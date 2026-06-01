@@ -116,6 +116,11 @@ export const S1_AUTO_SCHEDULER_POLICY = {
 export const S1_DEFAULT_CAPITAL_TWD = 10_000_000;
 export const S1_MIN_CAPITAL_TWD = 50_000;
 export const S1_MAX_CAPITAL_TWD = 10_000_000;
+export const S1_AUDIT_ACTIONS = {
+  signalGenerated: "s1_sim.signal_generated",
+  ordersSubmitted: "s1_sim.orders_submitted",
+  eodGenerated: "s1_sim.eod_generated",
+} as const;
 
 function normalizeS1Capital(value: unknown): number | null {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(/,/g, "")) : NaN;
@@ -134,6 +139,80 @@ function envS1Capital(): S1CapitalConfig | null {
     subscriptionId: null,
     createdAt: null,
   };
+}
+
+async function resolveS1WorkspaceId(): Promise<string | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .limit(1)
+    .catch(() => [] as Array<{ id: string }>);
+
+  return rows[0]?.id ?? null;
+}
+
+async function writeS1ObservationAudit(input: {
+  workspaceId: string;
+  action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS];
+  tradingDate: string;
+  data: S1Basket | S1OrderSubmitResult | S1EodReport;
+}): Promise<void> {
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(auditLogs).values({
+      workspaceId: input.workspaceId,
+      actorId: null,
+      action: input.action,
+      entityType: "s1_sim",
+      entityId: input.tradingDate,
+      payload: {
+        schema: "s1_sim_observation_audit_v1",
+        persisted_at: new Date().toISOString(),
+        data: input.data,
+      },
+    });
+  } catch (e) {
+    console.warn("[s1-audit] failed to persist observation audit:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function readS1ObservationAudit<T>(
+  action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS],
+  tradingDate: string,
+): Promise<T | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  const workspaceId = await resolveS1WorkspaceId();
+  if (!workspaceId) return null;
+
+  const rows = await db
+    .select({ payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, action),
+        eq(auditLogs.entityType, "s1_sim"),
+        eq(auditLogs.entityId, tradingDate),
+      ),
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(1)
+    .catch(() => [] as Array<{ payload: unknown }>);
+
+  const payload = rows[0]?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = (payload as Record<string, unknown>)["data"];
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  return data as T;
 }
 
 export async function resolveS1SimCapitalTwd(workspaceId: string): Promise<S1CapitalConfig> {
@@ -261,7 +340,7 @@ async function readS1BasketForDate(date: string): Promise<S1Basket | null> {
     const raw = await fs.readFile(p, "utf-8");
     return JSON.parse(raw) as S1Basket;
   } catch {
-    return null;
+    return readS1ObservationAudit<S1Basket>(S1_AUDIT_ACTIONS.signalGenerated, date);
   }
 }
 
@@ -553,6 +632,12 @@ async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<v
   } catch (e) {
     console.error("[s1-signal] failed to write basket JSON:", e instanceof Error ? e.message : String(e));
   }
+  await writeS1ObservationAudit({
+    workspaceId,
+    action: S1_AUDIT_ACTIONS.signalGenerated,
+    tradingDate: todayTst,
+    data: basketObj,
+  });
 
   console.log(`[s1-signal] DONE regime=${regime} top8=[${top8.map((s) => s.symbol).join(",")}]`);
 }
@@ -745,6 +830,15 @@ export async function runS1OrderSubmitTick(): Promise<void> {
   } catch (e) {
     console.error("[s1-order] failed to write submit JSON:", e instanceof Error ? e.message : String(e));
   }
+  const workspaceId = await resolveS1WorkspaceId();
+  if (workspaceId) {
+    await writeS1ObservationAudit({
+      workspaceId,
+      action: S1_AUDIT_ACTIONS.ordersSubmitted,
+      tradingDate: todayTst,
+      data: submitResult,
+    });
+  }
 
   const accepted = orderResults.filter((r) => r.status === "accepted").length;
   const rejected = orderResults.filter((r) => r.status === "rejected").length;
@@ -863,6 +957,15 @@ export async function runS1EodReportTick(): Promise<void> {
     await writeJson(reportJsonPath, report);
   } catch (e) {
     console.error("[s1-eod] failed to write JSON report:", e instanceof Error ? e.message : String(e));
+  }
+  const workspaceId = await resolveS1WorkspaceId();
+  if (workspaceId) {
+    await writeS1ObservationAudit({
+      workspaceId,
+      action: S1_AUDIT_ACTIONS.eodGenerated,
+      tradingDate: todayTst,
+      data: report,
+    });
   }
 
   // Markdown report

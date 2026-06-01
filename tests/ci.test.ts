@@ -192,6 +192,7 @@ import {
 import {
   resolveS1SimCapitalTwd,
   S1_AUTO_SCHEDULER_POLICY,
+  S1_AUDIT_ACTIONS,
   S1_DEFAULT_CAPITAL_TWD,
 } from "../apps/api/src/s1-sim-runner.ts";
 import {
@@ -15019,6 +15020,21 @@ test("S1-AUTO-1: automatic S1 SIM scheduler remains primary and self-heals missi
   assert.match(serverSource, /automatic_scheduler/);
   assert.match(runnerSource, /never submits stale prior-day/i);
   assert.doesNotMatch(runnerSource, /taipeiDateStr\(-1\).*taipeiDateStr\(-2\)/s);
+});
+
+test("S1-OBS-6: S1 observations are mirrored to audit_logs and status can recover after file loss", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  assert.equal(S1_AUDIT_ACTIONS.signalGenerated, "s1_sim.signal_generated");
+  assert.equal(S1_AUDIT_ACTIONS.ordersSubmitted, "s1_sim.orders_submitted");
+  assert.equal(S1_AUDIT_ACTIONS.eodGenerated, "s1_sim.eod_generated");
+  assert.match(runnerSource, /writeS1ObservationAudit/);
+  assert.match(runnerSource, /readS1ObservationAudit<S1Basket>/);
+  assert.match(serverSource, /_readS1ObservationAudit<S1BasketLite>/);
+  assert.match(serverSource, /observation_storage/);
+  assert.match(serverSource, /"s1_sim\.orders_submitted"/);
+  assert.match(serverSource, /"s1_sim\.eod_generated"/);
 });
 
 // =============================================================================
