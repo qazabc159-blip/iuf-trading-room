@@ -117,14 +117,16 @@ export function buildCompanyAiAnalystContractFallbackReport(
   trace: ReactStep[],
   initialPrompt: string,
   missingSections: number[],
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  qualityIssues: string[] = []
 ): string {
   const ticker = extractCompanyAiAnalystTicker(initialPrompt);
   const sourceSummary = summarizeTraceSources(trace);
-  const missing = missingSections.length ? missingSections.join(", ") : "未知";
+  const missing = missingSections.length ? missingSections.join(", ") : "無缺段落";
+  const quality = qualityIssues.length ? `；品質問題 ${qualityIssues.join(", ")}` : "";
 
   return `## 1. 公司概況與定位
-資料不足：${ticker} 的 AI 分析回覆未通過固定 9 段模板檢查，缺少段落 ${missing}。系統已停止展示原始破格式內容。
+資料不足：${ticker} 的 AI 分析回覆未通過固定 9 段模板檢查，缺少段落 ${missing}${quality}。系統已停止展示原始破格式內容。
 
 ## 2. 今日/最近資料狀態
 資料不足：本次工具觀察來源為 ${sourceSummary}，但最終彙整文字未符合產品模板，因此不把行情判斷包裝成正式分析。
@@ -286,6 +288,26 @@ export function validateCompanyAiAnalystSections(report: string): number[] {
   return COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS
     .filter((r) => !r.pattern.test(report))
     .map((r) => r.n);
+}
+
+export function validateCompanyAiAnalystQualityIssues(report: string): string[] {
+  const text = report.replace(/\r\n/g, "\n").trim();
+  const issues = new Set<string>();
+
+  if (text.length < 600) {
+    issues.add("too_short");
+  }
+  if (/資料不足[：:]\s*原因(?:[。\s]|$)/u.test(text)) {
+    issues.add("generic_data_gap_reason");
+  }
+  const genericPlaceholderLine = text
+    .split(/\n+/)
+    .some((line) => /^資料不足[：:]\s*(原因|需補充)?[。.\s]*$/u.test(line.trim()));
+  if (genericPlaceholderLine) {
+    issues.add("generic_placeholder_line");
+  }
+
+  return Array.from(issues);
 }
 
 export function validateSynthesisSections(report: string, initialPrompt = ""): number[] {
@@ -658,17 +680,22 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
     // report still misses sections, return an honest 9-section degraded report
     // instead of exposing broken LLM prose as a finished analyst report.
     if (synthesisContent) {
+      const isCompanyReport = isCompanyAiAnalystPrompt(opts.initialPrompt);
       const missingSections = validateSynthesisSections(synthesisContent, opts.initialPrompt);
-      if (missingSections.length > 0) {
-        console.warn(`[react-loop] synthesis missing sections ${missingSections.join(",")} — retrying once`);
+      const qualityIssues = isCompanyReport ? validateCompanyAiAnalystQualityIssues(synthesisContent) : [];
+      if (missingSections.length > 0 || qualityIssues.length > 0) {
+        const qualitySuffix = qualityIssues.length ? ` quality=${qualityIssues.join(",")}` : "";
+        console.warn(`[react-loop] synthesis missing sections ${missingSections.join(",") || "none"}${qualitySuffix} — retrying once`);
         const retryContent = await runSynthesis();
         if (retryContent) {
           synthesisContent = retryContent;
         }
         const finalMissing = validateSynthesisSections(synthesisContent, opts.initialPrompt);
-        if (finalMissing.length > 0 && isCompanyAiAnalystPrompt(opts.initialPrompt)) {
-          console.warn(`[react-loop] company AI analyst synthesis still missing sections ${finalMissing.join(",")} — using contract fallback`);
-          synthesisContent = buildCompanyAiAnalystContractFallbackReport(trace, opts.initialPrompt, finalMissing);
+        const finalQuality = isCompanyReport ? validateCompanyAiAnalystQualityIssues(synthesisContent) : [];
+        if ((finalMissing.length > 0 || finalQuality.length > 0) && isCompanyReport) {
+          const finalQualitySuffix = finalQuality.length ? ` quality=${finalQuality.join(",")}` : "";
+          console.warn(`[react-loop] company AI analyst synthesis still invalid sections=${finalMissing.join(",") || "none"}${finalQualitySuffix} — using contract fallback`);
+          synthesisContent = buildCompanyAiAnalystContractFallbackReport(trace, opts.initialPrompt, finalMissing, undefined, finalQuality);
         }
       }
     }
@@ -824,9 +851,12 @@ export async function getLatestCompanyAiAnalystDecision(ticker: string, workspac
     const normalizedWorkspaceId = workspaceId ?? null;
     const row = rows.find((r) => {
       const sameWorkspace = (r.workspaceId ?? null) === normalizedWorkspaceId;
+      const finalReport = r.finalReport ?? "";
       return sameWorkspace
         && r.status === "complete"
-        && Boolean(r.finalReport?.trim())
+        && Boolean(finalReport.trim())
+        && validateCompanyAiAnalystSections(finalReport).length === 0
+        && validateCompanyAiAnalystQualityIssues(finalReport).length === 0
         && isCompanyAiAnalystDecisionPrompt(r.prompt, ticker);
     });
 

@@ -5,6 +5,7 @@ import {
   buildCompanyAiAnalystContractFallbackReport,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
   validateCompanyAiAnalystSections,
+  validateCompanyAiAnalystQualityIssues,
   validateSynthesisSections,
 } from "./react-loop.js";
 
@@ -49,6 +50,21 @@ test("company AI analyst validator rejects missing contract sections", () => {
   assert.deepEqual(validateSynthesisSections(brokenReport, companyPrompt), [8]);
 });
 
+test("company AI analyst quality gate rejects short generic placeholder reports", () => {
+  const placeholderReport = `
+## 1. 公司概況與定位
+資料不足：原因。
+
+## 2. 今日/最近資料狀態
+資料不足：原因。
+`;
+
+  const issues = validateCompanyAiAnalystQualityIssues(placeholderReport);
+  assert.ok(issues.includes("too_short"));
+  assert.ok(issues.includes("generic_data_gap_reason"));
+  assert.ok(issues.includes("generic_placeholder_line"));
+});
+
 test("company AI analyst fallback is honest and still satisfies the 9-section contract", () => {
   const fallback = buildCompanyAiAnalystContractFallbackReport(
     [
@@ -71,12 +87,15 @@ test("company AI analyst fallback is honest and still satisfies the 9-section co
     ],
     companyPrompt,
     [3, 8],
-    "2026-06-01T00:00:00.000Z"
+    "2026-06-01T00:00:00.000Z",
+    ["too_short"]
   );
 
   assert.deepEqual(validateSynthesisSections(fallback, companyPrompt), []);
+  assert.deepEqual(validateCompanyAiAnalystQualityIssues(fallback), []);
   assert.match(fallback, /資料不足/);
   assert.match(fallback, /缺少段落 3, 8/);
+  assert.match(fallback, /too_short/);
   assert.match(fallback, /get_company_technical \/ get_news_top10/);
   assert.doesNotMatch(fallback, /必漲|重倉|All in/i);
 });
