@@ -13,6 +13,7 @@ import test from "node:test";
 import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.js";
 import {
   buildDailyBriefContractInstructions,
+  buildMarketOverviewSourceEntryFromSnapshot,
   buildSourceOnlyBriefPayload,
   classifyDraftTier,
   DAILY_BRIEF_REQUIRED_SECTION_IDS,
@@ -196,6 +197,36 @@ test("source-only fallback source trail includes market intel news and announcem
   const trail = payload.sections[0]?.sourceTrail ?? "";
   assert.match(trail, /ai_selected_news|AI 精選新聞/);
   assert.match(trail, /official_announcements|官方重大公告/);
+});
+
+test("daily brief source pack market overview uses live market snapshot", () => {
+  const entry = buildMarketOverviewSourceEntryFromSnapshot(
+    {
+      taiex: {
+        value: 41898.32,
+        change: 108.26,
+        changePct: 0.26,
+        sourceState: "live",
+        asOf: "2026-05-12",
+      },
+      heatmapTop3: [{ industry: "半導體", avgChangePct: 1.2, direction: "up" }],
+      topGainers: [{ symbol: "2330", name: "台積電", changePct: 2.1 }],
+      topLosers: [{ symbol: "2603", name: "長榮", changePct: -1.8 }],
+      institutional: { foreign: 1200, trust: -300, dealer: 50, date: "2026-05-12" },
+      margin: { balanceChange: 1000, shortChange: -250, date: "2026-05-11" },
+    },
+    new Date("2026-05-01")
+  );
+
+  assert.equal(entry.source, "market_overview");
+  assert.equal(entry.status, "LIVE");
+  assert.equal(entry.rowCount, 5);
+  assert.equal(entry.latestDate, "2026-05-12");
+  assert.match(entry.note ?? "", /taiex=live/);
+  assert.equal(entry.sampleRows?.[0]?.taiexValue, 41898.32);
+  assert.deepEqual(entry.sampleRows?.[0]?.heatmapTop3, [
+    { industry: "半導體", avgChangePct: 1.2, direction: "up" },
+  ]);
 });
 
 test("direct LLM daily brief payload attaches source trail to every section", () => {
