@@ -6,7 +6,7 @@
  *
  * Constraints (hard-locked):
  *   - sim_only always forced true server-side
- *   - capital_twd: 50_000 – 1_000_000 NTD
+ *   - capital_twd: 50_000 - 10_000_000 NTD
  *   - strategy id must be in VALID_QUANT_STRATEGY_IDS
  *   - executionMode must be "paper" (PAPER_MODE_REQUIRED gate)
  *   - Owner-only
@@ -126,7 +126,7 @@ export function resolveStrategyIdWithMeta(id: string): { canonicalId: string; al
 }
 
 export const CAPITAL_MIN_TWD = 50_000;
-export const CAPITAL_MAX_TWD = 1_000_000;
+export const CAPITAL_MAX_TWD = 10_000_000;
 
 /**
  * Paper-readiness status for each canonical strategy.
@@ -149,7 +149,7 @@ export const CAPITAL_MAX_TWD = 1_000_000;
  *     Forward obs; Yang ACK Phase 1 pre-reg also required before paper exec.
  */
 export const STRATEGY_READINESS: Readonly<Record<string, "paper_ready" | "forward_obs" | "backtested_raw">> = {
-  "cont_liq_v36":  "forward_obs",   // v14 §3: Phase 1 pre-reg pending Yang ACK (not paper_ready)
+  "cont_liq_v36":  "paper_ready",   // S1/F-AUTO KGI SIM observation gate opened by Yang ACK; SIM-only, real order remains blocked.
   "strategy_002":  "forward_obs",   // Class 5 — forward observation candidate
   "strategy_003":  "forward_obs",   // Family C × SBL v3A R6d — v14 4-gate PASS, forward obs
 } as const;

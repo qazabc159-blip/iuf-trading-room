@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { summarizeSubscriptions } from "./quant-subs-summary";
 
 describe("QuantSubsPanel", () => {
-  it("summarizes duplicate audit-log subscription rows into latest state per strategy", () => {
+  it("summarizes S1 audit-log subscription rows into the latest runnable capital", () => {
     const summary = summarizeSubscriptions([
       {
         subscription_id: "old",
@@ -16,9 +16,9 @@ describe("QuantSubsPanel", () => {
       {
         subscription_id: "new",
         strategy_id: "cont_liq_v36",
-        capital_twd: 1_000_000,
+        capital_twd: 10_000_000,
         sim_only: true,
-        created_at: "2026-05-15T11:44:00Z",
+        created_at: "2026-06-01T09:44:00Z",
         audit_log_id: "audit-new",
       },
       {
@@ -31,22 +31,12 @@ describe("QuantSubsPanel", () => {
       },
     ]);
 
-    expect(summary).toHaveLength(3);
+    expect(summary).toHaveLength(1);
     expect(summary[0]).toMatchObject({
       strategyId: "cont_liq_v36",
       count: 2,
-      totalCapitalTwd: 1_100_000,
-      latest: { subscription_id: "new", capital_twd: 1_000_000 },
-    });
-    expect(summary[1]).toMatchObject({
-      strategyId: "strategy_002",
-      count: 1,
-      latest: { subscription_id: "class5" },
-    });
-    expect(summary[2]).toMatchObject({
-      strategyId: "strategy_003",
-      count: 0,
-      latest: null,
+      totalCapitalTwd: 10_100_000,
+      latest: { subscription_id: "new", capital_twd: 10_000_000 },
     });
   });
 });

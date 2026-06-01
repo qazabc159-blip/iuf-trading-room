@@ -4406,8 +4406,9 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
   const todayTst = _s1TaipeiDateStr();
 
   // Import s1-sim-runner window checkers (read-only, no side-effects)
-  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow } =
+  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow, resolveS1SimCapitalTwd } =
     await import("./s1-sim-runner.js");
+  const capitalConfig = await resolveS1SimCapitalTwd(session.workspace.id);
 
   // Read today's basket (try today, yesterday, day-before)
   type S1BasketLite = { signal_date: string; regime: string; exposure_weight: number; basket: unknown[]; generated_at_tst: string };
@@ -4440,6 +4441,10 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
       eod_open: isS1EodWindow(),
     },
     gateway_url_configured: !!(process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"]),
+    configured_capital_twd: capitalConfig.capitalTwd,
+    capital_source: capitalConfig.source,
+    capital_subscription_id: capitalConfig.subscriptionId,
+    capital_subscription_created_at: capitalConfig.createdAt,
     latest_basket: latestBasket ? {
       date: latestBasketDate,
       regime: latestBasket.regime,
@@ -16602,7 +16607,7 @@ app.get("/api/v1/admin/openalice/adversarial-warns", async (c) => {
 // QUANT STRATEGY SUBSCRIBE (2026-05-15)
 // POST /api/v1/quant-strategies/:id/subscribe
 //   Owner-only. sim_only forced true server-side.
-//   capital_twd: 50_000–1_000_000 NTD.
+//   capital_twd: 50_000 - 10_000_000 NTD.
 //   Persists to audit_logs action="quant_strategy.subscribe" (no new DB table).
 //
 // GET /api/v1/quant-strategies/:id/subscriptions/my

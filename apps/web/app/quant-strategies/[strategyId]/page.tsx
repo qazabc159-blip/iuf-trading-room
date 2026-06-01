@@ -26,17 +26,17 @@ export default async function QuantStrategyDetailPage({
             {strategy.role} / {strategy.cadence} / {strategy.basketSize}
           </p>
         </div>
-        <div className={styles.statusRail} aria-label="策略狀態">
+        <div className={styles.statusRail} aria-label="S1 strategy status">
           <div className={styles.statusCell}>
             <span>狀態</span>
             <strong>{strategy.current.status}</strong>
           </div>
           <div className={styles.statusCell}>
-            <span>籃子</span>
+            <span>預估檔數</span>
             <strong>{strategy.holdings.length}</strong>
           </div>
           <div className={styles.statusCell}>
-            <span>樣本</span>
+            <span>研究樣本</span>
             <strong>{strategy.metrics.sampleCount}</strong>
           </div>
         </div>
@@ -45,9 +45,8 @@ export default async function QuantStrategyDetailPage({
       <StrategyDetailClient strategy={strategy} />
 
       <Link href="/quant-strategies" className={styles.cta} style={{ maxWidth: 180, marginTop: 10 }}>
-        回策略總覽
+        返回量化策略
       </Link>
     </main>
   );
 }
-

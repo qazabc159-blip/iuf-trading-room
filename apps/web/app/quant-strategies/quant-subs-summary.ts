@@ -15,12 +15,10 @@ export type SubscriptionSummary = {
   totalCapitalTwd: number;
 };
 
-export const VALID_STRATEGY_IDS = ["cont_liq_v36", "strategy_002", "strategy_003"] as const;
+export const VALID_STRATEGY_IDS = ["cont_liq_v36"] as const;
 
 export const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
-  cont_liq_v36: "連續流動性 v36",
-  strategy_002: "Class5 月營收動量",
-  strategy_003: "低波股息防守",
+  cont_liq_v36: "S1 連續動能流動性策略",
 };
 
 export function summarizeSubscriptions(subscriptions: SubscriptionRecord[]): SubscriptionSummary[] {

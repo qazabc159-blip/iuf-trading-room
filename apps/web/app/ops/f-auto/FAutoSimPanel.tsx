@@ -191,6 +191,8 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
           <div className="_fauto-kv-list">
             {([
               ["今日", state.data.todayTst ?? "--"],
+              ["S1 配置資金", state.data.configuredCapitalTwd != null ? fmtTwd(state.data.configuredCapitalTwd) : "--"],
+              ["資金來源", state.data.capitalSource ?? "--"],
               ["市場態勢", state.data.regime ?? "--"],
               ["曝險比重", state.data.exposureWeight != null ? `${(state.data.exposureWeight * 100).toFixed(0)}%` : "--"],
               ["訊號視窗", state.data.signalWindowOpen ? "開啟" : "關閉"],
