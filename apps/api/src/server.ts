@@ -4468,6 +4468,68 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
   });
 });
 
+// POST /api/v1/internal/s1-sim/manual-run — Owner-only S1 SIM catch-up trigger
+//
+// This intentionally does not change the automatic S1 Monday cadence. It gives
+// Yang an explicit way to run S1 SIM catch-up actions when an ops issue missed
+// the normal window. Real-order paths remain blocked.
+app.post("/api/v1/internal/s1-sim/manual-run", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+  if (typeof body !== "object" || body === null) {
+    return c.json({ error: "INVALID_BODY" }, 400);
+  }
+
+  const raw = body as Record<string, unknown>;
+  const action = raw["action"];
+  const confirm = raw["confirm"];
+  if (confirm !== "RUN_S1_SIM_MANUAL") {
+    return c.json({
+      error: "CONFIRMATION_REQUIRED",
+      message: "Manual S1 SIM trigger requires confirm='RUN_S1_SIM_MANUAL'.",
+    }, 400);
+  }
+  if (action !== "signal" && action !== "order_submit" && action !== "eod") {
+    return c.json({
+      error: "INVALID_ACTION",
+      message: "action must be one of: signal, order_submit, eod",
+    }, 400);
+  }
+
+  const startedAt = new Date().toISOString();
+  const {
+    runS1SignalTick,
+    runS1OrderSubmitTick,
+    runS1EodReportTick,
+  } = await import("./s1-sim-runner.js");
+
+  if (action === "signal") {
+    await runS1SignalTick();
+  } else if (action === "order_submit") {
+    await runS1OrderSubmitTick();
+  } else {
+    await runS1EodReportTick();
+  }
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    action,
+    status: "completed",
+    started_at: startedAt,
+    completed_at: new Date().toISOString(),
+  });
+});
+
 // GET /api/v1/internal/s1-sim/eod-report?date=YYYY-MM-DD — S1 EOD report (Owner only)
 //
 // Returns the full S1EodReport JSON for the requested date.
