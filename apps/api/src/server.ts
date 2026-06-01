@@ -9766,9 +9766,19 @@ app.get("/api/v1/briefs/:id", async (c) => {
     "no tier=red auto-approve",
     "no content_draft.ai_rejected bypass"
   ];
-  const wasRejected = auditRows.some(
-    (r) => r.action === "content_draft.ai_rejected" || r.action === "hallucination_reject"
+  const latestDecisionRow = auditRows.find((r) =>
+    [
+      "content_draft.source_only_backfill_approved",
+      "content_draft.ai_approved",
+      "content_draft.ai_rejected",
+      "content_draft.factual_reject",
+      "hallucination_reject"
+    ].includes(r.action)
   );
+  const wasRejected =
+    latestDecisionRow?.action === "content_draft.ai_rejected" ||
+    latestDecisionRow?.action === "content_draft.factual_reject" ||
+    latestDecisionRow?.action === "hallucination_reject";
 
   const auditChain = {
     hardReject: {
