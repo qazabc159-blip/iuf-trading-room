@@ -4505,29 +4505,38 @@ app.post("/api/v1/internal/s1-sim/manual-run", async (c) => {
     }, 400);
   }
 
-  const startedAt = new Date().toISOString();
-  const {
-    runS1SignalTick,
-    runS1OrderSubmitTick,
-    runS1EodReportTick,
-  } = await import("./s1-sim-runner.js");
+  const triggerId = crypto.randomUUID();
+  const acceptedAt = new Date().toISOString();
+  void (async () => {
+    try {
+      const {
+        runS1SignalTick,
+        runS1OrderSubmitTick,
+        runS1EodReportTick,
+      } = await import("./s1-sim-runner.js");
 
-  if (action === "signal") {
-    await runS1SignalTick();
-  } else if (action === "order_submit") {
-    await runS1OrderSubmitTick();
-  } else {
-    await runS1EodReportTick();
-  }
+      if (action === "signal") {
+        await runS1SignalTick();
+      } else if (action === "order_submit") {
+        await runS1OrderSubmitTick();
+      } else {
+        await runS1EodReportTick();
+      }
+      console.log(`[s1-manual] trigger ${triggerId} action=${action} completed`);
+    } catch (e) {
+      console.error(`[s1-manual] trigger ${triggerId} action=${action} failed:`, e instanceof Error ? e.message : String(e));
+    }
+  })();
 
   return c.json({
     sim_only: true,
     prod_write_blocked: true,
+    trigger_id: triggerId,
     action,
-    status: "completed",
-    started_at: startedAt,
-    completed_at: new Date().toISOString(),
-  });
+    status: "accepted",
+    accepted_at: acceptedAt,
+    result_path: "/api/v1/internal/s1-sim/status",
+  }, 202);
 });
 
 // GET /api/v1/internal/s1-sim/eod-report?date=YYYY-MM-DD — S1 EOD report (Owner only)
