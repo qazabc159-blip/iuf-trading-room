@@ -1408,9 +1408,10 @@ function sanitizeBriefHeading(raw: string): string {
   return trimmed;
 }
 
-function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
+export function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
   if (!raw) return null;
   try {
+    const sourceTrail = buildSourceTrailSummary(sourcePack);
     const parsed = JSON.parse(stripCodeFences(raw)) as {
       templateVersion?: unknown;
       marketState?: unknown;
@@ -1431,7 +1432,7 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
             const heading = rawHeading ? sanitizeBriefHeading(rawHeading) : "";
             const rawBody = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
             const body = sanitizeBriefBody(rawBody);
-            return { sectionId, heading, body };
+            return { sectionId, heading, body, sourceTrail };
           })
           .filter((section) => section.heading.length > 0 && section.body.length >= 50)
           .slice(0, 6)
@@ -2141,7 +2142,12 @@ export async function runPipelineTick(
  */
 export async function evaluatePipelinePublishGate(
   draftId: string,
-  sourcePack: SourcePack | null
+  sourcePack: SourcePack | null,
+  reviewerResult?: {
+    verdict: "approve" | "reject" | "manual_review";
+    confidence: number;
+    flagged_issues?: unknown[];
+  } | null
 ): Promise<{
   action: "published" | "queued_for_review" | "rejected" | "skipped";
   briefId: string | null;
@@ -2207,16 +2213,24 @@ export async function evaluatePipelinePublishGate(
       ? (auditRow.payload as Record<string, unknown>)
       : null;
 
-  const verdict =
+  const auditVerdict =
     auditPayload?.verdict === "approve" ||
     auditPayload?.verdict === "reject" ||
     auditPayload?.verdict === "manual_review"
       ? (auditPayload.verdict as "approve" | "reject" | "manual_review")
       : null;
-  const confidence = typeof auditPayload?.confidence === "number" ? auditPayload.confidence : null;
-  const flaggedIssueCount = Array.isArray(auditPayload?.flagged_issues)
-    ? (auditPayload.flagged_issues as unknown[]).length
-    : 0;
+  const verdict = reviewerResult?.verdict ?? auditVerdict;
+  const confidence =
+    typeof reviewerResult?.confidence === "number"
+      ? reviewerResult.confidence
+      : typeof auditPayload?.confidence === "number"
+        ? auditPayload.confidence
+        : null;
+  const flaggedIssueCount = Array.isArray(reviewerResult?.flagged_issues)
+    ? reviewerResult.flagged_issues.length
+    : Array.isArray(auditPayload?.flagged_issues)
+      ? (auditPayload.flagged_issues as unknown[]).length
+      : 0;
 
   // 5/12 FIX (Part 1): When sourcePack is null (process restarted — in-memory jobId→pack cache
   // cleared between generation and review), the fallback pack has trailComplete=false which
