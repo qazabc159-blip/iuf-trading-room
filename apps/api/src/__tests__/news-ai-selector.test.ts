@@ -26,6 +26,7 @@ import {
   getLastNewsRunAt,
   getNewsTop10WithStaleness,
   isWithinNewsWindowTrigger,
+  newsTop10QualityStaleReason,
   normalizeNewsTitleForDedupe,
   runNewsAiSelection,
   runNewsAiSelectionBootRecovery,
@@ -158,6 +159,51 @@ test("NS8: items.length is never more than 10", async () => {
   });
 
   assert.ok(result.items.length <= 10, `items.length must be <= 10, got ${result.items.length}`);
+});
+
+test("NS8e: fresh-but-short news selections are treated as stale for P0 recovery", () => {
+  const base = {
+    run_id: "short-run",
+    as_of: new Date().toISOString(),
+    next_refresh_at: computeNextRefreshAt(),
+    window_label: "08:00" as const,
+    selection_mode: "ai" as const,
+    input_row_count: 5,
+    ai_call_success: true,
+    stale_reason: null,
+  };
+
+  const shortResult = {
+    ...base,
+    items: Array.from({ length: 5 }, (_, i) => ({
+      id: `news-${i}`,
+      headline: `headline ${i}`,
+      date: "2026-06-01",
+      source: "finmind_stock_news" as const,
+      why_matters: `why ${i}`,
+      impact_tier: "MID" as const,
+      tags: ["test"],
+      rank: i + 1,
+    })),
+  };
+
+  assert.equal(newsTop10QualityStaleReason(shortResult), "insufficient_news_items_5_of_9");
+
+  const incompleteResult = {
+    ...base,
+    items: Array.from({ length: 9 }, (_, i) => ({
+      id: `news-${i}`,
+      headline: `headline ${i}`,
+      date: "2026-06-01",
+      source: "finmind_stock_news" as const,
+      why_matters: i === 8 ? null : `why ${i}`,
+      impact_tier: "MID" as const,
+      tags: ["test"],
+      rank: i + 1,
+    })),
+  };
+
+  assert.equal(newsTop10QualityStaleReason(incompleteResult), "incomplete_news_items_8_of_9");
 });
 
 // ── NS9: boot recovery fires unconditionally; respects 45min guard ────────────

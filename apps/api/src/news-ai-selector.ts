@@ -63,6 +63,7 @@ const EXPANDED_WINDOW_HOURS = 72;
 const LAST_RESORT_WINDOW_HOURS = 24 * 30;
 // How many top-10 items to return
 const TOP_N = 10;
+const MIN_COMPLETE_ITEMS = 9;
 // Consider selection stale if last run was > 90min ago (30min grace on 60min hourly cron)
 const STALE_AFTER_MS = 90 * 60 * 1000;
 // Boot recovery: if DB latest row is older than 60min, fire immediately (was 4h — too wide)
@@ -157,7 +158,27 @@ export function getLastNewsTop10(): NewsTop10Result | null {
   return _lastResult;
 }
 
+export function newsTop10QualityStaleReason(result: NewsTop10Result): string | null {
+  const completeItems = result.items.filter((item) => item.source && item.impact_tier && item.why_matters);
+  if (result.items.length < MIN_COMPLETE_ITEMS) {
+    return `insufficient_news_items_${result.items.length}_of_${MIN_COMPLETE_ITEMS}`;
+  }
+  if (completeItems.length < MIN_COMPLETE_ITEMS) {
+    return `incomplete_news_items_${completeItems.length}_of_${MIN_COMPLETE_ITEMS}`;
+  }
+  return null;
+}
+
+function hasFreshNewsTop10Quality(result: NewsTop10Result): boolean {
+  return newsTop10QualityStaleReason(result) === null;
+}
+
 function withNewsStaleness(result: NewsTop10Result, runAt: Date): NewsTop10Result {
+  const qualityReason = newsTop10QualityStaleReason(result);
+  if (qualityReason) {
+    return { ...result, stale_reason: qualityReason };
+  }
+
   const ageMs = Date.now() - runAt.getTime();
   if (ageMs > STALE_AFTER_MS) {
     return {
@@ -227,6 +248,7 @@ export function isWithinNewsWindowTrigger(): boolean {
   // 50min guard passes, cron fires, but if _lastResult still reflects stale content,
   // we MUST allow re-fire. Check as_of independently from _lastRunAt.
   if (_lastResult) {
+    if (_lastResult.input_row_count > 0 && !hasFreshNewsTop10Quality(_lastResult)) return true;
     const asOfAgeMs = Date.now() - new Date(_lastResult.as_of).getTime();
     if (asOfAgeMs > STALE_AFTER_MS) {
       // Content is stale regardless of when we last attempted — always fire
@@ -1019,7 +1041,7 @@ export async function runNewsAiSelectionBootRecovery(workspaceId: string): Promi
   // Fast path: already have fresh in-memory result (e.g. hot reload, test)
   if (_lastResult && _lastRunAt) {
     const ageMs = Date.now() - _lastRunAt.getTime();
-    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS) {
+    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS && hasFreshNewsTop10Quality(_lastResult)) {
       console.log("[news-ai-selector] boot recovery: in-memory result fresh, skipping");
       return;
     }
@@ -1029,7 +1051,7 @@ export async function runNewsAiSelectionBootRecovery(workspaceId: string): Promi
   const dbResult = await loadLatestSelectionFromDb();
   if (dbResult) {
     const ageMs = Date.now() - new Date(dbResult.as_of).getTime();
-    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS) {
+    if (ageMs < BOOT_RECOVERY_MAX_AGE_MS && hasFreshNewsTop10Quality(dbResult)) {
       // DB has fresh data — seed in-memory, skip AI call
       console.log(
         `[news-ai-selector] boot recovery: loaded from DB (${Math.round(ageMs / 60000)}min old), seeding memory`
