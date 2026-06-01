@@ -602,6 +602,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
   let currentPaperSymbol = null;
+  const apiBase = String(window.__IUF_FINAL_V031_API_BASE__ || "").replace(/\/$/, "");
   const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
   const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
   const industryLabels = window.__IUF_FINAL_V031_INDUSTRY_LABELS__ || {};
@@ -612,7 +613,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const price = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? "—" : (Number(value) >= 1000 ? Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 1 }) : Number(value).toFixed(2));
   const cls = (status) => status === "ok" || status === "allow" ? "ok" : status === "block" || status === "bad" ? "bad" : "warn";
   const unwrap = (json) => json && typeof json === "object" && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json;
-  const apiUrl = (path) => apiProxy + encodeURIComponent(path);
+  const apiUrl = (path) => apiBase ? apiBase + path : apiProxy + encodeURIComponent(path);
   const apiFetch = async (path, init={}) => fetch(apiUrl(path), {
     credentials: "include",
     cache: "no-store",
