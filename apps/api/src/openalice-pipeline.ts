@@ -714,13 +714,21 @@ async function collectSourcePack(
     });
   }
 
+  // 6. AI-selected news and official announcements are optional but must enter
+  // the prompt/source trail when available; otherwise the daily brief becomes
+  // a price-only summary and misses the market-intel layer.
+  await collectAiSelectedNewsSource(db, sources, staleThreshold);
+  await collectOfficialAnnouncementsSource(db, sources, workspaceId, staleThreshold);
+
   // Trail complete: all required sources are LIVE, DEGRADED, or STALE (not ERROR/EMPTY/MISSING/BLOCKED)
   const REQUIRED_SOURCES = ["companies_ohlcv"];
   const DEGRADED_OK_SOURCES = [
     "tw_monthly_revenue",
     "tw_institutional_buysell",
     "tw_margin_short",
-    "market_overview"
+    "market_overview",
+    "ai_selected_news",
+    "official_announcements"
   ];
   const trailComplete =
     REQUIRED_SOURCES.every((s) => {
@@ -825,6 +833,138 @@ async function collectTableSource(
 }
 
 // ── Generator ─────────────────────────────────────────────────────────────────
+
+function jsonArraySampleRows(value: unknown, limit = 3): Record<string, unknown>[] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    .slice(0, limit)
+    .map((item) => ({
+      headline: item["headline"] ?? item["title"] ?? null,
+      ticker: item["ticker"] ?? null,
+      companyName: item["companyName"] ?? null,
+      source: item["source"] ?? null,
+      impactTier: item["impact_tier"] ?? item["impactTier"] ?? null,
+      whyMatters: item["why_matters"] ?? item["whyMatters"] ?? null
+    }));
+  return rows.length > 0 ? rows : null;
+}
+
+async function collectAiSelectedNewsSource(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  sources: SourcePackEntry[],
+  staleThreshold: Date
+) {
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        id,
+        as_of::text AS latest,
+        selection_mode,
+        input_row_count,
+        ai_call_success,
+        items,
+        jsonb_array_length(items) AS item_count
+      FROM news_ai_selections
+      ORDER BY as_of DESC
+      LIMIT 1
+    `);
+    const rows = (result as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (Array.isArray(result) ? (result as Array<Record<string, unknown>>) : []);
+    const row = rows[0];
+    const itemCount = row ? Number(row["item_count"] ?? 0) : 0;
+    const latest = typeof row?.["latest"] === "string" ? row["latest"] : null;
+    const status: SourceStatus =
+      itemCount === 0
+        ? "EMPTY"
+        : latest && new Date(latest) < staleThreshold
+        ? "STALE"
+        : "LIVE";
+    const note = row
+      ? `mode=${String(row["selection_mode"] ?? "unknown")}; input_rows=${String(row["input_row_count"] ?? "n/a")}; ai_call_success=${String(row["ai_call_success"] ?? "n/a")}`
+      : "no_news_ai_selection";
+    sources.push({
+      source: "ai_selected_news",
+      status,
+      rowCount: itemCount,
+      latestDate: latest,
+      note,
+      sampleRows: jsonArraySampleRows(row?.["items"])
+    });
+  } catch (e) {
+    sources.push({
+      source: "ai_selected_news",
+      status: "DEGRADED",
+      rowCount: null,
+      latestDate: null,
+      note: e instanceof Error ? e.message.slice(0, 100) : "news_ai_selections_unavailable",
+      sampleRows: null
+    });
+  }
+}
+
+async function collectOfficialAnnouncementsSource(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  sources: SourcePackEntry[],
+  workspaceId: string,
+  staleThreshold: Date
+) {
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        COUNT(*) AS cnt,
+        MAX(announced_at)::text AS latest
+      FROM tw_announcements
+      WHERE ticker_symbol IN (SELECT ticker FROM companies WHERE workspace_id = ${workspaceId})
+    `);
+    const rows = (result as { rows?: Array<{ cnt?: string | number; latest?: string | null }> }).rows
+      ?? (Array.isArray(result) ? (result as Array<{ cnt?: string | number; latest?: string | null }>) : []);
+    const row = rows[0];
+    const count = row ? Number(row.cnt ?? 0) : 0;
+    const latest = row?.latest ?? null;
+    const status: SourceStatus =
+      count === 0
+        ? "EMPTY"
+        : latest && new Date(latest) < staleThreshold
+        ? "STALE"
+        : "LIVE";
+
+    let sampleRows: Record<string, unknown>[] | null = null;
+    if (count > 0) {
+      try {
+        const sampleRes = await db.execute(drizzleSql`
+          SELECT ticker_symbol AS ticker, announced_at::text AS announcedAt, title, source_url AS sourceUrl
+          FROM tw_announcements
+          WHERE ticker_symbol IN (SELECT ticker FROM companies WHERE workspace_id = ${workspaceId})
+          ORDER BY announced_at DESC
+          LIMIT 3
+        `);
+        sampleRows = (sampleRes as { rows?: Record<string, unknown>[] }).rows
+          ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []);
+      } catch {
+        // sample fetch failure is non-fatal
+      }
+    }
+
+    sources.push({
+      source: "official_announcements",
+      status,
+      rowCount: count,
+      latestDate: latest,
+      note: null,
+      sampleRows
+    });
+  } catch (e) {
+    sources.push({
+      source: "official_announcements",
+      status: "DEGRADED",
+      rowCount: null,
+      latestDate: null,
+      note: e instanceof Error ? e.message.slice(0, 100) : "tw_announcements_unavailable",
+      sampleRows: null
+    });
+  }
+}
 
 const OPENALICE_ACTIVE_DEVICE_SECONDS = Number(
   process.env["OPENALICE_ACTIVE_DEVICE_SECONDS"] ?? 5 * 60
@@ -934,7 +1074,9 @@ const SOURCE_PRODUCT_LABELS: Record<string, string> = {
   tw_monthly_revenue: "月營收資料",
   tw_institutional_buysell: "法人籌碼資料",
   tw_margin_short: "信用交易資料",
-  market_overview: "市場總覽資料"
+  market_overview: "市場總覽資料",
+  ai_selected_news: "AI 精選新聞",
+  official_announcements: "官方重大公告"
 };
 
 function formatSourceLabel(source: string): string {
@@ -1162,6 +1304,11 @@ export function buildDailyBriefContractInstructions(): string {
 }
 
 const DAILY_BRIEF_SECTION_ID_SET = new Set<string>(DAILY_BRIEF_REQUIRED_SECTION_IDS);
+const DAILY_BRIEF_MIN_BODY_CHARS = 50;
+const DAILY_BRIEF_LEGACY_HEADING_PATTERN =
+  /Market Overview|Theme Summaries|Company Notes|Technical Analysis|Risk Alert|Strategy Observation|Summary/i;
+const DAILY_BRIEF_RAW_DUMP_PATTERN =
+  /Theme:\s|Lifecycle:\s|Market State:\s|Linked Companies|Observation\]|Priority:\s/i;
 
 export function validateDailyBriefSectionsContract(
   sections: Array<{ sectionId?: unknown; heading?: unknown; body?: unknown }>
@@ -1186,6 +1333,20 @@ export function validateDailyBriefSectionsContract(
   return { ok: missing.length === 0, missing };
 }
 
+function isDailyBriefSectionContentCompliant(section: {
+  heading?: unknown;
+  body?: unknown;
+}): boolean {
+  const heading = typeof section.heading === "string" ? section.heading : "";
+  const body = typeof section.body === "string" ? section.body.trim() : "";
+
+  if (DAILY_BRIEF_LEGACY_HEADING_PATTERN.test(heading)) return false;
+  if (body.length < DAILY_BRIEF_MIN_BODY_CHARS) return false;
+  if (DAILY_BRIEF_RAW_DUMP_PATTERN.test(body)) return false;
+
+  return true;
+}
+
 export function isDailyBriefV2ContractCompliant(
   brief: { sections?: unknown } | null | undefined
 ): boolean {
@@ -1201,7 +1362,10 @@ export function isDailyBriefV2ContractCompliant(
     };
   });
 
-  return validateDailyBriefSectionsContract(sections).ok;
+  return (
+    validateDailyBriefSectionsContract(sections).ok &&
+    sections.every((section) => isDailyBriefSectionContentCompliant(section))
+  );
 }
 
 const ENGLISH_HEADING_MAP: Record<string, string> = {

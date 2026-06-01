@@ -98,6 +98,39 @@ test("daily brief v2 compliance helper accepts only complete v2 sections", () =>
   assert.equal(isDailyBriefV2ContractCompliant({ sections: null }), false);
 });
 
+test("daily brief v2 compliance helper rejects empty bodies, raw dumps, and legacy headings even when section ids exist", () => {
+  const baseSections = DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+    sectionId,
+    heading: sectionId,
+    body: "This section has enough source-backed content for contract validation."
+  }));
+
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 0 ? { ...section, body: "" } : section
+      )
+    }),
+    false
+  );
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 1 ? { ...section, body: "Theme: AI server; Lifecycle: watchlist; Priority: high" } : section
+      )
+    }),
+    false
+  );
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 2 ? { ...section, heading: "Market Overview" } : section
+      )
+    }),
+    false
+  );
+});
+
 test("daily brief instructions advertise only the v2 five-section contract", () => {
   const instructions = buildDailyBriefContractInstructions();
   for (const sectionId of DAILY_BRIEF_REQUIRED_SECTION_IDS) {
@@ -130,6 +163,22 @@ test("source-only fallback also satisfies the v2 five-section contract", () => {
       `legacy heading leaked into source-only fallback: ${legacyHeading}`
     );
   }
+});
+
+test("source-only fallback source trail includes market intel news and announcement sources when provided", () => {
+  const payload = buildSourceOnlyBriefPayload(makePack({
+    sources: [
+      ...makePack().sources,
+      { source: "ai_selected_news", status: "LIVE", rowCount: 10, latestDate: "2026-05-06T08:00:00Z", note: "mode=ai", sampleRows: null },
+      { source: "official_announcements", status: "EMPTY", rowCount: 0, latestDate: null, note: "no_official_market_announcements", sampleRows: null }
+    ]
+  })) as {
+    sections: Array<{ sourceTrail?: string | null }>;
+  };
+
+  const trail = payload.sections[0]?.sourceTrail ?? "";
+  assert.match(trail, /ai_selected_news|AI 精選新聞/);
+  assert.match(trail, /official_announcements|官方重大公告/);
 });
 
 test("daily brief dedupe allows regenerating approved drafts that lack sourceTrail", () => {
