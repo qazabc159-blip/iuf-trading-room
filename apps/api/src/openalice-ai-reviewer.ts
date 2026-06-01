@@ -418,7 +418,7 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     const sourceJobId = draftRow.sourceJobId ?? null;
     const sourcePack = loadSourcePackForDraft(sourceJobId) ?? loadSourcePackForDraft(draftId);
     try {
-      const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack);
+      const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack, result);
 
       if (gateResult.action === "rejected") {
         // Gate force-rejected (BROKEN token in output, or HALLUCINATED RAG verdict)

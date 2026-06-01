@@ -23,6 +23,7 @@ import {
   loadSourcePackForDraft,
   loadStrategySnapshot,
   lookupJobSourcePackSummary,
+  parseDirectBriefPayload,
   registerJobSourcePack,
   registerJobSourcePackSummary,
   runBatchAiReviewer,
@@ -195,6 +196,28 @@ test("source-only fallback source trail includes market intel news and announcem
   const trail = payload.sections[0]?.sourceTrail ?? "";
   assert.match(trail, /ai_selected_news|AI 精選新聞/);
   assert.match(trail, /official_announcements|官方重大公告/);
+});
+
+test("direct LLM daily brief payload attaches source trail to every section", () => {
+  const headings = ["市場總覽", "AI 精選重點", "產業與主題", "風險觀察", "資料來源狀態"];
+  const raw = JSON.stringify({
+    templateVersion: "daily_brief_contract_v2",
+    marketState: "Risk-On",
+    sections: DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId, index) => ({
+      sectionId,
+      heading: headings[index],
+      body: "這是一段通過模板檢查的來源化簡報內容，描述市場資料、新聞來源、產業變化與風險狀態，並明確保留資料不足說明，不提供任何買賣建議。"
+    }))
+  });
+  const payload = parseDirectBriefPayload(raw, makePack()) as {
+    sections: Array<{ sourceTrail?: string | null }>;
+  };
+
+  assert.equal(payload.sections.length, 5);
+  for (const section of payload.sections) {
+    assert.equal(typeof section.sourceTrail, "string");
+    assert.match(section.sourceTrail ?? "", /source_pack=test-pack-001/);
+  }
 });
 
 test("daily brief dedupe allows regenerating approved drafts that lack sourceTrail", () => {
