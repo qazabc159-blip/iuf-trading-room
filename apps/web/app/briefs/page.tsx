@@ -292,18 +292,19 @@ async function loadBriefsData(): Promise<{ briefs: DailyBrief[]; error: string |
 
 async function loadDrafts(): Promise<LoadState<ContentDraftEntry[]>> {
   const updatedAt = nowIso();
+  const today = todayTaipeiDate();
   try {
     const response = await getContentDrafts({ status: "awaiting_review", limit: 100 });
     const drafts = (response.data ?? [])
-      .filter((draft) => draft.targetTable === "daily_briefs")
+      .filter((draft) => isTodayDailyBriefDraft(draft, today))
       .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)))
       .slice(0, 20);
     if (drafts.length === 0) {
-      return { state: "EMPTY", data: [], updatedAt, source: "每日簡報草稿", reason: "目前沒有等待審核的每日簡報草稿。" };
+      return { state: "EMPTY", data: [], updatedAt, source: "今日每日簡報草稿", reason: "今天沒有等待審核的每日簡報草稿。舊草稿保留在內容審核後台，不影響今日正式簡報。" };
     }
-    return { state: "LIVE", data: drafts, updatedAt, source: "每日簡報草稿" };
+    return { state: "LIVE", data: drafts, updatedAt, source: "今日每日簡報草稿" };
   } catch (error) {
-    return { state: "BLOCKED", data: [], updatedAt, source: "每日簡報草稿", reason: friendlyDataError(error, "草稿讀取失敗。") };
+    return { state: "BLOCKED", data: [], updatedAt, source: "今日每日簡報草稿", reason: friendlyDataError(error, "草稿讀取失敗。") };
   }
 }
 
@@ -497,9 +498,9 @@ function JobsPanel({ jobs }: { jobs: LoadState<OpenAliceJobEntry[]> }) {
 
 function DraftQueuePanel({ drafts }: { drafts: LoadState<ContentDraftEntry[]> }) {
   return (
-    <Panel code="BRF-DRAFT" title="待審草稿" sub="每日簡報草稿與來源檢查" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "需處理"}>
+    <Panel code="BRF-DRAFT" title="今日待審草稿" sub="今日每日簡報草稿與來源檢查" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "需處理"}>
       <div className="brief-draft-gate">
-        <SourceLine state={drafts} label="每日簡報草稿" />
+        <SourceLine state={drafts} label="今日每日簡報草稿" />
         {drafts.state === "LIVE" && (
           <div className="brief-job-list">
             {drafts.data.map((draft) => (
@@ -642,9 +643,9 @@ export default async function BriefsPage() {
           <span className="parity-kpi-sub">已發布</span>
         </div>
         <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">待審草稿</span>
+          <span className="parity-kpi-label">今日待審草稿</span>
           <span className={`parity-kpi-value ${drafts.data.length ? "warn" : "dim"}`}>{formatCount(drafts.data.length)}</span>
-          <span className="parity-kpi-sub">等待審核</span>
+          <span className="parity-kpi-sub">今天等待審核</span>
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">OpenAlice</span>
