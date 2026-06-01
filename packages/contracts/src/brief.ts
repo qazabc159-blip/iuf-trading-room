@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const briefSectionSchema = z.object({
   heading: z.string(),
-  body: z.string()
+  body: z.string(),
+  sourceTrail: z.string().nullable().optional()
 });
 
 export const dailyBriefSchema = z.object({
@@ -21,7 +22,8 @@ export const dailyBriefCreateInputSchema = z.object({
   sections: z.array(
     z.object({
       heading: z.string().min(1).max(200),
-      body: z.string().min(1).max(5000)
+      body: z.string().min(1).max(5000),
+      sourceTrail: z.string().nullable().optional()
     })
   ).min(1),
   generatedBy: z.enum(["manual", "openalice", "worker"]).default("manual"),

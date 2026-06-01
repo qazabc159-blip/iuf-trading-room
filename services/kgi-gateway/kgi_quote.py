@@ -31,6 +31,99 @@ from schemas import TickEvent
 
 logger = logging.getLogger("kgi_quote")
 
+
+class KgiQuoteUnavailableError(RuntimeError):
+    """Raised when the logged-in SDK object cannot expose a stock quote client."""
+
+
+def _quote_error_code(exc: BaseException) -> str:
+    message = str(exc)
+    code = message.split(":", 1)[0].strip()
+    if code.startswith("KGI_QUOTE_"):
+        return code
+    return "KGI_QUOTE_UNAVAILABLE"
+
+
+def _resolve_stock_quote(api):
+    """
+    Return a usable kgisuperpy stock quote manager.
+
+    Some kgisuperpy login objects are trade-authenticated but do not expose
+    `api.Quote` because market-data wrappers were not attached during login.
+    When the login object still carries `_ObjOrder._URL` with a market-data
+    token, hydrate the read-only Quote wrapper lazily instead of failing with
+    AttributeError: 'login' object has no attribute 'Quote'.
+    """
+    quote = getattr(api, "Quote", None)
+    if quote is not None:
+        return quote
+
+    obj_order = getattr(api, "_ObjOrder", None)
+    auth = getattr(obj_order, "_URL", None)
+    token = getattr(auth, "token", None)
+    if auth is None or not token:
+        raise KgiQuoteUnavailableError(
+            "KGI_QUOTE_AUTH_UNAVAILABLE: login succeeded but market-data token/Quote is unavailable"
+        )
+
+    try:
+        from kgisuperpy.Quote import Subscribe, _STKQuoteManager
+    except Exception as exc:  # pragma: no cover - SDK import availability depends on gateway host
+        raise KgiQuoteUnavailableError(
+            f"KGI_QUOTE_SDK_UNAVAILABLE: {type(exc).__name__}"
+        ) from exc
+
+    container = getattr(api, "_Q", None)
+    if container is None:
+        container = Subscribe(auth, count=1)
+        setattr(api, "_Q", container)
+
+    quote = _STKQuoteManager(container.Quote)
+    setattr(api, "Quote", quote)
+    logger.info("Hydrated missing kgisuperpy stock Quote wrapper from login auth token")
+    return quote
+
+
+def get_quote_auth_status(api, *, logged_in: bool, quote_disabled: bool) -> dict:
+    """
+    Return a credential-free quote-auth diagnostic for /quote/status.
+
+    This deliberately exposes only state/code, never token, account, person id,
+    password, or upstream raw payloads.
+    """
+    if quote_disabled:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "disabled",
+            "quote_auth_error_code": "QUOTE_DISABLED",
+        }
+    if not logged_in or api is None:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "not_logged_in",
+            "quote_auth_error_code": "KGI_NOT_LOGGED_IN",
+        }
+    try:
+        _resolve_stock_quote(api)
+        return {
+            "quote_auth_available": True,
+            "quote_auth_state": "available",
+            "quote_auth_error_code": None,
+        }
+    except KgiQuoteUnavailableError as exc:
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "unavailable",
+            "quote_auth_error_code": _quote_error_code(exc),
+        }
+    except Exception:
+        logger.exception("Unexpected quote auth diagnostic failure")
+        return {
+            "quote_auth_available": False,
+            "quote_auth_state": "error",
+            "quote_auth_error_code": "KGI_QUOTE_STATUS_ERROR",
+        }
+
 # ---------------------------------------------------------------------------
 # W2b: In-memory ring buffers (module-level, shared across requests)
 # ---------------------------------------------------------------------------
@@ -164,9 +257,11 @@ class KgiQuoteManager:
             except Exception:
                 logger.exception("Error in on_tick bridge")
 
+        quote = _resolve_stock_quote(api)
+
         # Register callback first, then subscribe
-        api.Quote.set_cb_tick(on_tick, version=QuoteVersion.v1)
-        label = api.Quote.subscribe_tick(symbol, odd_lot=odd_lot, version=QuoteVersion.v1)
+        quote.set_cb_tick(on_tick, version=QuoteVersion.v1)
+        label = quote.subscribe_tick(symbol, odd_lot=odd_lot, version=QuoteVersion.v1)
         label_str = str(label) if label is not None else f"tick_{symbol}"
 
         with self._lock:
@@ -196,8 +291,9 @@ class KgiQuoteManager:
                 logger.exception("Error in on_bidask bridge")
 
         # Attempt to use SDK bidask subscription — SDK may not support this in all versions
-        subscribe_fn = getattr(api.Quote, "subscribe_bidask", None)
-        set_cb_fn = getattr(api.Quote, "set_cb_bidask", None)  # W2c fix: was set_cb_bid_ask (typo)
+        quote = _resolve_stock_quote(api)
+        subscribe_fn = getattr(quote, "subscribe_bidask", None)
+        set_cb_fn = getattr(quote, "set_cb_bidask", None)  # W2c fix: was set_cb_bid_ask (typo)
         if subscribe_fn is None or set_cb_fn is None:
             raise NotImplementedError(
                 "KGI SDK does not expose api.Quote.subscribe_bidask / set_cb_bidask "

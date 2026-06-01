@@ -54,7 +54,8 @@ export const companyNotePayloadSchema = z.object({
 
 const dailyBriefSectionSchema = z.object({
   heading: z.string().min(1),
-  body: z.string().min(1).max(1500)
+  body: z.string().min(1).max(1500),
+  sourceTrail: z.string().min(1).max(1500).nullable().optional()
 });
 
 export const dailyBriefPayloadSchema = z.object({
@@ -101,6 +102,29 @@ export function computeContentDraftDedupeKey(input: {
 }) {
   const entity = input.targetEntityId ?? "_none_";
   return `${input.workspaceId}:${input.targetTable}:${entity}:${input.producerVersion}`;
+}
+
+function dailyBriefHasCompleteSectionSourceTrail(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const sections = (payload as { sections?: unknown }).sections;
+  if (!Array.isArray(sections) || sections.length === 0) return false;
+  return sections.every((section) => {
+    if (!section || typeof section !== "object") return false;
+    const sourceTrail = (section as { sourceTrail?: unknown }).sourceTrail;
+    return typeof sourceTrail === "string" && sourceTrail.trim().length > 0;
+  });
+}
+
+export function shouldReuseExistingContentDraftForDedupe(input: {
+  targetTable: ContentDraftTargetTable;
+  nextPayload: unknown;
+  existingPayload: unknown;
+}): boolean {
+  if (input.targetTable !== "daily_briefs") return true;
+  const nextHasSourceTrail = dailyBriefHasCompleteSectionSourceTrail(input.nextPayload);
+  const existingHasSourceTrail = dailyBriefHasCompleteSectionSourceTrail(input.existingPayload);
+  if (nextHasSourceTrail && !existingHasSourceTrail) return false;
+  return true;
 }
 
 export function isOpenAliceDeviceActivePayload(
@@ -202,7 +226,13 @@ export async function createContentDraft(input: {
 
   const existing = await findRecentContentDraftByDedupeKey({ dedupeKey });
   if (existing) {
-    return toDraftRecord(existing);
+    if (shouldReuseExistingContentDraftForDedupe({
+      targetTable: input.targetTable,
+      nextPayload: input.payload,
+      existingPayload: existing.payload
+    })) {
+      return toDraftRecord(existing);
+    }
   }
 
   const [row] = await db
@@ -389,7 +419,11 @@ export async function approveContentDraft(input: {
       // Covers ALL approve paths: direct-cron, OpenAlice device, manual approve.
       // PR #471 only sanitized the direct path (parseDirectBriefPayload); device-
       // submitted briefs bypassed this entirely → FFFD=70 in 5/15-5/17 briefs.
-      const sanitizedSections = payload.sections.map((s) => ({ ...s, body: sanitizeBriefBody(s.body) }));
+      const sanitizedSections = payload.sections.map((s) => ({
+        ...s,
+        body: sanitizeBriefBody(s.body),
+        sourceTrail: typeof s.sourceTrail === "string" ? sanitizeBriefBody(s.sourceTrail) : s.sourceTrail
+      }));
       // Use insert with onConflictDoUpdate keyed on (workspaceId, date).
       // The schema has a composite index but not a unique constraint; we fall
       // back to a delete+insert pattern to stay compatible without a migration.

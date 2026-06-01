@@ -19,6 +19,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiGetMe } from "@/lib/auth-client";
+import {
+  buildCompanyAiAnalystPrompt,
+  COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
+} from "./aiAnalystReportContract";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -183,7 +187,19 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         setPhase({ kind: "not-owner" });
         return;
       }
-      setPhase({ kind: "idle" });
+      try {
+        const latest = await apiFetch<ReactRunResult | null>(
+          `/api/v1/admin/brain/react/company-report/${encodeURIComponent(ticker)}`
+        );
+        if (cancelled) return;
+        if (latest?.report_md) {
+          setPhase({ kind: "complete", result: latest });
+          return;
+        }
+      } catch {
+        // If the persisted-report lookup is unavailable, keep the generator usable.
+      }
+      if (!cancelled) setPhase({ kind: "idle" });
     }
     void checkRole();
     return () => { cancelled = true; };
@@ -257,8 +273,12 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: `請針對台灣上市公司 ${ticker} 進行深度分析，涵蓋：1) 近期營運動態 2) 財務體質 3) 主題產業受惠度 4) 風險點 5) 操作觀察結論。請使用繁體中文回覆。`,
-            context: { ticker, source: "company_page" },
+            prompt: buildCompanyAiAnalystPrompt(ticker),
+            context: {
+              ticker,
+              source: "company_page",
+              templateVersion: COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
+            },
             budget_usd: 0.5,
           }),
         }

@@ -67,6 +67,7 @@ const TOP_N = 10;
 const STALE_AFTER_MS = 90 * 60 * 1000;
 // Boot recovery: if DB latest row is older than 60min, fire immediately (was 4h — too wide)
 const BOOT_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
+const MAX_STOCK_NEWS_PER_TICKER = 1;
 
 // ── F1: Startup env validation ────────────────────────────────────────────────
 
@@ -351,14 +352,64 @@ function isLowQualityStockNews(row: RawNewsRow): boolean {
   return /cmoney|money-link|yahoo|udn|pchome|idn\.com\.tw|投資網誌|小編/.test(text);
 }
 
-function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockNews: boolean }): RawNewsRow[] {
+export function normalizeNewsTitleForDedupe(title: string | null | undefined): string {
+  let normalized = String(title ?? "").toLowerCase();
+  for (const token of [
+    "moneydj",
+    "line today",
+    "linetoday",
+    "yahoo",
+    "udn",
+    "cmoney",
+    "pchome",
+    "cnyes",
+    "anue",
+    "wantgoo",
+    "money-link",
+    "旺得富理財網",
+    "理財網",
+    "新聞",
+    "台股",
+    "上市櫃",
+  ]) {
+    normalized = normalized.replaceAll(token, "");
+  }
+  return normalized
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[【】\[\]（）()「」『』｜|:：,，.。!！?？\-–—_/\s]/g, "")
+    .slice(0, 96);
+}
+
+function isSelectionLowQualityStockNews(row: RawNewsRow): boolean {
+  if (isLowQualityStockNews(row)) return true;
+  if (row.source !== "finmind_stock_news") return false;
+  const text = `${row.title ?? ""} ${row.url ?? ""} ${row.company_name ?? ""}`.toLowerCase();
+  if (/moneydj|line\s*today|linetoday|wantgoo|cnyes|anue|tvbs|ettoday/.test(text)) return true;
+  return /討論牆|盤中速報|躺平|專家問|高點到了嗎|小編/.test(text);
+}
+
+function newsDedupeKey(row: Pick<RawNewsRow, "ticker" | "title">): string {
+  return `${row.ticker ?? ""}:${normalizeNewsTitleForDedupe(row.title)}`;
+}
+
+function newsItemDedupeKey(item: Pick<NewsAiItem, "ticker" | "headline">): string {
+  return `${item.ticker ?? ""}:${normalizeNewsTitleForDedupe(item.headline)}`;
+}
+
+export function sanitizeRawRows(rows: RawNewsRow[], opts: { dropLowQualityStockNews: boolean }): RawNewsRow[] {
   const seen = new Set<string>();
+  const stockNewsPerTicker = new Map<string, number>();
   const result: RawNewsRow[] = [];
   for (const row of rows) {
     const title = (row.title ?? "").trim();
     if (!title) continue;
-    if (opts.dropLowQualityStockNews && isLowQualityStockNews(row)) continue;
-    const key = `${row.source}:${row.ticker ?? ""}:${title}`;
+    if (opts.dropLowQualityStockNews && isSelectionLowQualityStockNews(row)) continue;
+    if (row.source === "finmind_stock_news" && row.ticker) {
+      const count = stockNewsPerTicker.get(row.ticker) ?? 0;
+      if (count >= MAX_STOCK_NEWS_PER_TICKER) continue;
+      stockNewsPerTicker.set(row.ticker, count + 1);
+    }
+    const key = `${row.source}:${newsDedupeKey(row) || title}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({ ...row, title });
@@ -401,6 +452,11 @@ function inferDeterministicImpact(row: RawNewsRow): "HIGH" | "MID" | "LOW" {
   const title = row.title ?? "";
   if (row.source === "twse_announcements") return "HIGH";
   if (/下市|停止交易|重大|重訊|處分|警示|虧損|財報公告|營收大幅|減資|增資/.test(title)) return "HIGH";
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) return "MID";
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) return "MID";
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) return "MID";
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入/.test(title)) return "MID";
+  if (/股利|配息|殖利率|除息/.test(title)) return "MID";
   if (/財報|營收|EPS|法說|股東會|注意股|外資|投信|訂單|漲停|跌停/.test(title)) return "MID";
   return "LOW";
 }
@@ -410,6 +466,12 @@ function buildDeterministicWhy(row: RawNewsRow, impact: "HIGH" | "MID" | "LOW"):
   const name = row.company_name || row.ticker || "相關公司";
   if (row.source === "twse_announcements") {
     return `${name} 有官方公告，需確認是否影響營收、財務或交易風險。`;
+  }
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) {
+    return `${name} 涉及指數或 ETF 成分調整，可能帶動被動資金換股與短線成交量。`;
+  }
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) {
+    return `${name} 市場評價或目標價出現變化，需檢查股價是否已反映預期。`;
   }
   if (/下市|停止交易|處分|警示/.test(title)) {
     return `${name} 出現交易或下市風險訊號，需優先檢查持股與風控。`;
@@ -423,21 +485,37 @@ function buildDeterministicWhy(row: RawNewsRow, impact: "HIGH" | "MID" | "LOW"):
   if (/法說|股東會|訂單|合作|供應/.test(title)) {
     return `${name} 公司事件可能牽動題材與預期，需追蹤後續公告。`;
   }
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入/.test(title)) {
+    return `${name} 題材或產品線出現新訊號，需追蹤是否擴散到相關供應鏈。`;
+  }
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) {
+    return `${name} 價量動能明顯變化，需確認是否有基本面或題材支撐。`;
+  }
+  if (/股利|配息|殖利率|除息/.test(title)) {
+    return `${name} 股利或殖利率訊息更新，可能影響收益型資金配置。`;
+  }
+  if (/全年|今年|展望|優於去年|成長|改善/.test(title)) {
+    return `${name} 經營層釋出營運展望，需觀察後續營收是否跟上。`;
+  }
   return impact === "LOW"
-    ? `${name} 有新的市場消息，先列入觀察並等待量價確認。`
-    : `${name} 有新消息可能影響市場預期，需追蹤相關族群反應。`;
+    ? `${name} 有公司面訊息更新，先列入觀察並等待量價確認。`
+    : `${name} 有市場預期變化訊號，需追蹤相關族群與成交量反應。`;
 }
 
 function buildDeterministicTags(row: RawNewsRow): string[] {
   const title = row.title ?? "";
   const tags = new Set<string>();
   if (row.source === "twse_announcements") tags.add("官方公告");
+  if (/成分股|換新血|納入|剔除|指數|ETF|0050|0056/.test(title)) tags.add("ETF/指數");
+  if (/目標價|評等|升評|降評|看好|靠山/.test(title)) tags.add("市場評價");
   if (/下市|停止交易|處分|警示/.test(title)) tags.add("風險");
   if (/財報|EPS|獲利|虧損/.test(title)) tags.add("財報");
   if (/營收/.test(title)) tags.add("營收");
   if (/外資|投信|法人/.test(title)) tags.add("籌碼");
   if (/法說|股東會/.test(title)) tags.add("公司事件");
-  if (/AI|伺服器|半導體|電動車|機器人|航運|金融/.test(title)) tags.add("題材");
+  if (/漲停|跌停|站上|均線|創高|創低|強勢|熱門股/.test(title)) tags.add("價量動能");
+  if (/轉型|新材料|COMPUTEX|半導體|AI|伺服器|切入|電動車|機器人|航運|金融/.test(title)) tags.add("題材");
+  if (/股利|配息|殖利率|除息/.test(title)) tags.add("股利");
   if (tags.size === 0) tags.add("市場新聞");
   return [...tags].slice(0, 3);
 }
@@ -734,6 +812,8 @@ export async function runNewsAiSelection(params: {
       const rowById = new Map(rawRows.map((r, idx) => [r.id ?? `row-${idx}`, r]));
       const aiMappedItems: NewsAiItem[] = [];
       const aiSelectedIds = new Set<string>();
+      const aiSelectedSemanticKeys = new Set<string>();
+      const aiSelectedStockNewsPerTicker = new Map<string, number>();
 
       for (let idx = 0; idx < aiResponse.selected.length && aiMappedItems.length < TOP_N; idx++) {
         const sel = aiResponse.selected[idx]!;
@@ -747,7 +827,21 @@ export async function runNewsAiSelection(params: {
           console.warn(`[news-ai-selector] AI returned unknown id="${sel.id}" — skipping`);
           continue;
         }
+        const semanticKey = newsDedupeKey(row);
+        if (semanticKey && aiSelectedSemanticKeys.has(semanticKey)) {
+          console.warn(`[news-ai-selector] AI returned duplicate headline group="${semanticKey}" at idx=${idx} ??skipping`);
+          continue;
+        }
+        if (row.source === "finmind_stock_news" && row.ticker) {
+          const count = aiSelectedStockNewsPerTicker.get(row.ticker) ?? 0;
+          if (count >= MAX_STOCK_NEWS_PER_TICKER) {
+            console.warn(`[news-ai-selector] AI over-selected ticker="${row.ticker}" at idx=${idx} ??skipping`);
+            continue;
+          }
+          aiSelectedStockNewsPerTicker.set(row.ticker, count + 1);
+        }
         aiSelectedIds.add(sel.id);
+        if (semanticKey) aiSelectedSemanticKeys.add(semanticKey);
 
         // Post-process why_matters: reject null/empty, use headline snippet as fallback
         const rawWhy = typeof sel.why_matters === "string" ? sel.why_matters.trim() : "";
@@ -779,15 +873,18 @@ export async function runNewsAiSelection(params: {
         for (const fallbackItem of deterministic) {
           if (aiMappedItems.length >= TOP_N) break;
           if (aiSelectedIds.has(fallbackItem.id)) continue;
+          const semanticKey = newsItemDedupeKey(fallbackItem);
+          if (semanticKey && aiSelectedSemanticKeys.has(semanticKey)) continue;
+          if (fallbackItem.source === "finmind_stock_news" && fallbackItem.ticker) {
+            const count = aiSelectedStockNewsPerTicker.get(fallbackItem.ticker) ?? 0;
+            if (count >= MAX_STOCK_NEWS_PER_TICKER) continue;
+            aiSelectedStockNewsPerTicker.set(fallbackItem.ticker, count + 1);
+          }
           aiSelectedIds.add(fallbackItem.id); // prevent same pad id twice
+          if (semanticKey) aiSelectedSemanticKeys.add(semanticKey);
           aiMappedItems.push({
             ...fallbackItem,
-            rank: 0, // placeholder — final re-assign below makes this definitive
-            // Pad items come from deterministic fallback — assign default why/impact so
-            // callers always see non-null values (acceptance: null why=0, null impact=0)
-            why_matters: `重要台股消息：${(fallbackItem.headline ?? "").slice(0, 30)}`,
-            impact_tier: "MID" as const,
-            tags: []
+            rank: 0 // placeholder — final re-assign below makes this definitive
           });
         }
       }

@@ -21,6 +21,13 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    # Self-hosted Windows runners can keep a restrictive machine policy.
+    # Use an explicit bypass for GitHub's generated temporary scripts so
+    # skip gates and deploy commands do not fail before product code runs.
+    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+
 jobs:
   deploy:
     # Only deploy if CI passed (auto), or manual dispatch.
@@ -41,7 +48,6 @@ jobs:
     steps:
       - name: Decide whether this matrix entry should run
         id: gate
-        shell: powershell
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $target = "${{ github.event.inputs.service }}"
@@ -68,11 +74,29 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: npm install -g @railway/cli@latest
 
+      - name: Remove non-runtime evidence before Railway upload
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          $paths = @(
+            "evidence",
+            "reports",
+            "packages/qa-playwright/reports",
+            "playwright-report",
+            "test-results",
+            "coverage"
+          )
+
+          foreach ($path in $paths) {
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+              Write-Host "Removed non-runtime path before Railway upload: $path"
+            }
+          }
+
       - name: Deploy ${{ matrix.service }}
         if: steps.gate.outputs.skip != 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        shell: powershell
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RAILWAY_TOKEN)) {
             Write-Host "::error::RAILWAY_TOKEN secret is not set. Create a project token in Railway dashboard and add it as a GitHub Actions secret named RAILWAY_TOKEN."
@@ -157,7 +181,6 @@ jobs:
         env:
           SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
           SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
-        shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -268,10 +291,10 @@ jobs:
           }
 
           # Hard check: migration count must match expected total.
-          # Current prod value: 43 (5/18 PR-A backend gate, migration 0042 v3 status/trigger).
-          # Repo has 41 current forward files through 0042, prod schema_migrations contains
-          # 2 legacy applied rows from earlier migration history = 41 + 2 = 43 total.
-          $expectedMigrationCount = "43"
+          # Current prod value: 44 (5/29 PR #757, migration 0043 ai_rec_v3 score_breakdown).
+          # Repo has 42 current forward files through 0043, prod schema_migrations contains
+          # 2 legacy applied rows from earlier migration history = 42 + 2 = 44 total.
+          $expectedMigrationCount = "44"
           if ($count -ne $expectedMigrationCount) {
             Write-Host "::error::Migration count mismatch: expected $expectedMigrationCount but got $count. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1

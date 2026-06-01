@@ -44,10 +44,22 @@ describe("industry heatmap representative pool source gate", () => {
     }
   });
 
+  it("falls back to fixed representative labels when feed names contain replacement characters", () => {
+    expect(source).toContain('!normalized.includes("�")');
+    for (const pair of ['"6285": "啟碁"', '"5608": "四維航"', '"6416": "瑞祺電通"']) {
+      expect(source).toContain(pair);
+    }
+  });
+
   it("does not render missing representative quotes as gray tiles", () => {
     expect(source).toContain('if (tile.sourceState === "no_data") return false;');
     expect(source).not.toContain("representativeNoDataTile");
     expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
     expect(source).toContain("未渲染為灰塊");
+  });
+  it("keeps compact tiles readable with both ticker and company name", () => {
+    expect(source).toContain('|| tile.labelMode === "small"');
+    expect(source).not.toContain('tile.labelMode === "small" ? null');
+    expect(source).toContain('<small className="tile-name">{tile.name}</small>');
   });
 });

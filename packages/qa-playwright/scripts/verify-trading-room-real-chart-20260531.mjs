@@ -1,0 +1,182 @@
+import { chromium } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+const repoRoot = path.resolve("../..");
+const outDir = path.join(repoRoot, "evidence/w7_paper_sprint");
+fs.mkdirSync(outDir, { recursive: true });
+
+const screenshotPath = path.join(outDir, "trading-room-real-chart-local-20260531.png");
+const reportPath = path.join(outDir, "trading-room-real-chart-local-20260531.json");
+const baseUrl = process.env.IUF_QA_BASE_URL ?? "http://127.0.0.1:3311";
+const initialSymbol = process.env.IUF_QA_SYMBOL ?? "2330";
+const planEntry = process.env.IUF_QA_ENTRY ?? "590";
+const planStop = process.env.IUF_QA_STOP ?? "560";
+const planTarget = process.env.IUF_QA_TP ?? "640";
+const requireCanvas = process.env.IUF_QA_REQUIRE_CANVAS === "1";
+const cookieFile = process.env.IUF_PLAYWRIGHT_COOKIE_FILE;
+const storageStateCandidates = [
+  process.env.IUF_PLAYWRIGHT_STORAGE_STATE,
+  path.join(repoRoot, "packages/qa-playwright/storageState.json"),
+  path.resolve(repoRoot, "../IUF_TRADING_ROOM_APP/packages/qa-playwright/storageState.json"),
+].filter(Boolean);
+const storageState = storageStateCandidates.find((candidate) => fs.existsSync(candidate));
+
+const consoleEvents = [];
+const requestFailures = [];
+
+function readNetscapeCookies(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return [];
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+  return lines.flatMap((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || (trimmed.startsWith("#") && !trimmed.startsWith("#HttpOnly_"))) return [];
+    const parts = line.split("\t");
+    if (parts.length < 7) return [];
+    const [domain, , cookiePath, secure, expires, name, value] = parts;
+    return [
+      {
+        name,
+        value,
+        domain: domain.replace(/^#HttpOnly_/, ""),
+        path: cookiePath || "/",
+        secure: String(secure).toUpperCase() === "TRUE",
+        expires: Number(expires) || -1,
+      },
+    ];
+  });
+}
+
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext(
+  storageState ? { storageState, viewport: { width: 1440, height: 900 } } : { viewport: { width: 1440, height: 900 } },
+);
+const cookies = readNetscapeCookies(cookieFile);
+if (cookies.length > 0) await context.addCookies(cookies);
+const page = await context.newPage();
+page.on("console", (msg) => {
+  if (["error", "warning"].includes(msg.type())) consoleEvents.push({ type: msg.type(), text: msg.text() });
+});
+page.on("requestfailed", (req) => requestFailures.push({ url: req.url(), failure: req.failure()?.errorText ?? "" }));
+
+const pageParams = new URLSearchParams({ symbol: initialSymbol, entry: planEntry, stop: planStop, tp: planTarget });
+await page.goto(`${baseUrl}/api/ui-final-v031/paper-trading-room?${pageParams.toString()}`, {
+  waitUntil: "domcontentloaded",
+  timeout: 60000,
+});
+await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
+
+const hostFrame = page.mainFrame();
+const iframe = hostFrame.locator("#real-kline-frame");
+await iframe.waitFor({ timeout: 30000 });
+const frameSrc = await iframe.getAttribute("src");
+const klineFrame = await iframe.elementHandle().then((handle) => handle?.contentFrame());
+if (!klineFrame) throw new Error("real kline iframe did not expose a content frame");
+
+await klineFrame.locator(".kline-panel,.kline-frame-empty").first().waitFor({ timeout: 30000 });
+const tabTexts = await klineFrame.locator(".kline-tab").allInnerTexts();
+const canvasCount = await klineFrame.locator(".kline-chart-canvas").count();
+const lightweightCanvas = await klineFrame.locator(".kline-chart-canvas canvas").count();
+const canvasRects = await klineFrame.locator("canvas").evaluateAll((nodes) =>
+  nodes.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  }),
+);
+const emptyState = await klineFrame.locator(".kline-insufficient,.kline-frame-empty,.terminal-note").count();
+const note = await klineFrame.locator(".kline-frame-note").innerText().catch(() => "");
+const emptyText = await klineFrame.locator(".kline-frame-empty,.terminal-note").first().innerText().catch(() => "");
+const indicatorReadout = await klineFrame.locator('[data-indicator-readout="volume-price"]').innerText().catch(() => "");
+
+const tsmcRow = hostFrame.locator(".wrow[data-sym='2330']");
+if (await tsmcRow.count()) {
+  await tsmcRow.first().click();
+} else {
+  await page.evaluate(() => {
+    if (typeof window.__IUF_SELECT_PAPER_SYMBOL__ === "function") {
+      window.__IUF_SELECT_PAPER_SYMBOL__("2330").catch(() => {});
+    } else {
+      window.updateRealChartFrame?.("2330");
+    }
+  });
+}
+await page.waitForTimeout(900);
+const updatedFrameSrc = await iframe.getAttribute("src");
+const outerHeaderSymbol = await hostFrame.locator(".symhead .sym").innerText().catch(() => "");
+const ticketSymbol = await hostFrame.locator("#t-sym").inputValue().catch(() => "");
+const stalePrefillText = await hostFrame.locator("#rec-prefill-box").innerText().catch(() => "");
+const ticketPrice = await hostFrame.locator("#t-price").inputValue().catch(() => "");
+
+await page.screenshot({ path: screenshotPath, fullPage: true });
+
+const report = {
+  url: page.url(),
+  frameSrc,
+  updatedFrameSrc,
+  tabTexts,
+  canvasCount,
+  lightweightCanvas,
+  canvasRects,
+  emptyState,
+  note,
+  emptyText,
+  indicatorReadout,
+  outerHeaderSymbol,
+  ticketSymbol,
+  stalePrefillText,
+  ticketPrice,
+  consoleEvents,
+  requestFailures,
+  storageState,
+  cookieFile: cookieFile ? "[provided]" : null,
+  cookieCount: cookies.length,
+  baseUrl,
+  initialSymbol,
+  requireCanvas,
+};
+fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+
+await browser.close();
+
+if (!String(frameSrc || "").includes("/final-v031/portfolio/kline-frame")) {
+  throw new Error(`trading room did not mount real chart frame: ${frameSrc}`);
+}
+if (!String(updatedFrameSrc || "").includes("symbol=2330")) {
+  throw new Error(`symbol switch did not refresh real chart frame: ${updatedFrameSrc}`);
+}
+if (String(updatedFrameSrc || "").includes(`entry=${planEntry}`) || String(updatedFrameSrc || "").includes(`stop=${planStop}`) || String(updatedFrameSrc || "").includes(`tp=${planTarget}`)) {
+  throw new Error(`real chart frame still used the previous recommendation plan after switching symbols: ${updatedFrameSrc}`);
+}
+if (canvasCount === 0 && emptyState === 0) {
+  throw new Error("real chart frame neither rendered chart canvas nor an explicit empty state");
+}
+const firstReadableCanvas = canvasRects.find((rect) => rect.width >= 300 && rect.height >= 250);
+if (requireCanvas && !firstReadableCanvas) {
+  throw new Error(`real chart canvas is required but not visible; emptyState=${emptyState}`);
+}
+if (firstReadableCanvas && firstReadableCanvas.top > 260) {
+  throw new Error(`real chart canvas is mounted too low for the trading room first view: top=${firstReadableCanvas.top}`);
+}
+if (emptyState === 0 && !tabTexts.some((text) => text.includes("MA") || text.includes("1"))) {
+  throw new Error(`real chart controls not found: ${tabTexts.join(" | ")}`);
+}
+if (emptyState === 0 && (!indicatorReadout.includes("量價支撐") || !indicatorReadout.includes("量價壓力"))) {
+  throw new Error(`volume-price indicator readout not found: ${indicatorReadout}`);
+}
+if (emptyState === 0 && (!indicatorReadout.includes("進場") || !indicatorReadout.includes("停損") || !indicatorReadout.includes("目標"))) {
+  throw new Error(`plan level readout not found: ${indicatorReadout}`);
+}
+if (!outerHeaderSymbol.includes("2330")) {
+  throw new Error(`outer trading-room header did not sync after symbol click: ${outerHeaderSymbol}`);
+}
+if (!ticketSymbol.includes("2330")) {
+  throw new Error(`ticket symbol did not sync after symbol click: ${ticketSymbol}`);
+}
+if (stalePrefillText.includes(initialSymbol) || stalePrefillText.includes(planEntry) || stalePrefillText.includes(planStop) || stalePrefillText.includes(planTarget)) {
+  throw new Error(`stale recommendation prefill remained after switching symbols: ${stalePrefillText}`);
+}
+const stalePlanNumbers = [planEntry, planStop, planTarget].map((value) => Number(value)).filter(Number.isFinite);
+const ticketPriceNumber = Number(ticketPrice);
+if (Number.isFinite(ticketPriceNumber) && stalePlanNumbers.some((value) => ticketPriceNumber === value)) {
+  throw new Error(`ticket price still used the previous recommendation plan after switching symbols: ${ticketPrice}`);
+}

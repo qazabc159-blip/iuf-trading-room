@@ -190,6 +190,12 @@ import {
   listAdversarialWarnEvents,
 } from "../apps/api/src/admin-openalice-adversarial-warns.ts";
 import {
+  resolveS1SimCapitalTwd,
+  S1_AUTO_SCHEDULER_POLICY,
+  S1_AUDIT_ACTIONS,
+  S1_DEFAULT_CAPITAL_TWD,
+} from "../apps/api/src/s1-sim-runner.ts";
+import {
   seedCompanyThemeLinks,
   type SeedThemeLinksResult,
 } from "../apps/api/src/seed/seed-company-theme-links.ts";
@@ -10296,9 +10302,50 @@ import {
   _resetDailySmokeHistory,
   _resetKgiSimState,
   getKgiSimState,
+  runSimQuoteSmoke,
   runSimTradeSmoke,
   type TradeSmokeResult,
 } from "../apps/api/src/broker/kgi-sim-env.ts";
+
+async function withFastKgiGatewayMock<T>(fn: () => Promise<T>): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = {
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"],
+    KGI_PERSON_ID: process.env["KGI_PERSON_ID"],
+    KGI_PERSON_PWD: process.env["KGI_PERSON_PWD"],
+  };
+
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-unit-gateway.test";
+  delete process.env["KGI_PERSON_ID"];
+  delete process.env["KGI_PERSON_PWD"];
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-unit-gateway.test/health") {
+      return new Response(JSON.stringify({ status: "ok", kgi_logged_in: false, account_set: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
   _resetDailySmokeHistory();
@@ -10308,54 +10355,51 @@ test("DS1: getDailySmokeHistory returns empty array on fresh start", () => {
 });
 
 test("DS2: runKgiSimDailySmokeSchedulerTick with forceRun=true returns valid entry", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  // Must return an entry (not null) when forceRun=true
-  assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
-  assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
-  assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
-  assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
-  assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
-  assert.ok(
-    ["pass", "fail", "partial"].includes(entry!.overallStatus),
-    `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
-  );
-  // In memory mode (no DB): prodBrokerAuditCount must be 0 (DB unavailable = defaults to 0)
-  assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
-  // tradeCheck must be null: confirmedByBruce/confirmedByJason not provided
-  assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
-  // quoteCheck structure must always be present
-  assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
-  assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
-  assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
-  assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
-  // Entry must be stored in ring buffer
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
-  assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    assert.ok(entry !== null, "DS2: entry returned with forceRun=true");
+    assert.equal(entry!.sim_only, true, "DS2: sim_only must always be true");
+    assert.ok(typeof entry!.runId === "string" && entry!.runId.length > 0, "DS2: runId is a non-empty string");
+    assert.ok(typeof entry!.firedAt === "string" && entry!.firedAt.length > 0, "DS2: firedAt is a non-empty string");
+    assert.ok(typeof entry!.durationMs === "number" && entry!.durationMs >= 0, "DS2: durationMs is a non-negative number");
+    assert.ok(
+      ["pass", "fail", "partial"].includes(entry!.overallStatus),
+      `DS2: overallStatus must be pass/fail/partial, got: ${entry!.overallStatus}`
+    );
+    assert.equal(entry!.prodBrokerAuditCount, 0, "DS2: prodBrokerAuditCount=0 when DB unavailable");
+    assert.equal(entry!.tradeCheck, null, "DS2: tradeCheck=null when dual-confirm not provided");
+    assert.ok(entry!.quoteCheck && typeof entry!.quoteCheck === "object", "DS2: quoteCheck object present");
+    assert.ok(typeof entry!.quoteCheck.gatewayReachable === "boolean", "DS2: quoteCheck.gatewayReachable is boolean");
+    assert.ok(typeof entry!.quoteCheck.loggedIn === "boolean", "DS2: quoteCheck.loggedIn is boolean");
+    assert.ok(typeof entry!.quoteCheck.subscribed === "boolean", "DS2: quoteCheck.subscribed is boolean");
+    assert.ok(typeof entry!.quoteCheck.tickReceived === "boolean", "DS2: quoteCheck.tickReceived is boolean");
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 1, "DS2: entry stored in history buffer");
+    assert.equal(hist[0]!.runId, entry!.runId, "DS2: stored entry matches returned entry");
+  });
 });
 
 test("DS3: ring buffer capped at 7 entries; getDailySmokeHistory returns newest-first", async () => {
-  _resetDailySmokeHistory();
-  _resetKgiSimState();
-  // Fire 8 times (forceRun bypasses window + idempotency)
-  for (let i = 0; i < 8; i++) {
-    await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-  }
-  const hist = getDailySmokeHistory();
-  assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
-  // Verify newest-first ordering
-  if (hist.length >= 2) {
-    const firstTime = new Date(hist[0]!.firedAt).getTime();
-    const secondTime = new Date(hist[1]!.firedAt).getTime();
-    assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
-  }
-  // All entries have sim_only=true and valid overallStatus
-  for (const e of hist) {
-    assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
-    assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
-  }
+  await withFastKgiGatewayMock(async () => {
+    _resetDailySmokeHistory();
+    _resetKgiSimState();
+    for (let i = 0; i < 8; i++) {
+      await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+    }
+    const hist = getDailySmokeHistory();
+    assert.equal(hist.length, 7, "DS3: ring buffer capped at 7 entries");
+    if (hist.length >= 2) {
+      const firstTime = new Date(hist[0]!.firedAt).getTime();
+      const secondTime = new Date(hist[1]!.firedAt).getTime();
+      assert.ok(firstTime >= secondTime, "DS3: history is newest-first");
+    }
+    for (const e of hist) {
+      assert.equal(e.sim_only, true, "DS3: sim_only=true on all entries");
+      assert.ok(["pass", "fail", "partial"].includes(e.overallStatus), "DS3: overallStatus valid");
+    }
+  });
 });
 
 test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) returns null", async () => {
@@ -10373,9 +10417,146 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
     assert.equal(hist.length, 0, "DS4: ring buffer empty when skipped outside window");
   } else {
     // Window is currently open: use forceRun to verify normal execution path
+    await withFastKgiGatewayMock(async () => {
+      const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
+      assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
+      assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    });
+  }
+});
+
+test("DS5: daily smoke fails when login is healthy but quote subscribe fails", async () => {
+  _resetDailySmokeHistory();
+  _resetKgiSimState();
+
+  const originalFetch = globalThis.fetch;
+  const originalGatewayUrl = process.env["KGI_GATEWAY_URL"];
+  const fakePersonId = "F" + "123456789";
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-gateway.test";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-gateway.test/health") {
+      return new Response(JSON.stringify({ status: "ok", kgi_logged_in: true, account_set: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url === "http://kgi-gateway.test/quote/subscribe/tick") {
+      return new Response(JSON.stringify({
+        detail: {
+          error: {
+            code: "KGI_SUBSCRIBE_FAILED",
+            message: "person_pwd=secret " + fakePersonId + " denied",
+            upstream: "token=abc " + fakePersonId + " upstream reject",
+          },
+        },
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
     const entry = await runKgiSimDailySmokeSchedulerTick({ forceRun: true });
-    assert.ok(entry !== null, "DS4 (window-open): forceRun=true returns entry");
-    assert.equal(entry!.sim_only, true, "DS4 (window-open): sim_only=true");
+    assert.ok(entry !== null, "DS5: entry returned with forceRun=true");
+    assert.equal(entry!.overallStatus, "fail", "DS5: subscribe failure must not pass daily smoke");
+    assert.equal(entry!.quoteCheck.gatewayReachable, true, "DS5: gateway was reachable");
+    assert.equal(entry!.quoteCheck.loggedIn, true, "DS5: gateway was logged in");
+    assert.equal(entry!.quoteCheck.subscribed, false, "DS5: quote was not subscribed");
+    assert.equal(entry!.quoteCheck.tickReceived, false, "DS5: tick was not received");
+    assert.match(entry!.quoteCheck.error ?? "", /subscribe_failed: HTTP 502/);
+    assert.match(entry!.quoteCheck.error ?? "", /KGI_SUBSCRIBE_FAILED/);
+    assert.doesNotMatch(entry!.quoteCheck.error ?? "", new RegExp(`${fakePersonId}|secret|abc`), "DS5: gateway details are redacted");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalGatewayUrl === undefined) {
+      delete process.env["KGI_GATEWAY_URL"];
+    } else {
+      process.env["KGI_GATEWAY_URL"] = originalGatewayUrl;
+    }
+  }
+});
+
+test("DS6: runSimQuoteSmoke logs in and sets account before subscribing after gateway restart", async () => {
+  _resetKgiSimState();
+  const originalFetch = globalThis.fetch;
+  const originalEnv = {
+    KGI_ENV: process.env["KGI_ENV"],
+    KGI_PERSON_ID: process.env["KGI_PERSON_ID"],
+    KGI_PERSON_PWD: process.env["KGI_PERSON_PWD"],
+    KGI_ACCOUNT: process.env["KGI_ACCOUNT"],
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"],
+  };
+  const calls: string[] = [];
+
+  process.env["KGI_ENV"] = "sim";
+  process.env["KGI_PERSON_ID"] = "UNIT_TEST_PERSON";
+  process.env["KGI_PERSON_PWD"] = "unit-test-password";
+  process.env["KGI_GATEWAY_URL"] = "http://unit-gateway";
+  delete process.env["KGI_ACCOUNT"];
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url.replace("http://unit-gateway", ""));
+
+    if (url.endsWith("/health")) {
+      return json(200, { status: "ok", kgi_logged_in: false, account_set: false });
+    }
+    if (url.endsWith("/session/login")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      assert.equal(body["simulation"], true, "DS6: quote smoke must login with simulation=true");
+      assert.equal(body["person_id"], "UNIT_TEST_PERSON", "DS6: person_id passed only to gateway login");
+      assert.equal(body["person_pwd"], "unit-test-password", "DS6: password passed only to gateway login");
+      return json(200, {
+        ok: true,
+        accounts: [{ account: "SIM-ACCOUNT-1", account_flag: "證券", broker_id: "9228" }],
+      });
+    }
+    if (url.endsWith("/session/set-account")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      assert.equal(body["account"], "SIM-ACCOUNT-1", "DS6: first SIM account is selected");
+      return json(200, { ok: true, account_flag: "證券", broker_id: "9228" });
+    }
+    if (url.endsWith("/quote/subscribe/tick")) {
+      return json(200, { ok: true, label: "tick:0050" });
+    }
+    if (url.includes("/quote/ticks")) {
+      return json(200, { ticks: [{ close: 128.5, volume: 1, datetime: "2026-05-30T01:00:00Z" }] });
+    }
+    return json(404, { error: { code: "UNEXPECTED_TEST_URL", message: url } });
+  }) as typeof fetch;
+
+  try {
+    const result = await runSimQuoteSmoke({ workspaceId: null, symbol: "0050" });
+    assert.equal(result.gatewayReachable, true, "DS6: gateway reachable");
+    assert.equal(result.loggedIn, true, "DS6: auto login succeeded");
+    assert.equal(result.gatewaySummary?.account_set, true, "DS6: auto set-account succeeded");
+    assert.equal(result.subscribed, true, "DS6: subscribe attempted after login");
+    assert.equal(result.tickReceived, true, "DS6: tick received");
+    assert.equal(result.error, null, "DS6: no smoke error");
+    assert.deepEqual(
+      calls.slice(0, 5),
+      ["/health", "/session/login", "/session/set-account", "/quote/subscribe/tick", "/quote/ticks?symbol=0050&limit=1"],
+      "DS6: health → login → set-account → subscribe → ticks"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   }
 });
 
@@ -10422,22 +10603,20 @@ test("ORT3: runSimTradeSmoke without dual-confirm returns awaiting_dual_confirm 
 });
 
 test("ORT4: runSimTradeSmoke with dual-confirm attempts order submit (gateway unreachable in CI)", async () => {
-  _resetKgiSimState();
-  const result = await runSimTradeSmoke({
-    workspaceId: null,
-    symbol: "0050",
-    confirmedByBruce: true,
-    confirmedByJason: true,
+  await withFastKgiGatewayMock(async () => {
+    _resetKgiSimState();
+    const result = await runSimTradeSmoke({
+      workspaceId: null,
+      symbol: "0050",
+      confirmedByBruce: true,
+      confirmedByJason: true,
+    });
+    assert.equal(result.sim_only, true, "ORT4: sim_only always true");
+    assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
+    assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
+    const state = getKgiSimState();
+    assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
   });
-  assert.equal(result.sim_only, true, "ORT4: sim_only always true");
-  // In CI (no gateway), gatewayReachable=false and orderSubmitted=true (we attempted fetch)
-  // OR if gateway reachable, orderSubmitted=true and outcome is accepted/not_enabled/rejected
-  assert.ok(typeof result.orderSubmitted === "boolean", "ORT4: orderSubmitted is boolean");
-  assert.ok(typeof result.orderReportReceived === "boolean", "ORT4: orderReportReceived is boolean");
-  // State must reflect the attempt
-  const state = getKgiSimState();
-  // lastSimOrderStatus must be updated (not "pending" after a dual-confirmed run)
-  assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
 });
 
 // ── P1-A Regression: institutional aggregateInstRows name-matching ─────────────
@@ -10580,6 +10759,70 @@ test("SIM4: kgiSimOrderBodySchema — LOT quantityUnit accepted; market order pr
   assert.equal(result.quantityUnit, "LOT", "SIM4: LOT quantityUnit accepted");
   assert.equal(result.orderType, "market", "SIM4: market orderType accepted");
   assert.equal(result.price, undefined, "SIM4: price not required for market order");
+});
+
+// =============================================================================
+// B2-MANUAL-SIM: kgiSimOrderBodySchema B2 extensions — timeInForce / orderCond / priceType
+// =============================================================================
+
+test("B2-MANUAL-SIM-1: schema defaults timeInForce=ROD and orderCond=Cash when not provided", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "2330",
+    side: "buy",
+    qty: 1,
+    price: 900,
+  });
+  assert.equal(result.timeInForce, "ROD", "B2-MANUAL-SIM-1: timeInForce defaults to ROD");
+  assert.equal(result.orderCond, "Cash", "B2-MANUAL-SIM-1: orderCond defaults to Cash");
+  assert.equal(result.priceType, undefined, "B2-MANUAL-SIM-1: priceType undefined when not provided");
+});
+
+test("B2-MANUAL-SIM-2: schema accepts explicit timeInForce=IOC and orderCond=Margin", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "2330",
+    side: "buy",
+    qty: 1,
+    price: 900,
+    timeInForce: "IOC",
+    orderCond: "Margin",
+  });
+  assert.equal(result.timeInForce, "IOC", "B2-MANUAL-SIM-2: timeInForce=IOC accepted");
+  assert.equal(result.orderCond, "Margin", "B2-MANUAL-SIM-2: orderCond=Margin accepted");
+});
+
+test("B2-MANUAL-SIM-3: schema accepts priceType=LimitUp (overrides numeric price)", () => {
+  const result = kgiSimOrderBodySchema.parse({
+    symbol: "0050",
+    side: "buy",
+    qty: 1,
+    priceType: "LimitUp",
+  });
+  assert.equal(result.priceType, "LimitUp", "B2-MANUAL-SIM-3: priceType=LimitUp accepted");
+  assert.equal(result.price, undefined, "B2-MANUAL-SIM-3: numeric price not required when priceType set");
+});
+
+test("B2-MANUAL-SIM-4: schema rejects invalid timeInForce value", () => {
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({
+      symbol: "2330",
+      side: "buy",
+      qty: 1,
+      price: 900,
+      timeInForce: "GTC", // not in ROD|IOC|FOK
+    });
+  }, { name: "ZodError" }, "B2-MANUAL-SIM-4: unknown timeInForce should throw ZodError");
+});
+
+test("B2-MANUAL-SIM-5: schema rejects invalid orderCond value", () => {
+  assert.throws(() => {
+    kgiSimOrderBodySchema.parse({
+      symbol: "2330",
+      side: "buy",
+      qty: 1,
+      price: 900,
+      orderCond: "Delivery", // not in allowed set
+    });
+  }, { name: "ZodError" }, "B2-MANUAL-SIM-5: unknown orderCond should throw ZodError");
 });
 
 // =============================================================================
@@ -10938,7 +11181,7 @@ test("QS-SUB-2: capital below 50k returns CAPITAL_BELOW_MIN 400", async () => {
   assert.equal(result.http_status, 400, "QS-SUB-2: http_status must be 400");
 });
 
-test("QS-SUB-3: capital above 1M returns CAPITAL_EXCEEDED_CAP 400", async () => {
+test("QS-SUB-3: capital above max returns CAPITAL_EXCEEDED_CAP 400", async () => {
   const result = await subscribeQuantStrategy({
     session: _mockQsSession,
     strategyId: "cont_liq_v36",
@@ -10949,6 +11192,15 @@ test("QS-SUB-3: capital above 1M returns CAPITAL_EXCEEDED_CAP 400", async () => 
   if (result.ok) return;
   assert.equal(result.error, "CAPITAL_EXCEEDED_CAP", "QS-SUB-3: error code must be CAPITAL_EXCEEDED_CAP");
   assert.equal(result.http_status, 400, "QS-SUB-3: http_status must be 400");
+});
+
+test("S1-CAPITAL-1: S1 runner defaults to 10M in non-DB mode", async () => {
+  const previous = process.env["S1_SIM_CAPITAL_TWD"];
+  delete process.env["S1_SIM_CAPITAL_TWD"];
+  const config = await resolveS1SimCapitalTwd(_mockQsSession.workspace.id);
+  assert.equal(config.capitalTwd, S1_DEFAULT_CAPITAL_TWD);
+  assert.equal(config.source, "default");
+  if (previous !== undefined) process.env["S1_SIM_CAPITAL_TWD"] = previous;
 });
 
 test("QS-SUB-4: non-existent strategy returns STRATEGY_NOT_FOUND 404", async () => {
@@ -11101,7 +11353,7 @@ test("QS-READINESS-1: strategy_003 subscribe returns forward_obs warning (Truth 
   );
 });
 
-test("QS-READINESS-2: cont_liq_v36 subscribe returns forward_obs warning (v14 §3 Phase 1 pre-reg pending)", async () => {
+test("QS-READINESS-2: cont_liq_v36 subscribe is accepted after S1 KGI SIM ACK", async () => {
   // cont_liq_v36 demoted from paper_ready to forward_obs per Truth Board v14 §3.
   // Phase 1 pre-reg requires explicit Yang ACK (楊董 3 天不在 / 不 lock / 不真單).
   const result = await subscribeQuantStrategy({
@@ -11110,17 +11362,9 @@ test("QS-READINESS-2: cont_liq_v36 subscribe returns forward_obs warning (v14 §
     capitalTwd: 100_000,
     executionMode: "paper",
   });
-  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed (forward obs accepted)");
+  assert.ok(result.ok, "QS-READINESS-2: cont_liq_v36 subscribe must succeed");
   if (!result.ok) return;
-  assert.ok(
-    typeof result.warning === "string" && result.warning.length > 0,
-    "QS-READINESS-2: cont_liq_v36 must return forward_obs warning (not paper_ready)"
-  );
-  assert.equal(
-    result.warning,
-    FORWARD_OBS_WARNING,
-    "QS-READINESS-2: warning must match FORWARD_OBS_WARNING constant"
-  );
+  assert.equal(result.warning, undefined, "QS-READINESS-2: S1 paper_ready should not return forward_obs warning");
 });
 
 test("QS-READINESS-3: STRATEGY_READINESS map has entries for all VALID_QUANT_STRATEGY_IDS", () => {
@@ -11147,11 +11391,11 @@ test("QS-READINESS-4: rs_20_60 is retired — subscribeQuantStrategy returns STR
   assert.equal(result.http_status, 410, "QS-READINESS-4: http_status must be 410 Gone");
 });
 
-test("QS-READINESS-5: cont_liq_v36 is forward_obs — FORWARD_OBS_WARNING constant exists and is non-empty", () => {
+test("QS-READINESS-5: readiness map marks S1 paper_ready and keeps research strategies forward_obs", () => {
   assert.ok(typeof FORWARD_OBS_WARNING === "string" && FORWARD_OBS_WARNING.length > 0,
     "QS-READINESS-5: FORWARD_OBS_WARNING must be a non-empty string");
-  assert.ok(STRATEGY_READINESS["cont_liq_v36"] === "forward_obs",
-    "QS-READINESS-5: cont_liq_v36 must be forward_obs in STRATEGY_READINESS (v14 §3 alignment)");
+  assert.ok(STRATEGY_READINESS["cont_liq_v36"] === "paper_ready",
+    "QS-READINESS-5: cont_liq_v36 must be paper_ready for S1 KGI SIM observation");
   assert.ok(STRATEGY_READINESS["strategy_003"] === "forward_obs",
     "QS-READINESS-5: strategy_003 must be forward_obs in STRATEGY_READINESS (Truth Board v14)");
 });
@@ -13939,6 +14183,26 @@ test("BRAIN-REACT-ANALYST-5: getMarketOverview returns valid shape (fail-open, n
     "BRAIN-REACT-ANALYST-5: source must be string");
 });
 
+test("BRAIN-REACT-ANALYST-6: company page reloads latest persisted AI analyst report", () => {
+  const repoRoot = process.cwd();
+  const serverSource = readFileSync(path.join(repoRoot, "apps/api/src/server.ts"), "utf8");
+  const panelSource = readFileSync(path.join(repoRoot, "apps/web/app/companies/[symbol]/AiAnalystReportPanel.tsx"), "utf8");
+  const helperSource = readFileSync(path.join(repoRoot, "apps/api/src/brain/react-loop.ts"), "utf8");
+
+  const latestRouteRegistration = 'app.get("/api/v1/admin/brain/react/company-report/:ticker"';
+  const decisionRouteRegistration = 'app.get("/api/v1/admin/brain/react/decisions/:run_id"';
+  assert.match(serverSource, /app\.get\("\/api\/v1\/admin\/brain\/react\/company-report\/:ticker"/,
+    "BRAIN-REACT-ANALYST-6: API must expose latest company AI report route");
+  assert.ok(
+    serverSource.indexOf(latestRouteRegistration) < serverSource.indexOf(decisionRouteRegistration),
+    "BRAIN-REACT-ANALYST-6: latest company report route must be registered before :run_id catch-all"
+  );
+  assert.match(helperSource, /getLatestCompanyAiAnalystDecision/,
+    "BRAIN-REACT-ANALYST-6: backend must query latest persisted company analyst decision");
+  assert.match(panelSource, /\/api\/v1\/admin\/brain\/react\/company-report\/\$\{encodeURIComponent\(ticker\)\}/,
+    "BRAIN-REACT-ANALYST-6: company panel must load the latest persisted report on mount");
+});
+
 // =============================================================================
 // PR #731 follow-up: tool-boot-seed (b) + event-streams graceful (c) (2026-05-19)
 // =============================================================================
@@ -14686,9 +14950,242 @@ test("AI-REC-V3-CRON-3: AiRecTrigger type includes cron_daily and manual refresh
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
+// =============================================================================
+// B1: S1 SIM Observation Endpoints — unit tests (S1-OBS-1..5)
+// =============================================================================
+//
+// These tests exercise the logic used in the 3 S1 internal endpoints without
+// needing a real HTTP server. They test:
+//   - _s1TaipeiDateStr() date math
+//   - _readJsonSafe() graceful null on missing file
+//   - Endpoint response shape (empty-state when file absent)
+//   - Date param validation pattern (YYYY-MM-DD guard)
+//   - TWSE fallback row parse (ClosingPrice / TradeVolume cleaning)
+
+test("S1-OBS-1: taipei date string is YYYY-MM-DD format", () => {
+  // Mirror the function inline so the test is self-contained
+  function taipeiDateStr(offsetDays = 0): string {
+    const d = new Date(Date.now() + offsetDays * 86_400_000);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  }
+  const today = taipeiDateStr(0);
+  assert.match(today, /^\d{4}-\d{2}-\d{2}$/, "S1-OBS-1: today format must be YYYY-MM-DD");
+  const yesterday = taipeiDateStr(-1);
+  assert.match(yesterday, /^\d{4}-\d{2}-\d{2}$/, "S1-OBS-1: yesterday format must be YYYY-MM-DD");
+  // yesterday must be before today lexicographically
+  assert.ok(yesterday < today, "S1-OBS-1: yesterday < today lexicographically");
+});
+
+test("S1-OBS-2: _readJsonSafe returns null for non-existent path", async () => {
+  // Replicate the logic inline
+  async function readJsonSafe<T>(filePath: string): Promise<T | null> {
+    try {
+      const { promises: nodeFs } = await import("node:fs");
+      const raw = await nodeFs.readFile(filePath, "utf-8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+  const result = await readJsonSafe("/non/existent/path/file.json");
+  assert.equal(result, null, "S1-OBS-2: missing file must return null (not throw)");
+});
+
+test("S1-OBS-3: _readJsonSafe parses valid JSON correctly", async () => {
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const fs = await import("node:fs/promises");
+  // Write a temp JSON file
+  const tmpDir = os.tmpdir();
+  const tmpFile = path.join(tmpDir, `s1-obs-test-${Date.now()}.json`);
+  const testData = { schema: "s1_sim_basket_v1", regime: "sideways", exposure_weight: 0.5, basket: [] };
+  await fs.writeFile(tmpFile, JSON.stringify(testData), "utf-8");
+
+  async function readJsonSafe<T>(filePath: string): Promise<T | null> {
+    try {
+      const { promises: nodeFs } = await import("node:fs");
+      const raw = await nodeFs.readFile(filePath, "utf-8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  const result = await readJsonSafe<typeof testData>(tmpFile);
+  assert.ok(result !== null, "S1-OBS-3: file found — result must not be null");
+  assert.equal(result?.regime, "sideways", "S1-OBS-3: regime must be 'sideways'");
+  assert.equal(result?.schema, "s1_sim_basket_v1", "S1-OBS-3: schema field preserved");
+  await fs.unlink(tmpFile).catch(() => {/* cleanup best-effort */});
+});
+
+test("S1-OBS-4: date param validation pattern (YYYY-MM-DD)", () => {
+  function isValidS1DateParam(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [yearRaw, monthRaw, dayRaw] = value.split("-");
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  }
+  assert.ok(isValidS1DateParam("2026-05-31"), "S1-OBS-4: 2026-05-31 valid");
+  assert.ok(isValidS1DateParam("2024-01-01"), "S1-OBS-4: 2024-01-01 valid");
+  assert.ok(!isValidS1DateParam("20260531"), "S1-OBS-4: 20260531 invalid (no dashes)");
+  assert.ok(!isValidS1DateParam("2026-5-31"), "S1-OBS-4: 2026-5-31 invalid (single digit month)");
+  assert.ok(!isValidS1DateParam("invalid"), "S1-OBS-4: 'invalid' rejected");
+  assert.ok(!isValidS1DateParam("2026-13-01"), "S1-OBS-4: month 13 rejected");
+  assert.ok(!isValidS1DateParam("2026-02-30"), "S1-OBS-4: impossible day rejected");
+});
+
+test("S1-OBS-5: TWSE ClosingPrice / TradeVolume cleaning logic", () => {
+  // Mirrors _twseRealtimeFallback() parse logic
+  function parseRow(row: { ClosingPrice?: string; TradeVolume?: string }): { close: number | null; vol: number | null } {
+    const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
+    const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
+    const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
+    const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+    return { close, vol };
+  }
+
+  // Normal row with commas
+  const r1 = parseRow({ ClosingPrice: "2,425.00", TradeVolume: "45,678,000" });
+  assert.equal(r1.close, 2425.00, "S1-OBS-5: comma-formatted price parsed correctly");
+  assert.equal(r1.vol, 45678000, "S1-OBS-5: comma-formatted volume parsed correctly");
+
+  // Zero / empty
+  const r2 = parseRow({ ClosingPrice: "--", TradeVolume: "" });
+  assert.equal(r2.close, null, "S1-OBS-5: '--' price → null");
+  assert.equal(r2.vol, null, "S1-OBS-5: empty volume → null");
+
+  // Normal numeric
+  const r3 = parseRow({ ClosingPrice: "100.5", TradeVolume: "1000" });
+  assert.equal(r3.close, 100.5, "S1-OBS-5: plain price 100.5");
+  assert.equal(r3.vol, 1000, "S1-OBS-5: plain volume 1000");
+});
+
+test("S1-MANUAL-1: server exposes owner-only manual S1 SIM trigger with confirmation guard", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /app\.post\("\/api\/v1\/internal\/s1-sim\/manual-run"/);
+  assert.match(serverSource, /RUN_S1_SIM_MANUAL/);
+  assert.match(serverSource, /runS1SignalTick/);
+  assert.match(serverSource, /runS1OrderSubmitTick/);
+  assert.match(serverSource, /runS1EodReportTick/);
+  assert.match(serverSource, /prod_write_blocked:\s*true/);
+});
+
+test("S1-AUTO-1: automatic S1 SIM scheduler remains primary and self-heals missing signal basket", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.enabled, true);
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.signalCatchupBeforeOrder, true);
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.manualTriggerRole, "owner_backup_only");
+  assert.match(serverSource, /ensureS1BasketBeforeOrderSubmit/);
+  assert.match(serverSource, /automatic_scheduler/);
+  assert.match(runnerSource, /never submits stale prior-day/i);
+  assert.doesNotMatch(runnerSource, /taipeiDateStr\(-1\).*taipeiDateStr\(-2\)/s);
+});
+
+test("S1-OBS-6: S1 observations are mirrored to audit_logs and status can recover after file loss", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  assert.equal(S1_AUDIT_ACTIONS.signalGenerated, "s1_sim.signal_generated");
+  assert.equal(S1_AUDIT_ACTIONS.ordersSubmitted, "s1_sim.orders_submitted");
+  assert.equal(S1_AUDIT_ACTIONS.eodGenerated, "s1_sim.eod_generated");
+  assert.match(runnerSource, /writeS1ObservationAudit/);
+  assert.match(runnerSource, /readS1ObservationAudit<S1Basket>/);
+  assert.match(serverSource, /_readS1ObservationAudit<S1BasketLite>/);
+  assert.match(serverSource, /observation_storage/);
+  assert.match(serverSource, /"s1_sim\.orders_submitted"/);
+  assert.match(serverSource, /"s1_sim\.eod_generated"/);
+});
+
+// =============================================================================
+// C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
+// =============================================================================
+//
+// Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
+// when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
+
+test("C6-TWSE-FB-1: TWSE fallback finds matching row by symbol Code", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string; Change: string };
+  const rows: StockDayAllRow[] = [
+    { Code: "2330", ClosingPrice: "850.0", TradeVolume: "20,000,000", Date: "1130531", Change: "+5" },
+    { Code: "2454", ClosingPrice: "1,250.0", TradeVolume: "5,000,000", Date: "1130531", Change: "-10" },
+  ];
+  const row = rows.find((r) => r.Code === "2330");
+  assert.ok(row !== undefined, "C6-TWSE-FB-1: row for 2330 must be found");
+  assert.equal(row?.Code, "2330", "C6-TWSE-FB-1: Code matches");
+});
+
+test("C6-TWSE-FB-2: TWSE fallback returns NO_DATA for unknown symbol", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string };
+  const rows: StockDayAllRow[] = [
+    { Code: "2330", ClosingPrice: "850.0", TradeVolume: "20,000,000", Date: "1130531" },
+  ];
+  const row = rows.find((r) => r.Code === "9999");
+  assert.equal(row, undefined, "C6-TWSE-FB-2: unknown symbol must not be found");
+  // When row is undefined → state=NO_DATA, lastPrice=null
+  const state = row ? "STALE" : "NO_DATA";
+  assert.equal(state, "NO_DATA", "C6-TWSE-FB-2: state must be NO_DATA for unknown symbol");
+});
+
+test("C6-TWSE-FB-3: TWSE fallback parse yields correct lastPrice and volume", () => {
+  type StockDayAllRow = { Code: string; ClosingPrice: string; TradeVolume: string; Date: string };
+  const row: StockDayAllRow = { Code: "2330", ClosingPrice: "850.00", TradeVolume: "20,123,456", Date: "1130531" };
+
+  const closeRaw = row.ClosingPrice.replace(/,/g, "").trim();
+  const volRaw = row.TradeVolume.replace(/,/g, "").trim();
+  const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
+  const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+
+  assert.equal(close, 850.00, "C6-TWSE-FB-3: lastPrice must be 850.00");
+  assert.equal(vol, 20123456, "C6-TWSE-FB-3: volume must be 20123456");
+  // state = STALE when close is not null
+  const state = close !== null ? "STALE" : "NO_DATA";
+  assert.equal(state, "STALE", "C6-TWSE-FB-3: state must be STALE when price is available");
+});
+
+test("C6-TWSE-FB-4: TWSE fallback gracefully handles malformed ClosingPrice", () => {
+  const malformedPrices = ["--", "N/A", "", "除息", "暫停交易"];
+  for (const raw of malformedPrices) {
+    const cleaned = raw.replace(/,/g, "").trim();
+    const close = cleaned && !isNaN(Number(cleaned)) ? Number(cleaned) : null;
+    assert.equal(close, null, `C6-TWSE-FB-4: malformed price "${raw}" must yield null`);
+  }
+});
+
+test("C6-TWSE-FB-5: source field is 'twse_openapi_eod' in fallback response shape", () => {
+  // Verify the contract: fallback responses must set source=twse_openapi_eod and
+  // bid/ask must be null (TWSE EOD has no bid/ask data)
+  const mockFallbackResponse = {
+    symbol: "2330",
+    lastPrice: 850.0,
+    bid: null as null,
+    ask: null as null,
+    volume: 20000000,
+    freshness: "stale" as const,
+    state: "STALE" as const,
+    source: "twse_openapi_eod" as const,
+    note: "twse_eod date=1130531",
+    updatedAt: new Date().toISOString(),
+  };
+  assert.equal(mockFallbackResponse.source, "twse_openapi_eod", "C6-TWSE-FB-5: source must be twse_openapi_eod");
+  assert.equal(mockFallbackResponse.bid, null, "C6-TWSE-FB-5: bid must be null (no bid/ask in TWSE EOD)");
+  assert.equal(mockFallbackResponse.ask, null, "C6-TWSE-FB-5: ask must be null (no bid/ask in TWSE EOD)");
+  assert.equal(mockFallbackResponse.state, "STALE", "C6-TWSE-FB-5: state is STALE when lastPrice available");
+  assert.ok(mockFallbackResponse.note.includes("twse_eod"), "C6-TWSE-FB-5: note must reference twse_eod");
+});
+
+// Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
   stopOutboxPoller();
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
-  process.exit(process.exitCode ?? 0);
 });

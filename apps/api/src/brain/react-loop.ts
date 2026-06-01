@@ -83,6 +83,73 @@ const HARD_MAX_COST_USD = 5.0;
 const DEFAULT_MAX_ROUNDS = 5;
 const DEFAULT_COST_CAP_USD = 1.0;
 const LOOP_MODEL_KEY = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+export const COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION = "company_ai_analyst_report_v1";
+const COMPANY_AI_ANALYST_TEMPLATE_MARKER = `TEMPLATE_VERSION: ${COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION}`;
+
+const COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS = [
+  { n: 1, pattern: /##\s*1[.\s]*公司概況與定位/u },
+  { n: 2, pattern: /##\s*2[.\s]*今日\/最近資料狀態/u },
+  { n: 3, pattern: /##\s*3[.\s]*近期事件與新聞/u },
+  { n: 4, pattern: /##\s*4[.\s]*技術結構/u },
+  { n: 5, pattern: /##\s*5[.\s]*籌碼與法人/u },
+  { n: 6, pattern: /##\s*6[.\s]*主題與產業鏈位置/u },
+  { n: 7, pattern: /##\s*7[.\s]*主要風險/u },
+  { n: 8, pattern: /##\s*8[.\s]*AI\s*結論與觀察等級/u },
+  { n: 9, pattern: /##\s*9[.\s]*資料來源與生成時間/u },
+];
+
+function isCompanyAiAnalystPrompt(initialPrompt: string): boolean {
+  return initialPrompt.includes(COMPANY_AI_ANALYST_TEMPLATE_MARKER);
+}
+
+function extractCompanyAiAnalystTicker(initialPrompt: string): string {
+  const match = initialPrompt.match(/分析標的:\s*([A-Z0-9._-]+)/iu);
+  return match?.[1]?.trim().toUpperCase() || "UNKNOWN";
+}
+
+function summarizeTraceSources(trace: ReactStep[]): string {
+  const tools = Array.from(new Set(trace.map((step) => step.toolName).filter((tool): tool is string => Boolean(tool))));
+  if (tools.length === 0) return "未取得可用工具觀察";
+  return tools.join(" / ");
+}
+
+export function buildCompanyAiAnalystContractFallbackReport(
+  trace: ReactStep[],
+  initialPrompt: string,
+  missingSections: number[],
+  now = new Date().toISOString()
+): string {
+  const ticker = extractCompanyAiAnalystTicker(initialPrompt);
+  const sourceSummary = summarizeTraceSources(trace);
+  const missing = missingSections.length ? missingSections.join(", ") : "未知";
+
+  return `## 1. 公司概況與定位
+資料不足：${ticker} 的 AI 分析回覆未通過固定 9 段模板檢查，缺少段落 ${missing}。系統已停止展示原始破格式內容。
+
+## 2. 今日/最近資料狀態
+資料不足：本次工具觀察來源為 ${sourceSummary}，但最終彙整文字未符合產品模板，因此不把行情判斷包裝成正式分析。
+
+## 3. 近期事件與新聞
+資料不足：新聞與事件內容需要重新生成並通過模板檢查後才可展示。不可 raw dump 新聞，也不可補故事。
+
+## 4. 技術結構
+資料不足：技術結構需由 quote / kline / get_company_technical 等來源生成並通過固定段落檢查。
+
+## 5. 籌碼與法人
+資料不足：籌碼與法人資料需由 institutional / margin / FinMind 等來源生成並通過固定段落檢查。
+
+## 6. 主題與產業鏈位置
+資料不足：主題與產業鏈描述需由 company_profile / theme / news 等來源生成並通過固定段落檢查。
+
+## 7. 主要風險
+資料風險：AI 回覆格式不合格。價格風險：本頁不提供下單建議。事件風險：事件與新聞需重新確認。
+
+## 8. AI 結論與觀察等級
+觀察等級：資料不足。這不是下單建議；請重新生成，直到報告通過固定 9 段模板與來源檢查。
+
+## 9. 資料來源與生成時間
+資料來源：${sourceSummary}。模板版本：${COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION}。生成時間：${now}。`;
+}
 
 // ── System prompt template ─────────────────────────────────────────────────────
 
@@ -107,12 +174,62 @@ Rules:
 - Keep thoughts concise (< 200 words).${context}`;
 }
 
+function buildCompanyAiAnalystSynthesisPrompt(traceText: string, initialPrompt: string, now: string): string {
+  return `你是 IUF Trading Room 的公司頁 AI 分析師。請只根據初始需求與工具觀察，輸出固定格式的繁體中文 Markdown 報告。
+
+## 初始需求
+${initialPrompt}
+
+## 工具觀察
+${traceText}
+
+## 輸出規格
+必須完全照以下 9 個段落與順序輸出，不可改名、不可省略：
+
+## 1. 公司概況與定位
+說明公司名稱、主要業務、產業位置。沒有資料就寫「資料不足：原因」。
+
+## 2. 今日/最近資料狀態
+列出最新價、漲跌、K 線日期、資料是否即時或延遲。沒有資料就寫「資料不足：原因」。
+
+## 3. 近期事件與新聞
+只列與公司或產業直接相關的事件，並說明為什麼重要。不可 raw dump 新聞。
+
+## 4. 技術結構
+整理趨勢、均線、支撐壓力、量能。沒有資料就寫缺哪個 endpoint 或工具。
+
+## 5. 籌碼與法人
+整理法人、融資融券或可取得的籌碼資料。沒有資料就明確降級。
+
+## 6. 主題與產業鏈位置
+說明公司和目前主題、供應鏈、產業熱點的關聯。
+
+## 7. 主要風險
+至少列出資料風險、價格風險、事件風險。
+
+## 8. AI 結論與觀察等級
+結論只能是：可追蹤 / 中性觀察 / 資料不足 / 風險偏高暫不採用。必須註明不是下單建議。
+
+## 9. 資料來源與生成時間
+列出使用過的資料來源類型與生成時間：${now}
+
+硬性規則：
+- 每個關鍵判斷都要標出資料來源類型，例如 quote / kline / company_profile / news / institutional / margin / FinMind / KGI。
+- 不可給保證獲利、必漲、勝率、重倉、All in 等語句。
+- 不可輸出內部推理、工具 JSON、run_id、token 或工程除錯內容。
+- 如果資料不足，照實寫「資料不足：原因」，不可猜測或補故事。`;
+}
+
 function buildSynthesisPrompt(trace: ReactStep[], initialPrompt: string): string {
   const traceText = trace
     .map((s) => `Round ${s.round}:\nThought: ${s.thought}\nTool: ${s.toolName ?? "(none)"}\nObservation: ${JSON.stringify(s.observation)}`)
     .join("\n\n");
 
   const now = new Date().toISOString();
+
+  if (isCompanyAiAnalystPrompt(initialPrompt)) {
+    return buildCompanyAiAnalystSynthesisPrompt(traceText, initialPrompt, now);
+  }
 
   return `根據以下分析追蹤，撰寫一份完整的繁體中文分析師報告。
 
@@ -165,7 +282,17 @@ ${now}
  * Validates that synthesis output contains all 9 required Chinese sections.
  * Returns missing section numbers if any are absent.
  */
-export function validateSynthesisSections(report: string): number[] {
+export function validateCompanyAiAnalystSections(report: string): number[] {
+  return COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS
+    .filter((r) => !r.pattern.test(report))
+    .map((r) => r.n);
+}
+
+export function validateSynthesisSections(report: string, initialPrompt = ""): number[] {
+  if (isCompanyAiAnalystPrompt(initialPrompt)) {
+    return validateCompanyAiAnalystSections(report);
+  }
+
   const required = [
     { n: 1, pattern: /##\s*1[.\s]*公司概況/u },
     { n: 2, pattern: /##\s*2[.\s]*近期事件/u },
@@ -527,14 +654,21 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
 
     let synthesisContent = await runSynthesis();
 
-    // Validate 9 sections — retry once if any missing
+    // Validate 9 sections — retry once if any missing. If the company-page
+    // report still misses sections, return an honest 9-section degraded report
+    // instead of exposing broken LLM prose as a finished analyst report.
     if (synthesisContent) {
-      const missingSections = validateSynthesisSections(synthesisContent);
+      const missingSections = validateSynthesisSections(synthesisContent, opts.initialPrompt);
       if (missingSections.length > 0) {
         console.warn(`[react-loop] synthesis missing sections ${missingSections.join(",")} — retrying once`);
         const retryContent = await runSynthesis();
         if (retryContent) {
           synthesisContent = retryContent;
+        }
+        const finalMissing = validateSynthesisSections(synthesisContent, opts.initialPrompt);
+        if (finalMissing.length > 0 && isCompanyAiAnalystPrompt(opts.initialPrompt)) {
+          console.warn(`[react-loop] company AI analyst synthesis still missing sections ${finalMissing.join(",")} — using contract fallback`);
+          synthesisContent = buildCompanyAiAnalystContractFallbackReport(trace, opts.initialPrompt, finalMissing);
         }
       }
     }
@@ -592,6 +726,34 @@ export interface DecisionDetail extends DecisionListItem {
   finalReport: string | null;
 }
 
+function promptIntent(prompt: unknown): string {
+  if (!prompt || typeof prompt !== "object" || Array.isArray(prompt)) return "";
+  const intent = (prompt as { intent?: unknown }).intent;
+  return typeof intent === "string" ? intent : "";
+}
+
+function isCompanyAiAnalystDecisionPrompt(prompt: unknown, ticker: string): boolean {
+  const intent = promptIntent(prompt);
+  if (!isCompanyAiAnalystPrompt(intent)) return false;
+  return extractCompanyAiAnalystTicker(intent) === ticker.trim().toUpperCase();
+}
+
+function mapDecisionDetail(r: typeof brainDecisions.$inferSelect): DecisionDetail {
+  return {
+    id: r.id,
+    runId: r.runId,
+    workspaceId: r.workspaceId ?? null,
+    status: r.status,
+    totalTokens: r.totalTokens,
+    totalCostUsd: r.totalCostUsd ?? "0",
+    createdAt: r.createdAt.toISOString(),
+    completedAt: r.completedAt?.toISOString() ?? null,
+    prompt: r.prompt,
+    reactTrace: Array.isArray(r.reactTrace) ? r.reactTrace as unknown[] : [],
+    finalReport: r.finalReport ?? null
+  };
+}
+
 export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
@@ -605,16 +767,19 @@ export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[
       .orderBy(desc(brainDecisions.createdAt))
       .limit(Math.min(limit, 100));
 
-    return rows.map((r) => ({
-      id: r.id,
-      runId: r.runId,
-      workspaceId: r.workspaceId ?? null,
-      status: r.status,
-      totalTokens: r.totalTokens,
-      totalCostUsd: r.totalCostUsd ?? "0",
-      createdAt: r.createdAt.toISOString(),
-      completedAt: r.completedAt?.toISOString() ?? null
-    }));
+    return rows.map((r) => {
+      const detail = mapDecisionDetail(r);
+      return {
+        id: detail.id,
+        runId: detail.runId,
+        workspaceId: detail.workspaceId,
+        status: detail.status,
+        totalTokens: detail.totalTokens,
+        totalCostUsd: detail.totalCostUsd,
+        createdAt: detail.createdAt,
+        completedAt: detail.completedAt
+      };
+    });
   } catch (e) {
     console.warn("[react-loop] listRecentDecisions failed:", e instanceof Error ? e.message : e);
     return [];
@@ -636,21 +801,38 @@ export async function getDecisionByRunId(runId: string): Promise<DecisionDetail 
     const r = rows[0];
     if (!r) return null;
 
-    return {
-      id: r.id,
-      runId: r.runId,
-      workspaceId: r.workspaceId ?? null,
-      status: r.status,
-      totalTokens: r.totalTokens,
-      totalCostUsd: r.totalCostUsd ?? "0",
-      createdAt: r.createdAt.toISOString(),
-      completedAt: r.completedAt?.toISOString() ?? null,
-      prompt: r.prompt,
-      reactTrace: Array.isArray(r.reactTrace) ? r.reactTrace as unknown[] : [],
-      finalReport: r.finalReport ?? null
-    };
+    return mapDecisionDetail(r);
   } catch (e) {
     console.warn("[react-loop] getDecisionByRunId failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+export async function getLatestCompanyAiAnalystDecision(ticker: string, workspaceId?: string | null): Promise<DecisionDetail | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  try {
+    const { desc } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(brainDecisions)
+      .orderBy(desc(brainDecisions.createdAt))
+      .limit(100);
+
+    const normalizedWorkspaceId = workspaceId ?? null;
+    const row = rows.find((r) => {
+      const sameWorkspace = (r.workspaceId ?? null) === normalizedWorkspaceId;
+      return sameWorkspace
+        && r.status === "complete"
+        && Boolean(r.finalReport?.trim())
+        && isCompanyAiAnalystDecisionPrompt(r.prompt, ticker);
+    });
+
+    return row ? mapDecisionDetail(row) : null;
+  } catch (e) {
+    console.warn("[react-loop] getLatestCompanyAiAnalystDecision failed:", e instanceof Error ? e.message : e);
     return null;
   }
 }

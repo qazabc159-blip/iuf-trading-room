@@ -1,0 +1,122 @@
+{
+  "consoleEvents": [
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] finmind took 182ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] main_market_feed took 182ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] market took 182ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ops took 182ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] brief took 174ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] broker took 172ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ideas took 173ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] runs took 173ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] intel took 172ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] snapshot took 173ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] paper took 177ms (status: ok) background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "warning",
+      "text": "%c%s%c [homepage-fetch] ALL_PANELS total=194ms background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  "
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    }
+  ],
+  "requestFailures": [
+    {
+      "url": "http://localhost:3300/_next/static/webpack/webpack.1bef771a4a8edab7.hot-update.js",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://localhost:3300/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket-intel%2Fannouncements%3Fdays%3D30%26limit%3D20%26scope%3Dmarket",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://localhost:3300/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fdata-sources%2Ffinmind%2Fstatus",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://localhost:3300/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket%2Fheatmap%2Ftwse",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://localhost:3300/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket%2Finstitutional-summary%2Ffinmind",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "url": "http://localhost:3300/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fmarket-intel%2Fnews-top10",
+      "failure": "net::ERR_ABORTED"
+    }
+  ],
+  "checks": {
+    "smallNames": [],
+    "adminLinks": [
+      "BrainLLM 費用",
+      "EventLog事件流",
+      "Portfolio快照版本",
+      "Tools工具登錄",
+      "UTA帳號管理",
+      "StrategiesLab 策略狀態",
+      "BrainLLM 費用",
+      "EventLog事件流",
+      "Portfolio快照版本",
+      "Tools工具登錄",
+      "UTA帳號管理",
+      "StrategiesLab 策略狀態"
+    ],
+    "briefText": "",
+    "briefHasRawEnglishHeadings": false,
+    "marketHeatTiles": 0,
+    "marketHeatSamples": [],
+    "institutionalText": "MISSING: TimeoutError: locator.innerText: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#iuf-institutional-panel')\u001b[22m\n"
+  },
+  "homeUrl": "http://localhost:3300/?qa=p0-visual-polish-auth",
+  "marketUrl": "http://localhost:3300/market-intel?qa=p0-visual-polish-auth"
+}

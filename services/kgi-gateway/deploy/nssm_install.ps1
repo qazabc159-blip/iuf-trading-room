@@ -23,6 +23,13 @@
 .PARAMETER PythonExe
     Path to python.exe. Auto-detected from PATH if not provided.
 
+.PARAMETER KgiSimulation
+    When $true (default), the Windows service is configured for KGI SIM/SUPERPY.
+
+.PARAMETER AutoLogin
+    When $true (default), the Windows service auto-logins on startup using the
+    Machine-level KGI_PERSON_ID / KGI_PERSON_PWD written by install.ps1.
+
 .NOTES
     Run as Administrator.
     NSSM source: https://nssm.cc (freeware, LGPL-like)
@@ -36,7 +43,9 @@ param(
     [string]$NssmDir          = "C:\nssm",
     [string]$ServiceName      = "KGIGateway",
     [string]$GatewayInstallDir = "C:\kgi-gateway",
-    [string]$PythonExe        = ""
+    [string]$PythonExe        = "",
+    [bool]$KgiSimulation      = $true,
+    [bool]$AutoLogin          = $true
 )
 
 Set-StrictMode -Version Latest
@@ -62,6 +71,12 @@ function Write-Info { param([string]$m) Write-Log "INFO " $m }
 function Write-Warn { param([string]$m) Write-Log "WARN " $m }
 function Write-Err  { param([string]$m) Write-Log "ERROR" $m }
 
+function Convert-BoolToEnv {
+    param([bool]$Value)
+    if ($Value) { return "true" }
+    return "false"
+}
+
 function Invoke-Action {
     param([string]$Description, [scriptblock]$Action)
     if ($DryRun) { Write-Info "[DRY-RUN] SKIP: $Description" }
@@ -74,7 +89,7 @@ function Invoke-Action {
 Write-Info "========================================"
 Write-Info "KGI Gateway NSSM Service Install"
 Write-Info "ServiceName=$ServiceName  InstallDir=$GatewayInstallDir"
-Write-Info "DryRun=$DryRun"
+Write-Info "DryRun=$DryRun  KgiSimulation=$KgiSimulation  AutoLogin=$AutoLogin"
 Write-Info "========================================"
 
 if (-not $DryRun) {
@@ -239,15 +254,17 @@ $machinePwd = [System.Environment]::GetEnvironmentVariable("KGI_PERSON_PWD", "Ma
 
 if ($machinePid -and $machinePwd) {
     Invoke-Action "Set AppEnvironmentExtra with KGI env vars" {
-        # Redact actual values from log — only record that they were set
+        # Redact actual values from log; only record that they were set.
+        $simulationEnv = Convert-BoolToEnv $KgiSimulation
+        $autoLoginEnv = Convert-BoolToEnv $AutoLogin
         $envExtra = @(
             "KGI_PERSON_ID=$machinePid",
             "KGI_PERSON_PWD=$machinePwd",
-            "KGI_SIMULATION=false",
+            "KGI_SIMULATION=$simulationEnv",
             "KGI_READ_ONLY_MODE=true",
             "GATEWAY_HOST=0.0.0.0",
             "GATEWAY_PORT=8787",
-            "AUTO_LOGIN=false",
+            "AUTO_LOGIN=$autoLoginEnv",
             "KGI_GATEWAY_POSITION_DISABLED=false",
             "KGI_GATEWAY_QUOTE_DISABLED=false"
         )

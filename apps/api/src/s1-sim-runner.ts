@@ -19,9 +19,9 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
-import { getDb, companies, workspaces } from "@iuf-trading-room/db";
+import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,9 +89,183 @@ export interface S1EodReport {
   notes: string[];
 }
 
+export type S1CapitalSource = "latest_subscription" | "env" | "default";
+
+export interface S1CapitalConfig {
+  capitalTwd: number;
+  source: S1CapitalSource;
+  subscriptionId: string | null;
+  createdAt: string | null;
+}
+
+export const S1_AUTO_SCHEDULER_POLICY = {
+  enabled: true,
+  mode: "weekly_monday_kgi_sim",
+  signalWindowTst: "Monday 08:30-08:55",
+  orderSubmitWindowTst: "Monday 09:00-09:20",
+  eodWindowTst: "Weekdays 14:00-14:30",
+  pollIntervalMs: 15 * 60 * 1000,
+  signalCatchupBeforeOrder: true,
+  manualTriggerRole: "owner_backup_only",
+} as const;
+
 // ---------------------------------------------------------------------------
 // Config & helpers
 // ---------------------------------------------------------------------------
+
+export const S1_DEFAULT_CAPITAL_TWD = 10_000_000;
+export const S1_MIN_CAPITAL_TWD = 50_000;
+export const S1_MAX_CAPITAL_TWD = 10_000_000;
+export const S1_AUDIT_ACTIONS = {
+  signalGenerated: "s1_sim.signal_generated",
+  ordersSubmitted: "s1_sim.orders_submitted",
+  eodGenerated: "s1_sim.eod_generated",
+} as const;
+
+function normalizeS1Capital(value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(/,/g, "")) : NaN;
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.floor(n);
+  if (rounded < S1_MIN_CAPITAL_TWD || rounded > S1_MAX_CAPITAL_TWD) return null;
+  return rounded;
+}
+
+function envS1Capital(): S1CapitalConfig | null {
+  const capital = normalizeS1Capital(process.env["S1_SIM_CAPITAL_TWD"]);
+  if (capital === null) return null;
+  return {
+    capitalTwd: capital,
+    source: "env",
+    subscriptionId: null,
+    createdAt: null,
+  };
+}
+
+async function resolveS1WorkspaceId(): Promise<string | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .limit(1)
+    .catch(() => [] as Array<{ id: string }>);
+
+  return rows[0]?.id ?? null;
+}
+
+async function writeS1ObservationAudit(input: {
+  workspaceId: string;
+  action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS];
+  tradingDate: string;
+  data: S1Basket | S1OrderSubmitResult | S1EodReport;
+}): Promise<void> {
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(auditLogs).values({
+      workspaceId: input.workspaceId,
+      actorId: null,
+      action: input.action,
+      entityType: "s1_sim",
+      entityId: input.tradingDate,
+      payload: {
+        schema: "s1_sim_observation_audit_v1",
+        persisted_at: new Date().toISOString(),
+        data: input.data,
+      },
+    });
+  } catch (e) {
+    console.warn("[s1-audit] failed to persist observation audit:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function readS1ObservationAudit<T>(
+  action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS],
+  tradingDate: string,
+): Promise<T | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  const workspaceId = await resolveS1WorkspaceId();
+  if (!workspaceId) return null;
+
+  const rows = await db
+    .select({ payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, action),
+        eq(auditLogs.entityType, "s1_sim"),
+        eq(auditLogs.entityId, tradingDate),
+      ),
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(1)
+    .catch(() => [] as Array<{ payload: unknown }>);
+
+  const payload = rows[0]?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = (payload as Record<string, unknown>)["data"];
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  return data as T;
+}
+
+export async function resolveS1SimCapitalTwd(workspaceId: string): Promise<S1CapitalConfig> {
+  const envConfig = envS1Capital();
+
+  if (isDatabaseMode()) {
+    const db = getDb();
+    if (db) {
+      try {
+        const rows = await db
+          .select({
+            id: auditLogs.id,
+            createdAt: auditLogs.createdAt,
+            payload: auditLogs.payload,
+          })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.workspaceId, workspaceId),
+              eq(auditLogs.action, "quant_strategy.subscribe"),
+              eq(auditLogs.entityId, "cont_liq_v36"),
+            ),
+          )
+          .orderBy(desc(auditLogs.createdAt))
+          .limit(1);
+
+        const row = rows[0];
+        const payload =
+          row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+            ? row.payload as Record<string, unknown>
+            : {};
+        const latestCapital = normalizeS1Capital(payload["capital_twd"]);
+        if (row && latestCapital !== null) {
+          return {
+            capitalTwd: latestCapital,
+            source: "latest_subscription",
+            subscriptionId: typeof payload["subscription_id"] === "string" ? payload["subscription_id"] : row.id,
+            createdAt: row.createdAt.toISOString(),
+          };
+        }
+      } catch (e) {
+        console.warn("[s1-capital] failed to read latest quant subscription:", e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  return envConfig ?? {
+    capitalTwd: S1_DEFAULT_CAPITAL_TWD,
+    source: "default",
+    subscriptionId: null,
+    createdAt: null,
+  };
+}
 
 /** Volume-mount path for persistent reports. Railway: /data, local: runtime-data */
 function reportsBase(): string {
@@ -160,6 +334,26 @@ async function writeMd(path: string, content: string): Promise<void> {
   await fs.writeFile(path, content, "utf-8");
 }
 
+async function readS1BasketForDate(date: string): Promise<S1Basket | null> {
+  const p = join(reportsBase(), "s1_sim_basket", `${date}.json`);
+  try {
+    const raw = await fs.readFile(p, "utf-8");
+    return JSON.parse(raw) as S1Basket;
+  } catch {
+    return readS1ObservationAudit<S1Basket>(S1_AUDIT_ACTIONS.signalGenerated, date);
+  }
+}
+
+export async function hasS1BasketForDate(date = taipeiDateStr()): Promise<boolean> {
+  return (await readS1BasketForDate(date)) !== null;
+}
+
+export type S1SignalCatchupResult =
+  | "existing_today_basket"
+  | "generated_today_basket"
+  | "skipped_outside_order_window"
+  | "missing_after_signal";
+
 // ---------------------------------------------------------------------------
 // Module-level dedup guards (prevent multi-fire within same day/window)
 // ---------------------------------------------------------------------------
@@ -167,6 +361,7 @@ async function writeMd(path: string, content: string): Promise<void> {
 let _signalLastFiredDate = "";
 let _orderSubmitLastFiredDate = "";
 let _eodLastFiredDate = "";
+let _signalRunInFlight: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // A. cont_liq signal runner + regime classifier + order sizing
@@ -177,10 +372,24 @@ let _eodLastFiredDate = "";
  * Universe: uses workspace companies from DB (already liquidity-filtered).
  * If fewer than 8 symbols have data, basket is truncated (skip halted stocks).
  */
-export async function runS1SignalTick(): Promise<void> {
+export async function runS1SignalTick(options: { force?: boolean } = {}): Promise<void> {
+  if (_signalRunInFlight) {
+    console.log("[s1-signal] signal run already in flight, waiting");
+    await _signalRunInFlight;
+    return;
+  }
+
+  _signalRunInFlight = runS1SignalTickOnce(options).finally(() => {
+    _signalRunInFlight = null;
+  });
+
+  await _signalRunInFlight;
+}
+
+async function runS1SignalTickOnce(options: { force?: boolean } = {}): Promise<void> {
   const todayTst = taipeiDateStr();
 
-  if (_signalLastFiredDate === todayTst) {
+  if (!options.force && _signalLastFiredDate === todayTst) {
     console.log("[s1-signal] already fired today, skipping");
     return;
   }
@@ -353,8 +562,13 @@ export async function runS1SignalTick(): Promise<void> {
   // 5. Top-8 selection
   const top8 = [...scored].sort((a, b) => b.score_cont_liq - a.score_cont_liq).slice(0, 8);
 
-  // 6. Order sizing (per Athena packet)
-  const CAPITAL_TWD = 10_000_000;
+  // 6. Order sizing (per Athena packet + latest S1 SIM capital subscription)
+  const capitalConfig = await resolveS1SimCapitalTwd(workspaceId);
+  const CAPITAL_TWD = capitalConfig.capitalTwd;
+  failsafe_notes.push(
+    `capital_source:${capitalConfig.source}` +
+      (capitalConfig.subscriptionId ? ` subscription:${capitalConfig.subscriptionId}` : ""),
+  );
   const longTarget = CAPITAL_TWD * exposureWeight;
   const perNameTarget = top8.length > 0 ? longTarget / top8.length : 0;
 
@@ -418,8 +632,30 @@ export async function runS1SignalTick(): Promise<void> {
   } catch (e) {
     console.error("[s1-signal] failed to write basket JSON:", e instanceof Error ? e.message : String(e));
   }
+  await writeS1ObservationAudit({
+    workspaceId,
+    action: S1_AUDIT_ACTIONS.signalGenerated,
+    tradingDate: todayTst,
+    data: basketObj,
+  });
 
   console.log(`[s1-signal] DONE regime=${regime} top8=[${top8.map((s) => s.symbol).join(",")}]`);
+}
+
+export async function ensureS1BasketBeforeOrderSubmit(): Promise<S1SignalCatchupResult> {
+  const todayTst = taipeiDateStr();
+  const existing = await readS1BasketForDate(todayTst);
+  if (existing) return "existing_today_basket";
+
+  if (!isS1OrderSubmitWindow()) {
+    return "skipped_outside_order_window";
+  }
+
+  console.warn("[s1-order] today basket missing inside order window; auto-generating signal before SIM submit");
+  await runS1SignalTick({ force: true });
+
+  const generated = await readS1BasketForDate(todayTst);
+  return generated ? "generated_today_basket" : "missing_after_signal";
 }
 
 // ---------------------------------------------------------------------------
@@ -427,8 +663,10 @@ export async function runS1SignalTick(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Read the most recent basket for today (or yesterday as fallback) and submit
- * each entry to KGI SIM via the gateway client.
+ * Read today's basket and submit each entry to KGI SIM via the gateway client.
+ * If the signal window was missed but the Monday order window is open, the
+ * runner generates today's basket first. It never submits stale prior-day
+ * baskets.
  *
  * Retry: 3x exponential backoff per order (200ms, 400ms, 800ms).
  * Fail-safe: rejection → log + NO auto-retry (per Athena spec).
@@ -445,30 +683,21 @@ export async function runS1OrderSubmitTick(): Promise<void> {
   const failsafe_notes: string[] = [];
   console.log(`[s1-order] START trading_date=${todayTst}`);
 
-  // 1. Find basket for today (fallback to yesterday)
-  const basketDir = join(reportsBase(), "s1_sim_basket");
-  let basket: S1Basket | null = null;
-  let basketDate = todayTst;
+  // 1. Ensure today's basket exists through the automatic path.
+  const catchupResult = await ensureS1BasketBeforeOrderSubmit();
+  failsafe_notes.push(`signal_catchup:${catchupResult}`);
 
-  for (const tryDate of [todayTst, taipeiDateStr(-1), taipeiDateStr(-2)]) {
-    const p = join(basketDir, `${tryDate}.json`);
-    try {
-      const raw = await fs.readFile(p, "utf-8");
-      basket = JSON.parse(raw) as S1Basket;
-      basketDate = tryDate;
-      console.log(`[s1-order] using basket from ${tryDate}`);
-      break;
-    } catch {
-      // not found — try next
-    }
-  }
+  let basket: S1Basket | null = await readS1BasketForDate(todayTst);
+  const basketDate = todayTst;
 
   if (!basket) {
-    console.warn("[s1-order] no basket found (today/yesterday/day-before) — skipping order submit");
-    failsafe_notes.push("no_basket_found: signal runner may not have fired yet");
+    console.warn("[s1-order] no today basket found after auto catch-up — skipping order submit");
+    failsafe_notes.push("no_today_basket_found: signal runner did not produce today's basket");
     _orderSubmitLastFiredDate = ""; // allow retry
     return;
   }
+
+  console.log(`[s1-order] using basket from ${basketDate}`);
 
   if (basket.basket.length === 0) {
     console.warn("[s1-order] basket is empty (likely crisis regime / no exposure) — skipping");
@@ -601,6 +830,15 @@ export async function runS1OrderSubmitTick(): Promise<void> {
   } catch (e) {
     console.error("[s1-order] failed to write submit JSON:", e instanceof Error ? e.message : String(e));
   }
+  const workspaceId = await resolveS1WorkspaceId();
+  if (workspaceId) {
+    await writeS1ObservationAudit({
+      workspaceId,
+      action: S1_AUDIT_ACTIONS.ordersSubmitted,
+      tradingDate: todayTst,
+      data: submitResult,
+    });
+  }
 
   const accepted = orderResults.filter((r) => r.status === "accepted").length;
   const rejected = orderResults.filter((r) => r.status === "rejected").length;
@@ -688,7 +926,7 @@ export async function runS1EodReportTick(): Promise<void> {
     : null;
 
   // Estimated cash residual from basket (best effort)
-  let cashResidual = 10_000_000; // assume full capital undeployed until basket found
+  let cashResidual = S1_DEFAULT_CAPITAL_TWD; // assume default capital undeployed until basket found
   try {
     const basketPath = join(reportsBase(), "s1_sim_basket", `${todayTst}.json`);
     const raw = await fs.readFile(basketPath, "utf-8");
@@ -719,6 +957,15 @@ export async function runS1EodReportTick(): Promise<void> {
     await writeJson(reportJsonPath, report);
   } catch (e) {
     console.error("[s1-eod] failed to write JSON report:", e instanceof Error ? e.message : String(e));
+  }
+  const workspaceId = await resolveS1WorkspaceId();
+  if (workspaceId) {
+    await writeS1ObservationAudit({
+      workspaceId,
+      action: S1_AUDIT_ACTIONS.eodGenerated,
+      tradingDate: todayTst,
+      data: report,
+    });
   }
 
   // Markdown report

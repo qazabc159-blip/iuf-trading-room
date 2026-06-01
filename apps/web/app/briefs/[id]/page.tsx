@@ -7,7 +7,8 @@ import {
   type BriefDetailAuditChain,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
+import { cleanExternalHeadline, cleanNarrativeText, formatBriefSourceTrail } from "@/lib/operator-copy";
+import { evaluateBriefQuality } from "../briefQuality";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +139,30 @@ function HardRejectPanel({ chain }: { chain: BriefDetailAuditChain }) {
 function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
   const review = chain.adversarialReview;
   if (!review) {
+    const sourceOnlyGate = chain.sourceOnlyGate;
+    if (sourceOnlyGate?.verdict === "OK") {
+      return (
+        <Panel
+          code="BRF-ADV"
+          title="風險審核"
+          sub="內容風險與發布檢查"
+          right="來源門檻通過"
+        >
+          <div className="brief-three-state">
+            <span className="parity-badge ok">來源門檻通過</span>
+            <span className="tg soft">歷史補產生簡報</span>
+          </div>
+          <div className="brief-source-trail">
+            <span>審核時間：{formatDateTime(sourceOnlyGate.auditedAt)}</span>
+            {sourceOnlyGate.sourcePackId && <span>資料包：{sourceOnlyGate.sourcePackId}</span>}
+          </div>
+          <p className="muted-copy" style={{ margin: "12px 0 0" }}>
+            這份簡報是依來源資料包補產生，未走完整 LLM 風險審核；系統已確認來源門檻與資料軌跡完整，
+            因此不再顯示成未審核。
+          </p>
+        </Panel>
+      );
+    }
     return (
       <Panel
         code="BRF-ADV"
@@ -208,6 +233,32 @@ function AdversarialReviewPanel({ chain }: { chain: BriefDetailAuditChain }) {
 function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
   const hc = chain.hallucinationCheck;
   if (!hc) {
+    const sourceOnlyGate = chain.sourceOnlyGate;
+    if (sourceOnlyGate?.verdict === "OK") {
+      return (
+        <Panel
+          code="BRF-HC"
+          title="事實查核"
+          sub="敘述與來源比對"
+          right="來源比對通過"
+        >
+          <div className="brief-three-state">
+            <span className="parity-badge ok">來源比對通過</span>
+            <span className="tg soft">sourceTrail 已保留</span>
+          </div>
+          <div className="brief-source-trail">
+            <span>審核時間：{formatDateTime(sourceOnlyGate.auditedAt)}</span>
+            {sourceOnlyGate.confidence !== null && (
+              <span>信心度：{sourceOnlyGate.confidence.toFixed(2)}</span>
+            )}
+          </div>
+          <p className="muted-copy" style={{ margin: "12px 0 0" }}>
+            這份簡報使用確定性來源資料與逐段 sourceTrail，不是即時 LLM RAG 查核結果；
+            目前顯示的是來源門檻查核通過狀態，避免把已通過的補產簡報誤標成尚未查核。
+          </p>
+        </Panel>
+      );
+    }
     return (
       <Panel
         code="BRF-HC"
@@ -276,6 +327,38 @@ function HallucinationPanel({ chain }: { chain: BriefDetailAuditChain }) {
 }
 
 function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
+  const quality = evaluateBriefQuality(brief);
+
+  if (!quality.displayable) {
+    return (
+      <Panel
+        code="BRF-PUB"
+        title="簡報內容"
+        sub={`${brief.date} / 已暫停展示`}
+        right="模板未通過"
+      >
+        <div className="brief-published">
+          <div className="brief-market-state">
+            <span className="tg gold">資料保護</span>
+            <strong>這份簡報不符合 AI 每日簡報 v2 模板，已停止展示正文。</strong>
+          </div>
+          <p className="state-reason">
+            系統偵測到舊版英文標題、原始主題 dump，或缺少固定段落。為避免把未整理內容當成投資依據，
+            這裡只保留審核與來源資訊，不顯示舊簡報正文。
+          </p>
+          <div className="brief-source-trail">
+            <span>缺少段落：{quality.missingHeadings.length ? quality.missingHeadings.join("、") : "無"}</span>
+            <span>舊版英文標題：{quality.hasLegacyHeading ? "有" : "無"}</span>
+            <span>原始 dump：{quality.hasRawDump ? "有" : "無"}</span>
+          </div>
+          <p className="state-reason">
+            下一輪每日簡報會套用 v2 固定模板：市場總覽、AI 精選重點、產業與主題、風險觀察、資料來源狀態。
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel
       code="BRF-PUB"
@@ -303,7 +386,7 @@ function BriefBodyPanel({ brief }: { brief: BriefDetail }) {
             {section.sourceTrail && (
               <div className="brief-source-trail">
                 <span className="tg gold">來源</span>
-                <span>{safeBriefText(section.sourceTrail)}</span>
+                <span>{formatBriefSourceTrail(section.sourceTrail)}</span>
               </div>
             )}
             {!section.sourceTrail && (
@@ -372,24 +455,42 @@ export default async function BriefDetailPage({
   }
 
   const brief = result.data;
+  const quality = evaluateBriefQuality(brief);
+  const displayTitle = quality.displayable ? safeHeadline(brief.title) : "每日簡報內容暫停展示";
   const isPublished = brief.status === "published";
   const totalSections = brief.sections.length;
+  const sourceOnlyGateOk = brief.auditChain.sourceOnlyGate?.verdict === "OK";
+  const riskAuditLabel = brief.auditChain.adversarialReview
+    ? auditVerdictLabel(brief.auditChain.adversarialReview.verdict)
+    : sourceOnlyGateOk ? "來源門檻通過" : "尚未完成";
+  const riskAuditClass = brief.auditChain.adversarialReview
+    ? auditVerdictParityClass(brief.auditChain.adversarialReview.verdict)
+    : sourceOnlyGateOk ? "ok" : "dim";
+  const factAuditLabel = brief.auditChain.hallucinationCheck
+    ? auditVerdictLabel(brief.auditChain.hallucinationCheck.verdict)
+    : sourceOnlyGateOk ? "來源比對通過" : "尚未完成";
+  const factAuditClass = brief.auditChain.hallucinationCheck
+    ? auditVerdictParityClass(brief.auditChain.hallucinationCheck.verdict)
+    : sourceOnlyGateOk ? "ok" : "dim";
 
   return (
     <PageFrame
       code="BRF-D"
-      title={safeHeadline(brief.title)}
+      title={displayTitle}
       sub={`${brief.date} / 正式簡報`}
       note="此頁顯示單份簡報內容、政策檢查、風險審核與事實查核，不提供買賣建議。"
     >
       {/* parity-hero: title + status hero */}
       <div className="parity-hero">
         <div className="parity-hero-eyebrow">DAILY BRIEF — {brief.date}</div>
-        <h2>{safeHeadline(brief.title)}</h2>
+        <h2>{displayTitle}</h2>
         <p style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <span className={`parity-badge ${statusParityClass(brief.status)}`}>
             {statusLabel(brief.status)}
           </span>
+          {!quality.displayable && (
+            <span className="parity-badge bad">模板未通過 — 舊標題已隱藏</span>
+          )}
           <span style={{ color: "var(--tac-fg-3)", fontSize: 13 }}>建立 {formatDateTime(brief.createdAt)}</span>
           {!isPublished && (
             <span className="parity-badge bad">尚未發布 — 請勿視為正式內容</span>
@@ -415,15 +516,15 @@ export default async function BriefDetailPage({
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">風險審核</span>
-          <span className={`parity-kpi-value ${auditVerdictParityClass(brief.auditChain.adversarialReview?.verdict)}`} style={{ fontSize: 16 }}>
-            {auditVerdictLabel(brief.auditChain.adversarialReview?.verdict)}
+          <span className={`parity-kpi-value ${riskAuditClass}`} style={{ fontSize: 16 }}>
+            {riskAuditLabel}
           </span>
           <span className="parity-kpi-sub">內容安全閘</span>
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">事實查核</span>
-          <span className={`parity-kpi-value ${auditVerdictParityClass(brief.auditChain.hallucinationCheck?.verdict)}`} style={{ fontSize: 16 }}>
-            {auditVerdictLabel(brief.auditChain.hallucinationCheck?.verdict)}
+          <span className={`parity-kpi-value ${factAuditClass}`} style={{ fontSize: 16 }}>
+            {factAuditLabel}
           </span>
           <span className="parity-kpi-sub">來源比對</span>
         </div>

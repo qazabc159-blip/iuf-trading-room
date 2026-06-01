@@ -433,8 +433,9 @@ function representativeSymbolsForSector(sectorKey: SectorKey) {
 
 function representativeCompanyName(symbol: string, rawName?: string | null) {
   const normalized = rawName?.trim();
-  if (normalized && normalized !== symbol) return normalized;
-  return REPRESENTATIVE_COMPANY_NAMES[symbol] ?? normalized ?? symbol;
+  const fixedName = REPRESENTATIVE_COMPANY_NAMES[symbol];
+  if (normalized && normalized !== symbol && !normalized.includes("�")) return normalized;
+  return fixedName ?? normalized ?? symbol;
 }
 
 function representativeRank(symbol: string, fallbackRank: number) {
@@ -872,10 +873,10 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
     >
       {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
       <span className="tile-symbol">{tile.symbol}</span>
-      {(tile.labelMode === "hero" || tile.labelMode === "large") && (
+      {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium" || tile.labelMode === "small") && (
         <small className="tile-name">{tile.name}</small>
       )}
-      {tile.labelMode === "small" ? null : isNoData ? (
+      {isNoData ? (
         <b className="tile-pct tile-pct-nodata">--</b>
       ) : (
         <b className="tile-pct">{formatPercent(tile.displayPct)}</b>

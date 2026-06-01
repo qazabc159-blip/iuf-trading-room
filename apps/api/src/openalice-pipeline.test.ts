@@ -10,18 +10,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.js";
 import {
+  buildDailyBriefContractInstructions,
+  buildSourceOnlyBriefPayload,
   classifyDraftTier,
+  DAILY_BRIEF_REQUIRED_SECTION_IDS,
   evaluatePublishGate,
   filterSourcePackEntries,
+  isDailyBriefV2ContractCompliant,
   isBriefBootRecoveryWindow,
+  loadSourcePackForDraft,
   loadStrategySnapshot,
+  lookupJobSourcePackSummary,
+  parseDirectBriefPayload,
+  registerJobSourcePack,
+  registerJobSourcePackSummary,
   runBatchAiReviewer,
   runPipelinePreMarketBootRecovery,
   runPipelineTick,
   sanitizeBriefBody,
   scrubForbiddenPhrases,
   scrubReplacementChars,
+  validateDailyBriefSectionsContract,
   _lastPipelineState,
   type SourcePack,
   type SourcePackEntry,
@@ -47,6 +58,201 @@ function makePack(overrides: Partial<SourcePack> = {}): SourcePack {
     ...overrides
   };
 }
+
+test("daily brief contract accepts all required section ids", () => {
+  const sections = DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+    sectionId,
+    heading: sectionId,
+    body: "This section has enough source-backed content for contract validation."
+  }));
+
+  assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: true, missing: [] });
+});
+
+test("daily brief contract rejects missing required section ids", () => {
+  const sections = DAILY_BRIEF_REQUIRED_SECTION_IDS
+    .filter((sectionId) => sectionId !== "risk_watch")
+    .map((sectionId) => ({
+      sectionId,
+      heading: sectionId,
+      body: "This section has enough source-backed content for contract validation."
+    }));
+
+  assert.deepEqual(validateDailyBriefSectionsContract(sections), { ok: false, missing: ["risk_watch"] });
+});
+
+test("daily brief v2 compliance helper accepts only complete v2 sections", () => {
+  const compliant = {
+    sections: DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+      sectionId,
+      heading: sectionId,
+      body: "This section has enough source-backed content for contract validation."
+    }))
+  };
+  const legacy = {
+    sections: [
+      { heading: "market overview", body: "Legacy brief section." },
+      { heading: "technical analysis", body: "Legacy brief section." },
+      { heading: "risk alert", body: "Legacy brief section." }
+    ]
+  };
+
+  assert.equal(isDailyBriefV2ContractCompliant(compliant), true);
+  assert.equal(isDailyBriefV2ContractCompliant(legacy), false);
+  assert.equal(isDailyBriefV2ContractCompliant({ sections: [] }), false);
+  assert.equal(isDailyBriefV2ContractCompliant({ sections: null }), false);
+});
+
+test("daily brief v2 compliance helper rejects empty bodies, raw dumps, and legacy headings even when section ids exist", () => {
+  const baseSections = DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({
+    sectionId,
+    heading: sectionId,
+    body: "This section has enough source-backed content for contract validation."
+  }));
+
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 0 ? { ...section, body: "" } : section
+      )
+    }),
+    false
+  );
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 1 ? { ...section, body: "Theme: AI server; Lifecycle: watchlist; Priority: high" } : section
+      )
+    }),
+    false
+  );
+  assert.equal(
+    isDailyBriefV2ContractCompliant({
+      sections: baseSections.map((section, index) =>
+        index === 2 ? { ...section, heading: "Market Overview" } : section
+      )
+    }),
+    false
+  );
+});
+
+test("direct daily brief reviewer can recover source pack by draft id", () => {
+  const draftId = `direct-draft-${Date.now()}`;
+  const pack = makePack({ packId: `pack-${draftId}` });
+  const summary = pack.sources.map((s) => `${s.source}(${s.status})`).join(", ");
+
+  registerJobSourcePackSummary(draftId, summary);
+  registerJobSourcePack(draftId, pack);
+
+  assert.equal(lookupJobSourcePackSummary(draftId), summary);
+  assert.equal(loadSourcePackForDraft(draftId)?.packId, pack.packId);
+});
+
+test("daily brief instructions advertise only the v2 five-section contract", () => {
+  const instructions = buildDailyBriefContractInstructions();
+  for (const sectionId of DAILY_BRIEF_REQUIRED_SECTION_IDS) {
+    assert.match(instructions, new RegExp(sectionId));
+  }
+  for (const heading of ["市場總覽", "AI 精選重點", "產業與主題", "風險觀察", "資料來源狀態"]) {
+    assert.match(instructions, new RegExp(heading));
+  }
+  for (const legacyHeading of ["技術觀察", "風控警示", "策略觀察", "今日資料狀態", "資料品質提醒"]) {
+    assert.equal(instructions.includes(legacyHeading), false, `legacy heading leaked into contract: ${legacyHeading}`);
+  }
+});
+
+test("source-only fallback also satisfies the v2 five-section contract", () => {
+  const payload = buildSourceOnlyBriefPayload(makePack()) as {
+    sections: Array<{ heading: string; body: string; sourceTrail?: string | null }>;
+  };
+
+  assert.deepEqual(validateDailyBriefSectionsContract(payload.sections), { ok: true, missing: [] });
+  assert.equal(payload.sections.length, 5);
+  for (const section of payload.sections) {
+    assert.equal(typeof section.sourceTrail, "string");
+    assert.match(section.sourceTrail ?? "", /source_pack=test-pack-001/);
+    assert.match(section.sourceTrail ?? "", /法人籌碼資料=LIVE/);
+  }
+  for (const legacyHeading of ["技術觀察", "風控警示", "策略觀察", "今日資料狀態", "資料品質提醒", "下一步工作"]) {
+    assert.equal(
+      payload.sections.some((section) => section.heading === legacyHeading),
+      false,
+      `legacy heading leaked into source-only fallback: ${legacyHeading}`
+    );
+  }
+});
+
+test("source-only fallback source trail includes market intel news and announcement sources when provided", () => {
+  const payload = buildSourceOnlyBriefPayload(makePack({
+    sources: [
+      ...makePack().sources,
+      { source: "ai_selected_news", status: "LIVE", rowCount: 10, latestDate: "2026-05-06T08:00:00Z", note: "mode=ai", sampleRows: null },
+      { source: "official_announcements", status: "EMPTY", rowCount: 0, latestDate: null, note: "no_official_market_announcements", sampleRows: null }
+    ]
+  })) as {
+    sections: Array<{ sourceTrail?: string | null }>;
+  };
+
+  const trail = payload.sections[0]?.sourceTrail ?? "";
+  assert.match(trail, /ai_selected_news|AI 精選新聞/);
+  assert.match(trail, /official_announcements|官方重大公告/);
+});
+
+test("direct LLM daily brief payload attaches source trail to every section", () => {
+  const headings = ["市場總覽", "AI 精選重點", "產業與主題", "風險觀察", "資料來源狀態"];
+  const raw = JSON.stringify({
+    templateVersion: "daily_brief_contract_v2",
+    marketState: "Risk-On",
+    sections: DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId, index) => ({
+      sectionId,
+      heading: headings[index],
+      body: "這是一段通過模板檢查的來源化簡報內容，描述市場資料、新聞來源、產業變化與風險狀態，並明確保留資料不足說明，不提供任何買賣建議。"
+    }))
+  });
+  const payload = parseDirectBriefPayload(raw, makePack()) as {
+    sections: Array<{ sourceTrail?: string | null }>;
+  };
+
+  assert.equal(payload.sections.length, 5);
+  for (const section of payload.sections) {
+    assert.equal(typeof section.sourceTrail, "string");
+    assert.match(section.sourceTrail ?? "", /source_pack=test-pack-001/);
+  }
+});
+
+test("daily brief dedupe allows regenerating approved drafts that lack sourceTrail", () => {
+  const nextPayload = buildSourceOnlyBriefPayload(makePack());
+  const existingWithoutTrail = {
+    date: "2026-05-06",
+    marketState: "Balanced",
+    sections: [{ heading: "市場總覽", body: "舊簡報內容。" }]
+  };
+
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "daily_briefs",
+      nextPayload,
+      existingPayload: existingWithoutTrail
+    }),
+    false
+  );
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "daily_briefs",
+      nextPayload,
+      existingPayload: nextPayload
+    }),
+    true
+  );
+  assert.equal(
+    shouldReuseExistingContentDraftForDedupe({
+      targetTable: "company_notes",
+      nextPayload,
+      existingPayload: existingWithoutTrail
+    }),
+    true
+  );
+});
 
 // ── Test 1: scheduler tick skips non-trading days (memory mode) ───────────────
 
@@ -220,6 +426,41 @@ test("classifyDraftTier keeps institutional buy/sell source labels green", () =>
     ]
   });
   assert.equal(tier, "green");
+});
+
+test("classifyDraftTier keeps no-advice daily brief disclaimers green", () => {
+  const tier = classifyDraftTier({
+    date: "2026-05-29",
+    sections: [
+      {
+        heading: "資料來源狀態",
+        body: "本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。"
+      }
+    ]
+  });
+  assert.equal(tier, "green");
+});
+
+test("publish gate Green tier: safe no-advice disclaimer still auto-publishes", () => {
+  const pack = makePack({ trailComplete: true });
+  const gate = evaluatePublishGate({
+    sourcePack: pack,
+    reviewerVerdict: "approve",
+    confidence: 0.95,
+    flaggedIssueCount: 0,
+    draftPayload: {
+      date: "2026-05-29",
+      sections: [
+        {
+          heading: "資料來源狀態",
+          body: "資料來源包含三大法人買賣超欄位；本文不構成投資建議，不提供目標價，不保證報酬，也不提供勝率。"
+        }
+      ]
+    }
+  });
+  assert.equal(gate.tier, "green");
+  assert.equal(gate.shouldAutoPublish, true);
+  assert.equal(gate.rejectReason, null);
 });
 
 test("classifyDraftTier returns red for guarantee keyword", () => {

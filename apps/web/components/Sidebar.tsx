@@ -10,6 +10,7 @@ import {
   GitFork,
   LineChart,
   Newspaper,
+  Radio,
   Sparkles,
   Target,
   Wrench,
@@ -136,6 +137,7 @@ export function Sidebar() {
           { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
           { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
           { path: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3, activePaths: ["/admin/strategies"] },
+          { path: "/ops/f-auto", title: "F-AUTO SIM", sub: "KGI SIM / S1", Icon: Radio, activePaths: ["/ops/f-auto"] },
         ] as NavItem[]).map((item) => {
           const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;

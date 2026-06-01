@@ -19,6 +19,8 @@ class Settings:
 
     # Optional: pre-warm login on startup (default False — wait for POST /session/login)
     AUTO_LOGIN: bool = os.environ.get("AUTO_LOGIN", "false").lower() == "true"
+    SIMULATION: bool = os.environ.get("KGI_SIMULATION", "true").lower() in ("true", "1", "yes")
+    KGI_ACCOUNT: str = os.environ.get("KGI_ACCOUNT", "").strip()
 
     # W2a Candidate F circuit breaker — when true, /position returns 503 immediately
     # without calling any KGI SDK / pandas / serialization. Mechanism-agnostic containment.

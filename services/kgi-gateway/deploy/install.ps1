@@ -34,6 +34,22 @@
     When $true (default), credentials are read from AWS SSM Parameter Store.
     When $false, script prompts for credentials interactively (fallback).
 
+.PARAMETER KgiSimulation
+    When $true (default), the gateway is configured for KGI SIM/SUPERPY.
+    SIM mode reads `/iuf/kgi/sim_person_id` and `/iuf/kgi/sim_person_pwd` by default.
+
+.PARAMETER KgiPersonIdSsmPath
+    Optional override for the SSM SecureString that stores the person ID.
+    Leave blank to use the SIM/live default based on -KgiSimulation.
+
+.PARAMETER KgiPersonPwdSsmPath
+    Optional override for the SSM SecureString that stores the password.
+    Leave blank to use the SIM/live default based on -KgiSimulation.
+
+.PARAMETER AutoLogin
+    When $true (default), the gateway logs in on service startup using the env vars
+    written by this install script. Read-only mode remains enabled.
+
 .NOTES
     - NEVER hard-code KGI_PERSON_ID / KGI_PERSON_PWD in this file.
     - Assumes AWS CLI is configured with IAM role (instance profile preferred).
@@ -44,9 +60,13 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [switch]$DryRun,
-    [string]$SourceDir    = (Resolve-Path "$PSScriptRoot\.."),
+    [string]$SourceDir    = "",
     [string]$GatewayInstallDir = "C:\kgi-gateway",
-    [switch]$UseSSM = $true
+    [switch]$UseSSM = $true,
+    [bool]$KgiSimulation = $true,
+    [string]$KgiPersonIdSsmPath = "",
+    [string]$KgiPersonPwdSsmPath = "",
+    [bool]$AutoLogin = $true
 )
 
 Set-StrictMode -Version Latest
@@ -73,6 +93,25 @@ function Write-Info  { param([string]$m) Write-Log "INFO " $m }
 function Write-Warn  { param([string]$m) Write-Log "WARN " $m }
 function Write-Err   { param([string]$m) Write-Log "ERROR" $m }
 
+function Convert-BoolToEnv {
+    param([bool]$Value)
+    if ($Value) { return "true" }
+    return "false"
+}
+
+if (-not $KgiPersonIdSsmPath) {
+    $KgiPersonIdSsmPath = if ($KgiSimulation) { "/iuf/kgi/sim_person_id" } else { "/iuf/kgi/person_id" }
+}
+if (-not $KgiPersonPwdSsmPath) {
+    $KgiPersonPwdSsmPath = if ($KgiSimulation) { "/iuf/kgi/sim_person_pwd" } else { "/iuf/kgi/person_pwd" }
+}
+
+if (-not $SourceDir) {
+    $SourceDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} elseif (Test-Path $SourceDir) {
+    $SourceDir = (Resolve-Path $SourceDir).Path
+}
+
 # ---------------------------------------------------------------------------
 # Dry-run wrapper
 # ---------------------------------------------------------------------------
@@ -92,6 +131,10 @@ function Invoke-Action {
 Write-Info "========================================"
 Write-Info "KGI Gateway EC2 Install Script"
 Write-Info "DryRun=$DryRun  SourceDir=$SourceDir  InstallDir=$GatewayInstallDir"
+Write-Info "KgiSimulation=$KgiSimulation  AutoLogin=$AutoLogin  UseSSM=$UseSSM"
+if ($UseSSM) {
+    Write-Info "Credential SSM paths: person_id=$KgiPersonIdSsmPath person_pwd=$KgiPersonPwdSsmPath"
+}
 Write-Info "========================================"
 
 if (-not $DryRun) {
@@ -282,9 +325,15 @@ $envVars = @{}
 
 if ($UseSSM) {
     Write-Info "Reading credentials from SSM Parameter Store..."
-    Invoke-Action "aws ssm get-parameter KGI_PERSON_ID" {
-        $envVars["KGI_PERSON_ID"]  = Get-SsmParam "/iuf/kgi/person_id"
-        $envVars["KGI_PERSON_PWD"] = Get-SsmParam "/iuf/kgi/person_pwd"
+    Invoke-Action "aws ssm get-parameter KGI credentials" {
+        $personIdFromSsm = Get-SsmParam $KgiPersonIdSsmPath
+        $personPwdFromSsm = Get-SsmParam $KgiPersonPwdSsmPath
+        if (-not $personIdFromSsm -or -not $personPwdFromSsm) {
+            Write-Err "Missing KGI credential from SSM. Check SSM paths and IAM permission."
+            exit 1
+        }
+        $envVars["KGI_PERSON_ID"]  = $personIdFromSsm.Trim().ToUpper()
+        $envVars["KGI_PERSON_PWD"] = $personPwdFromSsm.Trim()
     }
     if ($DryRun) {
         $envVars["KGI_PERSON_ID"]  = "DRY_RUN_PLACEHOLDER"
@@ -307,11 +356,11 @@ if ($UseSSM) {
 }
 
 # Non-credential vars (safe to inline)
-$envVars["KGI_SIMULATION"]                  = "false"
+$envVars["KGI_SIMULATION"]                  = Convert-BoolToEnv $KgiSimulation
 $envVars["KGI_READ_ONLY_MODE"]              = "true"
 $envVars["GATEWAY_HOST"]                    = "0.0.0.0"
 $envVars["GATEWAY_PORT"]                    = "8787"
-$envVars["AUTO_LOGIN"]                      = "false"
+$envVars["AUTO_LOGIN"]                      = Convert-BoolToEnv $AutoLogin
 $envVars["KGI_GATEWAY_POSITION_DISABLED"]   = "false"
 $envVars["KGI_GATEWAY_QUOTE_DISABLED"]      = "false"
 
@@ -379,6 +428,10 @@ Invoke-Action "Write $evidencePath" {
         install_dir       = $GatewayInstallDir
         dry_run           = $DryRun.IsPresent
         ssm_used          = $UseSSM.IsPresent
+        kgi_simulation    = $KgiSimulation
+        auto_login        = $AutoLogin
+        person_id_ssm_path = $KgiPersonIdSsmPath
+        person_pwd_ssm_path = $KgiPersonPwdSsmPath
         env_vars_written  = ($envVars.Keys | Where-Object { $_ -notin @("KGI_PERSON_ID","KGI_PERSON_PWD") })
         smoke_test        = "see_log"
     }

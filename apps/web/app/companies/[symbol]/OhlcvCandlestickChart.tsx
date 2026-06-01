@@ -21,7 +21,28 @@ type ChartBar = {
 
 // ── Indicator toggle state (persisted in localStorage) ─────────────────────
 type MaKey = "ma5" | "ma10" | "ma20" | "ma60";
-type IndicatorKey = "ma" | "rsi" | "macd";
+type IndicatorKey = "ma" | "vwap" | "sr" | "plan" | "rsi" | "macd";
+type IndicatorPrefs = Record<IndicatorKey, boolean>;
+type PlanLevels = {
+  entry?: number | null;
+  stop?: number | null;
+  target?: number | null;
+};
+type VolumePriceLevels = {
+  support: number | null;
+  resistance: number | null;
+  supportVolume: number | null;
+  resistanceVolume: number | null;
+  sampleSize: number;
+};
+type IndicatorSignal = {
+  key: string;
+  label: string;
+  value: string;
+  tone: "up" | "down" | "muted";
+  detail: string;
+};
+type ChartLogicalRange = { from: number; to: number };
 
 const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; label: string }> = [
   { key: "ma5",  period: 5,  color: "#FFD600", label: "MA5"  },
@@ -33,22 +54,25 @@ const MA_CONFIG: ReadonlyArray<{ key: MaKey; period: number; color: string; labe
 const LS_KEY_INDICATOR = "iuf_kline_indicators_v1";
 const LS_KEY_MA        = "iuf_kline_ma_v1";
 
-function loadIndicatorPrefs(): { ma: boolean; rsi: boolean; macd: boolean } {
+function loadIndicatorPrefs(): IndicatorPrefs {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem(LS_KEY_INDICATOR) : null;
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<{ ma: boolean; rsi: boolean; macd: boolean }>;
+      const parsed = JSON.parse(raw) as Partial<IndicatorPrefs>;
       return {
-        ma:   parsed.ma   ?? true,
-        rsi:  parsed.rsi  ?? false,
+        ma: parsed.ma ?? true,
+        vwap: parsed.vwap ?? true,
+        sr: parsed.sr ?? true,
+        plan: parsed.plan ?? true,
+        rsi: parsed.rsi ?? false,
         macd: parsed.macd ?? false,
       };
     }
   } catch { /* ignore */ }
-  return { ma: true, rsi: false, macd: false };
+  return { ma: true, vwap: true, sr: true, plan: true, rsi: false, macd: false };
 }
 
-function saveIndicatorPrefs(prefs: { ma: boolean; rsi: boolean; macd: boolean }) {
+function saveIndicatorPrefs(prefs: IndicatorPrefs) {
   try { if (typeof window !== "undefined") localStorage.setItem(LS_KEY_INDICATOR, JSON.stringify(prefs)); } catch { /* ignore */ }
 }
 
@@ -82,6 +106,32 @@ function calcSMA(closes: number[], period: number): (number | null)[] {
     for (let j = i - period + 1; j <= i; j++) sum += closes[j];
     result[i] = Number((sum / period).toFixed(3));
   }
+  return result;
+}
+
+function calcVWAP(bars: ChartBar[]): (number | null)[] {
+  const result: (number | null)[] = new Array(bars.length).fill(null);
+  let cumulativeValue = 0;
+  let cumulativeVolume = 0;
+  let currentSession = "";
+
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i];
+    const session = bar.source === "finmind-kbar" ? bar.dt.slice(0, 10) : "range";
+    if (session !== currentSession) {
+      currentSession = session;
+      cumulativeValue = 0;
+      cumulativeVolume = 0;
+    }
+    if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    cumulativeValue += typicalPrice * bar.volume;
+    cumulativeVolume += bar.volume;
+    if (cumulativeVolume > 0) {
+      result[i] = Number((cumulativeValue / cumulativeVolume).toFixed(3));
+    }
+  }
+
   return result;
 }
 
@@ -128,6 +178,28 @@ function calcEMA(closes: number[], period: number): (number | null)[] {
   return result;
 }
 
+function calcNullableEMA(values: Array<number | null>, period: number): (number | null)[] {
+  const k = 2 / (period + 1);
+  const result: (number | null)[] = new Array(values.length).fill(null);
+  let seed: number[] = [];
+  let ema: number | null = null;
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value === null || !Number.isFinite(value)) continue;
+    if (ema === null) {
+      seed.push(value);
+      if (seed.length < period) continue;
+      ema = seed.reduce((sum, item) => sum + item, 0) / period;
+    } else {
+      ema = value * k + ema * (1 - k);
+    }
+    result[i] = Number(ema.toFixed(4));
+  }
+
+  return result;
+}
+
 /** MACD = DIF (12 - 26 EMA), DEA = 9 EMA of DIF, Hist = DIF - DEA */
 function calcMACD(closes: number[]): {
   dif: (number | null)[];
@@ -140,15 +212,98 @@ function calcMACD(closes: number[]): {
     const e12 = ema12[i]; const e26 = ema26[i];
     return e12 !== null && e26 !== null ? Number((e12 - e26).toFixed(4)) : null;
   });
-  // DEA = 9-period EMA of DIF values (skip nulls by treating them as 0 for seeding)
-  const difValues = dif.map((v) => v ?? 0);
-  const deaRaw = calcEMA(difValues, 9);
+  // DEA is the 9-period EMA of valid DIF values.  Null warm-up periods must not
+  // be treated as zero, otherwise MACD shows a fake early signal.
+  const deaRaw = calcNullableEMA(dif, 9);
   const dea: (number | null)[] = dif.map((d, i) => (d !== null && deaRaw[i] !== null ? deaRaw[i] : null));
   const hist: (number | null)[] = dif.map((d, i) => {
     const de = dea[i];
     return d !== null && de !== null ? Number((d - de).toFixed(4)) : null;
   });
   return { dif, dea, hist };
+}
+
+function median(values: number[]) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function chooseVolumePriceLevel(
+  points: Array<{ price: number; volume: number }>,
+  lastClose: number,
+  direction: "support" | "resistance",
+) {
+  const usable = points.filter((item) => (
+    Number.isFinite(item.price)
+    && item.price > 0
+    && Number.isFinite(item.volume)
+    && item.volume > 0
+    && (direction === "support" ? item.price <= lastClose : item.price >= lastClose)
+  ));
+  if (usable.length === 0) return null;
+
+  const binSize = Math.max(lastClose * 0.004, 0.05);
+  const clusters = new Map<number, { priceSum: number; volume: number; touches: number }>();
+  for (const item of usable) {
+    const key = Math.round(item.price / binSize);
+    const existing = clusters.get(key) ?? { priceSum: 0, volume: 0, touches: 0 };
+    existing.priceSum += item.price * item.volume;
+    existing.volume += item.volume;
+    existing.touches += 1;
+    clusters.set(key, existing);
+  }
+
+  let best: { price: number; volume: number; score: number } | null = null;
+  for (const cluster of clusters.values()) {
+    const price = cluster.priceSum / cluster.volume;
+    const distancePct = Math.abs(price - lastClose) / lastClose;
+    const score = cluster.volume * (1 + Math.log1p(cluster.touches)) / (1 + distancePct * 7);
+    if (!best || score > best.score) best = { price, volume: cluster.volume, score };
+  }
+
+  return best ? { price: Number(best.price.toFixed(3)), volume: best.volume } : null;
+}
+
+function calcVolumePriceLevels(bars: ChartBar[]): VolumePriceLevels {
+  const recent = bars.slice(-Math.min(80, bars.length));
+  if (recent.length < 8) {
+    return { support: null, resistance: null, supportVolume: null, resistanceVolume: null, sampleSize: recent.length };
+  }
+
+  const medianVolume = median(recent.map((bar) => bar.volume));
+  const minVolume = Math.max(1, medianVolume * 0.65);
+  const pivotLows: Array<{ price: number; volume: number }> = [];
+  const pivotHighs: Array<{ price: number; volume: number }> = [];
+
+  for (let i = 1; i < recent.length - 1; i++) {
+    const prev = recent[i - 1];
+    const bar = recent[i];
+    const next = recent[i + 1];
+    const volumeOk = Number.isFinite(bar.volume) && bar.volume >= minVolume;
+    if (!volumeOk) continue;
+    if (bar.low <= prev.low && bar.low <= next.low) pivotLows.push({ price: bar.low, volume: bar.volume });
+    if (bar.high >= prev.high && bar.high >= next.high) pivotHighs.push({ price: bar.high, volume: bar.volume });
+  }
+
+  const lastClose = recent.at(-1)?.close;
+  if (typeof lastClose !== "number" || !Number.isFinite(lastClose) || lastClose <= 0) {
+    return { support: null, resistance: null, supportVolume: null, resistanceVolume: null, sampleSize: recent.length };
+  }
+
+  const lows = pivotLows.length ? pivotLows : recent.map((bar) => ({ price: bar.low, volume: bar.volume }));
+  const highs = pivotHighs.length ? pivotHighs : recent.map((bar) => ({ price: bar.high, volume: bar.volume }));
+  const support = chooseVolumePriceLevel(lows, lastClose, "support");
+  const resistance = chooseVolumePriceLevel(highs, lastClose, "resistance");
+
+  return {
+    support: support?.price ?? null,
+    resistance: resistance?.price ?? null,
+    supportVolume: support?.volume ?? null,
+    resistanceVolume: resistance?.volume ?? null,
+    sampleSize: recent.length,
+  };
 }
 
 // ── SVG sub-chart helpers ───────────────────────────────────────────────────
@@ -472,6 +627,84 @@ function toneClass(value: number | null | undefined) {
   return "muted";
 }
 
+function latestFinite(values: Array<number | null | undefined>) {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const value = values[i];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function relationSignal(label: string, price: number | null | undefined, base: number | null | undefined, key: string): IndicatorSignal | null {
+  if (typeof price !== "number" || !Number.isFinite(price) || typeof base !== "number" || !Number.isFinite(base) || base <= 0) return null;
+  const diffPct = ((price - base) / base) * 100;
+  return {
+    key,
+    label,
+    value: `${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}%`,
+    tone: diffPct > 0 ? "up" : diffPct < 0 ? "down" : "muted",
+    detail: price >= base ? `收盤高於 ${label} ${formatNumber(base)}` : `收盤低於 ${label} ${formatNumber(base)}`,
+  };
+}
+
+function buildIndicatorSignals(input: {
+  lastClose: number | null | undefined;
+  ma20: number | null | undefined;
+  ma60: number | null | undefined;
+  vwap: number | null | undefined;
+  rsi: number | null | undefined;
+  macdHist: number | null | undefined;
+  support: number | null | undefined;
+  resistance: number | null | undefined;
+}): IndicatorSignal[] {
+  const signals: IndicatorSignal[] = [];
+  const ma20 = relationSignal("MA20", input.lastClose, input.ma20, "ma20");
+  const ma60 = relationSignal("MA60", input.lastClose, input.ma60, "ma60");
+  const vwap = relationSignal("VWAP", input.lastClose, input.vwap, "vwap");
+  if (ma20) signals.push(ma20);
+  if (ma60) signals.push(ma60);
+  if (vwap) signals.push(vwap);
+  if (typeof input.rsi === "number" && Number.isFinite(input.rsi)) {
+    signals.push({
+      key: "rsi",
+      label: "RSI14",
+      value: input.rsi.toFixed(1),
+      tone: input.rsi >= 70 ? "up" : input.rsi <= 30 ? "down" : "muted",
+      detail: input.rsi >= 70 ? "偏熱" : input.rsi <= 30 ? "偏冷" : "中性",
+    });
+  }
+  if (typeof input.macdHist === "number" && Number.isFinite(input.macdHist)) {
+    signals.push({
+      key: "macd",
+      label: "MACD",
+      value: input.macdHist >= 0 ? "多方" : "空方",
+      tone: input.macdHist > 0 ? "up" : input.macdHist < 0 ? "down" : "muted",
+      detail: `柱狀 ${input.macdHist.toFixed(3)}`,
+    });
+  }
+  if (typeof input.lastClose === "number" && typeof input.support === "number" && Number.isFinite(input.support) && input.support > 0) {
+    const gap = ((input.lastClose - input.support) / input.support) * 100;
+    signals.push({
+      key: "support-gap",
+      label: "量價支撐",
+      value: `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`,
+      tone: gap >= 0 ? "up" : "down",
+      detail: `支撐 ${formatNumber(input.support)}`,
+    });
+  }
+  if (typeof input.lastClose === "number" && typeof input.resistance === "number" && Number.isFinite(input.resistance) && input.resistance > 0) {
+    const gap = ((input.resistance - input.lastClose) / input.lastClose) * 100;
+    signals.push({
+      key: "resistance-gap",
+      label: "量價壓力",
+      value: `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`,
+      tone: gap > 0 ? "muted" : "up",
+      detail: `壓力 ${formatNumber(input.resistance)}`,
+    });
+  }
+  return signals.slice(0, 6);
+}
+
 // ── RSI Sub-chart SVG ────────────────────────────────────────────────────────
 
 function RsiSubChart({ rsiValues, n }: { rsiValues: (number | null)[]; n: number }) {
@@ -673,9 +906,60 @@ const INDICATOR_CSS = `
 ._ind-toggle-btn._ma10.is-on { border-color: rgba(255,140,0,0.52); color: #FF8C00; background: rgba(255,140,0,0.06); }
 ._ind-toggle-btn._ma20.is-on { border-color: rgba(0,229,255,0.52); color: #00E5FF; background: rgba(0,229,255,0.06); }
 ._ind-toggle-btn._ma60.is-on { border-color: rgba(179,136,255,0.52); color: #B388FF; background: rgba(179,136,255,0.06); }
+._ind-toggle-btn._vwap.is-on { border-color: rgba(143,191,232,0.58); color: #8fbfe8; background: rgba(143,191,232,0.08); }
+._ind-toggle-btn._sr.is-on { border-color: rgba(236,201,75,0.58); color: #ecc94b; background: rgba(236,201,75,0.08); }
+._ind-toggle-btn._plan.is-on { border-color: rgba(72,187,120,0.58); color: #48bb78; background: rgba(72,187,120,0.08); }
 ._ind-ma-expand { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 ._ind-divider { width: 1px; height: 14px; background: rgba(220,228,240,0.12); margin: 0 2px; }
 ._ind-sub-section { border-top: 1px solid rgba(220,228,240,0.06); }
+._ind-level-readout {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(220,228,240,0.06);
+  background: rgba(5,8,12,0.32);
+  color: rgba(203,213,225,0.56);
+  font: 800 10px/1.45 var(--mono, monospace);
+}
+._ind-level-readout b { color: rgba(236,201,75,0.94); }
+._ind-level-readout ._plan { color: rgba(72,187,120,0.94); }
+.kline-signal-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(220,228,240,0.06);
+  background: rgba(3, 7, 12, 0.38);
+}
+.kline-signal-chip {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 6px;
+  background: rgba(15,23,34,0.72);
+  color: rgba(203,213,225,0.72);
+  font: 800 10px/1.35 var(--mono, monospace);
+}
+.kline-signal-chip span,
+.kline-signal-chip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kline-signal-chip b {
+  display: block;
+  margin: 2px 0;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+.kline-signal-chip.up b { color: #e63946; }
+.kline-signal-chip.down b { color: #2ecc71; }
+.kline-signal-chip.muted b { color: #f0bd62; }
+@media (max-width: 900px) {
+  .kline-signal-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (prefers-reduced-motion: reduce) {
   ._ind-toggle-btn { transition: none; }
 }
@@ -692,6 +976,8 @@ export function OhlcvCandlestickChart({
   symbol,
   sourceState,
   sourceReason,
+  planLevels,
+  compactTradingRoom = false,
 }: {
   bars: OhlcvBar[];
   kbarRows?: FinMindKBarRow[];
@@ -701,9 +987,12 @@ export function OhlcvCandlestickChart({
   symbol: string;
   sourceState: "LIVE" | "EMPTY" | "BLOCKED";
   sourceReason: string;
+  planLevels?: PlanLevels;
+  compactTradingRoom?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<import("lightweight-charts").IChartApi | null>(null);
+  const viewportRef = useRef<{ key: string; range: ChartLogicalRange | null }>({ key: "", range: null });
   const [error, setError] = useState<string | null>(null);
   const [interval, setInterval] = useState<EnabledInterval>("1d");
   const [range, setRange] = useState<RangeKey>("all");
@@ -711,8 +1000,8 @@ export function OhlcvCandlestickChart({
   const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
 
   // Indicator toggles — initialized from localStorage on first render
-  const [indicators, setIndicators] = useState<{ ma: boolean; rsi: boolean; macd: boolean }>(() => {
-    if (typeof window === "undefined") return { ma: true, rsi: false, macd: false };
+  const [indicators, setIndicators] = useState<IndicatorPrefs>(() => {
+    if (typeof window === "undefined") return { ma: true, vwap: true, sr: true, plan: true, rsi: false, macd: false };
     return loadIndicatorPrefs();
   });
   const [maEnabled, setMaEnabled] = useState<Record<MaKey, boolean>>(() => {
@@ -738,7 +1027,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 340 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
@@ -750,6 +1039,18 @@ export function OhlcvCandlestickChart({
     }
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, intradayRange, kbarRows, range]);
+  const chartViewportKey = useMemo(() => {
+    const first = chartBars[0];
+    const last = chartBars.at(-1);
+    return [
+      symbol,
+      interval,
+      isIntraday ? intradayRange : range,
+      chartBars.length,
+      first?.dt ?? "",
+      last?.dt ?? "",
+    ].join("|");
+  }, [chartBars, interval, intradayRange, isIntraday, range, symbol]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {
@@ -785,9 +1086,26 @@ export function OhlcvCandlestickChart({
     ma60: calcSMA(closes, 60),
   }), [closes]);
 
+  const vwapValues = useMemo(() => calcVWAP(chartBars), [chartBars]);
+
+  const volumePriceLevels = useMemo(() => calcVolumePriceLevels(chartBars), [chartBars]);
+
   const rsiValues = useMemo(() => calcRSI(closes, 14), [closes]);
 
   const macdResult = useMemo(() => calcMACD(closes), [closes]);
+  const indicatorSignals = useMemo(() => {
+    const lastClose = chartBars.at(-1)?.close ?? null;
+    return buildIndicatorSignals({
+      lastClose,
+      ma20: latestFinite(maValues.ma20),
+      ma60: latestFinite(maValues.ma60),
+      vwap: latestFinite(vwapValues),
+      rsi: latestFinite(rsiValues),
+      macdHist: latestFinite(macdResult.hist),
+      support: volumePriceLevels.support,
+      resistance: volumePriceLevels.resistance,
+    });
+  }, [chartBars, maValues, macdResult.hist, rsiValues, volumePriceLevels.resistance, volumePriceLevels.support, vwapValues]);
 
   const selectInterval = (nextInterval: EnabledInterval) => {
     const nextMeta = ENABLED_INTERVALS.find((item) => item.value === nextInterval);
@@ -808,6 +1126,7 @@ export function OhlcvCandlestickChart({
 
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
+    let rememberRange: ((nextRange: import("lightweight-charts").LogicalRange | null) => void) | null = null;
     let disposed = false;
     const intradayAxisLabels = new Map<number, string>(
       isIntraday
@@ -851,6 +1170,17 @@ export function OhlcvCandlestickChart({
           },
           crosshair: { mode: 1 },
           rightPriceScale: { borderColor: "rgba(255,255,255,0.14)", scaleMargins: { top: 0.08, bottom: 0.22 } },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: false,
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true,
+          },
           timeScale: {
             borderColor: "rgba(255,255,255,0.14)",
             timeVisible: isIntraday || interval === "1d",
@@ -916,6 +1246,64 @@ export function OhlcvCandlestickChart({
           }
         }
 
+        if (indicators.vwap) {
+          const data = chartBars
+            .map((bar, i) => ({ time: bar.time, value: vwapValues[i] }))
+            .filter((d): d is { time: ChartTime; value: number } => d.value !== null);
+          if (data.length > 0) {
+            const vwapSeries = chart.addSeries(lc.LineSeries, {
+              color: "#8fbfe8",
+              lineWidth: 1,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              crosshairMarkerVisible: false,
+            });
+            vwapSeries.setData(data);
+          }
+        }
+
+        if (indicators.sr) {
+          if (volumePriceLevels.support !== null) {
+            candleSeries.createPriceLine({
+              price: volumePriceLevels.support,
+              color: "#ecc94b",
+              lineWidth: 1,
+              lineStyle: lc.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "量價支撐",
+            });
+          }
+          if (volumePriceLevels.resistance !== null) {
+            candleSeries.createPriceLine({
+              price: volumePriceLevels.resistance,
+              color: "#f56565",
+              lineWidth: 1,
+              lineStyle: lc.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "量價壓力",
+            });
+          }
+        }
+
+        if (indicators.plan && planLevels) {
+          const planLines = [
+            { price: planLevels.entry, color: "#48bb78", title: "計畫進場", style: lc.LineStyle.Dotted },
+            { price: planLevels.stop, color: "#f56565", title: "計畫停損", style: lc.LineStyle.Dotted },
+            { price: planLevels.target, color: "#63b3ed", title: "計畫目標", style: lc.LineStyle.Dotted },
+          ];
+          for (const line of planLines) {
+            if (typeof line.price !== "number" || !Number.isFinite(line.price) || line.price <= 0) continue;
+            candleSeries.createPriceLine({
+              price: line.price,
+              color: line.color,
+              lineWidth: 1,
+              lineStyle: line.style,
+              axisLabelVisible: true,
+              title: line.title,
+            });
+          }
+        }
+
         const barsByTime = new Map(chartBars.map((bar) => [String(bar.time), bar]));
         chart.subscribeCrosshairMove((param) => {
           if (disposed) return;
@@ -935,14 +1323,37 @@ export function OhlcvCandlestickChart({
           });
         }
 
-        chart.timeScale().fitContent();
-        if (chartBars.length > 12) {
+        const setLogicalRange = (nextRange: ChartLogicalRange) => {
+          chart?.timeScale().setVisibleLogicalRange(nextRange);
+          viewportRef.current = { key: chartViewportKey, range: nextRange };
+        };
+        const savedViewport = viewportRef.current.key === chartViewportKey ? viewportRef.current.range : null;
+        if (
+          savedViewport
+          && Number.isFinite(savedViewport.from)
+          && Number.isFinite(savedViewport.to)
+          && savedViewport.to > savedViewport.from
+        ) {
+          setLogicalRange(savedViewport);
+        } else if (chartBars.length > 12) {
           const count = visibleBarsFor(interval, range);
-          chart.timeScale().setVisibleLogicalRange({
+          setLogicalRange({
             from: Math.max(0, chartBars.length - count),
             to: chartBars.length + 4,
           });
+        } else {
+          chart.timeScale().fitContent();
+          viewportRef.current = { key: chartViewportKey, range: null };
         }
+
+        rememberRange = (nextRange: import("lightweight-charts").LogicalRange | null) => {
+          if (!nextRange || !Number.isFinite(nextRange.from) || !Number.isFinite(nextRange.to)) return;
+          viewportRef.current = {
+            key: chartViewportKey,
+            range: { from: nextRange.from, to: nextRange.to },
+          };
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(rememberRange);
 
         ro = new ResizeObserver((entries) => {
           const nextWidth = entries[0]?.contentRect.width;
@@ -957,10 +1368,11 @@ export function OhlcvCandlestickChart({
     return () => {
       disposed = true;
       ro?.disconnect();
+      if (chart && rememberRange) chart.timeScale().unsubscribeVisibleLogicalRangeChange(rememberRange);
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, insufficientTrend, interval, isIntraday, range, indicators.ma, maEnabled, maValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -999,7 +1411,7 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
-  const showSubCharts = chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
 
   return (
     <section className="panel hud-frame kline-panel">
@@ -1050,7 +1462,39 @@ export function OhlcvCandlestickChart({
           </div>
         )}
 
-        <div className="_ind-divider" />
+        <button
+          type="button"
+          className={`_ind-toggle-btn _vwap${indicators.vwap ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("vwap")}
+          aria-pressed={indicators.vwap}
+          title="VWAP"
+        >
+          VWAP
+        </button>
+
+        <button
+          type="button"
+          className={`_ind-toggle-btn _sr${indicators.sr ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("sr")}
+          aria-pressed={indicators.sr}
+          title="用最近量價 pivot 計算支撐與壓力"
+        >
+          量價支撐/壓力
+        </button>
+
+        <button
+          type="button"
+          className={`_ind-toggle-btn _plan${indicators.plan ? " is-on" : ""}`}
+          onClick={() => toggleIndicator("plan")}
+          aria-pressed={indicators.plan}
+          title="顯示 AI/交易計畫帶入的進場、停損與目標價"
+        >
+          計畫點位
+        </button>
+
+        {!compactTradingRoom && (
+          <>
+            <div className="_ind-divider" />
 
         {/* RSI toggle */}
         <button
@@ -1073,7 +1517,31 @@ export function OhlcvCandlestickChart({
         >
           MACD
         </button>
+          </>
+        )}
       </div>
+
+      {(volumePriceLevels.support !== null || volumePriceLevels.resistance !== null || planLevels) && (
+        <div className="_ind-level-readout" data-indicator-readout="volume-price">
+          {volumePriceLevels.support !== null && <span>量價支撐 <b>{formatNumber(volumePriceLevels.support)}</b></span>}
+          {volumePriceLevels.resistance !== null && <span>量價壓力 <b>{formatNumber(volumePriceLevels.resistance)}</b></span>}
+          {planLevels?.entry ? <span className="_plan">進場 <b>{formatNumber(planLevels.entry)}</b></span> : null}
+          {planLevels?.stop ? <span className="_plan">停損 <b>{formatNumber(planLevels.stop)}</b></span> : null}
+          {planLevels?.target ? <span className="_plan">目標 <b>{formatNumber(planLevels.target)}</b></span> : null}
+        </div>
+      )}
+
+      {compactTradingRoom && indicatorSignals.length > 0 && (
+        <div className="kline-signal-strip" data-testid="trading-room-kline-signal-strip" aria-label="交易室量價指標摘要">
+          {indicatorSignals.map((signal) => (
+            <div key={signal.key} className={`kline-signal-chip ${signal.tone}`}>
+              <span>{signal.label}</span>
+              <b>{signal.value}</b>
+              <small>{signal.detail}</small>
+            </div>
+          ))}
+        </div>
+      )}
 
       {lastBar && (
         <div className="kline-snapshot-strip">

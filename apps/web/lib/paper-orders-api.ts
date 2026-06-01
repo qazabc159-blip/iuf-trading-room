@@ -343,6 +343,30 @@ export type KgiPositionsResponse = {
   note?: string;
 };
 
+export type KgiGatewayQuoteAuthSummary = {
+  available: boolean | null;
+  state: string;
+  errorCode: string | null;
+  subscribedTickCount: number | null;
+};
+
+export type KgiStatusResponse = {
+  sim_only: true;
+  kgi_env: string;
+  quote_connected: boolean;
+  trade_connected: boolean;
+  last_quote_time: string | null;
+  last_sim_order_status: string | null;
+  last_sim_order_detail: string | null;
+  last_quote_smoke_at: string | null;
+  last_trade_smoke_at: string | null;
+  last_sim_order_report_at: string | null;
+  prod_write_blocked: true;
+  gateway_quote_auth?: KgiGatewayQuoteAuthSummary;
+  sim_quote_host: string;
+  sim_trade_host: string;
+};
+
 export async function getKgiPositions(): Promise<KgiPositionsResponse> {
   // Returns the envelope data directly (never throws on gateway degraded states — those are 200)
   const cookie = await ssrCookieHeader();
@@ -377,6 +401,25 @@ export async function getKgiPositions(): Promise<KgiPositionsResponse> {
   return envelope.data;
 }
 
+export async function getKgiStatus(): Promise<KgiStatusResponse> {
+  const cookie = await ssrCookieHeader();
+  const response = await fetch(`${API_BASE}/api/v1/kgi/status`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "x-workspace-slug": WORKSPACE_SLUG,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+  });
+
+  const body = await readJson(response);
+  if (!response.ok) {
+    throw new PaperOrderApiError(response.status, body, "KGI_STATUS_FAILED");
+  }
+  return body as KgiStatusResponse;
+}
+
 // ---------------------------------------------------------------------------
 // KGI SIM Order — direct gateway submit (not paper-only DB)
 // POST /api/v1/kgi/sim/order
@@ -389,6 +432,9 @@ export type KgiSimOrderPayload = {
   price?: number | null;
   orderType: "market" | "limit";
   quantityUnit: "SHARE" | "LOT";
+  timeInForce?: "ROD" | "IOC" | "FOK";
+  orderCond?: "Cash" | "CashSelling" | "Margin" | "MarginDayTrade" | "ShortSelling" | "LendSelling";
+  priceType?: "MKT" | "Reference" | "LimitUp" | "LimitDown";
 };
 
 export type KgiSimOrderResponse = {
@@ -404,6 +450,9 @@ export type KgiSimOrderResponse = {
     effectiveQtyShares: number;
     price: number | null;
     orderType: "market" | "limit";
+    timeInForce?: "ROD" | "IOC" | "FOK";
+    orderCond?: "Cash" | "CashSelling" | "Margin" | "MarginDayTrade" | "ShortSelling" | "LendSelling";
+    priceType?: "MKT" | "Reference" | "LimitUp" | "LimitDown" | null;
     isOddLot: boolean;
     submittedAt: string;
   };
@@ -443,6 +492,9 @@ export async function submitKgiSimOrder(payload: KgiSimOrderPayload): Promise<Kg
       price: payload.price ?? null,
       orderType: payload.orderType,
       quantityUnit: payload.quantityUnit,
+      timeInForce: payload.timeInForce ?? "ROD",
+      orderCond: payload.orderCond ?? "Cash",
+      priceType: payload.priceType,
     }),
   });
 

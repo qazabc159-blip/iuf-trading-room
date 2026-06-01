@@ -2,11 +2,24 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const strategySource = readFileSync(new URL("./strategy-data.ts", import.meta.url), "utf8");
 
-describe("quant strategies score pending state", () => {
-  it("does not render missing quant scores as a perpetual loading state", () => {
-    expect(pageSource).not.toContain("<strong>讀取中</strong>");
-    expect(pageSource).toContain("待正式分數");
-    expect(pageSource).toContain("endpoint 未回傳");
+describe("quant strategies S1-only product surface", () => {
+  it("surfaces S1 as the only formal quant strategy", () => {
+    expect(pageSource).toContain("S1 F-AUTO");
+    expect(pageSource).toContain("目前正式產品只開 S1");
+    expect(pageSource).toContain("資金會由後端 S1 runner 讀取");
+    expect(strategySource).toContain('id: "cont_liq_v36"');
+    expect(strategySource).not.toContain("class5_revenue_momentum");
+    expect(strategySource).not.toContain("family_c_sbl_overlay");
+  });
+
+  it("keeps the page honest about SIM-only execution", () => {
+    expect(pageSource).toContain("SIM-only guard");
+    expect(pageSource).toContain("不會開啟真實委託");
+    expect(pageSource).toContain("F-AUTO 觀察面板");
+    expect(pageSource).not.toContain("LAB SANCTIONED SNAPSHOT");
+    expect(pageSource).not.toContain("MAIN execution rank buffer");
+    expect(pageSource).not.toContain("Continuous liquidity RS");
   });
 });

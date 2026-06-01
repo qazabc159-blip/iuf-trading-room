@@ -19,6 +19,9 @@ const FINAL_V031_ROUTE_REWRITES = new Map([
   ["/market-intel", "/final-v031/market-intel"],
   ["/portfolio", "/final-v031/portfolio"]
 ]);
+const PUBLIC_FINAL_V031_EMBEDS = new Set([
+  "/final-v031/portfolio/kline-frame"
+]);
 
 function isRailwayPublicHost(host: string): boolean {
   return host.endsWith(".up.railway.app");
@@ -26,6 +29,7 @@ function isRailwayPublicHost(host: string): boolean {
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
+  if (PUBLIC_FINAL_V031_EMBEDS.has(pathname)) return true;
   // Next.js internals and static assets
   if (pathname.startsWith("/_next/")) return true;
   if (pathname.startsWith("/api/")) return true;

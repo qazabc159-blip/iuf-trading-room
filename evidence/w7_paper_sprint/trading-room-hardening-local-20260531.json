@@ -1,0 +1,50 @@
+{
+  "url": "http://127.0.0.1:3322/api/ui-final-v031/paper-trading-room?symbol=1514",
+  "targetSymbol": "1514",
+  "before": {
+    "src": "/final-v031/portfolio/kline-frame?symbol=2330",
+    "selectedRow": "2330",
+    "bodyScrollWidth": 1440,
+    "bodyClientWidth": 1440,
+    "tformScrollWidth": 350,
+    "tformClientWidth": 350
+  },
+  "afterPick": {
+    "header": "1514",
+    "selectedRow": "1514",
+    "src": "/final-v031/portfolio/kline-frame?symbol=1514",
+    "mutations": [
+      "/final-v031/portfolio/kline-frame?symbol=1514"
+    ]
+  },
+  "canvasBeforeToggle": {
+    "x": 309,
+    "y": 255.296875,
+    "width": 722,
+    "height": 340
+  },
+  "afterToggle": {
+    "canvas": {
+      "x": 26,
+      "y": 115.296875,
+      "width": 722,
+      "height": 340
+    },
+    "signals": "MA20+4.1%收盤高於 MA20 120.55MA60+10.0%收盤高於 MA60 114.13VWAP+24.2%收盤高於 VWAP 101.02RSI1463.6中性MACD多方柱狀 0.612量價支撐+2.4%支撐 122.5",
+    "readoutVisible": false
+  },
+  "consoleEvents": [],
+  "requestFailures": [],
+  "pass": {
+    "noBodyHorizontalOverflow": true,
+    "noTicketHorizontalOverflow": true,
+    "singleFrameMutationOnPick": true,
+    "selectedHeaderSynced": true,
+    "selectedRowSynced": true,
+    "frameSrcSwitched": true,
+    "readoutHidden": true,
+    "canvasSizeStable": true,
+    "dataDrivenSignals": true
+  },
+  "screenshotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_hardening_20260531\\evidence\\w7_paper_sprint\\trading-room-hardening-local-20260531.png"
+}

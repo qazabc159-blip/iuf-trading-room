@@ -1,0 +1,102 @@
+{
+  "data": {
+    "doc": {
+      "sw": 1440,
+      "cw": 1440,
+      "sh": 900,
+      "ch": 900
+    },
+    "body": {
+      "sw": 1440,
+      "cw": 1440,
+      "sh": 900,
+      "ch": 900
+    },
+    "psafe": {
+      "r": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 34
+      },
+      "sw": 1440,
+      "cw": 1440,
+      "sh": 36,
+      "ch": 33,
+      "ox": "hidden",
+      "oy": "hidden"
+    },
+    "troom": {
+      "r": {
+        "x": 0,
+        "y": 34,
+        "w": 1440,
+        "h": 866
+      },
+      "sw": 1440,
+      "cw": 1440,
+      "sh": 866,
+      "ch": 866,
+      "ox": "hidden",
+      "oy": "hidden"
+    },
+    "rpane": {
+      "r": {
+        "x": 1072,
+        "y": 46,
+        "w": 352,
+        "h": 842
+      },
+      "sw": 350,
+      "cw": 350,
+      "sh": 840,
+      "ch": 840,
+      "ox": "hidden",
+      "oy": "hidden"
+    },
+    "tform": {
+      "r": {
+        "x": 1073,
+        "y": 90,
+        "w": 350,
+        "h": 797
+      },
+      "sw": 350,
+      "cw": 350,
+      "sh": 797,
+      "ch": 797,
+      "ox": "hidden",
+      "oy": "hidden"
+    },
+    "shell": {
+      "r": {
+        "x": 283,
+        "y": 134,
+        "w": 774,
+        "h": 491
+      },
+      "sw": 774,
+      "cw": 774,
+      "sh": 490,
+      "ch": 490,
+      "ox": "hidden",
+      "oy": "hidden"
+    },
+    "frame": {
+      "r": {
+        "x": 283,
+        "y": 135,
+        "w": 774,
+        "h": 490
+      },
+      "sw": 774,
+      "cw": 774,
+      "sh": 490,
+      "ch": 490,
+      "ox": "clip",
+      "oy": "clip"
+    }
+  },
+  "png": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_hardening_20260531\\evidence\\w7_paper_sprint\\trading-room-viewport-fit-local-20260531.png",
+  "json": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP_trading_room_hardening_20260531\\evidence\\w7_paper_sprint\\trading-room-viewport-fit-local-20260531.json"
+}
