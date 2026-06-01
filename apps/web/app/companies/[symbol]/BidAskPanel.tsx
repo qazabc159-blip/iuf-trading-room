@@ -62,23 +62,26 @@ const LIVE_CSS = `
 
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
+  if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
+    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；五檔面板降級，不補假委買委賣。";
+  }
   if (/SYMBOL_NOT_ALLOWED/i.test(msg)) {
-    return "此股票尚未列入 KGI_QUOTE_SYMBOL_WHITELIST，等待 Jason/Bruce 確認唯讀行情覆蓋。";
+    return "此股票尚未列入唯讀五檔行情覆蓋清單；不顯示假委買委賣。";
   }
   if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) {
-    return "KGI gateway 暫時無法連線；請確認 EC2 / Railway read-only bridge 狀態。";
+    return "KGI 唯讀行情暫時無法連線；請稍後再讀取。";
   }
   if (/QUOTE_DISABLED/i.test(msg)) {
     return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
   }
   if (/GATEWAY_AUTH/i.test(msg)) {
-    return "KGI gateway session 失效，需 Bruce/Jason 重新確認唯讀憑證。";
+    return "KGI 唯讀行情憑證暫時失效；此面板保持降級，不顯示假資料。";
   }
   return `五檔報價暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
 function offHoursReason() {
-  return `KGI 唯讀五檔目前在排程外，不打即時 gateway、也不補假委買委賣。下一次讀取窗口：${kgiNextOpenLabel()}。Owner: Jason/Bruce 確認 gateway/session。`;
+  return `KGI 唯讀五檔目前在排程外，不讀即時五檔、也不補假委買委賣。下一次讀取窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function BidAskPanel({ symbol }: { symbol: string }) {
@@ -134,7 +137,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
       {state.status === "blocked" && (
         <div className="state-panel">
           <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">資料源：KGI gateway /api/v1/kgi/quote/bidask</span>
+          <span className="tg soft">資料源：KGI 唯讀五檔</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}
@@ -142,7 +145,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在向 KGI gateway 讀取唯讀五檔資料。</span>
+          <span className="tg soft">正在讀取 KGI 唯讀五檔資料。</span>
         </div>
       )}
 

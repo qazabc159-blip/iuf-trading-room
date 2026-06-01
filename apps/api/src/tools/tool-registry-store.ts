@@ -59,6 +59,18 @@ export interface ToolStatsOptions {
   windowMs?: number; // default 24h
 }
 
+export function toolCallCreatedAtEpochMsForStats(createdAt: unknown): number | null {
+  if (createdAt instanceof Date) {
+    const value = createdAt.getTime();
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof createdAt === "string" || typeof createdAt === "number") {
+    const value = new Date(createdAt).getTime();
+    return Number.isFinite(value) ? value : null;
+  }
+  return null;
+}
+
 // Execution history entry for a single tool call.
 export interface ToolExecRecord {
   id: string;
@@ -331,7 +343,10 @@ export async function getToolStats(options: ToolStatsOptions = {}): Promise<Tool
 
     // Filter in-memory (simpler than raw SQL GROUP BY for Phase A)
     const sinceMs = since.getTime();
-    const filtered = rows.filter((r) => r.createdAt.getTime() >= sinceMs);
+    const filtered = rows.filter((r) => {
+      const createdAtMs = toolCallCreatedAtEpochMsForStats(r.createdAt);
+      return createdAtMs !== null && createdAtMs >= sinceMs;
+    });
 
     // Aggregate per toolKey
     const byKey = new Map<string, {

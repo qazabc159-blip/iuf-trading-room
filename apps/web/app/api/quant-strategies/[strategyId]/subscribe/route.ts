@@ -23,7 +23,7 @@ function safeStrategyId(value: string) {
 function parseSubscribeBody(raw: unknown) {
   const body = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const capital = Number(body.capital_twd);
-  if (!Number.isFinite(capital) || capital < 50_000 || capital > 1_000_000) {
+  if (!Number.isFinite(capital) || capital < 50_000 || capital > 10_000_000) {
     return null;
   }
   return {

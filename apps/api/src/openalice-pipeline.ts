@@ -714,13 +714,21 @@ async function collectSourcePack(
     });
   }
 
+  // 6. AI-selected news and official announcements are optional but must enter
+  // the prompt/source trail when available; otherwise the daily brief becomes
+  // a price-only summary and misses the market-intel layer.
+  await collectAiSelectedNewsSource(db, sources, staleThreshold);
+  await collectOfficialAnnouncementsSource(db, sources, workspaceId, staleThreshold);
+
   // Trail complete: all required sources are LIVE, DEGRADED, or STALE (not ERROR/EMPTY/MISSING/BLOCKED)
   const REQUIRED_SOURCES = ["companies_ohlcv"];
   const DEGRADED_OK_SOURCES = [
     "tw_monthly_revenue",
     "tw_institutional_buysell",
     "tw_margin_short",
-    "market_overview"
+    "market_overview",
+    "ai_selected_news",
+    "official_announcements"
   ];
   const trailComplete =
     REQUIRED_SOURCES.every((s) => {
@@ -825,6 +833,138 @@ async function collectTableSource(
 }
 
 // ── Generator ─────────────────────────────────────────────────────────────────
+
+function jsonArraySampleRows(value: unknown, limit = 3): Record<string, unknown>[] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    .slice(0, limit)
+    .map((item) => ({
+      headline: item["headline"] ?? item["title"] ?? null,
+      ticker: item["ticker"] ?? null,
+      companyName: item["companyName"] ?? null,
+      source: item["source"] ?? null,
+      impactTier: item["impact_tier"] ?? item["impactTier"] ?? null,
+      whyMatters: item["why_matters"] ?? item["whyMatters"] ?? null
+    }));
+  return rows.length > 0 ? rows : null;
+}
+
+async function collectAiSelectedNewsSource(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  sources: SourcePackEntry[],
+  staleThreshold: Date
+) {
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        id,
+        as_of::text AS latest,
+        selection_mode,
+        input_row_count,
+        ai_call_success,
+        items,
+        jsonb_array_length(items) AS item_count
+      FROM news_ai_selections
+      ORDER BY as_of DESC
+      LIMIT 1
+    `);
+    const rows = (result as { rows?: Array<Record<string, unknown>> }).rows
+      ?? (Array.isArray(result) ? (result as Array<Record<string, unknown>>) : []);
+    const row = rows[0];
+    const itemCount = row ? Number(row["item_count"] ?? 0) : 0;
+    const latest = typeof row?.["latest"] === "string" ? row["latest"] : null;
+    const status: SourceStatus =
+      itemCount === 0
+        ? "EMPTY"
+        : latest && new Date(latest) < staleThreshold
+        ? "STALE"
+        : "LIVE";
+    const note = row
+      ? `mode=${String(row["selection_mode"] ?? "unknown")}; input_rows=${String(row["input_row_count"] ?? "n/a")}; ai_call_success=${String(row["ai_call_success"] ?? "n/a")}`
+      : "no_news_ai_selection";
+    sources.push({
+      source: "ai_selected_news",
+      status,
+      rowCount: itemCount,
+      latestDate: latest,
+      note,
+      sampleRows: jsonArraySampleRows(row?.["items"])
+    });
+  } catch (e) {
+    sources.push({
+      source: "ai_selected_news",
+      status: "DEGRADED",
+      rowCount: null,
+      latestDate: null,
+      note: e instanceof Error ? e.message.slice(0, 100) : "news_ai_selections_unavailable",
+      sampleRows: null
+    });
+  }
+}
+
+async function collectOfficialAnnouncementsSource(
+  db: NonNullable<ReturnType<typeof getDb>>,
+  sources: SourcePackEntry[],
+  workspaceId: string,
+  staleThreshold: Date
+) {
+  try {
+    const result = await db.execute(drizzleSql`
+      SELECT
+        COUNT(*) AS cnt,
+        MAX(announced_at)::text AS latest
+      FROM tw_announcements
+      WHERE ticker_symbol IN (SELECT ticker FROM companies WHERE workspace_id = ${workspaceId})
+    `);
+    const rows = (result as { rows?: Array<{ cnt?: string | number; latest?: string | null }> }).rows
+      ?? (Array.isArray(result) ? (result as Array<{ cnt?: string | number; latest?: string | null }>) : []);
+    const row = rows[0];
+    const count = row ? Number(row.cnt ?? 0) : 0;
+    const latest = row?.latest ?? null;
+    const status: SourceStatus =
+      count === 0
+        ? "EMPTY"
+        : latest && new Date(latest) < staleThreshold
+        ? "STALE"
+        : "LIVE";
+
+    let sampleRows: Record<string, unknown>[] | null = null;
+    if (count > 0) {
+      try {
+        const sampleRes = await db.execute(drizzleSql`
+          SELECT ticker_symbol AS ticker, announced_at::text AS announcedAt, title, source_url AS sourceUrl
+          FROM tw_announcements
+          WHERE ticker_symbol IN (SELECT ticker FROM companies WHERE workspace_id = ${workspaceId})
+          ORDER BY announced_at DESC
+          LIMIT 3
+        `);
+        sampleRows = (sampleRes as { rows?: Record<string, unknown>[] }).rows
+          ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []);
+      } catch {
+        // sample fetch failure is non-fatal
+      }
+    }
+
+    sources.push({
+      source: "official_announcements",
+      status,
+      rowCount: count,
+      latestDate: latest,
+      note: null,
+      sampleRows
+    });
+  } catch (e) {
+    sources.push({
+      source: "official_announcements",
+      status: "DEGRADED",
+      rowCount: null,
+      latestDate: null,
+      note: e instanceof Error ? e.message.slice(0, 100) : "tw_announcements_unavailable",
+      sampleRows: null
+    });
+  }
+}
 
 const OPENALICE_ACTIVE_DEVICE_SECONDS = Number(
   process.env["OPENALICE_ACTIVE_DEVICE_SECONDS"] ?? 5 * 60
@@ -934,7 +1074,9 @@ const SOURCE_PRODUCT_LABELS: Record<string, string> = {
   tw_monthly_revenue: "月營收資料",
   tw_institutional_buysell: "法人籌碼資料",
   tw_margin_short: "信用交易資料",
-  market_overview: "市場總覽資料"
+  market_overview: "市場總覽資料",
+  ai_selected_news: "AI 精選新聞",
+  official_announcements: "官方重大公告"
 };
 
 function formatSourceLabel(source: string): string {
@@ -961,6 +1103,21 @@ function buildSourcePackContext(sourcePack: SourcePack): string {
     .join("\n");
 }
 
+function buildSourceTrailSummary(sourcePack: SourcePack): string {
+  const sources = sourcePack.sources
+    .map((source) => {
+      const parts = [
+        `${formatSourceLabel(source.source)}=${source.status}`,
+        `rows=${source.rowCount ?? "n/a"}`,
+        `latest=${source.latestDate ?? "n/a"}`,
+        source.note ? `note=${source.note}` : null
+      ].filter(Boolean);
+      return parts.join(",");
+    })
+    .join(" | ");
+  return `source_pack=${sourcePack.packId}; trading_date=${sourcePack.tradingDate}; ${sources}`;
+}
+
 export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<string, unknown> {
   const liveSources = sourcePack.sources.filter((source) => source.status === "LIVE");
   const staleSources = sourcePack.sources.filter((source) => source.status === "STALE" || source.status === "DEGRADED");
@@ -980,22 +1137,36 @@ export function buildSourceOnlyBriefPayload(sourcePack: SourcePack): Record<stri
   const blockedLine = blockedSources.length
     ? blockedSources.map((source) => `${formatSourceLabel(source.source)}（${source.note ?? source.status}）`).join("、")
     : "沒有主要資料缺口";
+  const sourceTrail = buildSourceTrailSummary(sourcePack);
 
   return dailyBriefPayloadSchema.parse({
     date: sourcePack.tradingDate,
     marketState: "Balanced",
     sections: [
       {
-        heading: "今日資料狀態",
-        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據。`
+        heading: "市場總覽",
+        body: `本簡報依 ${sourcePack.tradingDate} 可取得的台股資料整理。可用來源：${liveLine}。資料不足或過期來源不會被當成投資依據，市場狀態先以平衡觀察處理。`,
+        sourceTrail
       },
       {
-        heading: "資料品質提醒",
-        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先。`
+        heading: "AI 精選重點",
+        body: `目前沒有足夠通過模板檢查的 AI 精選新聞可直接發布；若來源不足，系統會保留來源狀態而不補故事。可用來源仍以 ${liveLine} 作為今日簡報基礎。`,
+        sourceTrail
       },
       {
-        heading: "下一步工作",
-        body: "今日先確認市場資料、重大訊息、紙上交易紀錄與研究批次是否同步完成；本系統不提供買賣建議，也不以未驗證績效作為決策依據。"
+        heading: "產業與主題",
+        body: `產業與主題段落只引用已收進資料包的市場資料；若主題、公司關聯或新聞來源不足，會維持資料不足狀態，不把未驗證題材寫成確定趨勢。`,
+        sourceTrail
+      },
+      {
+        heading: "風險觀察",
+        body: `需要留意的資料狀態：${staleLine}。缺口狀態：${blockedLine}。因此本日解讀以資料完整性與風控檢查為優先，不提供買賣建議、目標價或報酬承諾。`,
+        sourceTrail
+      },
+      {
+        heading: "資料來源狀態",
+        body: `來源狀態總結：可用來源為 ${liveLine}；過期或降級來源為 ${staleLine}；阻塞或缺口來源為 ${blockedLine}。下一步是補齊資料同步與審核鏈。`,
+        sourceTrail
       }
     ]
   });
@@ -1093,6 +1264,110 @@ async function tryPublishSourceOnlyBackfillDraft(input: {
  * Known English headings are mapped to canonical Chinese equivalents.
  * Any unrecognised English-heavy heading falls back to "今日市場簡報".
  */
+export const DAILY_BRIEF_TEMPLATE_VERSION = "daily_brief_contract_v2";
+export const DAILY_BRIEF_REQUIRED_SECTION_IDS = [
+  "market_overview",
+  "ai_selected_news",
+  "sector_themes",
+  "risk_watch",
+  "data_source_status",
+] as const;
+
+const DAILY_BRIEF_SECTION_LABELS: Record<(typeof DAILY_BRIEF_REQUIRED_SECTION_IDS)[number], string> = {
+  market_overview: "市場總覽",
+  ai_selected_news: "AI 精選重點",
+  sector_themes: "產業與主題",
+  risk_watch: "風險觀察",
+  data_source_status: "資料來源狀態",
+};
+
+export function buildDailyBriefContractInstructions(): string {
+  return `Daily brief contract:
+- templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
+- sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
+- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
+- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
+- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
+
+輸出 schema：
+{
+  "templateVersion": "${DAILY_BRIEF_TEMPLATE_VERSION}",
+  "marketState": "Risk-On" | "Balanced" | "Risk-Off",
+  "sections": [
+    { "sectionId": "market_overview", "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "ai_selected_news", "heading": "AI 精選重點", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "sector_themes", "heading": "產業與主題", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "risk_watch", "heading": "風險觀察", "body": "至少 50 字，最多 1200 字" },
+    { "sectionId": "data_source_status", "heading": "資料來源狀態", "body": "至少 50 字，最多 1200 字" }
+  ]
+}`;
+}
+
+const DAILY_BRIEF_SECTION_ID_SET = new Set<string>(DAILY_BRIEF_REQUIRED_SECTION_IDS);
+const DAILY_BRIEF_MIN_BODY_CHARS = 50;
+const DAILY_BRIEF_LEGACY_HEADING_PATTERN =
+  /Market Overview|Theme Summaries|Company Notes|Technical Analysis|Risk Alert|Strategy Observation|Summary/i;
+const DAILY_BRIEF_RAW_DUMP_PATTERN =
+  /Theme:\s|Lifecycle:\s|Market State:\s|Linked Companies|Observation\]|Priority:\s/i;
+
+export function validateDailyBriefSectionsContract(
+  sections: Array<{ sectionId?: unknown; heading?: unknown; body?: unknown }>
+): { ok: boolean; missing: string[] } {
+  const present = new Set<string>();
+
+  for (const section of sections) {
+    if (typeof section.sectionId === "string" && DAILY_BRIEF_SECTION_ID_SET.has(section.sectionId)) {
+      present.add(section.sectionId);
+      continue;
+    }
+
+    const heading = typeof section.heading === "string" ? section.heading : "";
+    for (const id of DAILY_BRIEF_REQUIRED_SECTION_IDS) {
+      if (heading.includes(DAILY_BRIEF_SECTION_LABELS[id])) {
+        present.add(id);
+      }
+    }
+  }
+
+  const missing = DAILY_BRIEF_REQUIRED_SECTION_IDS.filter((id) => !present.has(id));
+  return { ok: missing.length === 0, missing };
+}
+
+function isDailyBriefSectionContentCompliant(section: {
+  heading?: unknown;
+  body?: unknown;
+}): boolean {
+  const heading = typeof section.heading === "string" ? section.heading : "";
+  const body = typeof section.body === "string" ? section.body.trim() : "";
+
+  if (DAILY_BRIEF_LEGACY_HEADING_PATTERN.test(heading)) return false;
+  if (body.length < DAILY_BRIEF_MIN_BODY_CHARS) return false;
+  if (DAILY_BRIEF_RAW_DUMP_PATTERN.test(body)) return false;
+
+  return true;
+}
+
+export function isDailyBriefV2ContractCompliant(
+  brief: { sections?: unknown } | null | undefined
+): boolean {
+  if (!brief || !Array.isArray(brief.sections)) return false;
+
+  const sections = brief.sections.map((section) => {
+    if (!section || typeof section !== "object") return {};
+    const value = section as { sectionId?: unknown; heading?: unknown; body?: unknown };
+    return {
+      sectionId: value.sectionId,
+      heading: value.heading,
+      body: value.body
+    };
+  });
+
+  return (
+    validateDailyBriefSectionsContract(sections).ok &&
+    sections.every((section) => isDailyBriefSectionContentCompliant(section))
+  );
+}
+
 const ENGLISH_HEADING_MAP: Record<string, string> = {
   "market overview": "市場總覽",
   "technical analysis": "技術觀察",
@@ -1133,10 +1408,12 @@ function sanitizeBriefHeading(raw: string): string {
   return trimmed;
 }
 
-function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
+export function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Record<string, unknown> | null {
   if (!raw) return null;
   try {
+    const sourceTrail = buildSourceTrailSummary(sourcePack);
     const parsed = JSON.parse(stripCodeFences(raw)) as {
+      templateVersion?: unknown;
       marketState?: unknown;
       sections?: unknown;
     };
@@ -1149,18 +1426,25 @@ function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePack): Re
     const sections = Array.isArray(parsed.sections)
       ? parsed.sections
           .map((section) => {
-            const value = section as { heading?: unknown; body?: unknown };
+            const value = section as { sectionId?: unknown; heading?: unknown; body?: unknown };
+            const sectionId = typeof value.sectionId === "string" ? trimForBrief(value.sectionId, 80) : undefined;
             const rawHeading = typeof value.heading === "string" ? trimForBrief(value.heading, 80) : "";
             const heading = rawHeading ? sanitizeBriefHeading(rawHeading) : "";
             const rawBody = typeof value.body === "string" ? trimForBrief(value.body, 1_400) : "";
             const body = sanitizeBriefBody(rawBody);
-            return { heading, body };
+            return { sectionId, heading, body, sourceTrail };
           })
           .filter((section) => section.heading.length > 0 && section.body.length >= 50)
           .slice(0, 6)
       : [];
 
     if (sections.length === 0) return null;
+
+    const contract = validateDailyBriefSectionsContract(sections);
+    if (!contract.ok) {
+      console.warn(`[pipeline] daily brief contract missing sections: ${contract.missing.join(",")}`);
+      return null;
+    }
 
     return dailyBriefPayloadSchema.parse({
       date: sourcePack.tradingDate,
@@ -1202,22 +1486,14 @@ async function generateDirectDailyBriefDraft(input: {
 硬規則（任何違反 → 退件）：
 - 只能輸出 JSON，不要 markdown。
 - 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」/「下一步工作」。
+- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
 - 不提供買賣建議、不寫目標價、不保證報酬、不提勝率或績效承諾。
 - 不臆測資料來源沒有提供的新聞或事件。
 - 若資料不足，直接寫成資料品質提醒（中文）。
 - date 必須等於 ${input.sourcePack.tradingDate}。
 ${f4Rule}
 
-輸出 schema：
-{
-  "marketState": "Risk-On" | "Balanced" | "Risk-Off",
-  "sections": [
-    { "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
-    { "heading": "技術觀察", "body": "至少 50 字，最多 1200 字" },
-    { "heading": "風控警示", "body": "至少 50 字，最多 1200 字" }
-  ]
-}
+${buildDailyBriefContractInstructions()}
 
 資料狀態：
 ${sourceContext}${liveSnapshotBlock}`;
@@ -1241,6 +1517,14 @@ ${sourceContext}${liveSnapshotBlock}`;
   });
 
   if (!draft) return null;
+
+  const sourceSummary = input.sourcePack.sources
+    .map((s) => `${s.source}(${s.status})`)
+    .join(", ");
+  registerJobSourcePackSummary(draft.id, sourceSummary);
+  registerJobSourcePack(draft.id, input.sourcePack);
+  registerJobSourcePackSummary(`direct:${draft.id}`, sourceSummary);
+  registerJobSourcePack(`direct:${draft.id}`, input.sourcePack);
 
   if (input.reason === "historical_backfill") {
     const publishResult = await tryPublishSourceOnlyBackfillDraft({
@@ -1310,7 +1594,7 @@ ${sourcesSummary}${liveSnapshotBlock}
 硬規則（任何違反 → 退件）：
 - 只輸出 JSON，不要 markdown。
 - 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 範例：「市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日資料狀態」/「資料品質提醒」。
+- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
 - 禁止買賣建議、禁止進場/賣出/買進/出脫。
 - 禁止目標價（目標價）或報酬承諾（必賺/保證）。
 - 禁止臆測資料來源未提供的新聞或事件，禁止無來源 URL 的新聞。
@@ -1321,7 +1605,7 @@ ${sourcesSummary}${liveSnapshotBlock}
 - 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
 ${f4Rule}
 
-Output schema: daily_brief_v1`;
+${buildDailyBriefContractInstructions()}`;
 
   const activeDevice = await hasActiveOpenAliceDevice(workspaceId);
   const todayDate = getTaipeiDate();
@@ -1400,6 +1684,22 @@ export type PublishGateResult =
   | { tier: "red"; action: "rejected"; reason: string }
   | { tier: "green"; action: "skipped_no_draft" };
 
+function neutralizeSafeResearchDisclaimers(text: string): string {
+  return text
+    .replace(
+      /(?:不|未|無)(?:提供|構成|作為|寫出|寫|含有|包含|產生|輸出|給出|做出|給予)?[^。；;.!?！？\n]{0,48}(?:買賣建議|交易建議|投資建議|目標價|預測股價|報酬承諾|績效承諾|保證報酬|保證獲利|勝率)[^。；;.!?！？\n]{0,48}/g,
+      "safe_research_disclaimer"
+    )
+    .replace(
+      /(?:禁止|避免|不得)[^。；;.!?！？\n]{0,48}(?:買賣建議|交易建議|投資建議|目標價|預測股價|報酬承諾|績效承諾|保證報酬|保證獲利|勝率)[^。；;.!?！？\n]{0,48}/g,
+      "safe_research_disclaimer"
+    )
+    .replace(
+      /\b(?:no|not|without|does not|do not|never)\b.{0,48}\b(?:buy\/sell recommendation|buy recommendation|sell recommendation|trading advice|investment advice|target price|price target|guarantee|guaranteed profit|win rate)\b/g,
+      "safe_research_disclaimer"
+    );
+}
+
 /**
  * Classify draft payload into Green/Yellow/Red tier.
  * Red: buy/sell/target/guarantee/Sharpe keywords.
@@ -1466,6 +1766,7 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
 
   // Red tier keywords
   // Pete PR #230 F3 fix: 勝率 (win rate) added — was missing from red-tier classifier
+  const redKeywordText = neutralizeSafeResearchDisclaimers(policyText);
   const redPatterns = [
     /buy\b/, /sell\b/, /進場/, /賣出/, /買進/, /出脫/,
     /目標價/, /target price/, /price target/,
@@ -1474,7 +1775,7 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
     /勝率/, /win rate\s*[=:>]\s*[\d.]+/
   ];
   for (const p of redPatterns) {
-    if (p.test(policyText)) {
+    if (p.test(redKeywordText)) {
       return "red";
     }
   }
@@ -1704,7 +2005,7 @@ export async function runPipelineTick(
     // Normal run: skip if brief already published today
     try {
       const existingBriefs = await db
-        .select({ id: dailyBriefs.id })
+        .select({ id: dailyBriefs.id, sections: dailyBriefs.sections })
         .from(dailyBriefs)
         .where(
           and(
@@ -1713,8 +2014,9 @@ export async function runPipelineTick(
             visibleDailyBriefCondition()
           )
         )
-        .limit(1);
-      if (existingBriefs.length > 0) {
+        .limit(5);
+      const existingContractBrief = existingBriefs.find((brief) => isDailyBriefV2ContractCompliant(brief));
+      if (existingContractBrief) {
         const result: PipelineRunResult = {
           ...baseResult(),
           skippedReason: `brief_already_exists_for_date:${tradingDate}`,
@@ -1723,6 +2025,11 @@ export async function runPipelineTick(
         updatePipelineState({ lastResult: result });
         console.log(`[pipeline] tick=${tick} date=${tradingDate} SKIPPED: brief_already_exists`);
         return result;
+      }
+      if (existingBriefs.length > 0) {
+        console.warn(
+          `[pipeline] tick=${tick} date=${tradingDate} existing brief is not v2 contract compliant; regenerating`
+        );
       }
     } catch {
       // DB check failed — proceed anyway (non-fatal dedup, better than blocking)
@@ -1835,7 +2142,12 @@ export async function runPipelineTick(
  */
 export async function evaluatePipelinePublishGate(
   draftId: string,
-  sourcePack: SourcePack | null
+  sourcePack: SourcePack | null,
+  reviewerResult?: {
+    verdict: "approve" | "reject" | "manual_review";
+    confidence: number;
+    flagged_issues?: unknown[];
+  } | null
 ): Promise<{
   action: "published" | "queued_for_review" | "rejected" | "skipped";
   briefId: string | null;
@@ -1901,16 +2213,24 @@ export async function evaluatePipelinePublishGate(
       ? (auditRow.payload as Record<string, unknown>)
       : null;
 
-  const verdict =
+  const auditVerdict =
     auditPayload?.verdict === "approve" ||
     auditPayload?.verdict === "reject" ||
     auditPayload?.verdict === "manual_review"
       ? (auditPayload.verdict as "approve" | "reject" | "manual_review")
       : null;
-  const confidence = typeof auditPayload?.confidence === "number" ? auditPayload.confidence : null;
-  const flaggedIssueCount = Array.isArray(auditPayload?.flagged_issues)
-    ? (auditPayload.flagged_issues as unknown[]).length
-    : 0;
+  const verdict = reviewerResult?.verdict ?? auditVerdict;
+  const confidence =
+    typeof reviewerResult?.confidence === "number"
+      ? reviewerResult.confidence
+      : typeof auditPayload?.confidence === "number"
+        ? auditPayload.confidence
+        : null;
+  const flaggedIssueCount = Array.isArray(reviewerResult?.flagged_issues)
+    ? reviewerResult.flagged_issues.length
+    : Array.isArray(auditPayload?.flagged_issues)
+      ? (auditPayload.flagged_issues as unknown[]).length
+      : 0;
 
   // 5/12 FIX (Part 1): When sourcePack is null (process restarted — in-memory jobId→pack cache
   // cleared between generation and review), the fallback pack has trailComplete=false which
@@ -2715,6 +3035,31 @@ export async function runPipelineBackfillRange(
             deleted.push(`${date}:${idList}`);
           } else {
             console.log(`[admin/brief/backfill] force=true, no existing brief to delete for date=${date}`);
+          }
+
+          const existingDraftRows = await db
+            .select({ id: contentDrafts.id })
+            .from(contentDrafts)
+            .where(
+              and(
+                eq(contentDrafts.workspaceId, ws.id),
+                eq(contentDrafts.targetTable, "daily_briefs"),
+                eq(contentDrafts.targetEntityId, date)
+              )
+            );
+
+          if (existingDraftRows.length > 0) {
+            const draftIds = existingDraftRows.map((r) => r.id);
+            await db.delete(contentDrafts).where(
+              and(
+                eq(contentDrafts.workspaceId, ws.id),
+                eq(contentDrafts.targetTable, "daily_briefs"),
+                eq(contentDrafts.targetEntityId, date)
+              )
+            );
+            const draftIdList = draftIds.join(",");
+            console.log(`[admin/brief/backfill] force=true, deleted draft_id=${draftIdList} for date=${date}`);
+            deleted.push(`${date}:drafts:${draftIdList}`);
           }
         }
       } catch (e) {

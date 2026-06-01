@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   skip-check:
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
@@ -26,17 +26,19 @@ jobs:
           IUF_TEST_EMAIL: ${{ secrets.IUF_TEST_EMAIL }}
           IUF_TEST_PASSWORD: ${{ secrets.IUF_TEST_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:IUF_TEST_EMAIL) -or [string]::IsNullOrWhiteSpace($env:IUF_TEST_PASSWORD)) {
-            "should_run=false" >> $env:GITHUB_OUTPUT
-            echo "SKIPPED_MISSING_TEST_SECRETS — set IUF_TEST_EMAIL and IUF_TEST_PASSWORD in repo secrets."
+          $hasEmail = -not [string]::IsNullOrWhiteSpace($env:IUF_TEST_EMAIL)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:IUF_TEST_PASSWORD)
+          if ($hasEmail -and $hasPassword) {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'should_run=true' -Encoding UTF8
           } else {
-            "should_run=true" >> $env:GITHUB_OUTPUT
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'should_run=false' -Encoding UTF8
+            Write-Host 'SKIPPED_MISSING_TEST_SECRETS - set IUF_TEST_EMAIL and IUF_TEST_PASSWORD in repo secrets.'
           }
 
   run-smoke:
     needs: skip-check
     if: ${{ needs.skip-check.outputs.should_run == 'true' }}
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-prod"]') }}
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     env:
       IUF_TEST_EMAIL: ${{ secrets.IUF_TEST_EMAIL }}
       IUF_TEST_PASSWORD: ${{ secrets.IUF_TEST_PASSWORD }}
@@ -50,13 +52,13 @@ jobs:
           if ($env:RUNNER_OS -eq 'Windows') {
             $ts = (Get-Date -Format "yyyyMMdd-HHmm")
             $out = "evidence/w7_paper_sprint/gha_prod_smoke_$ts.md"
-            pwsh -NoProfile -ExecutionPolicy Bypass `
+            powershell -NoProfile -ExecutionPolicy Bypass `
               -File scripts/verify/Invoke-ProductionSmoke.ps1 `
               -OutFile $out
-            "PROD_SMOKE_OUT=$out" >> $env:GITHUB_ENV
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value ('PROD_SMOKE_OUT={0}' -f $out) -Encoding UTF8
           } else {
-            Write-Host "Note: Linux runner selected (reduced cost). For full Windows smoke, manually dispatch workflow."
-            "PROD_SMOKE_OUT=skipped" >> $env:GITHUB_ENV
+            Write-Host 'Note: Linux runner selected (reduced cost). For full Windows smoke, manually dispatch workflow.'
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value 'PROD_SMOKE_OUT=skipped' -Encoding UTF8
           }
         continue-on-error: true
 
@@ -66,17 +68,17 @@ jobs:
         run: |
           if ($env:RUNNER_OS -eq 'Windows') {
             $failed = @()
-            if ('${{ steps.prod_smoke.outcome }}'  -eq 'failure') { $failed += 'prod' }
+            if ('${{ steps.prod_smoke.outcome }}' -eq 'failure') { $failed += 'prod' }
             if ($failed.Count -gt 0) {
-              "SMOKE_FAILED=true"  >> $env:GITHUB_ENV
-              "SMOKE_FAIL_LIST=$($failed -join ',')" >> $env:GITHUB_ENV
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=true' -Encoding UTF8
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value ('SMOKE_FAIL_LIST={0}' -f ($failed -join ',')) -Encoding UTF8
             } else {
-              "SMOKE_FAILED=false" >> $env:GITHUB_ENV
-              "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=false' -Encoding UTF8
+              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAIL_LIST=' -Encoding UTF8
             }
           } else {
-            "SMOKE_FAILED=false" >> $env:GITHUB_ENV
-            "SMOKE_FAIL_LIST=" >> $env:GITHUB_ENV
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=false' -Encoding UTF8
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAIL_LIST=' -Encoding UTF8
           }
 
       - name: Upload smoke artifacts
@@ -97,7 +99,7 @@ jobs:
             const failList = process.env.SMOKE_FAIL_LIST || 'unknown';
             const runUrl   = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const now      = new Date();
-            const newBody  = `### Daily Smoke FAIL — ${now.toISOString()}\n\n` +
+            const newBody  = `### Daily Smoke FAIL - ${now.toISOString()}\n\n` +
                              `**Failed lanes:** ${failList}\n` +
                              `**Run:** ${runUrl}\n\n` +
                              `Investigate stop-lines in smoke artifact before next trading session.`;
@@ -115,7 +117,7 @@ jobs:
             let standingIssue = issues.length > 0 ? issues[0] : null;
 
             if (!standingIssue) {
-              const initialBody = `# Smoke Alert — Standing Issue\n\n` +
+              const initialBody = `# Smoke Alert - Standing Issue\n\n` +
                 `This issue is the single standing alert for daily production smoke failures.\n` +
                 `All subsequent failures will append comments here instead of opening new issues.\n\n` +
                 `---\n\n` + newBody;
@@ -144,7 +146,7 @@ jobs:
             });
 
             if (alreadyCommented) {
-              console.log(`Dedupe: smoke failure for "${failList}" already reported within 24 h on #${standingIssue.number} — skipping comment.`);
+              console.log(`Dedupe: smoke failure for "${failList}" already reported within 24 h on #${standingIssue.number} - skipping comment.`);
               return;
             }
 

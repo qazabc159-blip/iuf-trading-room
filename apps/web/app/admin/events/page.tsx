@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 
+import { unwrapEventLogApiPayload } from "@/lib/eventlog-api-payload";
 import { normalizeOutboxDiag, outboxPendingLabel } from "@/lib/eventlog-outbox";
 
 const API_BASE =
@@ -256,12 +257,59 @@ function fmtDT(iso: string) {
   }
 }
 
+function streamTypeLabel(streamType: string) {
+  if (streamType === "order") return "委託事件";
+  if (streamType === "system") return "系統事件";
+  return streamType;
+}
+
+function eventTypeLabel(eventType: string) {
+  const labels: Record<string, string> = {
+    "order.created": "委託建立",
+    "order.filled": "委託成交",
+    "paper.order.created": "紙上委託建立",
+    "paper.order.filled": "紙上委託成交",
+    "system.boot": "系統啟動",
+    "system.audit": "系統稽核",
+  };
+  const label = labels[eventType];
+  return label ? `${label} (${eventType})` : eventType;
+}
+
+function sideLabel(side: unknown) {
+  if (side === "buy") return "買進";
+  if (side === "sell") return "賣出";
+  return String(side ?? "方向未記錄");
+}
+
+function formatPayloadPreview(payload: Record<string, unknown>) {
+  const symbol = payload.symbol ?? payload.ticker;
+  const side = payload.side;
+  const qty = payload.qty ?? payload.quantity;
+  const status = payload.status;
+  const orderType = payload.orderType ?? payload.type;
+
+  if (symbol || side || qty || status || orderType) {
+    return [
+      symbol ? `標的 ${symbol}` : null,
+      side ? sideLabel(side) : null,
+      qty ? `數量 ${qty}` : null,
+      orderType ? `類型 ${orderType}` : null,
+      status ? `狀態 ${status}` : null,
+    ].filter(Boolean).join(" / ");
+  }
+
+  const keys = Object.keys(payload);
+  if (keys.length === 0) return "payload 為空";
+  return `已回傳 ${keys.length} 個欄位：${keys.slice(0, 5).join(", ")}`;
+}
+
 async function apiFetch<T>(path: string): Promise<T> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   const res = await fetch(`${base}${path}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw new Error(`${res.status}`);
-  const json = await res.json() as { data: T };
-  return json.data;
+  const json = await res.json() as T | { data?: T };
+  return unwrapEventLogApiPayload<T>(json);
 }
 
 function EventLogTruthState({
@@ -277,17 +325,17 @@ function EventLogTruthState({
       <div>{detail}</div>
       <div className="_ev-state-grid">
         <div>
-          <span className="_ev-state-label">Endpoint</span>
-          <div>{EVENT_STREAMS_ENDPOINT}</div>
-          <div>{OUTBOX_DIAG_ENDPOINT}</div>
+          <span className="_ev-state-label">資料來源</span>
+          <div>事件流讀取 API</div>
+          <div>Outbox 診斷資料</div>
         </div>
         <div>
-          <span className="_ev-state-label">Owner</span>
-          <div>Elva/Jason + Bruce owner-session verify</div>
+          <span className="_ev-state-label">資料狀態</span>
+          <div>管理登入後讀取正式資料</div>
         </div>
         <div>
-          <span className="_ev-state-label">Next</span>
-          <div>用 owner session 驗證 EventLog；若仍 401/500，檢查 Phase A auth、migration 與 outbox worker。</div>
+          <span className="_ev-state-label">下一步</span>
+          <div>確認登入狀態、事件流資料表與 outbox worker 是否正常。</div>
         </div>
       </div>
     </div>
@@ -390,10 +438,26 @@ export default function EventsAdminPage() {
     if (selectedStream) loadEvents(selectedStream);
   }
 
+  useEffect(() => {
+    if (streamsLoading || streamsError || streams.length === 0) return;
+    const visibleStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
+    if (visibleStreams.length === 0) return;
+    const selectedStillVisible = selectedStream
+      ? visibleStreams.some((s) => s.streamType === selectedStream.streamType && s.streamId === selectedStream.streamId)
+      : false;
+    if (selectedStillVisible) return;
+
+    const nextStream = visibleStreams[0];
+    setSelectedStream(nextStream);
+    setTimeTravelMode(false);
+    setAsOf("");
+    loadEvents(nextStream);
+  }, [filterType, loadEvents, selectedStream, streams, streamsError, streamsLoading]);
+
   const streamTypes = [...new Set(streams.map((s) => s.streamType))].sort();
   const filteredStreams = filterType ? streams.filter((s) => s.streamType === filterType) : streams;
   const normalizedOutbox = normalizeOutboxDiag(outbox);
-  const eventLogBlocked = streamsError || outboxError || Boolean(normalizedOutbox?.hasInvalidCounts);
+  const eventLogBlocked = streamsError;
   const eventLogEmpty = !streamsLoading && !streamsError && streams.length === 0;
 
   return (
@@ -407,7 +471,7 @@ export default function EventsAdminPage() {
             <span className="tc">OpenAlice Phase A</span>
           </div>
           <div className="tg meta-strip">
-            <span>Owner only</span>
+            <span>管理頁</span>
             {normalizedOutbox && (
               <span>
                 Outbox 待發{" "}
@@ -429,12 +493,12 @@ export default function EventsAdminPage() {
             )}
           </div>
         </header>
-        <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 選左側 stream → 查看事件序列。</div>
+        <div className="terminal-note">EventLog 事件流 / 時間回溯查詢 — 預設載入第一個正式事件流，可切換左側清單查看其他事件序列。</div>
         {normalizedOutbox?.hasInvalidCounts && (
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog Outbox 診斷數值異常"
-              detail="Outbox 診斷 endpoint 回傳負數或不可用數值；前端不把它顯示成負數待發，也不假裝為 0。請 Jason/Elva 檢查 outbox diag SQL 與 worker 狀態。"
+              detail="Outbox 診斷資料回傳負數或不可用數值；前端不把它顯示成負數待發，也不假裝為 0。請檢查 outbox 診斷 SQL 與 worker 狀態。"
             />
           </div>
         )}
@@ -442,7 +506,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="EventLog 目前無法讀取正式資料"
-              detail="目前 session 尚未通過 owner-only EventLog endpoint；前端不補假事件，也不把同步中當成正常資料。"
+              detail="目前登入狀態尚未通過 EventLog 管理資料讀取；前端不補假事件，也不把同步中當成正常資料。"
             />
           </div>
         )}
@@ -450,7 +514,7 @@ export default function EventsAdminPage() {
           <div style={{ marginBottom: 12 }}>
             <EventLogTruthState
               title="目前尚無 EventLog 事件流"
-              detail="後端 endpoint 可讀，但目前沒有 audit、OpenAlice job、paper order/fill 或 alert 事件；這是正式 empty state。"
+              detail="後端資料可讀，但目前沒有 audit、OpenAlice job、paper order/fill 或 alert 事件；這是正式 empty state。"
             />
           </div>
         )}
@@ -461,7 +525,7 @@ export default function EventsAdminPage() {
             <span className="_ev-filter-lbl">類型</span>
             <button type="button" className={`_ev-filter-btn${filterType === "" ? " active" : ""}`} onClick={() => setFilterType("")}>全部</button>
             {streamTypes.map((t) => (
-              <button key={t} type="button" className={`_ev-filter-btn${filterType === t ? " active" : ""}`} onClick={() => setFilterType(t)}>{t}</button>
+              <button key={t} type="button" className={`_ev-filter-btn${filterType === t ? " active" : ""}`} onClick={() => setFilterType(t)}>{streamTypeLabel(t)}</button>
             ))}
           </div>
         )}
@@ -476,7 +540,7 @@ export default function EventsAdminPage() {
             {streamsLoading && <div className="_ev-empty">載入中…</div>}
             {streamsError && (
               <div className="_ev-empty" style={{ color: "#ef5350" }}>
-                EventLog endpoint 未通過 owner session
+                EventLog 資料目前不可讀
               </div>
             )}
             {!streamsLoading && !streamsError && filteredStreams.length === 0 && (
@@ -493,7 +557,7 @@ export default function EventsAdminPage() {
                   tabIndex={0}
                   onKeyDown={(e) => e.key === "Enter" && handleSelectStream(s)}
                 >
-                  <div className="_ev-stream-type">{s.streamType}</div>
+                  <div className="_ev-stream-type">{streamTypeLabel(s.streamType)}</div>
                   <div className="_ev-stream-id">{s.streamId}</div>
                 </div>
               );
@@ -554,7 +618,7 @@ export default function EventsAdminPage() {
               {!selectedStream && !eventLogBlocked && eventLogEmpty && (
                 <EventLogTruthState
                   title="目前尚無 EventLog 事件"
-                  detail="EventLog endpoint 可讀但沒有事件；待 audit log、OpenAlice job、paper order/fill 或 alert 寫入後會出現在這裡。"
+                  detail="EventLog 資料可讀但沒有事件；待 audit log、OpenAlice job、paper order/fill 或 alert 寫入後會出現在這裡。"
                 />
               )}
               {!selectedStream && !eventLogBlocked && !eventLogEmpty && (
@@ -566,7 +630,7 @@ export default function EventsAdminPage() {
               {selectedStream && eventsError && (
                 <EventLogTruthState
                   title="此事件流目前無法讀取"
-                  detail="事件序列 endpoint 回傳錯誤；請用 owner session 重新驗證，若仍失敗由 Jason 檢查 EventLog events/at route。"
+                  detail="事件序列資料回傳錯誤；請重新驗證管理登入狀態，若仍失敗再檢查 EventLog 讀取路徑。"
                 />
               )}
               {selectedStream && !eventsLoading && !eventsError && events.length === 0 && (
@@ -576,22 +640,22 @@ export default function EventsAdminPage() {
                 <table className="_ev-table">
                   <thead>
                     <tr>
-                      <th>seq</th>
-                      <th>event_type</th>
-                      <th>occurred_at</th>
-                      <th>recorded_at</th>
-                      <th>payload 預覽</th>
+                      <th>序號</th>
+                      <th>事件類型</th>
+                      <th>發生時間</th>
+                      <th>紀錄時間</th>
+                      <th>資料預覽</th>
                     </tr>
                   </thead>
                   <tbody>
                     {events.map((ev) => (
                       <tr key={ev.id}>
                         <td style={{ color: "#ffb800" }}>{ev.seq}</td>
-                        <td>{ev.eventType}</td>
+                        <td>{eventTypeLabel(ev.eventType)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{fmtDT(ev.occurredAt)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>{fmtDT(ev.recordedAt)}</td>
                         <td>
-                          <div className="_ev-payload">{JSON.stringify(ev.payload)}</div>
+                          <div className="_ev-payload">{formatPayloadPreview(ev.payload)}</div>
                         </td>
                       </tr>
                     ))}

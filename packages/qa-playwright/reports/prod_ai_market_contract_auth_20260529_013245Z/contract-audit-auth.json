@@ -1,0 +1,1571 @@
+{
+  "generatedAt": "2026-05-29T01:33:00.287Z",
+  "cookiePresent": true,
+  "apiResults": {
+    "/auth/me": {
+      "endpoint": "/auth/me",
+      "status": 200,
+      "ok": true,
+      "json": {
+        "user": {
+          "id": "c1753415-5580-463d-a43a-d2a3987ab250",
+          "email": "qazabc159@gmail.com",
+          "name": "Owner",
+          "role": "Owner",
+          "workspaceId": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "workspace": {
+            "id": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+            "name": "Primary Desk",
+            "slug": "primary-desk"
+          }
+        },
+        "workspace": {
+          "id": "888fd3bd-4a48-4656-9e6a-ac19360cc0de",
+          "name": "Primary Desk",
+          "slug": "primary-desk"
+        }
+      }
+    },
+    "/api/v1/ai-recommendations/v3": {
+      "endpoint": "/api/v1/ai-recommendations/v3",
+      "status": 200,
+      "ok": true,
+      "json": {
+        "ok": true,
+        "runId": "01e84177-a2b2-4463-bfdd-0051fec561c6",
+        "status": "complete",
+        "generatedAt": "2026-05-20T10:41:28.121Z",
+        "items": [
+          {
+            "id": "6b27d72b-19d8-4e07-a134-dac97fe4db43",
+            "tp1": 2250,
+            "tp2": 2300,
+            "date": "2026-05-20",
+            "action": "高風險排除",
+            "bucket": "C",
+            "source": "brain_react_v2",
+            "ticker": "2330",
+            "r_ratio": 0.75,
+            "why_buy": [
+              "1. 台積電在半導體產業中具領導地位",
+              "長期成長潛力大。2. 技術面顯示出穩定性",
+              "雖然短期壓力存在",
+              "但仍可觀察。"
+            ],
+            "stopLoss": 2050,
+            "entryZone": {
+              "low": 2100,
+              "high": 2200,
+              "reason": "短期壓力，RSI中性"
+            },
+            "rationale": "1. 台積電在半導體產業中具領導地位; 長期成長潛力大。2. 技術面顯示出穩定性; 雖然短期壓力存在; 但仍可觀察。",
+            "subScores": {
+              "rs": 5,
+              "theme": 10,
+              "margin": 10,
+              "revenue": 10,
+              "technical": 5,
+              "valuation": 5,
+              "institutional": 10
+            },
+            "confidence": 0.5,
+            "totalScore": 55,
+            "aiGenerated": true,
+            "companyName": "台積電",
+            "marketState": "trend",
+            "why_not_buy": [
+              "1. 短期股價在20日均線下方",
+              "可能面臨進一步下跌。2. 市場情緒偏保守",
+              "可能影響資金流入。"
+            ],
+            "tp1Structured": {
+              "price": 2250,
+              "reason": "前波高"
+            },
+            "tp2Structured": {
+              "price": 2300,
+              "reason": "整數關"
+            },
+            "entryPriceRange": {
+              "low": 2100,
+              "high": 2200
+            },
+            "position_sizing": {
+              "nav_pct": 0.4,
+              "market_multiplier": 0.6
+            },
+            "stopLossStructured": {
+              "price": 2050,
+              "atr_multiple": 0.5
+            }
+          },
+          {
+            "id": "80401ff2-5144-4ae1-8926-0d0910746396",
+            "tp1": 3350,
+            "tp2": 3400,
+            "date": "2026-05-20",
+            "action": "可觀察布局（研究參考）",
+            "bucket": "A",
+            "source": "brain_react_v2",
+            "ticker": "2454",
+            "r_ratio": 0.85,
+            "why_buy": [
+              "1. 聯發科在5G及AI應用領域具優勢",
+              "市場需求持續增長。2. 技術面強勁",
+              "RSI顯示上漲動能。"
+            ],
+            "stopLoss": 3000,
+            "entryZone": {
+              "low": 3100,
+              "high": 3200,
+              "reason": "股價在20日和60日均線上方，顯示強勁動能"
+            },
+            "rationale": "1. 聯發科在5G及AI應用領域具優勢; 市場需求持續增長。2. 技術面強勁; RSI顯示上漲動能。",
+            "subScores": {
+              "rs": 10,
+              "theme": 15,
+              "margin": 10,
+              "revenue": 15,
+              "technical": 10,
+              "valuation": 5,
+              "institutional": 15
+            },
+            "confidence": 0.8,
+            "totalScore": 80,
+            "aiGenerated": true,
+            "companyName": "聯發科",
+            "marketState": "trend",
+            "why_not_buy": [
+              "1. 短期內可能面臨獲利回吐壓力。2. 整體市場情緒偏保守",
+              "可能影響股價表現。"
+            ],
+            "tp1Structured": {
+              "price": 3350,
+              "reason": "前波高"
+            },
+            "tp2Structured": {
+              "price": 3400,
+              "reason": "整數關"
+            },
+            "entryPriceRange": {
+              "low": 3100,
+              "high": 3200
+            },
+            "position_sizing": {
+              "nav_pct": 0.6,
+              "market_multiplier": 0.9
+            },
+            "stopLossStructured": {
+              "price": 3000,
+              "atr_multiple": 0.5
+            }
+          },
+          {
+            "id": "6c280b05-8141-4b18-99f9-c7b20f39cd5b",
+            "tp1": 260,
+            "tp2": 270,
+            "date": "2026-05-20",
+            "action": "可觀察布局（研究參考）",
+            "bucket": "A",
+            "source": "brain_react_v2",
+            "ticker": "2317",
+            "r_ratio": 0.8,
+            "why_buy": [
+              "1. 鴻海在電動車及智能製造領域持續擴展",
+              "未來成長潛力大。2. 技術面穩定",
+              "顯示出相對強勁的上漲動能。"
+            ],
+            "stopLoss": 220,
+            "entryZone": {
+              "low": 230,
+              "high": 250,
+              "reason": "股價在20日和60日均線上方，顯示穩定性"
+            },
+            "rationale": "1. 鴻海在電動車及智能製造領域持續擴展; 未來成長潛力大。2. 技術面穩定; 顯示出相對強勁的上漲動能。",
+            "subScores": {
+              "rs": 10,
+              "theme": 15,
+              "margin": 10,
+              "revenue": 10,
+              "technical": 10,
+              "valuation": 5,
+              "institutional": 15
+            },
+            "confidence": 0.75,
+            "totalScore": 75,
+            "aiGenerated": true,
+            "companyName": "鴻海",
+            "marketState": "trend",
+            "why_not_buy": [
+              "1. 短期內可能面臨市場情緒影響。2. 整體市場波動性增加",
+              "可能影響股價。"
+            ],
+            "tp1Structured": {
+              "price": 260,
+              "reason": "前波高"
+            },
+            "tp2Structured": {
+              "price": 270,
+              "reason": "整數關"
+            },
+            "entryPriceRange": {
+              "low": 230,
+              "high": 250
+            },
+            "position_sizing": {
+              "nav_pct": 0.4,
+              "market_multiplier": 0.7
+            },
+            "stopLossStructured": {
+              "price": 220,
+              "atr_multiple": 0.5
+            }
+          },
+          {
+            "id": "607ee8b5-7132-4b00-b83e-aa0e3b87fb34",
+            "tp1": 2000,
+            "tp2": 2050,
+            "date": "2026-05-20",
+            "action": "高風險排除",
+            "bucket": "C",
+            "source": "brain_react_v2",
+            "ticker": "2308",
+            "r_ratio": 0.7,
+            "why_buy": [
+              "1. 台達電在綠能及自動化領域具潛力",
+              "未來市場需求可期。2. 技術面顯示超賣",
+              "可能出現反彈。"
+            ],
+            "stopLoss": 1850,
+            "entryZone": {
+              "low": 1900,
+              "high": 1950,
+              "reason": "短期壓力，RSI顯示超賣"
+            },
+            "rationale": "1. 台達電在綠能及自動化領域具潛力; 未來市場需求可期。2. 技術面顯示超賣; 可能出現反彈。",
+            "subScores": {
+              "rs": 5,
+              "theme": 10,
+              "margin": 5,
+              "revenue": 10,
+              "technical": 5,
+              "valuation": 5,
+              "institutional": 10
+            },
+            "confidence": 0.4,
+            "totalScore": 50,
+            "aiGenerated": true,
+            "companyName": "台達電",
+            "marketState": "range",
+            "why_not_buy": [
+              "1. 短期股價在20日均線下方",
+              "可能面臨進一步下跌。2. 市場情緒偏保守",
+              "可能影響資金流入。"
+            ],
+            "tp1Structured": {
+              "price": 2000,
+              "reason": "前波高"
+            },
+            "tp2Structured": {
+              "price": 2050,
+              "reason": "整數關"
+            },
+            "entryPriceRange": {
+              "low": 1900,
+              "high": 1950
+            },
+            "position_sizing": {
+              "nav_pct": 0.4,
+              "market_multiplier": 0.5
+            },
+            "stopLossStructured": {
+              "price": 1850,
+              "atr_multiple": 0.5
+            }
+          },
+          {
+            "id": "6ebfdfea-9977-45b8-a03a-b23c91d1394c",
+            "tp1": 145,
+            "tp2": 150,
+            "date": "2026-05-20",
+            "action": "高風險排除",
+            "bucket": "C",
+            "source": "brain_react_v2",
+            "ticker": "2412",
+            "r_ratio": 0.65,
+            "why_buy": [
+              "1. 中華電信在5G及數位轉型上具優勢",
+              "未來成長潛力可期。2. 技術面顯示穩定性",
+              "具備防禦性。"
+            ],
+            "stopLoss": 130,
+            "entryZone": {
+              "low": 135,
+              "high": 140,
+              "reason": "股價在20日和60日均線上方，顯示穩定性"
+            },
+            "rationale": "1. 中華電信在5G及數位轉型上具優勢; 未來成長潛力可期。2. 技術面顯示穩定性; 具備防禦性。",
+            "subScores": {
+              "rs": 5,
+              "theme": 10,
+              "margin": 10,
+              "revenue": 10,
+              "technical": 10,
+              "valuation": 5,
+              "institutional": 10
+            },
+            "confidence": 0.5,
+            "totalScore": 60,
+            "aiGenerated": true,
+            "companyName": "中華電信",
+            "marketState": "range",
+            "why_not_buy": [
+              "1. 短期內可能面臨市場情緒影響。2. 整體市場波動性增加",
+              "可能影響股價。"
+            ],
+            "tp1Structured": {
+              "price": 145,
+              "reason": "前波高"
+            },
+            "tp2Structured": {
+              "price": 150,
+              "reason": "整數關"
+            },
+            "entryPriceRange": {
+              "low": 135,
+              "high": 140
+            },
+            "position_sizing": {
+              "nav_pct": 0.4,
+              "market_multiplier": 0.5
+            },
+            "stopLossStructured": {
+              "price": 130,
+              "atr_multiple": 0.5
+            }
+          }
+        ],
+        "marketState": null,
+        "marketRiskOffScore": null,
+        "totalCostUsd": 0.00564165,
+        "totalTokens": 25641,
+        "itemCount": 5,
+        "fullAiReportParsed": true,
+        "synthesisRetryUsed": false,
+        "synthesisFallbackUsed": false,
+        "usedFallback": false,
+        "reactTrace": [
+          {
+            "round": 1,
+            "thought": "正在獲取市場概覽以確認當前市場狀態。",
+            "toolName": "get_market_overview",
+            "toolInput": {},
+            "tokensUsed": 1794,
+            "observation": {
+              "otc": null,
+              "asOf": null,
+              "taiex": {
+                "index": null,
+                "change": -154.74,
+                "volume": null,
+                "changePct": -0.39
+              },
+              "source": "twse_openapi",
+              "sourceState": "live"
+            }
+          },
+          {
+            "round": 2,
+            "thought": "台股指數下跌154.74點，跌幅為0.39%。目前市場情緒偏向保守，需進一步分析以確認後續步驟。",
+            "toolName": null,
+            "toolInput": null,
+            "tokensUsed": 1917,
+            "observation": null
+          },
+          {
+            "round": 3,
+            "thought": "接下來將針對核心候選股進行技術分析，首先呼叫 2330（台積電）的技術資料。",
+            "toolName": "get_company_technical",
+            "toolInput": {
+              "ticker": "2330"
+            },
+            "tokensUsed": 2057,
+            "observation": {
+              "asOf": "2026-05-20",
+              "ma20": 2218,
+              "ma60": 2011.43,
+              "ma200": null,
+              "rsi14": 50.47,
+              "source": "finmind_ohlcv",
+              "ticker": "2330",
+              "volume": 32970945,
+              "aboveMa20": false,
+              "aboveMa60": true,
+              "changePct": -0.91,
+              "lastPrice": 2185,
+              "aboveMa200": null,
+              "companyName": null,
+              "volumeRatio20d": 0.74
+            }
+          },
+          {
+            "round": 4,
+            "thought": "台積電（2330）目前股價2185元，跌幅0.91%。RSI為50.47，顯示出市場情緒中性。股價在20日均線下方，但在60日均線上方，顯示出短期壓力。接下來將分析下一檔候選股2454（聯發科）。",
+            "toolName": "get_company_technical",
+            "toolInput": {
+              "ticker": "2454"
+            },
+            "tokensUsed": 2286,
+            "observation": {
+              "asOf": "2026-05-20",
+              "ma20": 3060.5,
+              "ma60": 2162.92,
+              "ma200": null,
+              "rsi14": 63.62,
+              "source": "finmind_ohlcv",
+              "ticker": "2454",
+              "volume": 8671108,
+              "aboveMa20": true,
+              "aboveMa60": true,
+              "changePct": 2.38,
+              "lastPrice": 3230,
+              "aboveMa200": null,
+              "companyName": null,
+              "volumeRatio20d": 0.58
+            }
+          },
+          {
+            "round": 5,
+            "thought": "聯發科（2454）目前股價3230元，上漲2.38%。RSI為63.62，顯示出強勁的上漲動能。股價在20日和60日均線上方，顯示出良好的技術結構。接下來將分析2317（鴻海）。",
+            "toolName": "get_company_technical",
+            "toolInput": {
+              "ticker": "2317"
+            },
+            "tokensUsed": 2511,
+            "observation": {
+              "asOf": "2026-05-20",
+              "ma20": 238.38,
+              "ma60": 219.9,
+              "ma200": null,
+              "rsi14": 61.19,
+              "source": "finmind_ohlcv",
+              "ticker": "2317",
+              "volume": 62650287,
+              "aboveMa20": true,
+              "aboveMa60": true,
+              "changePct": -2.04,
+              "lastPrice": 240,
+              "aboveMa200": null,
+              "companyName": null,
+              "volumeRatio20d": 0.61
+            }
+          },
+          {
+            "round": 6,
+            "thought": "鴻海（2317）目前股價240元，跌幅2.04%。RSI為61.19，顯示出相對強勁的上漲動能。股價在20日和60日均線上方，顯示出穩定的技術結構。接下來將分析2308（台達電）。",
+            "toolName": "get_company_technical",
+            "toolInput": {
+              "ticker": "2308"
+            },
+            "tokensUsed": 2737,
+            "observation": {
+              "asOf": "2026-05-20",
+              "ma20": 2115.25,
+              "ma60": 1704.33,
+              "ma200": null,
+              "rsi14": 31.62,
+              "source": "finmind_ohlcv",
+              "ticker": "2308",
+              "volume": 10890054,
+              "aboveMa20": false,
+              "aboveMa60": true,
+              "changePct": 0,
+              "lastPrice": 1915,
+              "aboveMa200": null,
+              "companyName": null,
+              "volumeRatio20d": 0.87
+            }
+          },
+          {
+            "round": 7,
+            "thought": "台達電（2308）目前股價1915元，持平。RSI為31.62，顯示出超賣狀態。股價在20日均線下方，但在60日均線上方，顯示出短期壓力。接下來將分析2412（中華電信）。",
+            "toolName": "get_company_technical",
+            "toolInput": {
+              "ticker": "2412"
+            },
+            "tokensUsed": 2958,
+            "observation": {
+              "asOf": "2026-05-20",
+              "ma20": 136.82,
+              "ma60": 135.87,
+              "ma200": null,
+              "rsi14": 57.58,
+              "source": "finmind_ohlcv",
+              "ticker": "2412",
+              "volume": 23148337,
+              "aboveMa20": true,
+              "aboveMa60": true,
+              "changePct": -2.46,
+              "lastPrice": 139,
+              "aboveMa200": null,
+              "companyName": null,
+              "volumeRatio20d": 1.69
+            }
+          },
+          {
+            "round": 8,
+            "thought": "中華電信（2412）目前股價139元，跌幅2.46%。RSI為57.58，顯示出中性偏強的市場情緒。股價在20日和60日均線上方，顯示出穩定的技術結構。至此已完成5檔候選股的技術分析，接下來將進行總結與評分。",
+            "toolName": null,
+            "toolInput": null,
+            "tokensUsed": 3188,
+            "observation": null
+          }
+        ],
+        "finalReportMarkdown": "## 2330 台積電\n- 分類: C高風險排除\n- 總分: 55\n- 市場狀態: trend\n- 主題位置分: 10\n- 營收財報分: 10\n- 法人ETF分: 10\n- 融資借券分: 10\n- 相對強弱量能分: 5\n- 技術結構分: 5\n- 估值事件分: 5\n- 進場區: 2100-2200\n- 進場理由: 短期壓力，RSI中性\n- TP1: 2250\n- TP1理由: 前波高\n- TP2: 2300\n- TP2理由: 整數關\n- 停損: 2050\n- ATR倍數: 0.5\n- R值: 0.75\n- 信心: 0.5\n- 為什麼買: 1. 台積電在半導體產業中具領導地位，長期成長潛力大。2. 技術面顯示出穩定性，雖然短期壓力存在，但仍可觀察。\n- 為什麼不買: 1. 短期股價在20日均線下方，可能面臨進一步下跌。2. 市場情緒偏保守，可能影響資金流入。\n- NAV比重: 0.4%\n- 市場倍率: 0.6\n\n## 2454 聯發科\n- 分類: A可觀察布局\n- 總分: 80\n- 市場狀態: trend\n- 主題位置分: 15\n- 營收財報分: 15\n- 法人ETF分: 15\n- 融資借券分: 10\n- 相對強弱量能分: 10\n- 技術結構分: 10\n- 估值事件分: 5\n- 進場區: 3100-3200\n- 進場理由: 股價在20日和60日均線上方，顯示強勁動能\n- TP1: 3350\n- TP1理由: 前波高\n- TP2: 3400\n- TP2理由: 整數關\n- 停損: 3000\n- ATR倍數: 0.5\n- R值: 0.85\n- 信心: 0.8\n- 為什麼買: 1. 聯發科在5G及AI應用領域具優勢，市場需求持續增長。2. 技術面強勁，RSI顯示上漲動能。\n- 為什麼不買: 1. 短期內可能面臨獲利回吐壓力。2. 整體市場情緒偏保守，可能影響股價表現。\n- NAV比重: 0.6%\n- 市場倍率: 0.9\n\n## 2317 鴻海\n- 分類: A可觀察布局\n- 總分: 75\n- 市場狀態: trend\n- 主題位置分: 15\n- 營收財報分: 10\n- 法人ETF分: 15\n- 融資借券分: 10\n- 相對強弱量能分: 10\n- 技術結構分: 10\n- 估值事件分: 5\n- 進場區: 230-250\n- 進場理由: 股價在20日和60日均線上方，顯示穩定性\n- TP1: 260\n- TP1理由: 前波高\n- TP2: 270\n- TP2理由: 整數關\n- 停損: 220\n- ATR倍數: 0.5\n- R值: 0.8\n- 信心: 0.75\n- 為什麼買: 1. 鴻海在電動車及智能製造領域持續擴展，未來成長潛力大。2. 技術面穩定，顯示出相對強勁的上漲動能。\n- 為什麼不買: 1. 短期內可能面臨市場情緒影響。2. 整體市場波動性增加，可能影響股價。\n- NAV比重: 0.4%\n- 市場倍率: 0.7\n\n## 2308 台達電\n- 分類: C高風險排除\n- 總分: 50\n- 市場狀態: range\n- 主題位置分: 10\n- 營收財報分: 10\n- 法人ETF分: 10\n- 融資借券分: 5\n- 相對強弱量能分: 5\n- 技術結構分: 5\n- 估值事件分: 5\n- 進場區: 1900-1950\n- 進場理由: 短期壓力，RSI顯示超賣\n- TP1: 2000\n- TP1理由: 前波高\n- TP2: 2050\n- TP2理由: 整數關\n- 停損: 1850\n- ATR倍數: 0.5\n- R值: 0.7\n- 信心: 0.4\n- 為什麼買: 1. 台達電在綠能及自動化領域具潛力，未來市場需求可期。2. 技術面顯示超賣，可能出現反彈。\n- 為什麼不買: 1. 短期股價在20日均線下方，可能面臨進一步下跌。2. 市場情緒偏保守，可能影響資金流入。\n- NAV比重: 0.4%\n- 市場倍率: 0.5\n\n## 2412 中華電信\n- 分類: C高風險排除\n- 總分: 60\n- 市場狀態: range\n- 主題位置分: 10\n- 營收財報分: 10\n- 法人ETF分: 10\n- 融資借券分: 10\n- 相對強弱量能分: 5\n- 技術結構分: 10\n- 估值事件分: 5\n- 進場區: 135-140\n- 進場理由: 股價在20日和60日均線上方，顯示穩定性\n- TP1: 145\n- TP1理由: 前波高\n- TP2: 150\n- TP2理由: 整數關\n- 停損: 130\n- ATR倍數: 0.5\n- R值: 0.65\n- 信心: 0.5\n- 為什麼買: 1. 中華電信在5G及數位轉型上具優勢，未來成長潛力可期。2. 技術面顯示穩定性，具備防禦性。\n- 為什麼不買: 1. 短期內可能面臨市場情緒影響。2. 整體市場波動性增加，可能影響股價。\n- NAV比重: 0.4%\n- 市場倍率: 0.5"
+      }
+    },
+    "/api/v1/recommendations/today": {
+      "endpoint": "/api/v1/recommendations/today",
+      "status": 200,
+      "ok": true,
+      "json": {
+        "date": "2026-05-29",
+        "generatedAt": "2026-05-29T01:32:47.734Z",
+        "count": 4,
+        "items": [
+          {
+            "recommendationId": "rec_3707_20260529",
+            "date": "2026-05-29",
+            "generatedAt": "2026-05-29T01:32:47.734Z",
+            "ticker": "3707",
+            "companyName": "漢磊",
+            "rank": 1,
+            "action": "今日首選",
+            "direction": "中性",
+            "timeHorizon": "波段",
+            "confidence": 0.57,
+            "totalScore": 76,
+            "quant": {
+              "score": 80,
+              "strategySource": "cont_liq_v36",
+              "gateStatus": "WATCH",
+              "reason": [
+                "持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "Period 1 forward observation Day 6/20，目前 unrealized return -0.41% 為籃中表現最好"
+              ]
+            },
+            "entryZone": {
+              "primary": "參考技術面支撐帶",
+              "reason": "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面"
+            },
+            "invalidation": {
+              "price": null,
+              "rule": "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新"
+            },
+            "targets": [
+              {
+                "label": "TP1",
+                "price": null,
+                "reason": "待 forward observation 成熟後補充"
+              }
+            ],
+            "positionSizing": {
+              "suggestion": "小倉",
+              "maxRiskPct": 1
+            },
+            "reasons": {
+              "technical": [],
+              "chip": [],
+              "news": [],
+              "theme": [],
+              "quant": [
+                "持續流動性 × 相對強勢綜合排序 Top-1，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "Period 1 forward observation Day 6/20，目前 unrealized return -0.41% 為籃中表現最好"
+              ],
+              "macro": []
+            },
+            "risks": [
+              "forward observation not mature h20",
+              "research tracking only not promoted",
+              "otc listed consider liquidity"
+            ],
+            "dataQuality": {
+              "quote": "OK",
+              "kbar": "OK",
+              "chip": "OK",
+              "news": "STALE",
+              "quant": "WEAK",
+              "confidencePenalty": 0.05
+            },
+            "sourceTrail": [
+              {
+                "type": "quant",
+                "source": "cont_liq_v36",
+                "timestamp": "2026-05-14T13:30:00+08:00"
+              },
+              {
+                "type": "fixture",
+                "source": "athena_cont_liq_v36_fixture_2026-05-14",
+                "timestamp": "2026-05-14T17:55:00+08:00"
+              }
+            ],
+            "generatedBy": "iuf_recommendation_orchestrator_v1"
+          },
+          {
+            "recommendationId": "rec_2426_20260529",
+            "date": "2026-05-29",
+            "generatedAt": "2026-05-29T01:32:47.734Z",
+            "ticker": "2426",
+            "companyName": "鼎元",
+            "rank": 2,
+            "action": "可觀察布局（研究參考）",
+            "direction": "中性",
+            "timeHorizon": "波段",
+            "confidence": 0.57,
+            "totalScore": 71,
+            "quant": {
+              "score": 75,
+              "strategySource": "cont_liq_v36",
+              "gateStatus": "WATCH",
+              "reason": [
+                "持續流動性 × 相對強勢綜合排序 Top-2，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "光電 LED 類股，與 2486 同 sector 同籃內出現產業集中度"
+              ]
+            },
+            "entryZone": {
+              "primary": "參考技術面支撐帶",
+              "reason": "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面"
+            },
+            "invalidation": {
+              "price": null,
+              "rule": "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新"
+            },
+            "targets": [
+              {
+                "label": "TP1",
+                "price": null,
+                "reason": "待 forward observation 成熟後補充"
+              }
+            ],
+            "positionSizing": {
+              "suggestion": "小倉",
+              "maxRiskPct": 1
+            },
+            "reasons": {
+              "technical": [],
+              "chip": [],
+              "news": [],
+              "theme": [],
+              "quant": [
+                "持續流動性 × 相對強勢綜合排序 Top-2，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "光電 LED 類股，與 2486 同 sector 同籃內出現產業集中度"
+              ],
+              "macro": []
+            },
+            "risks": [
+              "forward observation not mature h20",
+              "research tracking only not promoted",
+              "intraperiod drawdown below minus 10pct day6",
+              "sector concentration with 2486"
+            ],
+            "dataQuality": {
+              "quote": "OK",
+              "kbar": "OK",
+              "chip": "OK",
+              "news": "STALE",
+              "quant": "WEAK",
+              "confidencePenalty": 0.05
+            },
+            "sourceTrail": [
+              {
+                "type": "quant",
+                "source": "cont_liq_v36",
+                "timestamp": "2026-05-14T13:30:00+08:00"
+              },
+              {
+                "type": "fixture",
+                "source": "athena_cont_liq_v36_fixture_2026-05-14",
+                "timestamp": "2026-05-14T17:55:00+08:00"
+              }
+            ],
+            "generatedBy": "iuf_recommendation_orchestrator_v1"
+          },
+          {
+            "recommendationId": "rec_6205_20260529",
+            "date": "2026-05-29",
+            "generatedAt": "2026-05-29T01:32:47.734Z",
+            "ticker": "6205",
+            "companyName": "詮欣",
+            "rank": 3,
+            "action": "可觀察布局（研究參考）",
+            "direction": "中性",
+            "timeHorizon": "波段",
+            "confidence": 0.57,
+            "totalScore": 69,
+            "quant": {
+              "score": 73,
+              "strategySource": "cont_liq_v36",
+              "gateStatus": "WATCH",
+              "reason": [
+                "持續流動性 × 相對強勢綜合排序 Top-3，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "電子零組件 / 連接器類股，與其他三檔屬不同 sector"
+              ]
+            },
+            "entryZone": {
+              "primary": "參考技術面支撐帶",
+              "reason": "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面"
+            },
+            "invalidation": {
+              "price": null,
+              "rule": "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新"
+            },
+            "targets": [
+              {
+                "label": "TP1",
+                "price": null,
+                "reason": "待 forward observation 成熟後補充"
+              }
+            ],
+            "positionSizing": {
+              "suggestion": "小倉",
+              "maxRiskPct": 1
+            },
+            "reasons": {
+              "technical": [],
+              "chip": [],
+              "news": [],
+              "theme": [],
+              "quant": [
+                "持續流動性 × 相對強勢綜合排序 Top-3，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "電子零組件 / 連接器類股，與其他三檔屬不同 sector"
+              ],
+              "macro": []
+            },
+            "risks": [
+              "forward observation not mature h20",
+              "research tracking only not promoted",
+              "intraperiod drawdown below minus 10pct day6 worst in basket"
+            ],
+            "dataQuality": {
+              "quote": "OK",
+              "kbar": "OK",
+              "chip": "OK",
+              "news": "STALE",
+              "quant": "WEAK",
+              "confidencePenalty": 0.05
+            },
+            "sourceTrail": [
+              {
+                "type": "quant",
+                "source": "cont_liq_v36",
+                "timestamp": "2026-05-14T13:30:00+08:00"
+              },
+              {
+                "type": "fixture",
+                "source": "athena_cont_liq_v36_fixture_2026-05-14",
+                "timestamp": "2026-05-14T17:55:00+08:00"
+              }
+            ],
+            "generatedBy": "iuf_recommendation_orchestrator_v1"
+          },
+          {
+            "recommendationId": "rec_2486_20260529",
+            "date": "2026-05-29",
+            "generatedAt": "2026-05-29T01:32:47.734Z",
+            "ticker": "2486",
+            "companyName": "一詮",
+            "rank": 4,
+            "action": "可觀察布局（研究參考）",
+            "direction": "中性",
+            "timeHorizon": "波段",
+            "confidence": 0.57,
+            "totalScore": 67,
+            "quant": {
+              "score": 71,
+              "strategySource": "cont_liq_v36",
+              "gateStatus": "WATCH",
+              "reason": [
+                "持續流動性 × 相對強勢綜合排序 Top-4，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "光電 LED 類股，與 2426 同 sector"
+              ]
+            },
+            "entryZone": {
+              "primary": "參考技術面支撐帶",
+              "reason": "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面"
+            },
+            "invalidation": {
+              "price": null,
+              "rule": "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新"
+            },
+            "targets": [
+              {
+                "label": "TP1",
+                "price": null,
+                "reason": "待 forward observation 成熟後補充"
+              }
+            ],
+            "positionSizing": {
+              "suggestion": "小倉",
+              "maxRiskPct": 1
+            },
+            "reasons": {
+              "technical": [],
+              "chip": [],
+              "news": [],
+              "theme": [],
+              "quant": [
+                "持續流動性 × 相對強勢綜合排序 Top-4，符合 z(vol5/20)+z(ret20d) 策略邏輯",
+                "60 日報酬 ≥ +6% regime 條件通過 (regime=trend)",
+                "光電 LED 類股，與 2426 同 sector"
+              ],
+              "macro": []
+            },
+            "risks": [
+              "forward observation not mature h20",
+              "research tracking only not promoted",
+              "intraperiod drawdown below minus 10pct day6",
+              "sector concentration with 2426",
+              "high unit price consider lot size"
+            ],
+            "dataQuality": {
+              "quote": "OK",
+              "kbar": "OK",
+              "chip": "OK",
+              "news": "STALE",
+              "quant": "WEAK",
+              "confidencePenalty": 0.05
+            },
+            "sourceTrail": [
+              {
+                "type": "quant",
+                "source": "cont_liq_v36",
+                "timestamp": "2026-05-14T13:30:00+08:00"
+              },
+              {
+                "type": "fixture",
+                "source": "athena_cont_liq_v36_fixture_2026-05-14",
+                "timestamp": "2026-05-14T17:55:00+08:00"
+              }
+            ],
+            "generatedBy": "iuf_recommendation_orchestrator_v1"
+          }
+        ]
+      }
+    },
+    "/api/v1/market-intel/news-top10": {
+      "endpoint": "/api/v1/market-intel/news-top10",
+      "status": 200,
+      "ok": true,
+      "json": {
+        "data": {
+          "run_id": "6ba567e5-bbb3-4f84-911c-eaaef88ea6b9",
+          "as_of": "2026-05-29T01:07:55.554Z",
+          "next_refresh_at": "2026-05-29T02:07:00.000Z",
+          "window_label": "08:00",
+          "selection_mode": "fallback",
+          "items": [
+            {
+              "id": "0b6d7149-9fd3-4758-9e24-0b18460739d8",
+              "headline": "盈餘：立隆電(2472)股價遭警示，自結4月歸屬母公司淨利1.26億元，EPS 0.76元 - 富聯網",
+              "date": "2026-05-28 08:05:00",
+              "ticker": "2472",
+              "companyName": "立隆電",
+              "source": "finmind_stock_news",
+              "why_matters": "立隆電 出現交易或下市風險訊號，需優先檢查持股與風控。",
+              "impact_tier": "HIGH",
+              "tags": [
+                "風險",
+                "財報"
+              ],
+              "rank": 1
+            },
+            {
+              "id": "1c0cf6b8-17c0-4dd4-9b78-51706fd7c617",
+              "headline": "立隆電因本公司有價證券於集中交易市場達公布注意交易資訊標準，故公布相關財務業務等重大訊息，以利投資人區別瞭解。 | MoneyDJ理財網 - LINE TODAY",
+              "date": "2026-05-28 09:17:43",
+              "ticker": "2472",
+              "companyName": "立隆電",
+              "source": "finmind_stock_news",
+              "why_matters": "立隆電 有新消息可能影響市場預期，需追蹤相關族群反應。",
+              "impact_tier": "HIGH",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 2
+            },
+            {
+              "id": "b3af6520-0c92-4b37-91f7-f44a1cd6af72",
+              "headline": "被動元件嗨翻！「這檔」連9漲90%帶立隆電等10檔漲停 國巨、華新科、蜜望實齊飆7% - FTNN 新聞網",
+              "date": "2026-05-28 02:25:00",
+              "ticker": "2472",
+              "companyName": "立隆電",
+              "source": "finmind_stock_news",
+              "why_matters": "立隆電 有新消息可能影響市場預期，需追蹤相關族群反應。",
+              "impact_tier": "MID",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 3
+            },
+            {
+              "id": "e86c6e54-3226-438f-a4d2-f168fdfa77fb",
+              "headline": "早盤快訊》力成、立隆電強攻漲停！台股站穩44700點，車用零組件掀漲停潮 | 風傳媒 - LINE TODAY",
+              "date": "2026-05-28 03:07:39",
+              "ticker": "2472",
+              "companyName": "立隆電",
+              "source": "finmind_stock_news",
+              "why_matters": "立隆電 有新消息可能影響市場預期，需追蹤相關族群反應。",
+              "impact_tier": "MID",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 4
+            },
+            {
+              "id": "bf803fca-221f-437e-87de-360e75825d66",
+              "headline": "可成多元轉型題材不敵大盤亂流 股價大跌8.63% 後續待觀察 - 理財周刊",
+              "date": "2026-05-28 08:05:56",
+              "ticker": "2474",
+              "companyName": "可成",
+              "source": "finmind_stock_news",
+              "why_matters": "可成 有新的市場消息，先列入觀察並等待量價確認。",
+              "impact_tier": "LOW",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 5
+            },
+            {
+              "id": "5daccf1e-81e9-40cb-9c5d-2191c4b0bc66",
+              "headline": "討論牆 | 盤中速報 - 翔耀(2438)股價拉至漲停，漲停價25.3元，成交319張 - LINE TODAY",
+              "date": "2026-05-28 11:03:32",
+              "ticker": "2438",
+              "companyName": "翔耀",
+              "source": "finmind_stock_news",
+              "why_matters": "翔耀 有新消息可能影響市場預期，需追蹤相關族群反應。",
+              "impact_tier": "MID",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 6
+            },
+            {
+              "id": "77acd395-82d6-4bf3-8ce4-73b7c6db2cdc",
+              "headline": "討論牆 | 盤中速報 - 立隆電(2472)股價拉至漲停，漲停價371.0元，成交6,611張 - LINE TODAY",
+              "date": "2026-05-28 03:55:00",
+              "ticker": "2472",
+              "companyName": "立隆電",
+              "source": "finmind_stock_news",
+              "why_matters": "立隆電 有新消息可能影響市場預期，需追蹤相關族群反應。",
+              "impact_tier": "MID",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 7
+            },
+            {
+              "id": "ebf39b48-9f22-4bde-9cff-bd774a26921c",
+              "headline": "石英元件是什麼？台灣石英六雄－晶技、希華、泰藝、台嘉碩、加高、安碁，乘AI光模組升級浪潮全面爆發｜產業熱話 - sinotrade.com.tw",
+              "date": "2026-05-28 01:19:18",
+              "ticker": "2484",
+              "companyName": "希華",
+              "source": "finmind_stock_news",
+              "why_matters": "希華 有新的市場消息，先列入觀察並等待量價確認。",
+              "impact_tier": "LOW",
+              "tags": [
+                "題材"
+              ],
+              "rank": 8
+            },
+            {
+              "id": "77236173-48cd-4000-a683-5f0486a3fd3e",
+              "headline": "討論牆 | 盤中速報 - 強茂(2481)大漲7.46%，報144元 - LINE TODAY",
+              "date": "2026-05-28 05:02:32",
+              "ticker": "2481",
+              "companyName": "強茂",
+              "source": "finmind_stock_news",
+              "why_matters": "強茂 有新的市場消息，先列入觀察並等待量價確認。",
+              "impact_tier": "LOW",
+              "tags": [
+                "市場新聞"
+              ],
+              "rank": 9
+            },
+            {
+              "id": "ad768df1-b0b4-4543-9dfc-ed77e10aaed9",
+              "headline": "盟立啖半導體商機- 日報 - 工商時報",
+              "date": "2026-05-28 19:00:00",
+              "ticker": "2464",
+              "companyName": "盟立",
+              "source": "finmind_stock_news",
+              "why_matters": "盟立 有新的市場消息，先列入觀察並等待量價確認。",
+              "impact_tier": "LOW",
+              "tags": [
+                "題材"
+              ],
+              "rank": 10
+            }
+          ],
+          "input_row_count": 98,
+          "ai_call_success": false,
+          "stale_reason": null
+        }
+      }
+    },
+    "/api/v1/announcements?scope=market&limit=10": {
+      "endpoint": "/api/v1/announcements?scope=market&limit=10",
+      "status": 200,
+      "ok": true,
+      "json": {
+        "items": [
+          {
+            "id": "0dbb576f-228c-4c51-a58c-104167031b5e",
+            "date": "2026-05-28",
+            "title": "面板股，跟你想的不一樣，本周群創、友達、瑞軒股東會關注重點｜股市話題｜豐雲學堂2026 年 05 月 - sinotrade.com.tw",
+            "category": "台股新聞",
+            "ticker": "2409",
+            "companyName": "友達",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "2cf945b1-7d93-4517-9d7f-22cf441c5e9a",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 瑞軒(2489)急跌-3.24%報51.3元，成交8,765張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2489",
+            "companyName": "瑞軒",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "ecb5708b-1cfe-42be-bcf0-8e428c4866f7",
+            "date": "2026-05-28",
+            "title": "面板股，跟你想的不一樣，本周群創、友達、瑞軒股東會關注重點｜股市話題｜豐雲學堂2026 年 05 月 - sinotrade.com.tw",
+            "category": "台股新聞",
+            "ticker": "2489",
+            "companyName": "瑞軒",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "b3af6520-0c92-4b37-91f7-f44a1cd6af72",
+            "date": "2026-05-28",
+            "title": "被動元件嗨翻！「這檔」連9漲90%帶立隆電等10檔漲停 國巨、華新科、蜜望實齊飆7% - FTNN 新聞網",
+            "category": "台股新聞",
+            "ticker": "2472",
+            "companyName": "立隆電",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "38f342df-d13a-4151-aa38-31ca5a1945a7",
+            "date": "2026-05-28",
+            "title": "被動元件嗨翻！「這檔」連9漲90%帶立隆電等10檔漲停 國巨、華新科、蜜望實齊飆7% - Yahoo股市",
+            "category": "台股新聞",
+            "ticker": "2492",
+            "companyName": "華新科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "0c8a4bf0-da2a-49d6-b761-2ada74840ab0",
+            "date": "2026-05-28",
+            "title": "【11:02 即時新聞】華新科(2492)亮燈漲停397元，被動元件族群續攻＋多頭技術結構配合法人主力加碼 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2492",
+            "companyName": "華新科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "e50202e6-d863-403a-9485-efca9f5d1fe7",
+            "date": "2026-05-28",
+            "title": "【11:02 即時新聞】華新科(2492)亮燈漲停397元，被動元件族群續攻＋多頭技術結構配合法人主力加碼 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2492",
+            "companyName": "華新科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "a6091185-adc8-4a9a-889c-2472ae804a48",
+            "date": "2026-05-28",
+            "title": "被動漲不停「十餘檔噴漲停」 國巨、華新科再寫波段新高 - Yahoo股市",
+            "category": "台股新聞",
+            "ticker": "2492",
+            "companyName": "華新科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "245d8927-0aa2-4cbc-b805-74f018a2edcc",
+            "date": "2026-05-28",
+            "title": "出貨警告！爆量長黑+戰爭又起=崩盤？華新科狂噴8⊕還能追嗎？ - 鉅亨號",
+            "category": "台股新聞",
+            "ticker": "2492",
+            "companyName": "華新科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "ade17d47-297d-4344-94d3-063e050ea234",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 揚博(2493)急拉3.94%報170.5元，成交1,923張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2493",
+            "companyName": "揚博",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "fc2e366d-077a-4fc2-af06-bc508b3cff28",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 揚博(2493)大漲8.86%，報172元 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2493",
+            "companyName": "揚博",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "57bbaf79-dd39-4802-a4fc-1ce20bcd317d",
+            "date": "2026-05-28",
+            "title": "盈餘：普安(2495)股價遭警示，自結4月歸屬母公司淨利7900萬元，EPS 0.29元 - 富聯網",
+            "category": "台股新聞",
+            "ticker": "2495",
+            "companyName": "普安",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "92e3e575-9de1-4a0a-9e36-b9598ca55eca",
+            "date": "2026-05-28",
+            "title": "《電週邊》普安4月EPS0.29元 - 富聯網",
+            "category": "台股新聞",
+            "ticker": "2495",
+            "companyName": "普安",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "033b1763-f313-45b9-94c9-8709a3433a32",
+            "date": "2026-05-28",
+            "title": "【即時新聞】國產股東會通過史上最高配發率2.6元現金股利 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2504",
+            "companyName": "國產",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "b277831c-bf52-4bdf-ae58-d1b4e3c4f128",
+            "date": "2026-05-28",
+            "title": "2504 國產 - 國產股東會／董座徐蘭英：今年新增汐止二廠、台中新廠獲利穩健成長-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2504",
+            "companyName": "國產",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "2ed804d7-25bb-438b-8a59-313fd1b3c82e",
+            "date": "2026-05-28",
+            "title": "個股：全坤建(2509)6月1日召開法人說明會 - 富聯網",
+            "category": "台股新聞",
+            "ticker": "2509",
+            "companyName": "全坤建",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "1761d902-c65c-4b53-aa02-53ff1dbfa433",
+            "date": "2026-05-28",
+            "title": "個股：全坤建(2509)6月1日召開法人說明會 - ww2.money-link.com.tw",
+            "category": "台股新聞",
+            "ticker": "2509",
+            "companyName": "全坤建",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "177443ee-7802-4460-9300-8544dfa13f18",
+            "date": "2026-05-28",
+            "title": "中工(2515) 個股概覽 | 個股 - 股市 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2515",
+            "companyName": "中工",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "54bfd91c-0abb-4536-88a4-d2b41f0699f0",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 新建(2516)股價拉至漲停，漲停價14.1元，成交958張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2516",
+            "companyName": "新建",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "87a9c636-ce91-4254-a483-b165a7e0cff6",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 新建(2516)大漲8.17%，報13.9元 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2516",
+            "companyName": "新建",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "b3afaae3-6f6d-49c4-8d09-5e4c7503360d",
+            "date": "2026-05-28",
+            "title": "皇普獲利創新高但發包卡關 蘇永平：像小媳婦安靜等工 - 生活新聞 - PChome Online 新聞 - PChome Online 新聞",
+            "category": "台股新聞",
+            "ticker": "2528",
+            "companyName": "皇普",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "d2886eac-aa58-4fd0-9f22-9148d4450af5",
+            "date": "2026-05-28",
+            "title": "台股站上4萬點！房市現況如何？皇普蘇永平嘆「建商就像小媳婦！」 - fuhouse.setn.com",
+            "category": "台股新聞",
+            "ticker": "2528",
+            "companyName": "皇普",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "7eb0e3c3-c269-4091-9996-4d7d16644394",
+            "date": "2026-05-28",
+            "title": "台股站上4萬點！房市現況如何？皇普蘇永平嘆「建商就像小媳婦！」 - 富房網",
+            "category": "台股新聞",
+            "ticker": "2528",
+            "companyName": "皇普",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "55898433-91e3-4955-8a31-26164f2f28a2",
+            "date": "2026-05-28",
+            "title": "個股：皇普股東會通過3元股利，反映原物料上揚、缺工，今年推案腳步放緩 - 富聯網",
+            "category": "台股新聞",
+            "ticker": "2528",
+            "companyName": "皇普",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "183a13b6-49df-4037-8878-c4024aa6ae8f",
+            "date": "2026-05-28",
+            "title": "個股：皇普股東會通過3元股利，反映原物料上揚、缺工，今年推案腳步放緩 - ww2.money-link.com.tw",
+            "category": "台股新聞",
+            "ticker": "2528",
+            "companyName": "皇普",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "f8e42bea-27ca-44b1-8293-1afe556bb388",
+            "date": "2026-05-28",
+            "title": "日勝生(2547)- - 券商分點進出買賣統計-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2547",
+            "companyName": "日勝生",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "7e03a718-e00c-45a0-9f86-f4ffeeba4a89",
+            "date": "2026-05-28",
+            "title": "2548 華固- 房市冷風中誰還賣得動？雙北百億案靠兩點突圍「西華璞園」212萬稱王-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2548",
+            "companyName": "華固",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "44ed4c8b-d010-493a-bf33-55d9c8a6527b",
+            "date": "2026-05-28",
+            "title": "美急單湧現 貨櫃海運爆艙 長榮、陽明、萬海可望跟進漲價 - 經濟日報",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "83106ad0-c0a2-4a6e-8302-4bc7af66a9f6",
+            "date": "2026-05-28",
+            "title": "長榮(2603)- - 券商分點進出買賣統計-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "920e84f7-372c-4a86-9d54-b4d26adcaabe",
+            "date": "2026-05-28",
+            "title": "精品級紀念品股東大排「長榮」Q2Q3審慎樂觀 | NOWNEWS今日新聞 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "38e052a9-f9d6-4100-adfe-e89653ebd745",
+            "date": "2026-05-28",
+            "title": "精品級紀念品股東大排「長榮」Q2Q3 審慎樂觀 - MSN",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "394d8e63-78e1-4e7f-bec8-7752a8c7025a",
+            "date": "2026-05-28",
+            "title": "【即時新聞】長榮股東會全球首播長生輪影片 展現E型雙能源環保船特色 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "f7d08605-f80e-49a8-872d-3362e63453e9",
+            "date": "2026-05-28",
+            "title": "貨主提早拉貨 長榮、萬海看旺Q2、Q3 - 自由財經",
+            "category": "台股新聞",
+            "ticker": "2603",
+            "companyName": "長榮",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "3ffbfdd2-e4eb-4252-a81a-b83afac586c2",
+            "date": "2026-05-28",
+            "title": "2605 新興 - 5/28 航運指數-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2605",
+            "companyName": "新興",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "9123ee24-1600-4f72-b85f-f83ab25546d3",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 統懋(2434)急拉4.43%報36.5元，成交528張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2434",
+            "companyName": "統懋",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "2093e19a-91aa-40ff-892d-7a829f9d7d21",
+            "date": "2026-05-28",
+            "title": "【11:21 即時新聞】翔耀(2438)攻上漲停27.8元，綠色算力題材發酵＋多頭量價結構帶動買盤追價 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2438",
+            "companyName": "翔耀",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "d140095d-2833-49e6-92ab-4a5d34c46213",
+            "date": "2026-05-28",
+            "title": "【11:21 即時新聞】翔耀(2438)攻上漲停27.8元，綠色算力題材發酵＋多頭量價結構帶動買盤追價 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2438",
+            "companyName": "翔耀",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "1be86b04-1f50-40cb-b824-7793483d99b5",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 翔耀(2438)急拉3.35%報27.8元，成交793張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2438",
+            "companyName": "翔耀",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "5daccf1e-81e9-40cb-9c5d-2191c4b0bc66",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 翔耀(2438)股價拉至漲停，漲停價25.3元，成交319張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2438",
+            "companyName": "翔耀",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "40c3caa0-0c49-44c1-b1b6-333e21b588f4",
+            "date": "2026-05-28",
+            "title": "討論牆 | 盤中速報 - 超豐(2441)股價拉至漲停，漲停價128.5元，成交3,597張 - LINE TODAY",
+            "category": "台股新聞",
+            "ticker": "2441",
+            "companyName": "超豐",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "acf41419-80bb-43a8-9fea-7ae00e51700f",
+            "date": "2026-05-28",
+            "title": "2449 京元電子 - 5/28 股息1 盈餘配股0.5 114/6/2 92開始...-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2449",
+            "companyName": "京元電子",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "3b549cf0-7a12-4133-bdcb-7caad428c998",
+            "date": "2026-05-28",
+            "title": "京元電子的價格該怎麼理解？從半導體循環看估值，不只看數字-蘇宛真 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2449",
+            "companyName": "京元電子",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "95cbdd10-2141-4e56-8aed-dea591c8b4e9",
+            "date": "2026-05-28",
+            "title": "2449 京元電子- 散戶拼命賣，大戶拼命買！真有趣的局~~ 而且大戶主動買了快一...-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2449",
+            "companyName": "京元電子",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "01a62611-7e4b-4129-8a78-3233696c3885",
+            "date": "2026-05-28",
+            "title": "京元電子(2449) 個股概覽 | 個股 - 股市 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2449",
+            "companyName": "京元電子",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "c4c9104a-9b95-446b-8acc-d4d8a5de9a62",
+            "date": "2026-05-28",
+            "title": "2449 京元電子 - 2026/05/28 ➡️ 京元電子籌碼-股市爆料同學會 - CMoney",
+            "category": "台股新聞",
+            "ticker": "2449",
+            "companyName": "京元電子",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "89edff90-38e7-4806-8fcf-3ce8d4e7b1a8",
+            "date": "2026-05-28",
+            "title": "台積電、聯發科、台達電…台股不再是一個人的武林，謝金河憶好友范疇：5年前預見台灣成為風雲國家 - 今周刊",
+            "category": "台股新聞",
+            "ticker": "2454",
+            "companyName": "聯發科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "34ebf1e4-28e7-494d-a25d-d616ed20643b",
+            "date": "2026-05-28",
+            "title": "聯發科太狂！不止Google　郭明錤曝成為「馬斯克Terafab關鍵一環」 - ETtoday財經雲",
+            "category": "台股新聞",
+            "ticker": "2454",
+            "companyName": "聯發科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "de75ea8e-0d78-4b5c-932a-2ae324e0aa3f",
+            "date": "2026-05-28",
+            "title": "左擁 Google 右抱輝達、再搶馬斯克大單？郭明錤點名聯發科成 Terafab 關鍵拼圖 - 鏈新聞 ABMedia",
+            "category": "台股新聞",
+            "ticker": "2454",
+            "companyName": "聯發科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "16c277b3-6a29-4988-b3f7-422fbcd0e52c",
+            "date": "2026-05-28",
+            "title": "台股破四萬四爆天量！台積電聯發科領軍半導體-財經焦點情報站 - CMoney投資網誌",
+            "category": "台股新聞",
+            "ticker": "2454",
+            "companyName": "聯發科",
+            "url": null,
+            "source": "finmind_stock_news"
+          },
+          {
+            "id": "3e226e5f-8e7b-43ca-a047-00fea0ff4546",
+            "date": "2026-05-28",
+            "title": "盤後快訊》大盤失守4萬4！台積電、聯發科領跌，東陽、華新科逆勢衝高 | 下班經濟學 | 財經 - 風傳媒",
+            "category": "台股新聞",
+            "ticker": "2454",
+            "companyName": "聯發科",
+            "url": null,
+            "source": "finmind_stock_news"
+          }
+        ],
+        "total": 50,
+        "asOf": "2026-05-29"
+      }
+    }
+  },
+  "pageResults": [
+    {
+      "route": "/ai-recommendations",
+      "status": 200,
+      "textLength": 2781,
+      "appError": false,
+      "errors": [],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_ai_market_contract_auth_20260529_013245Z\\ai_recommendations.png",
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7\nAI 推薦\nAI 推薦\nRecommendation Orchestrator\n台北 / 2026/5/29 09:32:49\n資料 / 正式資料\n模式 / 觀察與研究\n研究 / 前端資料\n推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。\n趨勢盤\n/\n趨勢分數偏強，可照 SOP 執行。\n部位係數 1.0\n策略執行紀錄\n訊號中心\nAI 推薦 / 今日 AI 推薦\n產生時間 05/20 18:41 / 正式資料\n5 檔\n已取得正式 AI 推薦\n\n目前顯示 5 檔，未使用備援補牌。\n\n推薦數量\n5/5\n生成狀態\n完成\n備援補牌\n未使用\n官方公告\n待接入\n2330台積電\nC 推薦級\n信心 50%\n盤勢係數 0.6\n題材\t營收\t法人/ETF\t籌碼\tRS/量\t技術\t估值/事件\t總分\n10/20\t10/15\t10/15\t10/15\t5/10\t5/20\t5/5\t55/100\n建議進場區間\n2,100 - 2,200\n\n短期壓力，RSI中性\n\n目標一\n2,250\n目標二\n2,300\n停損\n2,050\n風報比\n0.75R\n推薦理由\n\n1. 台積電在半導體產業中具領導地位\n\n長期成長潛力大。2. 技術面顯示"
+    },
+    {
+      "route": "/market-intel",
+      "status": 200,
+      "textLength": 2979,
+      "appError": false,
+      "errors": [],
+      "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_ai_market_contract_auth_20260529_013245Z\\market_intel.png",
+      "sample": "I\nIUF · 戰情台\nv3.0 · TACTICAL\n台股 AI 交易戰情室\n操作員 · IUF-01\n模擬模式 / 風控守門\n戰情台\n盤勢與任務\n市場情報\n重大訊息\nAI 推薦\n推薦引擎\n交易室\n委託與部位\n公司 / 主題\n公司圖譜\n量化策略\nSIM-only\nOPENALICE\nBrain\nLLM 費用\nEventLog\n事件流\nPortfolio\n快照版本\nTools\n工具登錄\nUTA\n帳號管理\nStrategies\nLab 策略狀態\nMARKET · INTEL\n正式資料 / 風控守門\n登出\n警示通知，7 則未讀\n7\n---FRAME---\n市場情報\n\n今日重點、來源狀態與 AI 精選訊息\n\n今日訊息\n98\nAI 精選\n10\n來源正常\n1 / 4\n下次抓取\n剛剛\n研究模式\n本頁僅做研究判讀，不下單、不顯示目標價或勝率。下一步請進策略想法。\nRESEARCH\n使用正式公告或備援排序；未顯示示意新聞。\n知道了\nAI 精選 · 今日重點\nAI 精選已回傳\n看全部 ›\n全部\n10\nAI 硬體\n1\n半導體\n1\n金融\n0\n電動車\n1\n⌕\n2472\n盈餘：立隆電(2472)股價遭警示，自結4月歸屬母公司淨利1.26億元，EPS 0.76元 - 富聯網\nFinMind\n·\n風險\n·\n立隆電\n·\n查看公司\n·\n查看主題\n·\n查看推薦\n為什麼重要　立隆電 出現交易或下市風險訊號，需優先檢查持股與風控。\n17 小時前\n›\n2472\n立隆電因本公司有價證券於集中交易市場達公布注意交易資訊標準，故公布相關財務業務等重大訊息，以利投資人區別瞭解。 | MoneyDJ理財網 - LINE TODAY\nFinMind\n·\n市場新聞\n·\n立隆電\n·\n查看公司\n·\n查看主題\n·\n查看推薦\n為什麼重要　立隆電 有新消息可能影響市場預期，需追蹤相關族群反應。\n16 小時前\n›\n2472\n被動元件嗨翻！「"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P1",
+      "area": "Recommendations today",
+      "issue": "/today has 4 items, expected >= 5"
+    },
+    {
+      "severity": "P1",
+      "area": "Market Intel",
+      "issue": "selection_mode=fallback"
+    },
+    {
+      "severity": "P1",
+      "area": "Market Intel",
+      "issue": "ai_call_success=false"
+    }
+  ]
+}

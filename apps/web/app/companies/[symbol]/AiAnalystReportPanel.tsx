@@ -19,6 +19,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiGetMe } from "@/lib/auth-client";
+import {
+  buildCompanyAiAnalystPrompt,
+  COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
+} from "./aiAnalystReportContract";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -257,8 +261,12 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: `請針對台灣上市公司 ${ticker} 進行深度分析，涵蓋：1) 近期營運動態 2) 財務體質 3) 主題產業受惠度 4) 風險點 5) 操作觀察結論。請使用繁體中文回覆。`,
-            context: { ticker, source: "company_page" },
+            prompt: buildCompanyAiAnalystPrompt(ticker),
+            context: {
+              ticker,
+              source: "company_page",
+              templateVersion: COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
+            },
             budget_usd: 0.5,
           }),
         }
@@ -298,8 +306,8 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         <AiPanelHeader />
         <div className="_ai-owner-lock">
           <div className="_ai-lock-icon">🔒</div>
-          <div className="_ai-lock-msg">Owner 限定</div>
-          <div className="_ai-lock-sub dim">AI 深度分析功能僅限 Owner 角色存取</div>
+          <div className="_ai-lock-msg">需要分析權限</div>
+          <div className="_ai-lock-sub dim">目前帳號無法生成深度報告；頁面不顯示假分析內容。</div>
         </div>
       </section>
     );
@@ -458,7 +466,7 @@ function AiPanelHeader() {
     <h3 className="ascii-head" style={{ marginBottom: 12 }}>
       <span className="ascii-head-bracket">AI 分析師報告</span>
       <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>
-        Brain 推理 / Owner 唯讀
+        AI 分析 / 唯讀資料
       </span>
     </h3>
   );

@@ -22,12 +22,14 @@ import {
 import type { StrategyIdeasView } from "@iuf-trading-room/contracts";
 import { industryLabel, INDUSTRY_LABEL_MAP } from "@/lib/industry-i18n";
 import {
+  getKgiStatus,
   getKgiPositions,
   getPaperHealth,
   getPaperPortfolioRaw,
   listPaperFills,
   listPaperOrders,
   type KgiPositionsResponse,
+  type KgiStatusResponse,
   type PaperFillLedgerRow,
   type PaperHealthState,
   type PaperOrderState,
@@ -93,6 +95,17 @@ function isTwTicker(value?: string | null) {
   return /^[0-9]{4}[A-Z]?$/.test(String(value ?? "").trim());
 }
 
+const DEFAULT_TRADING_ROOM_WATCHLIST = [
+  { symbol: "2330", name: "台積電", meta: "核心觀察" },
+  { symbol: "1514", name: "亞力", meta: "電機設備" },
+  { symbol: "1560", name: "中砂", meta: "半導體設備" },
+  { symbol: "1590", name: "亞德客-KY", meta: "自動化設備" },
+  { symbol: "1721", name: "三晃", meta: "化學材料" },
+  { symbol: "1723", name: "中碳", meta: "材料 / 能源" },
+  { symbol: "1809", name: "中釉", meta: "材料" },
+  { symbol: "2066", name: "世德", meta: "車用零組件" },
+] as const;
+
 function companyHref(symbol?: string | null) {
   return isTwTicker(symbol) ? `/companies/${encodeURIComponent(String(symbol))}` : "/companies";
 }
@@ -112,9 +125,6 @@ function marketFeedState(
   newsError: string | null,
   announcementsError: string | null,
 ) {
-  const endpoint = "GET /api/v1/market-intel/news-top10";
-  const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
-  const owner = "Jason / Elva";
   if (items.length > 0) {
     const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
     return {
@@ -122,8 +132,6 @@ function marketFeedState(
       label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
       summary: `顯示 ${items.length} 則 ${source}`,
       detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
-      endpoint,
-      owner,
       nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。",
     };
   }
@@ -140,9 +148,7 @@ function marketFeedState(
     label: "等待正式資料",
     summary: "目前沒有可呈現的正式 AI 精選市場情報",
     detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
-    endpoint,
-    owner,
-    nextAction: `確認 ${endpoint} 排程、${annEndpoint} sourceState 與 owner-session 權限；前端不顯示示意新聞。`,
+    nextAction: "等待下一輪市場情報同步；前端不顯示示意新聞。",
   };
 }
 
@@ -291,28 +297,28 @@ async function buildMarketIntelPayload() {
     sources: [
       {
         name: "公開資訊觀測站",
-        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : `Endpoint: GET /api/v1/market-intel/announcements；${announcementsError ? "後端錯誤" : "目前無可呈現公告"}`,
+        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : (announcementsError ? "官方公告同步異常" : "目前無可呈現公告"),
         state: mopsLive ? "ok" : "warn",
         status: mopsLive ? "正常" : "待確認",
         fresh: announcements?.items?.[0]?.date ? minutesAgoText(announcements.items[0].date) : "同步中",
       },
       {
         name: "FinMind 市場資料",
-        label: finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中",
+        label: finMindLive ? "市場資料源可用" : "市場資料源同步中",
         state: finMindLive ? "ok" : "warn",
         status: finMindLive ? "正常" : "同步中",
         fresh: finMind?.updatedAt ? minutesAgoText(finMind.updatedAt) : "同步中",
       },
       {
         name: "AI 精選訊息",
-        label: aiLive ? `Endpoint: ${feedState.endpoint} 已回傳 ${news?.items?.length ?? 0} 則` : `Endpoint: ${feedState.endpoint} 尚無可顯示項目`,
+        label: aiLive ? `AI 精選已回傳 ${news?.items?.length ?? 0} 則` : "AI 精選尚無可顯示項目",
         state: aiLive ? "ok" : "warn",
         status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
         fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
       },
       {
         name: "主管機關公告",
-        label: `Owner: ${feedState.owner}；Next: sourceState / 欄位完整度確認`,
+        label: "公告欄位完整度待確認；不顯示未驗證內容",
         state: "warn",
         status: "待確認",
         fresh: "排程探測",
@@ -425,11 +431,11 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
 }
 
 function paperPrefillSourceLabel(source: PaperPrefillHandoff["source"]) {
-  if (source === "ai_recommendations") return "來源 AI 推薦";
-  if (source === "strategy_home") return "來源 首頁策略";
-  if (source === "home_paper_preview") return "來源 首頁紙上交易";
-  if (source === "strategy_run") return "來源 策略 Run";
-  return "來源 URL";
+  if (source === "ai_recommendations") return "AI 推薦帶入";
+  if (source === "strategy_home") return "首頁策略帶入";
+  if (source === "home_paper_preview") return "首頁紙上交易帶入";
+  if (source === "strategy_run") return "策略執行紀錄帶入";
+  return "網址參數帶入";
 }
 
 function paperPrefillWatchMeta(prefill: PaperPrefillHandoff) {
@@ -442,13 +448,14 @@ function sameSymbol(left: string | null | undefined, right: string | null | unde
 }
 
 async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
-  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.allSettled([
+  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.allSettled([
     getPaperHealth(),
     getPaperPortfolioRaw(),
     listPaperFills(),
     listPaperOrders(),
     getKgiPositions(),
-    getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 8, sort: "score" }),
+    getKgiStatus(),
+    getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 200, sort: "score" }),
   ]);
 
   const health = okValue<PaperHealthState | null>(healthResult, null);
@@ -459,6 +466,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
+  const kgiStatus = okValue<KgiStatusResponse | null>(kgiStatusResult, null);
   const ideas = ideasResult.status === "fulfilled" ? ideasResult.value.data : null;
   const mappedIdeas = ideas?.items?.map(mapIdea) ?? [];
   const prefill = options.paperPrefill ?? null;
@@ -485,6 +493,13 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const change = lastPrice != null && previous != null ? lastPrice - previous : null;
   const changePct = change != null && previous ? (change / previous) * 100 : null;
 
+  const defaultWatchlist = DEFAULT_TRADING_ROOM_WATCHLIST.map((item) => ({
+    symbol: item.symbol,
+    name: item.name,
+    meta: item.meta,
+    price: item.symbol === selectedSymbol ? lastPrice : null,
+    changePct: item.symbol === selectedSymbol ? changePct : null,
+  }));
   const watchlist = [
     ...(prefill?.enabled && selectedSymbol ? [{
       symbol: selectedSymbol,
@@ -507,9 +522,9 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       price: null,
       changePct: null,
     })),
+    ...defaultWatchlist,
   ]
-    .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
-    .slice(0, 10);
+    .filter((item, index, arr) => arr.findIndex((other) => sameSymbol(other.symbol, item.symbol)) === index);
 
   return {
     screen: "paper-trading-room" as const,
@@ -519,7 +534,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     selected: {
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
-      sector: company?.chainPosition ?? selectedIdea?.sector ?? "台股",
+      sector: industryLabel(company?.chainPosition ?? selectedIdea?.sector ?? "台股"),
       price: lastPrice,
       open: quote?.lastPrice ?? lastBar?.open ?? null,
       high: lastBar?.high ?? null,
@@ -537,12 +552,14 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     orders,
     fills,
     kgi,
+    kgiStatus,
     dataStates: {
       health: settledState(healthResult),
       portfolio: settledState(portfolioRawResult),
       fills: settledState(fillsResult),
       orders: settledState(ordersResult),
       kgi: settledState(kgiResult),
+      kgiStatus: settledState(kgiStatusResult),
       ideas: settledState(ideasResult),
     },
     ohlcv,
@@ -585,6 +602,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   let live = window.__IUF_FINAL_V031_LIVE__;
   if (!live || !live.screen) return;
   let currentPaperSymbol = null;
+  const apiBaseRaw = String(window.__IUF_FINAL_V031_API_BASE__ || "");
+  const apiBase = apiBaseRaw.endsWith("/") ? apiBaseRaw.slice(0, -1) : apiBaseRaw;
   const apiProxy = window.__IUF_FINAL_V031_API_PROXY__;
   const workspaceSlug = window.__IUF_FINAL_V031_WORKSPACE_SLUG__;
   const industryLabels = window.__IUF_FINAL_V031_INDUSTRY_LABELS__ || {};
@@ -596,12 +615,22 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const cls = (status) => status === "ok" || status === "allow" ? "ok" : status === "block" || status === "bad" ? "bad" : "warn";
   const unwrap = (json) => json && typeof json === "object" && Object.prototype.hasOwnProperty.call(json, "data") ? json.data : json;
   const apiUrl = (path) => apiProxy + encodeURIComponent(path);
-  const apiFetch = async (path, init={}) => fetch(apiUrl(path), {
-    credentials: "include",
-    cache: "no-store",
-    ...init,
-    headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug, ...(init.headers || {}) }
-  });
+  const directApiUrl = (path) => apiBase ? apiBase + path : null;
+  const apiFetch = async (path, init={}) => {
+    const method = (init.method || "GET").toUpperCase();
+    const requestInit = {
+      credentials: "include",
+      cache: "no-store",
+      ...init,
+      headers: { "Content-Type": "application/json", "x-workspace-slug": workspaceSlug, ...(init.headers || {}) }
+    };
+    const res = await fetch(apiUrl(path), requestInit);
+    const direct = directApiUrl(path);
+    if (method === "GET" && direct && (res.status === 401 || res.status === 403)) {
+      return fetch(direct, requestInit);
+    }
+    return res;
+  };
   const apiGetRaw = async (path) => {
     const res = await apiFetch(path, {
       credentials: "include",
@@ -637,11 +666,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return "url";
   };
   const paperPrefillSourceLabel = (source) => {
-    if (source === "ai_recommendations") return "來源 AI 推薦";
-    if (source === "strategy_home") return "來源 首頁策略";
-    if (source === "home_paper_preview") return "來源 首頁紙上交易";
-    if (source === "strategy_run") return "來源 策略 Run";
-    return "來源 URL";
+    if (source === "ai_recommendations") return "AI 推薦帶入";
+    if (source === "strategy_home") return "首頁策略帶入";
+    if (source === "home_paper_preview") return "首頁紙上交易帶入";
+    if (source === "strategy_run") return "策略執行紀錄帶入";
+    return "網址參數帶入";
   };
   const readPaperPrefillFromUrl = () => {
     if (live.screen !== "paper-trading-room") return null;
@@ -702,9 +731,6 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   const recommendationHref = (symbol) => isTwTicker(symbol) ? "/ai-recommendations?symbol=" + encodeURIComponent(String(symbol)) : "/ai-recommendations";
   const topicHref = (tag) => "/themes?query=" + encodeURIComponent(String(tag || "市場情報"));
   const marketFeedState = (items, news, announcements, newsOk, announcementsOk) => {
-    const endpoint = "GET /api/v1/market-intel/news-top10";
-    const annEndpoint = "GET /api/v1/market-intel/announcements?days=30&limit=20&scope=market";
-    const owner = "Jason / Elva";
     if (items.length > 0) {
       const source = news?.items?.length ? "AI 精選" : "官方公告 fallback";
       return {
@@ -712,8 +738,6 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         label: news?.items?.length ? "AI 精選已回傳" : "官方公告 fallback",
         summary: "顯示 " + items.length + " 則 " + source,
         detail: news?.selection_mode === "ai" ? "AI selector 已完成今日篩選。" : "使用正式公告或備援排序；未顯示示意新聞。",
-        endpoint,
-        owner,
         nextAction: "持續比對 AI 推薦股票、公司頁與主題頁連結。"
       };
     }
@@ -728,9 +752,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       label: "等待正式資料",
       summary: "目前沒有可呈現的正式 AI 精選市場情報",
       detail: details || "後端尚未回傳今日 AI 精選或官方公告項目。",
-      endpoint,
-      owner,
-      nextAction: "確認 " + endpoint + " 排程、" + annEndpoint + " sourceState 與 owner-session 權限；前端不顯示示意新聞。"
+      nextAction: "等待下一輪市場情報同步；前端不顯示示意新聞。"
     };
   };
   const setText = (sel, value) => { const node = $(sel); if (node) node.textContent = value; };
@@ -896,10 +918,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       items,
       feedState,
       sources: [
-        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "Endpoint: GET /api/v1/market-intel/announcements；目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
-        { name:"FinMind 市場資料", label:finMindLive ? "Endpoint: GET /api/v1/data-sources/finmind/status 可用" : "Endpoint: GET /api/v1/data-sources/finmind/status 同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
-        { name:"AI 精選訊息", label:aiLive ? "Endpoint: " + feedState.endpoint + " 已回傳 " + (news?.items?.length || 0) + " 則" : "Endpoint: " + feedState.endpoint + " 尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
-        { name:"主管機關公告", label:"Owner: " + feedState.owner + "；Next: sourceState / 欄位完整度確認", state:"warn", status:"待確認", fresh:"排程探測" }
+        { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
+        { name:"FinMind 市場資料", label:finMindLive ? "市場資料源可用" : "市場資料源同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
+        { name:"AI 精選訊息", label:aiLive ? "AI 精選已回傳 " + (news?.items?.length || 0) + " 則" : "AI 精選尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
+        { name:"主管機關公告", label:"公告欄位完整度待確認；不顯示未驗證內容", state:"warn", status:"待確認", fresh:"排程探測" }
       ],
       readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) },
       heatmap: heatmapTiles,
@@ -920,12 +942,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, ideasResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
+      soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score"))
     ]);
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
@@ -954,29 +977,44 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const previous = prevBar?.close ?? null;
     const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
     const changePct = change != null && previous ? change / Number(previous) * 100 : null;
-    const prefillWatch = prefill?.enabled && selectedSymbol ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
+    const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
+    const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
+    const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
+    const defaultWatchlist = [
+      { symbol:"2330", name:"台積電", meta:"核心觀察" },
+      { symbol:"1514", name:"亞力", meta:"電機設備" },
+      { symbol:"1560", name:"中砂", meta:"半導體設備" },
+      { symbol:"1590", name:"亞德客-KY", meta:"自動化設備" },
+      { symbol:"1721", name:"三晃", meta:"化學材料" },
+      { symbol:"1723", name:"中碳", meta:"材料 / 能源" },
+      { symbol:"1809", name:"中釉", meta:"材料" },
+      { symbol:"2066", name:"世德", meta:"車用零組件" }
+    ].map((item) => ({ symbol:item.symbol, name:item.name, meta:item.meta, price:sameSym(item.symbol, selectedSymbol) ? lastPrice : null, changePct:sameSym(item.symbol, selectedSymbol) ? changePct : null }));
+    const prefillWatch = prefillMatchesSelected ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
-      .filter((item, index, arr) => arr.findIndex((other) => other.symbol === item.symbol) === index)
-      .slice(0, 10);
+      .concat(defaultWatchlist)
+      .filter((item, index, arr) => arr.findIndex((other) => sameSym(other.symbol, item.symbol)) === index);
     return {
       screen:"paper-trading-room",
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
-      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:company?.chainPosition || selectedIdea?.sector || "台股", price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
       portfolio,
       orders,
       fills,
       kgi:kgiResult.ok ? kgiResult.data : null,
+      kgiStatus:kgiStatusResult.ok ? kgiStatusResult.data : null,
       dataStates:{
         health:softState(healthResult),
         portfolio:softState(portfolioRawResult),
         fills:softState(fillsResult),
         orders:softState(ordersResult),
         kgi:softState(kgiResult),
+        kgiStatus:softState(kgiStatusResult),
         ideas:softState(ideasResult)
       },
       ohlcv,
@@ -990,10 +1028,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   async function selectPaperSymbol(symbol) {
     const normalized = String(symbol || '').trim().toUpperCase();
     if (!/^[0-9A-Z._-]{2,16}$/.test(normalized)) return;
+    const activePrefill = paperPrefill();
+    const activePrefillSymbol = String(activePrefill?.symbol || "").trim().toUpperCase();
+    const shouldClearPrefill = !!activePrefill?.enabled && activePrefillSymbol && activePrefillSymbol !== normalized;
     currentPaperSymbol = normalized;
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('symbol', normalized);
+      if (shouldClearPrefill) {
+        ["entry", "stop", "tp", "from_rec", "recommendationId", "side"].forEach((key) => url.searchParams.delete(key));
+      }
       window.history.replaceState(null, '', url);
     } catch {
       // ignore history failures in embedded contexts
@@ -1002,7 +1046,35 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     rows.forEach((row) => row.classList.toggle('on', String(row.dataset.sym || '').toUpperCase() === normalized));
     setText('.symhead .sym', normalized);
     setText('.symhead .nm', '載入中');
+    const immediateSymInput = $("#t-sym");
+    if (immediateSymInput) {
+      immediateSymInput.value = normalized;
+      immediateSymInput.setAttribute("value", normalized);
+    }
+    removeMismatchedPaperPrefill(normalized, activePrefill);
     await refreshClientLive();
+  }
+  window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol;
+
+  function removeMismatchedPaperPrefill(symbol, snapshotPrefill = null) {
+    const selectedSymbol = String(symbol || "").trim().toUpperCase();
+    const activePrefill = snapshotPrefill || paperPrefill();
+    const prefillSymbol = String(activePrefill?.symbol || "").trim().toUpperCase();
+    if (!selectedSymbol || !prefillSymbol || prefillSymbol === selectedSymbol) return false;
+    const existing = $("#rec-prefill-box");
+    if (existing) existing.remove();
+    [".lv-label.entry", ".lv-label.stop", ".lv-label.target"].forEach((selector) => {
+      const node = $(selector);
+      if (node) node.textContent = "";
+    });
+    const staleEntryPrice = firstNumber(activePrefill?.entry);
+    const priceInput = $("#t-price");
+    const currentPrice = firstNumber(priceInput?.value);
+    if (priceInput && staleEntryPrice != null && currentPrice === staleEntryPrice) {
+      priceInput.value = "";
+      priceInput.setAttribute("value", "");
+    }
+    return true;
   }
 
   function attachPaperRowHandlers() {
@@ -1014,6 +1086,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         if (!sym) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (typeof window.pickRow === "function") {
+          window.pickRow(sym);
+        } else if (typeof window.updateRealChartFrame === "function") {
+          window.updateRealChartFrame(sym);
+        }
         selectPaperSymbol(sym).catch((error) => {
           window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : 'symbol_select_failed';
         });
@@ -1022,7 +1099,46 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   let paperSearchTimer = null;
-  function renderPaperSearchResult(match, query) {
+  function renderPaperSearchResults(results, query) {
+    const wl = $('#wl-my');
+    if (!wl) return;
+    let group = wl.querySelector('.group');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'group';
+      wl.prepend(group);
+    }
+    wl.querySelectorAll('[data-search-result="1"]').forEach((el) => el.remove());
+    if (!query) {
+      group.textContent = String((live.watchlist || []).length || 0) + ' 檔自選 / 候選';
+      wl.querySelectorAll('.wrow').forEach((row) => { row.style.display = ''; });
+      return;
+    }
+    wl.querySelectorAll('.wrow').forEach((row) => {
+      if (row.dataset.searchResult !== '1') row.style.display = 'none';
+    });
+    if (!Array.isArray(results) || results.length === 0) {
+      group.textContent = '找不到符合的股票';
+      return;
+    }
+    group.textContent = '搜尋結果 · ' + results.length + ' 檔（全 1900+ 台股可搜）';
+    let anchor = group;
+    for (const match of results) {
+      const ticker = String(match.ticker || '').toUpperCase();
+      if (!ticker) continue;
+      const row = document.createElement('div');
+      row.className = 'wrow';
+      row.dataset.searchResult = '1';
+      row.dataset.sym = ticker;
+      row.style.cursor = 'pointer';
+      row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(industryLabel(match.sector || '台股')) + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+      if (anchor.parentNode) anchor.parentNode.insertBefore(row, anchor.nextSibling);
+      anchor = row;
+    }
+    attachPaperRowHandlers();
+  }
+
+  function _unused_renderPaperSearchResult_legacy(match, query) {
     const wl = $('#wl-my');
     if (!wl) return;
     let group = wl.querySelector('.group');
@@ -1045,7 +1161,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
       row.removeAttribute('data-sym');
       row.style.display = '';
-      row.innerHTML = '<span class="sym">AUTH</span><div class="body"><div class="nm">\u9700\u8981 owner session \u624d\u80fd\u641c\u5c0b\u53f0\u80a1</div><div class="meta">GET /api/v1/companies/lookup \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5047\u7d50\u679c</div></div>';
+      row.innerHTML = '<span class="sym">AUTH</span><div class="body"><div class="nm">\u9700\u8981\u767b\u5165\u5f8c\u624d\u80fd\u641c\u5c0b\u53f0\u80a1</div><div class="meta">\u672a\u6388\u6b0a\u6642\u4e0d\u986f\u793a\u9810\u8a2d\u5047\u7d50\u679c</div></div>';
       return;
     }
     if (!match) {
@@ -1069,7 +1185,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     row.dataset.sym = ticker;
     row.style.display = '';
-    row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(match.sector || '台股') + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
+    row.innerHTML = '<span class="sym">' + esc(ticker) + '</span><div class="body"><div class="nm">' + esc(match.name || ticker) + '</div><div class="meta">' + esc(industryLabel(match.sector || '台股')) + '</div></div><div class="price"><span class="v">--</span><span class="d flat">點選載入</span></div>';
     attachPaperRowHandlers();
   }
 
@@ -1080,18 +1196,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const runSearch = async () => {
       const query = String(input.value || '').trim();
       if (!query) {
-        renderPaperSearchResult(null, '');
+        renderPaperSearchResults([], '');
         return;
       }
-      const local = (live.watchlist || []).find((item) =>
-        String(item.symbol || '').includes(query) || String(item.name || '').toLowerCase().includes(query.toLowerCase())
-      );
-      if (local) {
-        renderPaperSearchResult({ ticker: local.symbol, name: local.name, sector: local.meta }, query);
+      // Use new /search endpoint returning array (dropdown)
+      const results = await apiGet('/api/v1/companies/search?q=' + encodeURIComponent(query) + '&limit=30').catch(() => null);
+      if (!results || !Array.isArray(results)) {
+        renderPaperSearchResults([], query);
         return;
       }
-      const match = await apiGet('/api/v1/companies/lookup?q=' + encodeURIComponent(query)).catch(() => ({ error: "blocked" }));
-      renderPaperSearchResult(match, query);
+      renderPaperSearchResults(results, query);
     };
     input.addEventListener('input', () => {
       window.clearTimeout(paperSearchTimer);
@@ -1118,6 +1232,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         : live.screen === "strategy-ideas"
           ? await clientIdeasPayload()
           : await clientPaperPayload();
+      if (
+        live.screen === "paper-trading-room"
+        && currentPaperSymbol
+        && next?.selected?.symbol
+        && !sameSym(next.selected.symbol, currentPaperSymbol)
+      ) {
+        window.__IUF_FINAL_V031_STALE_REFRESH_DROPPED__ = {
+          expected: currentPaperSymbol,
+          received: next.selected.symbol,
+          at: new Date().toISOString(),
+        };
+        return;
+      }
       live = Object.assign({}, live, next);
       window.__IUF_FINAL_V031_LIVE__ = live;
       if (live.screen === "market-intel") hydrateMarket();
@@ -1153,7 +1280,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           item.recommendationHref ? '<a target="_top" href="'+esc(item.recommendationHref)+'">查看推薦</a>' : ''
         ].filter(Boolean).join('<span>·</span>');
         return '<div class="feedrow" style="--i:'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') + (links ? '<span>·</span>' + links : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>';
-      }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'</span><span>·</span><span>Owner: '+esc(feedState.owner || "Jason / Elva")+'</span></div></div><div class="why"><b>下一步</b>　'+esc(feedState.nextAction || "確認 news-top10 排程與 owner-session 權限；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
+      }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>AI 精選排程尚未回傳</span><span>·</span><span>不顯示示意新聞</span></div></div><div class="why"><b>狀態</b>　'+esc(feedState.nextAction || "等待下一輪市場情報同步；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
     }
     const feedState = live.feedState || {};
     const feedPill = $("#market-feed-state-pill");
@@ -1170,7 +1297,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (feedback) {
       feedback.innerHTML = (live.items || []).length
         ? esc(feedState.detail || "正式資料已回傳；每則情報提供來源、為什麼重要與下一步 CTA。")
-        : '目前 <b>沒有正式 AI 精選市場情報</b>。Endpoint: '+esc(feedState.endpoint || "GET /api/v1/market-intel/news-top10")+'；Owner: '+esc(feedState.owner || "Jason / Elva")+'；Next: '+esc(feedState.nextAction || "確認排程與 owner-session 權限")+'。';
+        : '目前 <b>沒有正式 AI 精選市場情報</b>。'+esc(feedState.nextAction || "等待下一輪市場情報同步；前端不顯示示意新聞。");
     }
     const list = $(".srclist");
     if (list) {
@@ -1189,9 +1316,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         heatGrid.innerHTML = tiles.slice(0, 30).map((tile) => {
           const alpha = Math.max(0.08, tile.intensity / 100);
           const bg = tile.tone === "up"
-            ? "rgba(0,210,110," + alpha + ")"
+            ? "rgba(230,57,70," + alpha + ")"
             : tile.tone === "dn"
-              ? "rgba(240,60,60," + alpha + ")"
+              ? "rgba(46,204,113," + alpha + ")"
               : "rgba(120,120,140,0.08)";
           const cls = tile.tone === "up" ? "up" : tile.tone === "dn" ? "dn" : "flat";
           return '<div class="htile" style="background:' + bg + '" title="' + esc(tile.industry) + ' 共 ' + esc(tile.stockCount) + ' 檔"><div class="nm">' + esc(tile.industry) + '</div><div class="pct ' + cls + '">' + esc(tile.label) + '</div><div class="cnt">' + esc(tile.gainerCount) + '↑ ' + esc(tile.loserCount) + '↓</div></div>';
@@ -1225,11 +1352,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           : ''
         ).join("") +
         (inst.state !== "live"
-          ? '<div style="font:11px/1.5 var(--sans);color:var(--fg-3);margin-top:6px">法人資料同步中</div>'
+          ? '<div style="font:11px/1.5 var(--sans);color:var(--fg-3);margin-top:6px">三大法人資料尚未完成今日回補；來源：FinMind / TWSE institutional summary。此區不補假數字。</div>'
           : ''
         );
     } else if (instPanel && !inst) {
-      instPanel.innerHTML = '<div style="color:var(--fg-3);font:12px/2 var(--sans);text-align:center;padding:8px">法人買賣超資料同步中</div>';
+      instPanel.innerHTML = '<div style="color:var(--fg-3);font:12px/1.8 var(--sans);text-align:left;padding:10px 12px;border:1px solid rgba(145,160,181,.16);border-radius:6px;background:rgba(17,24,34,.48)"><b style="color:var(--fg-1)">三大法人資料尚未回傳</b><br>需要資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell / TWSE institutional summary。Owner：Jason data lane。下一步：盤後回補或修復 ingest；本頁不顯示假法人買賣超。</div>';
     }
   }
 
@@ -1296,11 +1423,68 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
+  const kgiQuoteAuth = () => live.kgiStatus?.gateway_quote_auth || null;
+  const kgiQuoteBlockedReason = (label) => {
+    const auth = kgiQuoteAuth();
+    const code = String(auth?.errorCode || "");
+    const state = String(auth?.state || "");
+    if (code === "KGI_GATEWAY_UNREACHABLE" || state === "gateway_unreachable") return "KGI gateway 目前連不到；" + label + "暫停，不補假資料。";
+    if (code === "KGI_QUOTE_AUTH_UNAVAILABLE") return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；" + label + "暫停，不補假資料。";
+    if (code === "QUOTE_DISABLED") return "KGI 唯讀行情目前停用；" + label + "暫停，不補假資料。";
+    if (code === "KGI_NOT_LOGGED_IN") return "KGI gateway 尚未登入；" + label + "暫停，不補假資料。";
+    if (auth && auth.available === false) return "KGI 唯讀行情目前不可用（" + esc(code || auth.state || "blocked") + "）；" + label + "暫停，不補假資料。";
+    return "KGI 唯讀行情暫無回傳；" + label + "暫停，不補假資料。";
+  };
+
+  function hydrateKgiReadinessNote() {
+    const note = $('.ltab[data-lt="kgi"] .kginote');
+    if (!note) return;
+    const auth = kgiQuoteAuth();
+    const status = live.kgiStatus || {};
+    const positions = live.kgi?.positions || [];
+    const isGatewayUnreachable = String(auth?.errorCode || "") === "KGI_GATEWAY_UNREACHABLE" || String(auth?.state || "") === "gateway_unreachable";
+    const isAuthUnavailable = String(auth?.errorCode || "") === "KGI_QUOTE_AUTH_UNAVAILABLE";
+    const title = isGatewayUnreachable
+      ? "KGI gateway 連線中斷"
+      : isAuthUnavailable
+      ? "KGI SIM 已登入，行情權限未開"
+      : auth?.available
+        ? "KGI 唯讀行情可用"
+        : "KGI 唯讀狀態已同步";
+    const detail = isGatewayUnreachable
+      ? "API 已確認目前連不到 KGI gateway 主機或 tunnel；Paper 交易仍可用，KGI 五檔、逐筆與券商庫存讀取暫停。"
+      : isAuthUnavailable
+      ? "目前可讀 gateway / 帳號狀態；即時五檔與逐筆因凱基未提供 SIM 行情 token 暫停，不會補假資料。"
+      : auth?.available
+        ? "gateway 已登入且行情授權可用；若表格為空，代表目前沒有券商庫存或尚未收到該股票逐筆。"
+        : kgiQuoteBlockedReason("行情讀取");
+    const rows = [
+      status.kgi_env ? "環境：" + esc(status.kgi_env).toUpperCase() : null,
+      status.prod_write_blocked ? "正式下單：封鎖" : null,
+      auth ? "行情：" + (auth.available ? "可訂閱" : esc(auth.errorCode || auth.state || "不可用")) : null,
+      "庫存：" + positions.length + " 筆",
+    ].filter(Boolean);
+    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI READ-ONLY</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
+  }
+
   function applyPaperPrefill(selected) {
     const prefill = paperPrefill();
     const existing = $("#rec-prefill-box");
     if (!prefill?.enabled) {
       if (existing) existing.remove();
+      return;
+    }
+
+    const selectedSymbol = String(selected?.symbol || "").trim().toUpperCase();
+    const prefillSymbol = String(prefill.symbol || "").trim().toUpperCase();
+    if (prefillSymbol && selectedSymbol && prefillSymbol !== selectedSymbol) {
+      removeMismatchedPaperPrefill(selectedSymbol);
+      const submit = $("#submit-btn");
+      const label = $("#submit-btn-label") || submit?.querySelector("b");
+      if (label) {
+        if (!label.id) label.id = "submit-btn-label";
+        label.textContent = "紙上單預覽";
+      }
       return;
     }
 
@@ -1324,7 +1508,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         prefill.target ? "目標 " + prefill.target : null,
         prefill.recommendationId ? "rec " + prefill.recommendationId : null
       ].filter(Boolean);
-      box.innerHTML = '<div class="k">AI RECOMMENDATION PAPER PREVIEW</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
+      box.innerHTML = '<div class="k">AI 推薦紙上單預覽</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
 
     const entryPrice = firstNumber(prefill.entry);
@@ -1399,7 +1583,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (selected.symbol) {
       symLive[selected.symbol] = {
         nm: selected.name || selected.symbol,
-        sec: selected.sector || "台股",
+        sec: industryLabel(selected.sector || "台股"),
         price: selected.price,
         open: selected.open,
         high: selected.high,
@@ -1410,15 +1594,22 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     window.__IUF_SYM_DATA_LIVE__ = symLive;
 
-    // 4. Redraw chart with real OHLCV now that globals are set
-    if (typeof window.drawChart === "function" && chartBars.length > 0) {
+    // 4. Redraw the legacy SVG chart only when the real company-page K-line frame
+    // is not mounted. The trading room uses the real iframe; repainting the hidden
+    // SVG on every 15s hydration makes symbol switches feel jumpy without adding
+    // user-visible value.
+    const realFrameMounted = !!document.getElementById("real-kline-frame");
+    if (!realFrameMounted && typeof window.drawChart === "function") {
       window.drawChart(selected.symbol || "2330");
+    }
+    if (typeof window.updateRealChartFrame === "function") {
+      window.updateRealChartFrame(selected.symbol || "2330");
     }
     // ──────────────────────────────────────────────────────────────────────────
 
     setText(".symhead .sym", selected.symbol || "—");
     setText(".symhead .nm", (selected.name || selected.symbol || "—"));
-    setText(".symhead .meta", selected.sector || "台股");
+    setText(".symhead .meta", industryLabel(selected.sector || "台股"));
     const pv = $(".symhead .price .v"); if (pv) { pv.textContent = price(selected.price); pv.className = "v " + tone; }
     const pd = $(".symhead .price .d"); if (pd) { pd.textContent = chg == null ? "可用資料" : (Number(chg) >= 0 ? "▲ +" : "▼ −") + Math.abs(Number(chg)).toFixed(2) + " 　" + (Number(pct) >= 0 ? "+" : "−") + Math.abs(Number(pct || 0)).toFixed(2) + "%"; pd.className = "d " + tone; }
     const stats = $$(".symhead .stats .s .v");
@@ -1430,7 +1621,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wl = $("#wl-my");
     if (wl) {
       const wlItems = live.watchlist || [];
-      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper portfolio / strategy ideas / companies lookup</div><div class="meta">GET /api/v1/paper/portfolio \u00b7 GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u4fdd\u7559\u9810\u8a2d 5 \u6a94</div></div></div>'; } else if (false) {
+      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u81ea\u9078\u3001\u6a21\u64ec\u5eab\u5b58\u6216\u7b56\u7565\u5019\u9078\u56de\u50b3</div><div class="meta">\u4e0d\u4fdd\u7559\u9810\u8a2d\u5047\u5019\u9078</div></div></div>'; } else if (false) {
         // P1-1 fallback: keep SSR static rows, update group label only
         const groupEl = wl.querySelector(".group");
         if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
@@ -1442,14 +1633,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           }
         }));
       } else {
-        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item, i) => '<div class="wrow '+(i===0?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
-        // Re-attach click listeners for freshly rendered rows
-        wl.querySelectorAll(".wrow").forEach((r) => r.addEventListener("click", () => {
-          const sym = r.dataset.sym;
-          if (sym && typeof window.pickRow === "function") {
-            window.pickRow(sym);
-          }
-        }));
+        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item) => '<div class="wrow '+(sameSym(item.symbol, selected.symbol)?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
       }
     }
     attachPaperRowHandlers();
@@ -1477,6 +1661,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+price(pos.symbol === selected.symbol ? selected.price : pos.avgCostPerShare)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.symbol === selected.symbol ? selected.price || 0 : pos.avgCostPerShare || 0))+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+esc(pos.fillCount)+' 筆</td></tr>').join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
     if (kgiBody) kgiBody.innerHTML = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">讀取</span></td></tr>').join("") || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
+    hydrateKgiReadinessNote();
     const depth = $("#depth");
     if (depth) {
       if (live.bidAsk) {
@@ -1489,6 +1674,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
     }
     // BUG_006 — tape: 最近成交 ticks
+    if (depth && !live.bidAsk) {
+      depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("五檔"))+'</div>';
+    }
     const tape = $("#tape");
     if (tape) {
       const ticks = live.ticks || [];
@@ -1503,6 +1691,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
     }
     // BUG_006 — OHLCV legend in chart bar
+    if (tape && !(live.ticks || []).length) {
+      tape.innerHTML = '<div class="row" style="grid-template-columns:1fr;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("逐筆成交"))+'</div>';
+    }
     const ohlcvLast = (live.ohlcv || []).length ? live.ohlcv[live.ohlcv.length - 1] : null;
     const ohlcO = $("#ohlc-o"); if (ohlcO) ohlcO.textContent = ohlcvLast ? price(ohlcvLast.open) : (selected.open ? price(selected.open) : "—");
     const ohlcH = $("#ohlc-h"); if (ohlcH) ohlcH.textContent = ohlcvLast ? price(ohlcvLast.high) : (selected.high ? price(selected.high) : "—");
@@ -1527,11 +1718,21 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       // Vendor preview is best-effort; backend preview still validates again on click.
     }
     const submit = $("#submit-btn");
+    const kgiSubmit = $("#submit-kgi-sim-btn");
+    const getKgiSubmitLabel = () => $("#submit-kgi-sim-label") || kgiSubmit?.querySelector("b");
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
       if (blockedLabel) blockedLabel.textContent = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
       const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
+    }
+    if (kgiSubmit && !capitalReady) {
+      kgiSubmit.disabled = true;
+      kgiSubmit.classList.add("is-blocked");
+      kgiSubmit.setAttribute("aria-disabled", "true");
+      kgiSubmit.dataset.blocked = "owner_session_required";
+      const kgiBlockedLabel = getKgiSubmitLabel();
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "\u9700\u8981 owner session";
     }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -1611,6 +1812,97 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       }
     }, true);
 
+    if (kgiSubmit) kgiSubmit.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!capitalReady) return;
+      const qty = Number($("#t-qty")?.value || 0);
+      const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
+      const orderType = String($("#t-otype")?.value || "limit");
+      const side = $("#side .on")?.dataset.side || "buy";
+      const rawPx = Number($("#t-price")?.value || 0);
+      const selectedPx = Number(selected.price || 0);
+      const priceRequired = orderType !== "market";
+      const invalidQty = !Number.isFinite(qty) || qty <= 0;
+      const invalidPrice = priceRequired && (!Number.isFinite(rawPx) || rawPx <= 0);
+      const invalidMarketPrice = !priceRequired && (!Number.isFinite(selectedPx) || selectedPx <= 0);
+      const kgiLabel = getKgiSubmitLabel();
+      const setGate = (message) => { const gate = $(".gate .h .v"); if (gate) gate.textContent = message; };
+      if (orderType !== "market" && orderType !== "limit") {
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 不支援停損單";
+        setGate("KGI SIM 只支援市價 / 限價");
+        return;
+      }
+      if (invalidQty || invalidPrice || invalidMarketPrice) {
+        const reason = invalidQty ? "請輸入有效數量" : (priceRequired ? "請輸入有效委託價" : "等待有效市價");
+        if (kgiLabel) kgiLabel.textContent = reason;
+        setGate(reason);
+        return;
+      }
+
+      kgiSubmit.disabled = true;
+      kgiSubmit.classList.remove("is-blocked");
+      kgiSubmit.removeAttribute("aria-disabled");
+      delete kgiSubmit.dataset.blocked;
+      if (kgiLabel) kgiLabel.textContent = "KGI SIM 風控預檢中...";
+      const px = orderType === "market" ? selectedPx : rawPx;
+      const payload = {
+        symbol: selected.symbol,
+        side,
+        orderType,
+        qty,
+        quantity_unit: unit,
+        price: orderType === "market" ? null : px,
+      };
+      try {
+        const directPayload = Object.assign({}, payload, { idempotencyKey: "v031_kgi_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) });
+        let preview;
+        try {
+          preview = { ok: true, data: await apiPost("/api/v1/paper/preview", directPayload) };
+        } catch {
+          preview = await fetch("/api/ui-final-v031-paper/preview", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+        }
+        if (!preview.ok) throw new Error(preview.error || "preview_failed");
+
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 送單中...";
+        const simPayload = {
+          ticker: selected.symbol,
+          side,
+          orderType,
+          quantity: qty,
+          quantityUnit: unit,
+          price: orderType === "market" ? null : px,
+          timeInForce: "ROD",
+          orderCond: "Cash",
+          priceType: orderType === "market" ? "MKT" : undefined,
+        };
+        const response = await fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(simPayload),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message = body && typeof body === "object"
+            ? String(body.message || body.reason || body.error || "KGI SIM 送單失敗")
+            : "KGI SIM 送單失敗";
+          throw new Error(message);
+        }
+        const data = body && typeof body === "object" ? body.data : null;
+        const tradeId = data && typeof data === "object" && data.tradeId ? String(data.tradeId) : "";
+        if (kgiLabel) kgiLabel.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已送出";
+        setGate("KGI SIM 已送出（正式實單仍鎖定）");
+        try { await refreshClientLive(); } catch { /* ignore */ }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (kgiLabel) kgiLabel.textContent = "KGI SIM 未送出";
+        setGate(message.slice(0, 80) || "KGI SIM 未送出");
+      } finally {
+        setTimeout(() => { kgiSubmit.disabled = false; }, 1200);
+      }
+    }, true);
+
     // ── Position banner (real portfolio for selected symbol) ──────────────────
     const selPos = (live.portfolio || []).find((p) => String(p.symbol) === String(selected.symbol));
     const banner = $("#posbanner");
@@ -1686,7 +1978,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (eventsBody) {
       const events = [];
       // fills → buy/sell events
-      (live.fills || []).slice(0, 8).forEach((f) => {
+      (live.fills || []).slice(0, 100).forEach((f) => {
         const side = String(f.side || "buy");
         events.push({
           ts: String(f.fillTime || "").slice(5, 16) || "—",
@@ -1728,17 +2020,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (wlSigGroup) wlSigGroup.textContent = "策略候選 · " + ideas.length + " 檔";
       // Remove old static rows (keep only group div)
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      ideas.slice(0, 8).forEach((idea, i) => {
+      ideas.forEach((idea) => {
         const div = document.createElement("div");
-        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.className = "wrow" + (sameSym(idea.symbol, selected.symbol) ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         const tone = String(idea.statusClass || "") === "allow" ? "ok" : String(idea.statusClass || "") === "block" ? "bad" : "warn";
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">' + esc(String(idea.signalCount || 0)) + ' 訊號 · ' + esc(String(idea.completeness || 0)) + '%</div></div><div class="price"><span class="v">—</span><span class="d ' + tone + '">' + esc(String(idea.status || "—")) + '</span></div>';
-        div.addEventListener("click", () => {
-          if (typeof window.pickRow === "function") {
-            window.pickRow(String(idea.symbol || ""));
-          }
-        });
         wlSig.appendChild(div);
       });
     } else if (wlSig) {
@@ -1746,7 +2033,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       Array.from(wlSig.querySelectorAll(".wrow")).forEach((el) => el.remove());
       const div = document.createElement("div");
       div.className = "wrow";
-      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 strategy ideas endpoint</div><div class="meta">GET /api/v1/strategy/ideas \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u7b56\u7565\u8a0a\u865f\u56de\u50b3</div><div class="meta">\u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
       wlSig.appendChild(div);
     }
 
@@ -1757,16 +2044,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (wlPaper && allowIdeas.length) {
       if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自策略想法 · " + allowIdeas.length + " 檔";
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
-      allowIdeas.slice(0, 6).forEach((idea, i) => {
+      allowIdeas.slice(0, 6).forEach((idea) => {
         const div = document.createElement("div");
-        div.className = "wrow" + (i === 0 ? " on" : "");
+        div.className = "wrow" + (sameSym(idea.symbol, selected.symbol) ? " on" : "");
         div.dataset.sym = String(idea.symbol || "");
         div.innerHTML = '<span class="sym">' + esc(String(idea.symbol || "—")) + '</span><div class="body"><div class="nm">' + esc(String(idea.companyName || idea.symbol || "—")) + '</div><div class="meta">AI 評分 ' + esc(String(idea.score || "—")) + ' · ' + esc(String(idea.confidence || "—")) + '</div></div><div class="price"><span class="v">—</span><span class="d ok">' + esc(String(idea.status || "—")) + '</span></div>';
-        div.addEventListener("click", () => {
-          if (typeof window.pickRow === "function") {
-            window.pickRow(String(idea.symbol || ""));
-          }
-        });
         wlPaper.appendChild(div);
       });
     } else if (wlPaper) {
@@ -1774,7 +2056,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
       const div = document.createElement("div");
       div.className = "wrow";
-      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85 paper strategy candidates</div><div class="meta">GET /api/v1/strategy/ideas?decisionMode=paper \u00b7 Owner: Elva/Jason \u00b7 \u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
+      div.innerHTML = '<span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u7d19\u4e0a\u4ea4\u6613\u5019\u9078\u56de\u50b3</div><div class="meta">\u4e0d\u986f\u793a\u9810\u8a2d\u5019\u9078</div></div>';
       wlPaper.appendChild(div);
     }
   }

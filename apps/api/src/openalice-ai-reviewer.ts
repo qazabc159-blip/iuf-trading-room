@@ -364,8 +364,8 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     // Gap 2 fix: look up sourcePackSummary from the pipeline job registry via sourceJobId.
     // Enables Category C (source selection bias) detection in the adversarial reviewer.
     const sourcePackSummary = draftRow.sourceJobId
-      ? lookupJobSourcePackSummary(draftRow.sourceJobId)
-      : null;
+      ? lookupJobSourcePackSummary(draftRow.sourceJobId) ?? lookupJobSourcePackSummary(draftId)
+      : lookupJobSourcePackSummary(draftId);
 
     const adversarialResult = await runAdversarialReview(
       draftRow.payload,
@@ -416,9 +416,9 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     // It does NOT re-read the AI audit log we just wrote — the timing is fine because we call
     // evaluatePipelinePublishGate BEFORE approveContentDraft, which is correct order.
     const sourceJobId = draftRow.sourceJobId ?? null;
-    const sourcePack = loadSourcePackForDraft(sourceJobId);
+    const sourcePack = loadSourcePackForDraft(sourceJobId) ?? loadSourcePackForDraft(draftId);
     try {
-      const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack);
+      const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack, result);
 
       if (gateResult.action === "rejected") {
         // Gate force-rejected (BROKEN token in output, or HALLUCINATED RAG verdict)

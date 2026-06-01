@@ -280,6 +280,8 @@ export type AiRecommendationV3Item = {
 
 export type AiRecommendationV3SourceState = {
   state?: "live" | "empty" | "degraded" | "pending" | string;
+  source?: string | null;
+  count?: number | null;
   lastUpdated?: string | null;
   owner?: string | null;
   nextAction?: string | null;
@@ -434,6 +436,14 @@ export type BriefDetailAuditChain = {
     flags: unknown[];
     ragUsed: boolean;
     modelChain: string;
+    auditedAt: string | null;
+  } | null;
+  sourceOnlyGate?: {
+    ran: boolean;
+    verdict: "OK" | "HELD";
+    confidence: number | null;
+    reason: string | null;
+    sourcePackId: string | null;
     auditedAt: string | null;
   } | null;
 };
@@ -681,6 +691,8 @@ export type OpenAliceObservability = {
 
 export type OpenAliceDispatcherTickResult =
   | "enqueued"
+  | "pipeline_triggered"
+  | "pipeline_skipped"
   | "skipped_existing_job"
   | "skipped_existing_brief"
   | "no_workspace"

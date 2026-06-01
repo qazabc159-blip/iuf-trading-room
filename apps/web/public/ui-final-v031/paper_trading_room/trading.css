@@ -161,11 +161,13 @@
 
 .chart-bar .toolset{display:inline-flex;gap:6px}
 .chart-bar .tool{
+  appearance:none;
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);
-  font:500 11px/1 var(--mono);color:var(--fg-2);cursor:pointer;letter-spacing:.04em;transition:all .15s
+  font:500 11px/1 var(--mono);color:var(--fg-2);cursor:pointer;letter-spacing:.04em;transition:all .15s;white-space:nowrap
 }
-.chart-bar .tool:hover{color:var(--fg-0);border-color:var(--line-strong)}
+.chart-bar .tool:hover,.chart-bar .tool:focus-visible{color:var(--fg-0);border-color:var(--line-strong);outline:0}
+.chart-bar .tool:focus-visible{box-shadow:0 0 0 2px rgba(226,184,92,.28)}
 .chart-bar .tool.on{color:var(--brand);background:var(--brand-bg);border-color:var(--brand-line)}
 .chart-bar .tool i{width:8px;height:8px;border-radius:1px;display:inline-block}
 .chart-bar .tool .ma{background:#e2b85c}
@@ -201,6 +203,12 @@
 .chart-wrap .lv-label.entry{fill:var(--brand)}
 .chart-wrap .lv-label.stop{fill:var(--bad)}
 .chart-wrap .lv-label.target{fill:var(--ok)}
+.chart-wrap[data-ma="off"] #ma,
+.chart-wrap[data-vwap="off"] #vwap,
+.chart-wrap[data-sr="off"] .sr-line,
+.chart-wrap[data-sr="off"] .sr-label,
+.chart-wrap[data-lv="off"] .lv-line,
+.chart-wrap[data-lv="off"] .lv-label{display:none}
 .chart-wrap .crosshair{pointer-events:none}
 .chart-wrap .crosshair line{stroke:var(--fg-2);stroke-dasharray:3 4;opacity:.4}
 .chart-wrap .ch-tip{

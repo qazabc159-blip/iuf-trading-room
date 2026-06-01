@@ -57,10 +57,10 @@ const LANES: LaneCard[] = [
     displayName: "S1 iuf_ls_omni_v1_router",
     state: "active-owner-review",
     statusCategory: "owner_review",
-    statusReason: "Owner-review packet and Bruce 10/10 attest exist; this is still a SIM research packet, not capital approval.",
-    nextAction: "Yang reviews the owner packet and decides whether to keep SIM observation active; no broker/order path is opened by this page.",
+    statusReason: "複核包與 Bruce 10/10 檢查都已存在；目前仍是模擬研究包，不代表資金核准。",
+    nextAction: "等待楊董複核後，決定是否保留模擬觀察；本頁不開啟券商或下單路徑。",
     owner: "Elva / Bruce / Yang",
-    recommendationImpact: "Can inform research context only; must not auto-promote live or paper recommendations.",
+    recommendationImpact: "只能作為研究背景，不會自動升級成正式推薦或紙上交易推薦。",
     qualityChecks: { passed: 10, total: 10 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -70,7 +70,7 @@ const LANES: LaneCard[] = [
       liveReady: false,
       paperReady: false,
     },
-    forwardObsNote: "10M SIM owner-review packet — 待楊董 review",
+    forwardObsNote: "1000 萬模擬研究包：待楊董複核",
     evidenceFiles: [
       "reports/data_lane/s1_iuf_ls_omni_owner_review_packet_2026_05_18_v1.json",
       "reports/data_lane/s1_iuf_ls_omni_owner_review_packet_attest_v1.json",
@@ -80,11 +80,11 @@ const LANES: LaneCard[] = [
       "reports/data_lane/s1_inverse_hedge_bakeoff_v1.json",
     ],
     notes: [
-      "Long engine: cont_liq v36R top8",
-      "Hedge: 00632R (crisis-only, 0.60 target weight, adjusted-price verified)",
-      "Bruce attest: PACKET_ATTEST_PASS 10/10",
-      "Route proxy: 421 days, compound +215.91%, max drawdown -13.18%",
-      "Soft-throttle row: 2485 on 2025-08-25 (needs split/size reduction in SIM policy)",
+      "多方核心：cont_liq v36R top8",
+      "避險腳本：00632R 僅危機情境啟用，目標權重 0.60，已用還原價驗證",
+      "Bruce 檢查：10 / 10 通過",
+      "路徑代理測試：421 天，複利 +215.91%，最大回撤 -13.18%",
+      "2025-08-25 的 2485 需要在模擬政策中降低切分或下單尺寸",
     ],
     phantomItems: undefined,
   },
@@ -93,10 +93,10 @@ const LANES: LaneCard[] = [
     displayName: "cont_liq v36 top4 (baseline)",
     state: "baseline-c04-fail",
     statusCategory: "risk_blocked",
-    statusReason: "Standalone baseline is blocked by the C04 broad-family evidence gate; it can stay as research context only.",
-    nextAction: "Athena/Bruce must rerun or replace broad-family evidence before this baseline can be described as cleared.",
+    statusReason: "單獨使用的 baseline 沒通過 C04 廣族群證據閘，目前只能保留為研究背景。",
+    nextAction: "Athena / Bruce 需要重跑或替換廣族群證據，通過後才可標示為已清關。",
     owner: "Athena / Bruce",
-    recommendationImpact: "Not eligible as a standalone recommendation source while the C04 gate is blocked.",
+    recommendationImpact: "C04 未通過前，不能當成獨立推薦來源。",
     qualityChecks: { passed: 10, total: 11 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -111,11 +111,11 @@ const LANES: LaneCard[] = [
       "reports/data_lane/codex_cont_liq_v36_capital_test_preflight_v1.json",
     ],
     notes: [
-      "C04 strict broad-family evidence gate not passed: broad-family max-T p=0.09979 > threshold 0.05",
-      "Strict statistical clearance route: NOT OPEN",
-      "C11 owner risk budget: NOW SOLVED (10M TWD / max loss 300K TWD)",
-      "v36 top4 is not dead, but cannot be described as fully cleared",
-      "cont_liq v36R top8 is the long engine inside S1 — treat as S1 component only",
+      "C04 廣族群證據閘未通過：max-T p=0.09979，高於 0.05 門檻",
+      "嚴格統計清關路徑尚未開啟",
+      "C11 風險預算已處理：1000 萬台幣模擬資金，最大虧損 30 萬台幣",
+      "v36 top4 不是廢棄，但不能描述成完全清關",
+      "cont_liq v36R top8 只作為 S1 裡的多方元件",
     ],
     phantomItems: undefined,
   },
@@ -124,10 +124,10 @@ const LANES: LaneCard[] = [
     displayName: "Class5 v3/v4",
     state: "research-paused",
     statusCategory: "research_paused",
-    statusReason: "Previous memory claims were retracted because no disk-backed source artifacts were found.",
-    nextAction: "Write a fresh hypothesis spec and new artifacts before showing this lane as a candidate again.",
+    statusReason: "先前記憶中的通過說法找不到檔案證據，因此已撤回。",
+    nextAction: "要先重新寫假設規格並產出新證據，才能再次列為候選策略。",
     owner: "Athena",
-    recommendationImpact: "No impact on AI recommendation or strategy routing until new verified artifacts exist.",
+    recommendationImpact: "沒有新驗證檔案前，不影響 AI 推薦或策略路由。",
     qualityChecks: { passed: 0, total: 13 },
     lastUpdate: "2026-05-18T11:29:00+08:00",
     permissions: {
@@ -143,14 +143,14 @@ const LANES: LaneCard[] = [
       "reports/data_lane/athena_path_a_retract_draft_2026_05_18.md",
     ],
     notes: [
-      "Disk status: retracted / no source artifacts",
-      "Current state: research-paused pending fresh hypothesis spec",
+      "檔案狀態：已撤回，沒有可引用來源",
+      "目前狀態：研究暫停，等待新的假設規格",
     ],
     phantomItems: [
-      "Class5 Truth Board v15 / Class5 v3 PASS / v4 redesign",
-      "Sprint Cycle 4 cont_liq Period 2 sector cap 3 PASS",
+      "Class5 Truth Board v15 / Class5 v3 通過 / v4 redesign",
+      "Sprint Cycle 4 cont_liq Period 2 sector cap 3 通過",
       "Round-2 fixture publish under research/fixtures/",
-      "Family C x SBL v3 PASS",
+      "Family C x SBL v3 通過",
     ],
   },
 ];
@@ -173,7 +173,7 @@ function LaneStateBadge({ state }: { state: LaneState }) {
         textTransform: "uppercase",
         letterSpacing: "0.06em",
       }}>
-        OWNER-REVIEW PACKET
+        待楊董複核
       </span>
     );
   }
@@ -192,7 +192,7 @@ function LaneStateBadge({ state }: { state: LaneState }) {
         textTransform: "uppercase",
         letterSpacing: "0.06em",
       }}>
-        BASELINE — C04 BLOCKED
+        C04 風險閘未過
       </span>
     );
   }
@@ -211,7 +211,7 @@ function LaneStateBadge({ state }: { state: LaneState }) {
       textTransform: "uppercase",
       letterSpacing: "0.06em",
     }}>
-      RESEARCH-PAUSED
+      研究暫停
     </span>
   );
 }
@@ -252,11 +252,11 @@ function QualityBar({ passed, total }: { passed: number; total: number }) {
 
 function PermissionsBlock() {
   const items = [
-    "broker / order",
-    "registry state",
-    "capital use",
-    "live-ready",
-    "paper-ready",
+    "券商與下單",
+    "策略註冊",
+    "資金使用",
+    "正式交易",
+    "紙上交易",
   ];
   return (
     <div style={{
@@ -272,7 +272,7 @@ function PermissionsBlock() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
         {items.map(item => (
           <span key={item} style={{ fontSize: 11, color: "rgba(255,184,0,0.78)", fontFamily: "var(--mono, monospace)" }}>
-            disabled · {item}
+            關閉：{item}
           </span>
         ))}
       </div>
@@ -292,7 +292,7 @@ function PhantomBadge({ label }: { label: string }) {
       borderRadius: 3,
       marginBottom: 4,
     }}>
-      <span style={{ fontSize: 11, color: "#ffa726", fontWeight: 700, flexShrink: 0 }}>RETRACTED</span>
+      <span style={{ fontSize: 11, color: "#ffa726", fontWeight: 700, flexShrink: 0 }}>已撤回</span>
       <span style={{ fontSize: 11, color: "rgba(255,167,38,0.85)", fontFamily: "var(--mono, monospace)" }}>{label}</span>
     </div>
   );
@@ -304,7 +304,7 @@ function statusSummaryStyle(category: LaneCard["statusCategory"]) {
       background: "rgba(76,175,80,0.07)",
       border: "1px solid rgba(76,175,80,0.2)",
       color: "rgba(76,175,80,0.9)",
-      label: "OWNER REVIEW",
+      label: "等待複核",
     };
   }
   if (category === "risk_blocked") {
@@ -312,14 +312,14 @@ function statusSummaryStyle(category: LaneCard["statusCategory"]) {
       background: "rgba(255,167,38,0.07)",
       border: "1px solid rgba(255,167,38,0.22)",
       color: "rgba(255,167,38,0.92)",
-      label: "RISK BLOCKED",
+      label: "風險阻擋",
     };
   }
   return {
     background: "rgba(158,158,158,0.08)",
     border: "1px solid rgba(158,158,158,0.24)",
     color: "rgba(210,210,210,0.86)",
-    label: "RESEARCH PAUSED",
+    label: "研究暫停",
   };
 }
 
@@ -345,15 +345,15 @@ function StatusSummary({ lane }: { lane: LaneCard }) {
           {style.label}
         </span>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
-          Owner: {lane.owner}
+          負責：{lane.owner}
         </span>
       </div>
       <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)", lineHeight: 1.55 }}>
         {lane.statusReason}
       </div>
       <div style={{ display: "grid", gap: 4, fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.55 }}>
-        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>Next action:</strong> {lane.nextAction}</div>
-        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>Recommendation impact:</strong> {lane.recommendationImpact}</div>
+        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>下一步：</strong>{lane.nextAction}</div>
+        <div><strong style={{ color: "rgba(255,255,255,0.72)" }}>對推薦系統影響：</strong>{lane.recommendationImpact}</div>
       </div>
     </div>
   );
@@ -374,7 +374,7 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
-            Strategy ID
+            策略代號
           </div>
           <div style={{ fontFamily: "var(--mono, monospace)", fontSize: 13, fontWeight: 700, color: "#e0e0e0" }}>
             {lane.id}
@@ -389,14 +389,14 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
       {/* Quality checks */}
       <div>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-          品質鎖 checklist
+          品質檢查
         </div>
         <QualityBar passed={lane.qualityChecks.passed} total={lane.qualityChecks.total} />
       </div>
 
       {/* Last update */}
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontFamily: "var(--mono, monospace)" }}>
-        Last update: {new Date(lane.lastUpdate).toLocaleString("zh-TW", { hour12: false })}
+        更新時間：{new Date(lane.lastUpdate).toLocaleString("zh-TW", { hour12: false })}
       </div>
 
       {/* Permissions block */}
@@ -434,7 +434,7 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
       {lane.phantomItems && lane.phantomItems.length > 0 && (
         <div>
           <div style={{ fontSize: 10, color: "#ffa726", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-            Retracted claims — 不可引用
+            已撤回說法：不可引用
           </div>
           {lane.phantomItems.map((item, i) => (
             <PhantomBadge key={i} label={item} />
@@ -444,18 +444,31 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
 
       {/* Evidence files */}
       {lane.evidenceFiles.length > 0 && (
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-            Evidence files (read-only, IUF_QUANT_LAB)
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <details style={{
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 5,
+          background: "rgba(255,255,255,0.018)",
+          padding: "8px 10px",
+        }}>
+          <summary style={{
+            cursor: "pointer",
+            color: "rgba(255,255,255,0.52)",
+            fontSize: 11,
+            fontWeight: 700,
+          }}>
+            查看 {lane.evidenceFiles.length} 份證據檔案
+          </summary>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+              來源：IUF_QUANT_LAB，只讀保存。
+            </span>
             {lane.evidenceFiles.map((f, i) => (
               <code key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", display: "block", wordBreak: "break-all" }}>
                 {f}
               </code>
             ))}
           </div>
-        </div>
+        </details>
       )}
     </div>
   );
@@ -545,20 +558,20 @@ export default function AdminStrategiesPage() {
 
       <main className="_strat-page">
         <div className="_strat-header">
-          <div className="_strat-title">Quant Lab — Strategy Lanes</div>
+          <div className="_strat-title">Quant Lab 策略狀態</div>
           <div className="_strat-subtitle">
-            Ground truth: Codex S1 state 2026-05-18 11:29 TST &nbsp;·&nbsp; Owner-only
+            真實來源：Codex S1 狀態 2026-05-18 11:29 TST &nbsp;·&nbsp; 僅限管理者
           </div>
         </div>
 
         <div className="_strat-truth-banner">
-          Quant Lab 目前只允許研究與 SIM owner-review 語境。S1 owner-review packet 已建置完畢，
-          Bruce 10/10 attest PASS；但 broker / order / capital 權限都未開啟，尚未取得楊董 review。
-          cont_liq v36 top4 是 C04 risk-blocked baseline；Class5 v3/v4 是 retracted / research-paused。
-          任何來自 5/15 MEMORY 的描述均不可引用為已驗證 shipped evidence。
+          Quant Lab 目前只允許研究與模擬複核。S1 複核包已建置完畢，Bruce 10 / 10 檢查通過；
+          但券商、下單、資金權限都沒有開啟，尚未取得楊董複核。
+          cont_liq v36 top4 仍卡在 C04 風險閘；Class5 v3/v4 已撤回並暫停研究。
+          任何來自 5/15 MEMORY 的描述都不能當成已驗證證據。
         </div>
 
-        <div className="_strat-section-label">Active lanes ({LANES.length})</div>
+        <div className="_strat-section-label">追蹤策略（{LANES.length}）</div>
 
         <div className="_strat-lanes">
           {LANES.map(lane => (
@@ -567,11 +580,11 @@ export default function AdminStrategiesPage() {
         </div>
 
         <div className="_strat-wording-rule">
-          <strong>可說</strong>: "owner-review packet exists" / "Bruce 10/10 attest PASS" / "10M SIM research packet" /
-          "S1 is packaged for Yang owner review" &nbsp;
+          <strong>可說</strong>：複核包存在 / Bruce 10 / 10 檢查通過 / 1000 萬模擬研究包 /
+          S1 已打包等待楊董複核 &nbsp;
           <br />
-          <span style={{ color: "rgba(255,184,0,0.85)", fontWeight: 700 }}>不可說</span>: "capital-approved" / "alpha confirmed" / "live-ready" / "paper-ready" /
-          "可實單" / "產品化完成" / "follow-trade"
+          <span style={{ color: "rgba(255,184,0,0.85)", fontWeight: 700 }}>不可說</span>：資金已核准 / alpha 已確認 / 可正式交易 / 可紙上交易 /
+          可實單 / 產品化完成 / 可跟單
         </div>
       </main>
     </>

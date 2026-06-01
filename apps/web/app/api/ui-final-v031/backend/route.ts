@@ -19,9 +19,14 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/data-sources\/finmind\/status(?:\?|$)/,
   /^\/api\/v1\/market\/(?:heatmap\/twse|institutional-summary\/finmind)(?:\?|$)/,
   /^\/api\/v1\/strategy\/ideas(?:\?|$)/,
-  /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio)(?:\?|$|\/)/,
+  /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio|positions|funds)(?:\?|$|\/)/,
   /^\/api\/v1\/portfolio\/kgi\/positions(?:\?|$)/,
   /^\/api\/v1\/companies(?:\?|$|\/)/,
+  /^\/api\/v1\/themes\/[^/]+\/companies(?:\?|$)/,
+  /^\/api\/v1\/kgi\/status(?:\?|$)/,
+  /^\/api\/v1\/kgi\/sim\/(?:positions|orders|balance)(?:\?|$)/,
+  /^\/api\/v1\/internal\/kgi\/sim\/daily-smoke-status(?:\?|$)/,
+  /^\/api\/v1\/internal\/s1-sim\/(?:status|basket|eod-report)(?:\?|$)/,
   /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
 ];
 

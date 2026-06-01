@@ -1,0 +1,92 @@
+[
+  {
+    "route": "/ai-recommendations",
+    "status": 200,
+    "textLength": 2835,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\ai_recommendations.png"
+  },
+  {
+    "route": "/ideas",
+    "status": 200,
+    "textLength": 2835,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\ideas.png"
+  },
+  {
+    "route": "/market-intel",
+    "status": 200,
+    "textLength": 2929,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\market_intel.png"
+  },
+  {
+    "route": "/portfolio",
+    "status": 200,
+    "textLength": 1485,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\portfolio.png"
+  },
+  {
+    "route": "/companies",
+    "status": 200,
+    "textLength": 2132,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\companies.png"
+  },
+  {
+    "route": "/companies/2330",
+    "status": 200,
+    "textLength": 7343,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\companies_2330.png"
+  },
+  {
+    "route": "/admin/brain/llm",
+    "status": 200,
+    "textLength": 6346,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\admin_brain_llm.png"
+  },
+  {
+    "route": "/admin/events",
+    "status": 200,
+    "textLength": 650,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\admin_events.png"
+  },
+  {
+    "route": "/admin/tools",
+    "status": 200,
+    "textLength": 8368,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\admin_tools.png"
+  },
+  {
+    "route": "/admin/portfolio/snapshots",
+    "status": 200,
+    "textLength": 2158,
+    "appError": false,
+    "forbiddenHits": [],
+    "errors": [],
+    "screenshot": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\packages\\qa-playwright\\reports\\prod_after_780_20260528_205228Z\\admin_portfolio_snapshots.png"
+  }
+]

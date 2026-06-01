@@ -467,6 +467,54 @@ def test_actual_sdk_fislogon_true_succeeds_without_is_succeed():
     success_stub.show_account.assert_called_once()
 
 
+def test_sdk_show_account_only_shape_is_accepted_as_success():
+    """
+    Some kgisuperpy builds attach show_account after successful login without
+    exposing _ObjOrder.FIsLogon or IsSucceed on the outer object. Presence of
+    callable show_account is treated as the success-only shape by the gateway
+    diagnostic script, so the session should not block it as attr=unknown.
+    """
+
+    class ShowAccountOnlyLoginResult:
+        def __init__(self) -> None:
+            self.called = False
+
+        def show_account(self):
+            self.called = True
+            return [{"account": "1234567", "account_flag": "證券", "broker_id": "9A9A"}]
+
+    success_stub = ShowAccountOnlyLoginResult()
+
+    session = KgiSession()
+    with patch("kgi_session.kgisuperpy") as mock_kgi:
+        mock_kgi.login.return_value = success_stub
+        accounts = session.login(person_id="A123456789", person_pwd="okpwd", simulation=True)
+
+    assert session.is_logged_in is True
+    assert success_stub.called is True
+    assert accounts[0].account == "1234567"
+
+
+def test_missing_state_flag_reports_attr_path_not_unknown():
+    """
+    When the login result has neither state flags nor account methods, the
+    diagnostic attr should say which SDK flag was missing. attr=unknown is not
+    actionable enough for live KGI troubleshooting.
+    """
+
+    class EmptyLoginResult:
+        pass
+
+    session = KgiSession()
+    with patch("kgi_session.kgisuperpy") as mock_kgi:
+        mock_kgi.login.return_value = EmptyLoginResult()
+        with pytest.raises(KgiLoginObjectMissingAttr) as exc_info:
+            session.login(person_id="A123456789", person_pwd="okpwd", simulation=True)
+
+    assert exc_info.value.attr_name == "_ObjOrder.FIsLogon"
+    assert session.is_logged_in is False
+
+
 # ---------------------------------------------------------------------------
 # Test 13: raw AttributeError path is redacted and classified
 # ---------------------------------------------------------------------------

@@ -21,12 +21,16 @@ import test from "node:test";
 import {
   _resetNewsAiSelectorState,
   computeNextRefreshAt,
+  deterministicTop10,
   getLastNewsTop10,
   getLastNewsRunAt,
   getNewsTop10WithStaleness,
   isWithinNewsWindowTrigger,
+  normalizeNewsTitleForDedupe,
   runNewsAiSelection,
   runNewsAiSelectionBootRecovery,
+  sanitizeRawRows,
+  type RawNewsRow,
 } from "../news-ai-selector.js";
 
 // ── NS1: null before any run ──────────────────────────────────────────────────
@@ -157,6 +161,188 @@ test("NS8: items.length is never more than 10", async () => {
 });
 
 // ── NS9: boot recovery fires unconditionally; respects 45min guard ────────────
+
+test("NS8b: deterministic fallback still provides why_matters, impact_tier, and tags", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "risk-1589",
+      ticker: "1589",
+      company_name: "永冠-KY",
+      date: "2026-05-28T08:00:00.000Z",
+      title: "永冠-KY最快下市 股票恐淪廢紙",
+      url: "https://example.test/news",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "official-2330",
+      ticker: "2330",
+      company_name: "台積電",
+      date: "2026-05-28T09:00:00.000Z",
+      title: "台積電公告董事會重要決議",
+      url: "https://example.test/mops",
+      source: "twse_announcements",
+    },
+  ];
+
+  const items = deterministicTop10(rows);
+
+  assert.ok(items.length > 0, "fallback must return rows");
+  assert.ok(items.every((item) => item.why_matters), "fallback why_matters must be filled");
+  assert.ok(items.every((item) => item.impact_tier), "fallback impact_tier must be filled");
+  assert.ok(items.every((item) => item.tags.length > 0), "fallback tags must be filled");
+});
+
+test("NS8c: news sanitizer removes repost noise and caps one stock-news ticker", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "m1",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:24:34.000Z",
+      title: "徐旭東獨子徐國安代父出征，遠東新股東會首度致詞- 新聞 - MoneyDJ",
+      url: "https://example.test/moneydj-1",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "m2",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:24:34.000Z",
+      title: "徐旭東獨子徐國安代父出征，遠東新股東會首度致詞| MoneyDJ理財網 - LINE TODAY",
+      url: "https://example.test/line-today",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q1",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:44:00.000Z",
+      title: "遠東新看Q2營運更好/Q3持穩，全年優於去年",
+      url: "https://example.test/q1",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q2",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:45:00.000Z",
+      title: "遠東新股東會通過配息案",
+      url: "https://example.test/q2",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "q3",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:46:00.000Z",
+      title: "遠東新法人說明會更新",
+      url: "https://example.test/q3",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "noise-etf-1",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:47:00.000Z",
+      title: "賣一張0050想「躺平2個月」 專家問1事搖頭：只能1個月 - TVBS新聞網",
+      url: "https://example.test/tvbs-noise",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "noise-etf-2",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:48:00.000Z",
+      title: "台股、0050高點到了嗎？專家：美股數據給出不同答案 - ETtoday財經雲",
+      url: "https://example.test/ettoday-noise",
+      source: "finmind_stock_news",
+    },
+  ];
+
+  assert.equal(
+    normalizeNewsTitleForDedupe(rows[0]!.title),
+    normalizeNewsTitleForDedupe(rows[1]!.title),
+    "reposted MoneyDJ/LINE TODAY titles should share one semantic key"
+  );
+
+  const clean = sanitizeRawRows(rows, { dropLowQualityStockNews: true });
+
+  assert.ok(clean.every((row) => !/moneydj|line\s*today/i.test(`${row.title} ${row.url}`)), "known repost sources must be removed");
+  assert.ok(clean.every((row) => !/tvbs|ettoday|躺平|高點到了嗎/i.test(`${row.title} ${row.url}`)), "retail ETF commentary must be removed");
+  assert.ok(clean.filter((row) => row.ticker === "1402" && row.source === "finmind_stock_news").length <= 1, "one stock-news ticker must not flood the top-10 input");
+});
+
+test("NS8d: deterministic fallback emits specific why_matters for common market-intel categories", () => {
+  const rows: RawNewsRow[] = [
+    {
+      id: "etf-0050",
+      ticker: "0050",
+      company_name: "元大台灣50",
+      date: "2026-05-29T03:00:00.000Z",
+      title: "0050換新血4檔入列呼聲高 - 工商時報",
+      url: "https://example.test/etf",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "target-1303",
+      ticker: "1303",
+      company_name: "南亞",
+      date: "2026-05-29T03:01:00.000Z",
+      title: "個股／南亞科最強靠山 他新目標價曝",
+      url: "https://example.test/target",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "theme-1312",
+      ticker: "1312",
+      company_name: "國喬",
+      date: "2026-05-29T03:02:00.000Z",
+      title: "國喬三策略轉型搶攻新材料",
+      url: "https://example.test/theme",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "momentum-1319",
+      ticker: "1319",
+      company_name: "東陽",
+      date: "2026-05-29T03:03:00.000Z",
+      title: "東陽站上所有均線",
+      url: "https://example.test/momentum",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "dividend-1432",
+      ticker: "1432",
+      company_name: "大魯閣",
+      date: "2026-05-29T03:04:00.000Z",
+      title: "54家股利公布大魯閣殖利率逾12.35％",
+      url: "https://example.test/dividend",
+      source: "finmind_stock_news",
+    },
+    {
+      id: "outlook-1402",
+      ticker: "1402",
+      company_name: "遠東新",
+      date: "2026-05-29T03:05:00.000Z",
+      title: "遠東新席家宜：今年一定會比去年好",
+      url: "https://example.test/outlook",
+      source: "finmind_stock_news",
+    },
+  ];
+
+  const byId = new Map(deterministicTop10(rows).map((item) => [item.id, item]));
+
+  assert.match(byId.get("etf-0050")!.why_matters ?? "", /被動資金|ETF/);
+  assert.match(byId.get("target-1303")!.why_matters ?? "", /目標價|市場評價/);
+  assert.match(byId.get("theme-1312")!.why_matters ?? "", /供應鏈|題材/);
+  assert.match(byId.get("momentum-1319")!.why_matters ?? "", /價量|均線/);
+  assert.match(byId.get("dividend-1432")!.why_matters ?? "", /股利|殖利率/);
+  assert.match(byId.get("outlook-1402")!.why_matters ?? "", /營運展望|營收/);
+  assert.ok(
+    [...byId.values()].every((item) => !/有新的市場消息|有新消息可能影響市場預期/.test(item.why_matters ?? "")),
+    "common categories must not fall back to generic why_matters copy"
+  );
+});
 
 test("NS9: runNewsAiSelectionBootRecovery() fires when never run before", async () => {
   _resetNewsAiSelectorState();

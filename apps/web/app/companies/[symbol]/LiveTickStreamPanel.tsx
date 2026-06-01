@@ -92,15 +92,18 @@ function priceClass(chgType: number | null | undefined): string {
 
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
-  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未列入 KGI_QUOTE_SYMBOL_WHITELIST，等待唯讀行情覆蓋。";
-  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI gateway 暫時無法連線；請確認唯讀行情 bridge。";
+  if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
+    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；逐筆成交面板降級，不補假成交明細。";
+  }
+  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未列入唯讀逐筆行情覆蓋清單；不顯示假成交明細。";
+  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI 唯讀逐筆暫時無法連線；請稍後再讀取。";
   if (/QUOTE_DISABLED/i.test(msg)) return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
-  if (/GATEWAY_AUTH/i.test(msg)) return "KGI gateway session 失效，需重新確認唯讀憑證。";
+  if (/GATEWAY_AUTH/i.test(msg)) return "KGI 唯讀行情憑證暫時失效；此面板保持降級，不顯示假成交明細。";
   return `逐筆成交暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
 function offHoursReason() {
-  return `KGI 唯讀逐筆目前在排程外，不打即時 gateway、也不補假成交明細。下一次讀取窗口：${kgiNextOpenLabel()}。Owner: Jason/Bruce 確認 gateway/session。`;
+  return `KGI 唯讀逐筆目前在排程外，不讀即時逐筆、也不補假成交明細。下一次讀取窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
@@ -149,7 +152,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
       {state.status === "blocked" && (
         <div className="state-panel">
           <span className="badge badge-red">BLOCKED</span>
-          <span className="tg soft">資料源：KGI gateway /api/v1/kgi/quote/ticks</span>
+          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}

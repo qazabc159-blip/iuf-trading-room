@@ -61,6 +61,25 @@ export const aiRecPositionSizingSchema = z.object({
   market_multiplier: z.number(),  // trend/range/event/risk_off multiplier per SOP
 });
 
+/** Source trail entry — which tool was called for this ticker and what it returned */
+export const aiRecSourceTrailEntrySchema = z.object({
+  toolName: z.string(),
+  ticker: z.string().optional(),
+  round: z.number().int().min(1),
+  dataFields: z.array(z.string()),  // e.g. ["lastPrice","rsi14","ma20","ma60"]
+});
+export type AiRecSourceTrailEntry = z.infer<typeof aiRecSourceTrailEntrySchema>;
+
+/** Run-level score breakdown summary (aggregate across items) */
+export const aiRecRunScoreBreakdownSchema = z.object({
+  itemCount: z.number().int(),
+  incompleteCount: z.number().int(),
+  ratingDistribution: z.record(z.string(), z.number().int()),  // {"A+":1,"A":2,"B":1,"C":1}
+  avgTotalScore: z.number().nullable(),
+  topRating: z.enum(["A+", "A", "B", "C"]).nullable(),
+});
+export type AiRecRunScoreBreakdown = z.infer<typeof aiRecRunScoreBreakdownSchema>;
+
 // ── Core schema (v2 backward-compat + v3 optional extensions) ─────────────────
 
 export const aiStockRecommendationV2Schema = z.object({
@@ -113,6 +132,12 @@ export const aiStockRecommendationV2Schema = z.object({
   why_buy: z.array(z.string()).optional(),
   /** Transparent bear / risk bullets */
   why_not_buy: z.array(z.string()).optional(),
+  /** ≤80 char single-line plain-Chinese buy thesis (楊董 SOP "為什麼可以買") */
+  whyBuyBrief: z.string().max(80).optional(),
+  /** Tool call trail that produced data for this recommendation */
+  sourceTrail: z.array(aiRecSourceTrailEntrySchema).optional(),
+  /** True when any of the 7 sub-score axes is missing — this card was not fully scored */
+  isIncomplete: z.boolean().optional(),
 });
 
 export type AiStockRecommendationV2 = z.infer<typeof aiStockRecommendationV2Schema>;
@@ -134,6 +159,8 @@ export const aiRecommendationV2RunSchema = z.object({
   totalCostUsd: z.number(),
   totalTokens: z.number(),
   dbRowId: z.string().nullable(),
+  /** Run-level score breakdown summary (populated after items are parsed) */
+  scoreBreakdown: aiRecRunScoreBreakdownSchema.optional(),
 });
 
 export type AiRecommendationV2Run = z.infer<typeof aiRecommendationV2RunSchema>;

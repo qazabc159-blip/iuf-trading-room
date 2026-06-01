@@ -109,12 +109,10 @@ describe("AI recommendations v3 view mapping", () => {
     });
 
     expect(state.tone).toBe("degraded");
-    expect(state.label).toBe("DEGRADED");
-    expect(state.title).toContain("not complete");
-    expect(state.detail).toContain("status=synthesis_format_error");
-    expect(state.detail).toContain("itemCount=5");
-    expect(state.detail).toContain("usedFallback=true");
-    expect(state.detail).toContain("fullAiReportParsed=false");
+    expect(state.label).toBe("需留意");
+    expect(state.title).toContain("尚未完整");
+    expect(state.detail).toContain("目前顯示 5 檔");
+    expect(state.detail).toContain("不會補假資料");
   });
 
   it("shows an explicit pending state instead of padding when itemCount is under five", () => {
@@ -131,8 +129,8 @@ describe("AI recommendations v3 view mapping", () => {
     });
 
     expect(state.tone).toBe("degraded");
-    expect(state.detail).toContain("itemCount=3");
-    expect(state.detail).toContain("not padding");
+    expect(state.detail).toContain("目前顯示 3 檔");
+    expect(state.detail).toContain("不會補假資料");
   });
 
   it("derives official announcement source state or exposes the missing backend field", () => {
@@ -201,6 +199,7 @@ describe("AI recommendations v3 view mapping", () => {
     });
 
     expect(state.tone).toBe("live");
-    expect(state.detail).toContain("itemCount=5");
+    expect(state.detail).toContain("目前顯示 5 檔");
+    expect(state.detail).toContain("未使用備援補牌");
   });
 });

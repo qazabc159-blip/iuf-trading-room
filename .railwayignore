@@ -1,0 +1,11 @@
+evidence/
+reports/
+packages/qa-playwright/reports/
+playwright-report/
+test-results/
+coverage/
+node_modules/
+.next/
+dist/
+build/
+*.log

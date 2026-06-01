@@ -1,0 +1,254 @@
+{
+  "url": "https://app.eycvector.com/?heatmap=core&sector=shipping&rev=heatmap-dom-probe-20260529",
+  "title": "",
+  "tabs": [
+    "核心觀察池38 檔",
+    "半導體業10 檔",
+    "電子零組件13 檔",
+    "電腦及週邊設備11 檔",
+    "通信網路12 檔",
+    "金融保險12 檔",
+    "鋼鐵工業12 檔",
+    "航運業10 檔"
+  ],
+  "stats": [
+    "更新 05/29 00:00",
+    "12 檔代表池",
+    "10 檔有行情",
+    "均幅 +0.76%"
+  ],
+  "footer": "固定代表股池完成 · 依成交值優先排序 · 即時 · 2 檔代表股缺可驗證行情，未渲染為灰塊≤ -3%≥ +3%",
+  "tileCount": 10,
+  "tiles": [
+    {
+      "html": "<a class=\"tac-heat-tile up hero   \" style=\"--heat:0.46366666666666667;left:0%;top:0%;width:38.69564766262577%;height:50.71067721563289%\" aria-label=\"2603 長榮，漲跌幅 +0.95%，成交值 65.3 億\" href=\"/companies/2603\"><span class=\"tile-symbol\">2603</span><small class=\"tile-name\">長榮</small><b class=\"tile-pct\">+0.95%</b><em class=\"tile-meta\">成交值 65.3 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2603<!-- --> <!-- -->長榮</strong><span>漲跌幅 <!-- -->+0.95%</span><span>漲跌 <!-- -->2.00</span><span>收盤 <!-- -->213.00</span><span>成交值 65.3 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2603長榮+0.95%成交值 65.3 億2603 長榮漲跌幅 +0.95%漲跌 2.00收盤 213.00成交值 65.3 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up hero   "
+        ],
+        [
+          "style",
+          "--heat:0.46366666666666667;left:0%;top:0%;width:38.69564766262577%;height:50.71067721563289%"
+        ],
+        [
+          "aria-label",
+          "2603 長榮，漲跌幅 +0.95%，成交值 65.3 億"
+        ],
+        [
+          "href",
+          "/companies/2603"
+        ]
+      ],
+      "cls": "tac-heat-tile up hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up hero   \" style=\"--heat:0.8000666666666666;left:0%;top:50.71067721563289%;width:38.69564766262577%;height:49.28932278436711%\" aria-label=\"2610 華航，漲跌幅 +2.69%，成交值 60.1 億\" href=\"/companies/2610\"><span class=\"tile-symbol\">2610</span><small class=\"tile-name\">華航</small><b class=\"tile-pct\">+2.69%</b><em class=\"tile-meta\">成交值 60.1 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2610<!-- --> <!-- -->華航</strong><span>漲跌幅 <!-- -->+2.69%</span><span>漲跌 <!-- -->0.50</span><span>收盤 <!-- -->19.10</span><span>成交值 60.1 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2610華航+2.69%成交值 60.1 億2610 華航漲跌幅 +2.69%漲跌 0.50收盤 19.10成交值 60.1 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up hero   "
+        ],
+        [
+          "style",
+          "--heat:0.8000666666666666;left:0%;top:50.71067721563289%;width:38.69564766262577%;height:49.28932278436711%"
+        ],
+        [
+          "aria-label",
+          "2610 華航，漲跌幅 +2.69%，成交值 60.1 億"
+        ],
+        [
+          "href",
+          "/companies/2610"
+        ]
+      ],
+      "cls": "tac-heat-tile up hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up hero   \" style=\"--heat:0.6898666666666666;left:38.69564766262577%;top:0%;width:36.00788479963257%;height:47.770712277976294%\" aria-label=\"2618 長榮航，漲跌幅 +2.12%，成交值 44.3 億\" href=\"/companies/2618\"><span class=\"tile-symbol\">2618</span><small class=\"tile-name\">長榮航</small><b class=\"tile-pct\">+2.12%</b><em class=\"tile-meta\">成交值 44.3 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2618<!-- --> <!-- -->長榮航</strong><span>漲跌幅 <!-- -->+2.12%</span><span>漲跌 <!-- -->0.75</span><span>收盤 <!-- -->36.05</span><span>成交值 44.3 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2618長榮航+2.12%成交值 44.3 億2618 長榮航漲跌幅 +2.12%漲跌 0.75收盤 36.05成交值 44.3 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up hero   "
+        ],
+        [
+          "style",
+          "--heat:0.6898666666666666;left:38.69564766262577%;top:0%;width:36.00788479963257%;height:47.770712277976294%"
+        ],
+        [
+          "aria-label",
+          "2618 長榮航，漲跌幅 +2.12%，成交值 44.3 億"
+        ],
+        [
+          "href",
+          "/companies/2618"
+        ]
+      ],
+      "cls": "tac-heat-tile up hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up hero   \" style=\"--heat:0.4269333333333334;left:74.70353246225834%;top:0%;width:25.296467537741663%;height:47.770712277976294%\" aria-label=\"2609 陽明，漲跌幅 +0.76%，成交值 15.7 億\" href=\"/companies/2609\"><span class=\"tile-symbol\">2609</span><small class=\"tile-name\">陽明</small><b class=\"tile-pct\">+0.76%</b><em class=\"tile-meta\">成交值 15.7 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2609<!-- --> <!-- -->陽明</strong><span>漲跌幅 <!-- -->+0.76%</span><span>漲跌 <!-- -->0.40</span><span>收盤 <!-- -->52.70</span><span>成交值 15.7 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2609陽明+0.76%成交值 15.7 億2609 陽明漲跌幅 +0.76%漲跌 0.40收盤 52.70成交值 15.7 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up hero   "
+        ],
+        [
+          "style",
+          "--heat:0.4269333333333334;left:74.70353246225834%;top:0%;width:25.296467537741663%;height:47.770712277976294%"
+        ],
+        [
+          "aria-label",
+          "2609 陽明，漲跌幅 +0.76%，成交值 15.7 億"
+        ],
+        [
+          "href",
+          "/companies/2609"
+        ]
+      ],
+      "cls": "tac-heat-tile up hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up hero   \" style=\"--heat:0.5912666666666667;left:38.69564766262577%;top:47.770712277976294%;width:32.016111484570516%;height:29.070550981800377%\" aria-label=\"2615 萬海，漲跌幅 +1.61%，成交值 7.3 億\" href=\"/companies/2615\"><span class=\"tile-symbol\">2615</span><small class=\"tile-name\">萬海</small><b class=\"tile-pct\">+1.61%</b><em class=\"tile-meta\">成交值 7.3 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2615<!-- --> <!-- -->萬海</strong><span>漲跌幅 <!-- -->+1.61%</span><span>漲跌 <!-- -->1.30</span><span>收盤 <!-- -->82.00</span><span>成交值 7.3 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2615萬海+1.61%成交值 7.3 億2615 萬海漲跌幅 +1.61%漲跌 1.30收盤 82.00成交值 7.3 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up hero   "
+        ],
+        [
+          "style",
+          "--heat:0.5912666666666667;left:38.69564766262577%;top:47.770712277976294%;width:32.016111484570516%;height:29.070550981800377%"
+        ],
+        [
+          "aria-label",
+          "2615 萬海，漲跌幅 +1.61%，成交值 7.3 億"
+        ],
+        [
+          "href",
+          "/companies/2615"
+        ]
+      ],
+      "cls": "tac-heat-tile up hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile down hero   \" style=\"--heat:0.7981333333333334;left:38.69564766262577%;top:76.84126325977667%;width:32.016111484570516%;height:23.158736740223333%\" aria-label=\"2606 裕民，漲跌幅 -2.68%，成交值 3.7 億\" href=\"/companies/2606\"><span class=\"tile-symbol\">2606</span><small class=\"tile-name\">裕民</small><b class=\"tile-pct\">-2.68%</b><em class=\"tile-meta\">成交值 3.7 億</em><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2606<!-- --> <!-- -->裕民</strong><span>漲跌幅 <!-- -->-2.68%</span><span>漲跌 <!-- -->-1.90</span><span>收盤 <!-- -->69.00</span><span>成交值 3.7 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2606裕民-2.68%成交值 3.7 億2606 裕民漲跌幅 -2.68%漲跌 -1.90收盤 69.00成交值 3.7 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile down hero   "
+        ],
+        [
+          "style",
+          "--heat:0.7981333333333334;left:38.69564766262577%;top:76.84126325977667%;width:32.016111484570516%;height:23.158736740223333%"
+        ],
+        [
+          "aria-label",
+          "2606 裕民，漲跌幅 -2.68%，成交值 3.7 億"
+        ],
+        [
+          "href",
+          "/companies/2606"
+        ]
+      ],
+      "cls": "tac-heat-tile down hero   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up large   \" style=\"--heat:0.6666666666666666;left:70.71175914719629%;top:47.770712277976294%;width:29.28824085280371%;height:19.082615540568757%\" aria-label=\"2646 星宇航空，漲跌幅 +2.00%，成交值 1.6 億\" href=\"/companies/2646\"><span class=\"tile-symbol\">2646</span><small class=\"tile-name\">星宇航空</small><b class=\"tile-pct\">+2.00%</b><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2646<!-- --> <!-- -->星宇航空</strong><span>漲跌幅 <!-- -->+2.00%</span><span>漲跌 <!-- -->0.40</span><span>收盤 <!-- -->20.45</span><span>成交值 1.6 億</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2646星宇航空+2.00%2646 星宇航空漲跌幅 +2.00%漲跌 0.40收盤 20.45成交值 1.6 億日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up large   "
+        ],
+        [
+          "style",
+          "--heat:0.6666666666666666;left:70.71175914719629%;top:47.770712277976294%;width:29.28824085280371%;height:19.082615540568757%"
+        ],
+        [
+          "aria-label",
+          "2646 星宇航空，漲跌幅 +2.00%，成交值 1.6 億"
+        ],
+        [
+          "href",
+          "/companies/2646"
+        ]
+      ],
+      "cls": "tac-heat-tile up large   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up large   \" style=\"--heat:0.40180000000000005;left:70.71175914719629%;top:66.85332781854505%;width:16.346728470545912%;height:23.057412445714004%\" aria-label=\"2607 榮運，漲跌幅 +0.63%，成交值 5099 萬\" href=\"/companies/2607\"><span class=\"tile-symbol\">2607</span><small class=\"tile-name\">榮運</small><b class=\"tile-pct\">+0.63%</b><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2607<!-- --> <!-- -->榮運</strong><span>漲跌幅 <!-- -->+0.63%</span><span>漲跌 <!-- -->0.30</span><span>收盤 <!-- -->47.60</span><span>成交值 5099 萬</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2607榮運+0.63%2607 榮運漲跌幅 +0.63%漲跌 0.30收盤 47.60成交值 5099 萬日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up large   "
+        ],
+        [
+          "style",
+          "--heat:0.40180000000000005;left:70.71175914719629%;top:66.85332781854505%;width:16.346728470545912%;height:23.057412445714004%"
+        ],
+        [
+          "aria-label",
+          "2607 榮運，漲跌幅 +0.63%，成交值 5099 萬"
+        ],
+        [
+          "href",
+          "/companies/2607"
+        ]
+      ],
+      "cls": "tac-heat-tile up large   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile up large   \" style=\"--heat:0.4520666666666667;left:87.0584876177422%;top:66.85332781854505%;width:12.941512382257798%;height:23.057412445714004%\" aria-label=\"2636 台驊控股，漲跌幅 +0.89%，成交值 2565 萬\" href=\"/companies/2636\"><span class=\"tile-symbol\">2636</span><small class=\"tile-name\">台驊控股</small><b class=\"tile-pct\">+0.89%</b><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>2636<!-- --> <!-- -->台驊控股</strong><span>漲跌幅 <!-- -->+0.89%</span><span>漲跌 <!-- -->0.60</span><span>收盤 <!-- -->67.70</span><span>成交值 2565 萬</span><span>日期 <!-- -->2026-05-29</span></span></a>",
+      "text": "2636台驊控股+0.89%2636 台驊控股漲跌幅 +0.89%漲跌 0.60收盤 67.70成交值 2565 萬日期 2026-05-29",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile up large   "
+        ],
+        [
+          "style",
+          "--heat:0.4520666666666667;left:87.0584876177422%;top:66.85332781854505%;width:12.941512382257798%;height:23.057412445714004%"
+        ],
+        [
+          "aria-label",
+          "2636 台驊控股，漲跌幅 +0.89%，成交值 2565 萬"
+        ],
+        [
+          "href",
+          "/companies/2636"
+        ]
+      ],
+      "cls": "tac-heat-tile up large   "
+    },
+    {
+      "html": "<a class=\"tac-heat-tile down small   \" style=\"--heat:0.5448666666666667;left:70.71175914719629%;top:89.91074026425906%;width:29.288240852803685%;height:10.089259735740939%\" aria-label=\"5608 四維航，漲跌幅 -1.37%，成交值 2493 萬\" href=\"/companies/5608\"><span class=\"tile-symbol\">5608</span><span class=\"tac-heat-tooltip\" role=\"tooltip\"><strong>5608<!-- --> <!-- -->四維航</strong><span>漲跌幅 <!-- -->-1.37%</span><span>漲跌 <!-- -->-0.20</span><span>收盤 <!-- -->14.45</span><span>成交值 2493 萬</span><span>日期 <!-- -->2026-05-27</span></span></a>",
+      "text": "56085608 四維航漲跌幅 -1.37%漲跌 -0.20收盤 14.45成交值 2493 萬日期 2026-05-27",
+      "attrs": [
+        [
+          "class",
+          "tac-heat-tile down small   "
+        ],
+        [
+          "style",
+          "--heat:0.5448666666666667;left:70.71175914719629%;top:89.91074026425906%;width:29.288240852803685%;height:10.089259735740939%"
+        ],
+        [
+          "aria-label",
+          "5608 四維航，漲跌幅 -1.37%，成交值 2493 萬"
+        ],
+        [
+          "href",
+          "/companies/5608"
+        ]
+      ],
+      "cls": "tac-heat-tile down small   "
+    }
+  ]
+}

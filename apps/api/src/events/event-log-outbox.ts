@@ -299,37 +299,44 @@ export async function _pollAndDeliver(): Promise<number> {
 export async function getOutboxDiag(): Promise<{
   pendingCount: number;
   fatalCount: number;
+  oldestPendingAt: string | null;
   isPollerRunning: boolean;
 }> {
   if (!isDatabaseMode()) {
-    return { pendingCount: 0, fatalCount: 0, isPollerRunning: false };
+    return { pendingCount: 0, fatalCount: 0, oldestPendingAt: null, isPollerRunning: false };
   }
 
   const db = getDb();
   if (!db) {
-    return { pendingCount: 0, fatalCount: 0, isPollerRunning: _pollerHandle !== null };
+    return { pendingCount: 0, fatalCount: 0, oldestPendingAt: null, isPollerRunning: _pollerHandle !== null };
   }
 
   try {
-    const pendingResult = await db.execute(
-      sql`SELECT COUNT(*)::int AS cnt FROM el_outbox WHERE delivered_at IS NULL`
-    ) as unknown;
-    const pendingRows: { cnt: number | string }[] = Array.isArray(pendingResult)
-      ? (pendingResult as { cnt: number | string }[])
-      : ((pendingResult as { rows?: { cnt: number | string }[] }).rows ?? []);
-    const pendingCount = Number(pendingRows[0]?.cnt ?? 0);
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE delivered_at IS NULL)::int AS pending_count,
+        COUNT(*) FILTER (WHERE delivered_at <= TIMESTAMPTZ '1970-01-01 00:00:01+00')::int AS fatal_count,
+        MIN(created_at) FILTER (WHERE delivered_at IS NULL)::text AS oldest_pending_at
+      FROM el_outbox
+    `) as unknown;
+    const rows = Array.isArray(result)
+      ? (result as Array<Record<string, unknown>>)
+      : ((result as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+    const row = rows[0] ?? {};
+    const pendingCount = Number(row["pending_count"] ?? 0);
+    const fatalCount = Number(row["fatal_count"] ?? 0);
+    const oldestPendingAt = typeof row["oldest_pending_at"] === "string"
+      ? row["oldest_pending_at"]
+      : null;
 
-    const fatalResult = await db.execute(
-      sql`SELECT COUNT(*)::int AS cnt FROM el_outbox WHERE delivered_at = ${EPOCH_TS}`
-    ) as unknown;
-    const fatalRows: { cnt: number | string }[] = Array.isArray(fatalResult)
-      ? (fatalResult as { cnt: number | string }[])
-      : ((fatalResult as { rows?: { cnt: number | string }[] }).rows ?? []);
-    const fatalCount = Number(fatalRows[0]?.cnt ?? 0);
-
-    return { pendingCount, fatalCount, isPollerRunning: _pollerHandle !== null };
+    return {
+      pendingCount: Number.isFinite(pendingCount) && pendingCount >= 0 ? pendingCount : -1,
+      fatalCount: Number.isFinite(fatalCount) && fatalCount >= 0 ? fatalCount : -1,
+      oldestPendingAt,
+      isPollerRunning: _pollerHandle !== null
+    };
   } catch (e) {
     console.warn("[outbox-diag] query failed:", e instanceof Error ? e.message : String(e));
-    return { pendingCount: -1, fatalCount: -1, isPollerRunning: _pollerHandle !== null };
+    return { pendingCount: -1, fatalCount: -1, oldestPendingAt: null, isPollerRunning: _pollerHandle !== null };
   }
 }

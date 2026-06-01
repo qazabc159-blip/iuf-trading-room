@@ -22,10 +22,10 @@ export function portfolioSnapshotStateCopy(input: {
     return {
       tone: "loading",
       title: "讀取 Portfolio Snapshot",
-      detail: "正在向正式 snapshot read API 讀取資料。",
+      detail: "正在讀取正式 snapshot API，確認 paper 帳本歷史快照與差異比對資料。",
       endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
       owner: PORTFOLIO_SNAPSHOT_OWNER,
-      nextAction: "等待 API 回應；若超時，由 Bruce 檢查 production route 與 owner session。",
+      nextAction: "等待 API 回應；若逾時或失敗，改顯示 blocked 狀態與 owner。",
     };
   }
 
@@ -33,10 +33,10 @@ export function portfolioSnapshotStateCopy(input: {
     return {
       tone: "live",
       title: `Portfolio Snapshot LIVE：${input.count} 筆`,
-      detail: "已接正式 read API，畫面只呈現後端回傳的 snapshot 與 positions。",
+      detail: "已連上正式 snapshot API。這裡是 paper portfolio 的歷史快照，不是即時庫存；持倉是否為空會依每筆快照內容誠實顯示。",
       endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
       owner: PORTFOLIO_SNAPSHOT_OWNER,
-      nextAction: "可選擇左側 snapshot 檢視部位，或輸入兩個 snapshot ID 比較 diff。",
+      nextAction: "檢查最新快照的觸發來源、持倉筆數與時間；需要比較兩筆快照時輸入 snapshot ID 查 diff。",
     };
   }
 
@@ -44,10 +44,10 @@ export function portfolioSnapshotStateCopy(input: {
     return {
       tone: "empty",
       title: "Portfolio Snapshot EMPTY",
-      detail: "read API 已可用，但目前後端尚未寫入任何 portfolio snapshot；這不是假資料，也不是白屏。",
+      detail: "API 可連線，但目前沒有任何 portfolio snapshot。這代表 snapshot writer 尚未寫入，不可假裝有資料。",
       endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
       owner: PORTFOLIO_SNAPSHOT_OWNER,
-      nextAction: "請由 Elva/Jason 確認 snapshot writer 何時由 paper portfolio、orders、fills 或 EOD job 觸發。",
+      nextAction: "請 Elva/Jason 檢查 snapshot writer、paper orders/fills 與 EOD job 是否有觸發寫入。",
     };
   }
 
@@ -55,9 +55,9 @@ export function portfolioSnapshotStateCopy(input: {
   return {
     tone: "blocked",
     title: "Portfolio Snapshot BLOCKED",
-    detail: `讀取正式 read API 失敗：${status}。畫面不會用假 snapshot 填空。`,
+    detail: `snapshot read API 讀取失敗（${status}）。頁面不可顯示假資料，需查看 API/session/log。`,
     endpoint: PORTFOLIO_SNAPSHOT_ENDPOINT,
     owner: PORTFOLIO_SNAPSHOT_OWNER,
-    nextAction: "Bruce 先驗 production route/session；Elva/Jason 檢查 API log 與 snapshot store。",
+    nextAction: "Bruce 驗 production route/session；Elva/Jason 查看 API log 與 snapshot store。",
   };
 }

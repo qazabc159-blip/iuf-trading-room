@@ -30,15 +30,36 @@ describe("industry heatmap representative pool source gate", () => {
     }
   });
 
+  it("pins every sector pool to 15 tickers so no-data filtering still leaves a full heatmap", () => {
+    for (const group of ["semiconductor", "components", "computer", "communication", "finance", "steel", "shipping"]) {
+      expect(groupLength(group), group).toBe(15);
+    }
+    expect(source).toContain("const MAX_TILES_PER_SECTOR = 15;");
+    expect(source).toContain('shipping: ["2603", "2609", "2615", "2636", "2605", "2606", "2610", "2618", "2646", "6757", "2607", "5608", "2608", "2617", "2637"]');
+  });
+
   it("ships Chinese company labels for the tickers shown in the user screenshots", () => {
     for (const pair of ['"2330": "台積電"', '"2454": "聯發科"', '"2317": "鴻海"', '"2412": "中華電"', '"2881": "富邦金"']) {
       expect(source).toContain(pair);
     }
   });
 
-  it("does not silently drop missing representative quotes", () => {
-    expect(source).toContain('sourceState: "no_data"');
-    expect(source).toContain("固定代表股池；此檔暫無可驗證行情");
-    expect(source).toContain("暫無行情");
+  it("falls back to fixed representative labels when feed names contain replacement characters", () => {
+    expect(source).toContain('!normalized.includes("�")');
+    for (const pair of ['"6285": "啟碁"', '"5608": "四維航"', '"6416": "瑞祺電通"']) {
+      expect(source).toContain(pair);
+    }
+  });
+
+  it("does not render missing representative quotes as gray tiles", () => {
+    expect(source).toContain('if (tile.sourceState === "no_data") return false;');
+    expect(source).not.toContain("representativeNoDataTile");
+    expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
+    expect(source).toContain("未渲染為灰塊");
+  });
+  it("keeps compact tiles readable with both ticker and company name", () => {
+    expect(source).toContain('|| tile.labelMode === "small"');
+    expect(source).not.toContain('tile.labelMode === "small" ? null');
+    expect(source).toContain('<small className="tile-name">{tile.name}</small>');
   });
 });

@@ -17,7 +17,7 @@ export type V3PanelState = {
 
 const ENDPOINT = "GET /api/v1/ai-recommendations/v3";
 const OWNER = "Elva/Jason backend gate + Bruce owner-session verify";
-const OFFICIAL_ANNOUNCEMENT_NEXT_ACTION = "Backend needs to expose official announcement source state in the v3 response.";
+const OFFICIAL_ANNOUNCEMENT_NEXT_ACTION = "後端需在 v3 回應提供官方公告來源狀態；前端不可自行猜測或用新聞冒充公告。";
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -93,6 +93,65 @@ function compactUnknown(value: unknown): string | null {
   return String(value);
 }
 
+function readTraceObservationForTicker(data: AiRecommendationV3Response | null | undefined, ticker: string): Record<string, unknown> | null {
+  const trace = Array.isArray(data?.reactTrace) ? data.reactTrace : [];
+  for (const step of trace) {
+    const record = asRecord(step);
+    const observation = asRecord(record?.observation);
+    if (!observation || String(observation.ticker ?? "") !== ticker) continue;
+    return observation;
+  }
+  return null;
+}
+
+function deriveSourceTrail(item: AiRecommendationV3Item, data: AiRecommendationV3Response | null | undefined): string | null {
+  const direct = compactUnknown(item.sourceTrail);
+  if (direct) return direct;
+
+  const parts: string[] = [];
+  if (item.source) parts.push(`recommendation_source=${item.source}`);
+
+  if (data?.sourceState) {
+    const run = [
+      data.sourceState.source ? `source=${data.sourceState.source}` : null,
+      data.sourceState.state ? `state=${data.sourceState.state}` : null,
+      data.sourceState.count != null ? `count=${data.sourceState.count}` : null,
+      data.sourceState.lastUpdated ? `lastUpdated=${data.sourceState.lastUpdated}` : null,
+    ].filter(Boolean).join(" ");
+    if (run) parts.push(`run(${run})`);
+  }
+
+  const official = readNamedSourceState(data, [
+    "officialAnnouncementSourceState",
+    "officialAnnouncementsSourceState",
+    "announcementSourceState",
+    "official_announcements",
+    "announcements",
+    "mops",
+  ]);
+  if (official) {
+    const line = [
+      official.source ? `source=${official.source}` : null,
+      official.state ? `state=${official.state}` : null,
+      official.count != null ? `count=${official.count}` : null,
+      official.lastUpdated ? `lastUpdated=${official.lastUpdated}` : null,
+    ].filter(Boolean).join(" ");
+    if (line) parts.push(`official_announcements(${line})`);
+  }
+
+  const technical = readTraceObservationForTicker(data, item.ticker);
+  if (technical) {
+    const line = [
+      technical.source ? `source=${String(technical.source)}` : null,
+      technical.asOf ? `asOf=${String(technical.asOf)}` : null,
+      technical.lastPrice != null ? `lastPrice=${String(technical.lastPrice)}` : null,
+    ].filter(Boolean).join(" ");
+    if (line) parts.push(`technical(${line})`);
+  }
+
+  return parts.length > 0 ? parts.join(" / ") : null;
+}
+
 function normalizeSourceState(
   label: string,
   source: AiRecommendationV3SourceState | string | null | undefined,
@@ -153,8 +212,8 @@ export function getOfficialAnnouncementSourceState(data: AiRecommendationV3Respo
     label: "官方公告 source state",
     state: traceMentionsOfficialAnnouncements(data) ? "degraded" : "pending",
     detail: traceMentionsOfficialAnnouncements(data)
-      ? "v3 trace mentions announcement-like data, but no explicit official announcement sourceState was returned."
-      : "v3 response did not include official announcement sourceState.",
+      ? "v3 trace 有公告相關訊號，但後端沒有明確回傳官方公告 sourceState。"
+      : "v3 回應沒有官方公告 sourceState，前端只能標示待接入。",
     owner: "Jason/Elva",
     nextAction: OFFICIAL_ANNOUNCEMENT_NEXT_ACTION,
   };
@@ -189,7 +248,7 @@ export function mapV3ItemToStockRecCard(
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
   const entryLabel = (item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null)
-    ?? (entryLow != null && entryHigh != null ? "Backend v3 entryPriceRange" : "後端未回傳 entry range");
+    ?? (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
@@ -219,7 +278,7 @@ export function mapV3ItemToStockRecCard(
     why_not_buy: joinLines(item.why_not_buy),
     risk: joinLines(item.risk, item.risks, item.riskFactors, item.why_not_buy),
     source: item.source ?? null,
-    sourceTrail: compactUnknown(item.sourceTrail),
+    sourceTrail: deriveSourceTrail(item, data),
     sourceState: deriveItemSourceState(item, data),
     officialAnnouncementSourceState: getOfficialAnnouncementSourceState(data),
     synthesisFlags: {
@@ -313,46 +372,44 @@ export function buildV3PanelState(input: {
   const hasEnoughItems = backendItemCount >= 5 && input.visibleCount >= Math.min(5, backendItemCount);
   const isComplete = status === "complete";
   const usedFallback = input.data?.usedFallback === true || input.data?.synthesisFallbackUsed === true || input.data?.fullAiReportParsed === false;
-  const flags = `status=${status} / itemCount=${backendItemCount} / visibleCards=${input.visibleCount} / usedFallback=${boolText(input.data?.usedFallback)} / fullAiReportParsed=${boolText(input.data?.fullAiReportParsed)} / synthesisRetryUsed=${boolText(input.data?.synthesisRetryUsed)} / synthesisFallbackUsed=${boolText(input.data?.synthesisFallbackUsed)}`;
-
   if (input.visibleCount > 0) {
     const live = isComplete && hasEnoughItems && !usedFallback;
     return {
       tone: live ? "live" : "degraded",
-      label: live ? "LIVE" : "DEGRADED",
+      label: live ? "正式資料" : "需留意",
       title: live
-        ? "v3 gate complete with real backend cards"
-        : "v3 returned real backend cards, but the gate is not complete",
+        ? "已取得正式 AI 推薦"
+        : "AI 推薦資料尚未完整",
       detail: live
-        ? `${flags}. These cards are rendered directly from ${ENDPOINT}.`
-        : `${flags}. The UI is not padding or upgrading the result; it is showing exactly the backend state.`,
+        ? `目前顯示 ${input.visibleCount} 檔，未使用備援補牌。`
+        : `目前顯示 ${input.visibleCount} 檔，後端回傳 ${backendItemCount} 檔；此頁不會補假資料。`,
       endpoint: ENDPOINT,
       owner: source?.owner ?? OWNER,
       nextAction: live
-        ? nextFromSource ?? "Bruce can proceed with owner-session browser acceptance."
-        : nextFromSource ?? "Backend must reach status=complete with non-fallback synthesis before this can be called fully accepted.",
+        ? nextFromSource ?? "可進行頁面驗收。"
+        : nextFromSource ?? "等待推薦引擎回到完整狀態後再驗收。",
     };
   }
 
   if (status === "empty" || status === "pending" || source?.state === "empty") {
     return {
       tone: "pending",
-      label: "PENDING",
-      title: "v3 returned no recommendation cards",
-      detail: `${flags}. The page must not backfill mock cards.`,
+      label: "等待資料",
+      title: "目前沒有可顯示的 AI 推薦",
+      detail: "推薦引擎尚未回傳可用卡片；此頁不會補假資料。",
       endpoint: ENDPOINT,
       owner: source?.owner ?? OWNER,
-      nextAction: nextFromSource ?? "Trigger or repair the v3 run, then re-run owner-session browser verify.",
+      nextAction: nextFromSource ?? "等待下一輪推薦產生後重新驗收。",
     };
   }
 
   return {
     tone: "degraded",
-    label: "DEGRADED",
-    title: `v3 status=${status}`,
-    detail: `${flags}. No v3 card is visible, and no mock replacement is allowed.`,
+    label: "需留意",
+    title: "AI 推薦資料異常",
+    detail: `推薦引擎狀態為 ${status}，目前沒有可顯示卡片；此頁不會補假資料。`,
     endpoint: ENDPOINT,
     owner: source?.owner ?? OWNER,
-    nextAction: nextFromSource ?? "Elva/Jason need to inspect the v3 run and Bruce needs a production payload capture.",
+    nextAction: nextFromSource ?? "需要檢查推薦產生流程與 production payload。",
   };
 }

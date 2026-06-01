@@ -233,6 +233,7 @@ import {
 import {
   _lastPipelineState,
   getPipelineObservabilityAddendum,
+  isDailyBriefV2ContractCompliant,
   loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
@@ -281,6 +282,7 @@ import {
   getTstDate as getStrategyBriefTstDate
 } from "./openalice-strategy-brief.js";
 import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
+import { normalizeAndMergeTwseHeatmapTiles } from "./utils/heatmap-normalized-merge.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -1579,6 +1581,40 @@ app.get("/api/v1/companies/lookup", async (c) => {
   };
   _lookupCache.set(cacheKey, { data: result, expiresAt: now + LOOKUP_TTL_MS });
   return c.json({ data: result });
+});
+
+// =============================================================================
+// GET /api/v1/companies/search?q=X&limit=N — prefix-match dropdown source.
+// Returns array of matches (up to limit), unlike /lookup which returns single.
+// Used by trading room search bar to populate dropdown of candidate stocks.
+// Matching: ticker startsWith, then name contains (case-insensitive).
+// =============================================================================
+app.get("/api/v1/companies/search", async (c) => {
+  const q = (c.req.query("q") ?? "").trim().toUpperCase();
+  if (!q) return c.json({ data: [] });
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
+  const workspaceSlug = c.get("session").workspace.slug;
+  const companies = await getCompaniesLiteCached(c.get("repo"), workspaceSlug);
+
+  const tickerStarts: typeof companies = [];
+  const tickerContains: typeof companies = [];
+  const nameContains: typeof companies = [];
+  for (const co of companies) {
+    const t = co.ticker.toUpperCase();
+    const n = co.name.toUpperCase();
+    if (t.startsWith(q)) tickerStarts.push(co);
+    else if (t.includes(q)) tickerContains.push(co);
+    else if (n.includes(q)) nameContains.push(co);
+    if (tickerStarts.length + tickerContains.length + nameContains.length >= limit * 3) break;
+  }
+  const merged = [...tickerStarts, ...tickerContains, ...nameContains].slice(0, limit);
+  return c.json({
+    data: merged.map((co) => ({
+      ticker: co.ticker,
+      name: co.name,
+      sector: co.market ?? "",
+    })),
+  });
 });
 
 // =============================================================================
@@ -3831,6 +3867,49 @@ import {
   maskAccount,
 } from "./broker/kgi-sim-env.js";
 
+type KgiGatewayQuoteAuthSummary = {
+  available: boolean | null;
+  state: string;
+  errorCode: string | null;
+  subscribedTickCount: number | null;
+};
+
+async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSummary> {
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4_000);
+  try {
+    const res = await fetch(`${gatewayUrl}/quote/status`, { method: "GET", signal: controller.signal });
+    if (!res.ok) {
+      return { available: null, state: "gateway_error", errorCode: `HTTP_${res.status}`, subscribedTickCount: null };
+    }
+    const body = await res.json() as {
+      quote_auth_available?: boolean;
+      quote_auth_state?: string;
+      quote_auth_error_code?: string | null;
+      subscribed_symbols?: { tick?: string[] };
+    };
+    return {
+      available: typeof body.quote_auth_available === "boolean" ? body.quote_auth_available : null,
+      state: body.quote_auth_state ?? "unknown",
+      errorCode: body.quote_auth_error_code ?? null,
+      subscribedTickCount: Array.isArray(body.subscribed_symbols?.tick) ? body.subscribed_symbols.tick.length : null,
+    };
+  } catch {
+    return {
+      available: null,
+      state: "gateway_unreachable",
+      errorCode: "KGI_GATEWAY_UNREACHABLE",
+      subscribedTickCount: null,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // GET /api/v1/kgi/status — Owner only. Returns KGI env, connection state, SIM smoke results.
 // LITERAL route registered BEFORE any parametric /api/v1/kgi/:* to avoid Hono shadow.
 app.get("/api/v1/kgi/status", async (c) => {
@@ -3840,6 +3919,7 @@ app.get("/api/v1/kgi/status", async (c) => {
   }
 
   const state = getKgiSimState();
+  const gatewayQuoteAuth = await readKgiGatewayQuoteAuthSummary();
 
   return c.json({
     sim_only: true,
@@ -3853,6 +3933,7 @@ app.get("/api/v1/kgi/status", async (c) => {
     last_trade_smoke_at: state.lastTradeSmokeAt,
     last_sim_order_report_at: state.lastSimOrderReportAt,
     prod_write_blocked: true, // permanent hard guard — never false
+    gateway_quote_auth: gatewayQuoteAuth,
     sim_quote_host: process.env["KGI_SIM_QUOTE_HOST"] ?? "iquotetest.kgi.com.tw",
     sim_trade_host: process.env["KGI_SIM_TRADE_HOST"] ?? "itradetest.kgi.com.tw",
   });
@@ -3883,7 +3964,22 @@ app.post("/api/v1/kgi/sim/quote-smoke", async (c) => {
     symbol: typeof body.symbol === "string" ? body.symbol : "0050",
   });
 
-  return c.json({ sim_only: true, data: result });
+  const httpStatus = !result.gatewayReachable
+    ? 502
+    : !result.loggedIn
+      ? 503
+      : !result.subscribed
+        ? 502
+        : !result.tickReceived
+          ? 504
+          : 200;
+
+  return c.json({
+    ok: httpStatus === 200,
+    sim_only: true,
+    prod_write_blocked: true,
+    data: result,
+  }, httpStatus);
 });
 
 // POST /api/v1/kgi/sim/trade-smoke — Owner only. Run SIM trade smoke (submit 1 odd-lot order).
@@ -3914,7 +4010,24 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
     confirmedByJason: body.confirmedByJason === true,
   });
 
-  return c.json({ sim_only: true, data: result });
+  const httpStatus = result.orderOutcome === "awaiting_dual_confirm"
+    ? 428
+    : result.orderOutcome === "prod_write_blocked"
+      ? 409
+      : !result.gatewayReachable
+        ? 502
+        : !result.loggedIn
+          ? 503
+          : result.orderSubmitted || result.orderOutcome === "accepted" || result.orderOutcome === "callback_received"
+            ? 200
+            : 502;
+
+  return c.json({
+    ok: httpStatus === 200,
+    sim_only: true,
+    prod_write_blocked: true,
+    data: result,
+  }, httpStatus);
 });
 
 // POST /api/v1/kgi/sim/order — Owner only. User-facing KGI SIM order submit.
@@ -3929,10 +4042,17 @@ app.post("/api/v1/kgi/sim/trade-smoke", async (c) => {
 //   - Account masked as 9228-***-6 in audit
 //   - KGI_READ_ONLY_MODE does NOT block SIM submit (only real broker writes)
 //
-// Body: { symbol, side, qty, price?, orderType, quantityUnit }
+// Body: { symbol, side, qty, price?, orderType, quantityUnit, timeInForce?, orderCond?, priceType? }
 // Response: { sim_only: true, data: { tradeId, status, submittedAt, ... } }
 // Supports both old field names (symbol/qty) and new aliases (ticker/quantity)
 // so that callers can use either convention without breaking existing integrations.
+//
+// B2 additions (2026-05-31):
+//   timeInForce — "ROD"|"IOC"|"FOK" (default: "ROD")
+//   orderCond   — "Cash"|"CashSelling"|"Margin"|"MarginDayTrade"|"ShortSelling"|"LendSelling"
+//                 (default: "Cash")
+//   priceType   — "MKT"|"Reference"|"LimitUp"|"LimitDown" — KGI special-price codes
+//                 when set, overrides numeric price field for the gateway call
 export const kgiSimOrderBodySchema = z.object({
   // ticker is alias for symbol (Elva spec uses {ticker, side, quantity, orderType})
   ticker: z.string().min(1).max(8).toUpperCase().optional(),
@@ -3944,6 +4064,11 @@ export const kgiSimOrderBodySchema = z.object({
   price: z.number().positive().nullable().optional(),
   orderType: z.enum(["market", "limit", "MARKET", "LIMIT"]).transform((v) => v.toLowerCase() as "market" | "limit").default("limit"),
   quantityUnit: z.enum(["SHARE", "LOT"]).default("SHARE"),
+  // B2: optional fields — gateway passes these through to KGI SDK
+  timeInForce: z.enum(["ROD", "IOC", "FOK"]).default("ROD"),
+  orderCond: z.enum(["Cash", "CashSelling", "Margin", "MarginDayTrade", "ShortSelling", "LendSelling"]).default("Cash"),
+  // priceType: KGI special-price codes; when present, overrides numeric price for gateway
+  priceType: z.enum(["MKT", "Reference", "LimitUp", "LimitDown"]).optional(),
 }).transform((raw) => ({
   symbol: (raw.ticker ?? raw.symbol ?? "").toUpperCase(),
   side: raw.side,
@@ -3951,6 +4076,9 @@ export const kgiSimOrderBodySchema = z.object({
   price: raw.price,  // keep undefined when not provided (SIM2/SIM4 contract)
   orderType: raw.orderType,
   quantityUnit: raw.quantityUnit,
+  timeInForce: raw.timeInForce,
+  orderCond: raw.orderCond,
+  priceType: raw.priceType,
 })).refine((d) => d.symbol.length >= 1, { message: "ticker/symbol is required" })
   .refine((d) => d.qty > 0, { message: "quantity/qty must be positive" });
 
@@ -3983,11 +4111,11 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
     return c.json({ error: "BAD_REQUEST" }, 400);
   }
 
-  // 4. Price check: limit orders require a price
-  if (body.orderType === "limit" && (body.price == null || body.price <= 0)) {
+  // 4. Price check: limit orders require either a numeric price or a priceType
+  if (body.orderType === "limit" && !body.priceType && (body.price == null || body.price <= 0)) {
     return c.json({
       error: "VALIDATION_ERROR",
-      message: "限價單需要填入有效的委託價格。",
+      message: "限價單需要填入有效的委託價格，或指定 priceType（如 LimitUp / LimitDown）。",
       sim_only: true,
     }, 400);
   }
@@ -4026,19 +4154,31 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
     effective_qty_shares: effectiveQty,
     order_type: body.orderType,
     price: body.price ?? null,
+    price_type: body.priceType ?? null,
+    time_in_force: body.timeInForce,
+    order_cond: body.orderCond,
     odd_lot: isOddLot,
     account_masked: maskAccount(process.env["KGI_ACCOUNT"] ?? "9228-001282-6"),
     prod_write_blocked: true,
   };
+
+  // Resolve effective price for gateway:
+  //   priceType present → pass the string ("MKT", "LimitUp", etc.) as price
+  //   numeric price present → pass the number
+  //   neither → undefined (market fallback on gateway side)
+  type KgiPriceArg = number | "MKT" | "Reference" | "LimitUp" | "LimitDown" | undefined;
+  const gatewayPrice: KgiPriceArg = body.priceType
+    ? (body.priceType as "MKT" | "Reference" | "LimitUp" | "LimitDown")
+    : (body.price ?? undefined);
 
   try {
     const tradeRaw = await client.createOrder({
       action: body.side === "buy" ? "Buy" : "Sell",
       symbol: body.symbol,
       qty: body.qty,
-      price: body.price ?? undefined,
-      timeInForce: "ROD",
-      orderCond: "Cash",
+      price: gatewayPrice,
+      timeInForce: body.timeInForce,
+      orderCond: body.orderCond,
       oddLot: isOddLot,
       name: "IUF_SIM_USER_ORDER",
     });
@@ -4080,7 +4220,10 @@ app.post("/api/v1/kgi/sim/order", async (c) => {
         quantityUnit: body.quantityUnit,
         effectiveQtyShares: effectiveQty,
         price: body.price ?? null,
+        priceType: body.priceType ?? null,
         orderType: body.orderType,
+        timeInForce: body.timeInForce,
+        orderCond: body.orderCond,
         isOddLot,
         submittedAt,
       },
@@ -4228,6 +4371,21 @@ function _s1TaipeiDateStr(offsetDays = 0): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
 }
 
+function _isValidS1DateParam(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [yearRaw, monthRaw, dayRaw] = value.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 // GET /api/v1/internal/s1-sim/status — S1 pipeline observation status (Owner only)
 //
 // Returns:
@@ -4248,8 +4406,9 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
   const todayTst = _s1TaipeiDateStr();
 
   // Import s1-sim-runner window checkers (read-only, no side-effects)
-  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow } =
+  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow, resolveS1SimCapitalTwd } =
     await import("./s1-sim-runner.js");
+  const capitalConfig = await resolveS1SimCapitalTwd(session.workspace.id);
 
   // Read today's basket (try today, yesterday, day-before)
   type S1BasketLite = { signal_date: string; regime: string; exposure_weight: number; basket: unknown[]; generated_at_tst: string };
@@ -4282,6 +4441,10 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
       eod_open: isS1EodWindow(),
     },
     gateway_url_configured: !!(process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"]),
+    configured_capital_twd: capitalConfig.capitalTwd,
+    capital_source: capitalConfig.source,
+    capital_subscription_id: capitalConfig.subscriptionId,
+    capital_subscription_created_at: capitalConfig.createdAt,
     latest_basket: latestBasket ? {
       date: latestBasketDate,
       regime: latestBasket.regime,
@@ -4305,6 +4468,77 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
   });
 });
 
+// POST /api/v1/internal/s1-sim/manual-run — Owner-only S1 SIM catch-up trigger
+//
+// This intentionally does not change the automatic S1 Monday cadence. It gives
+// Yang an explicit way to run S1 SIM catch-up actions when an ops issue missed
+// the normal window. Real-order paths remain blocked.
+app.post("/api/v1/internal/s1-sim/manual-run", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "INVALID_JSON" }, 400);
+  }
+  if (typeof body !== "object" || body === null) {
+    return c.json({ error: "INVALID_BODY" }, 400);
+  }
+
+  const raw = body as Record<string, unknown>;
+  const action = raw["action"];
+  const confirm = raw["confirm"];
+  if (confirm !== "RUN_S1_SIM_MANUAL") {
+    return c.json({
+      error: "CONFIRMATION_REQUIRED",
+      message: "Manual S1 SIM trigger requires confirm='RUN_S1_SIM_MANUAL'.",
+    }, 400);
+  }
+  if (action !== "signal" && action !== "order_submit" && action !== "eod") {
+    return c.json({
+      error: "INVALID_ACTION",
+      message: "action must be one of: signal, order_submit, eod",
+    }, 400);
+  }
+
+  const triggerId = crypto.randomUUID();
+  const acceptedAt = new Date().toISOString();
+  void (async () => {
+    try {
+      const {
+        runS1SignalTick,
+        runS1OrderSubmitTick,
+        runS1EodReportTick,
+      } = await import("./s1-sim-runner.js");
+
+      if (action === "signal") {
+        await runS1SignalTick();
+      } else if (action === "order_submit") {
+        await runS1OrderSubmitTick();
+      } else {
+        await runS1EodReportTick();
+      }
+      console.log(`[s1-manual] trigger ${triggerId} action=${action} completed`);
+    } catch (e) {
+      console.error(`[s1-manual] trigger ${triggerId} action=${action} failed:`, e instanceof Error ? e.message : String(e));
+    }
+  })();
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    trigger_id: triggerId,
+    action,
+    status: "accepted",
+    accepted_at: acceptedAt,
+    result_path: "/api/v1/internal/s1-sim/status",
+  }, 202);
+});
+
 // GET /api/v1/internal/s1-sim/eod-report?date=YYYY-MM-DD — S1 EOD report (Owner only)
 //
 // Returns the full S1EodReport JSON for the requested date.
@@ -4318,9 +4552,8 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
   const { join: pathJoin } = await import("node:path");
   const dateParam = c.req.query("date") ?? _s1TaipeiDateStr();
 
-  // Validate date format YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-    return c.json({ error: "INVALID_DATE", message: "date must be YYYY-MM-DD" }, 400);
+  if (!_isValidS1DateParam(dateParam)) {
+    return c.json({ error: "INVALID_DATE", message: "date must be a valid YYYY-MM-DD calendar date" }, 400);
   }
 
   const base = _s1ReportsBase();
@@ -4362,9 +4595,8 @@ app.get("/api/v1/internal/s1-sim/basket", async (c) => {
   const { join: pathJoin } = await import("node:path");
   const dateParam = c.req.query("date") ?? _s1TaipeiDateStr();
 
-  // Validate date format YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-    return c.json({ error: "INVALID_DATE", message: "date must be YYYY-MM-DD" }, 400);
+  if (!_isValidS1DateParam(dateParam)) {
+    return c.json({ error: "INVALID_DATE", message: "date must be a valid YYYY-MM-DD calendar date" }, 400);
   }
 
   const base = _s1ReportsBase();
@@ -5004,9 +5236,7 @@ app.get("/api/v1/paper/orders", async (c) => {
 });
 
 // GET /api/v1/paper/positions — paper trading positions.
-// When KGI_ENV=sim (or ?source=sim): reconstructs positions from KGI /deals.
-//   WORKAROUND 2026-05-20: /position SDK native crash (KGI vendor bug, Candidate F).
-//   Bypass: aggregate deals by symbol → net qty + weighted avg cost.
+// When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM gateway positions.
 // When KGI_ENV=paper (or ?source=paper), returns in-memory paper-broker positions.
 // Default: follows KGI_ENV env var. Override with ?source=sim|paper.
 app.get("/api/v1/paper/positions", async (c) => {
@@ -5016,8 +5246,7 @@ app.get("/api/v1/paper/positions", async (c) => {
   const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
 
   if (useSimSource) {
-    // KGI SIM mode — reconstruct positions from /deals (bypass broken /position SDK)
-    // /position endpoint crashes with 500 (KGI vendor SDK bug, see gateway line 460 comment).
+    // KGI SIM mode — pull real positions from gateway
     const gatewayUrl =
       process.env["KGI_GATEWAY_URL"] ??
       process.env["KGI_GATEWAY_BASE_URL"] ??
@@ -5025,53 +5254,77 @@ app.get("/api/v1/paper/positions", async (c) => {
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
     const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
     try {
-      const deals = await client.getDeals();
-      // deals shape: Record<symbol, Array<{action:"B"|"S", quantity:number, price:number, ...}>>
-      type DealRecord = { action: string; quantity: number; price: number; [k: string]: unknown };
-      const posMap = new Map<string, { netQty: number; totalCost: number; dealCount: number }>();
-      for (const [symbol, dealList] of Object.entries(deals)) {
-        if (!Array.isArray(dealList)) continue;
-        for (const deal of dealList as DealRecord[]) {
-          const isBuy = deal.action === "B";
-          const qty = Number(deal.quantity) || 0;
-          const price = Number(deal.price) || 0;
-          const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0, dealCount: 0 };
-          if (isBuy) {
-            existing.netQty += qty;
-            existing.totalCost += qty * price;
-          } else {
-            existing.netQty -= qty;
-            existing.totalCost -= qty * price;
-          }
-          existing.dealCount += 1;
-          posMap.set(symbol, existing);
-        }
-      }
-      const accountLabel = process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim";
-      const positions = Array.from(posMap.entries())
-        .filter(([, v]) => v.netQty !== 0)
-        .map(([symbol, v]) => {
-          const avgCost = v.netQty > 0 ? Math.round((v.totalCost / v.netQty) * 100) / 100 : null;
-          return {
-            accountId: accountLabel,
-            symbol,
-            market: "TWSE",
-            quantity: v.netQty,
-            avgPrice: avgCost,
-            marketPrice: avgCost, // no live quote here; avgCost is best available
-            marketValue: avgCost !== null ? Math.round(avgCost * v.netQty * 100) / 100 : null,
-            unrealizedPnl: null, // cannot compute without live quote
-            unrealizedPnlPct: null,
-            openedAt: null,
-            companyId: null,
-            source: "kgi_sim_reconstructed",
-            reconstructedFromDeals: true,
-          };
-        });
-      return c.json({ data: positions, source: "kgi_sim_reconstructed", degraded: false });
+      const rawPositions = await client.getPosition();
+      // Map KgiPosition → Position-compatible shape for UI
+      const positions = rawPositions
+        .filter((p) => p.netQuantity !== 0 || p.unrealized !== 0)
+        .map((p) => ({
+          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+          symbol: p.symbol,
+          market: "TWSE",
+          quantity: p.netQuantity,
+          avgPrice: p.lastPrice, // best proxy; KGI position df does not expose avgPrice
+          marketPrice: p.lastPrice,
+          marketValue: p.lastPrice ? p.lastPrice * p.netQuantity : null,
+          unrealizedPnl: p.unrealized,
+          unrealizedPnlPct: null,
+          openedAt: null,
+          companyId: null,
+          source: "kgi_sim",
+        }));
+      return c.json({ data: positions, source: "kgi_sim" });
     } catch (_err) {
-      // Graceful degradation — fall back to empty list, not error
-      return c.json({ data: [], source: "kgi_sim_reconstructed", degraded: true });
+      // KGI /position native crash workaround — reconstruct from /deals.
+      // Root cause: kgisuperpy Order.get_position() crashes; gateway returns 500.
+      try {
+        const dealsBySymbol = (await client.getDeals()) as Record<
+          string,
+          Array<{ action?: string; quantity?: number; price?: number }>
+        >;
+        const reconstructed: Array<Record<string, unknown>> = [];
+        for (const [symbol, deals] of Object.entries(dealsBySymbol)) {
+          if (!Array.isArray(deals)) continue;
+          let netQty = 0;
+          let totalCost = 0;
+          let lastPrice = 0;
+          for (const d of deals) {
+            const action = String(d.action ?? "");
+            const qty = Number(d.quantity ?? 0);
+            const price = Number(d.price ?? 0);
+            if (qty <= 0 || price <= 0) continue;
+            lastPrice = price;
+            if (action === "B") {
+              netQty += qty;
+              totalCost += qty * price;
+            } else if (action === "S") {
+              netQty -= qty;
+              totalCost -= qty * price;
+            }
+          }
+          if (netQty !== 0) {
+            const avgPrice = netQty !== 0 ? totalCost / netQty : 0;
+            const marketValue = lastPrice * netQty;
+            const unrealizedPnl = marketValue - totalCost;
+            reconstructed.push({
+              accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+              symbol,
+              market: "TWSE",
+              quantity: netQty,
+              avgPrice,
+              marketPrice: lastPrice,
+              marketValue,
+              unrealizedPnl,
+              unrealizedPnlPct: totalCost !== 0 ? unrealizedPnl / Math.abs(totalCost) : null,
+              openedAt: null,
+              companyId: null,
+              source: "kgi_sim_reconstructed",
+            });
+          }
+        }
+        return c.json({ data: reconstructed, source: "kgi_sim_reconstructed" });
+      } catch (_recon) {
+        return c.json({ data: [], source: "kgi_sim", degraded: true });
+      }
     }
   }
 
@@ -9427,21 +9680,27 @@ app.get("/api/v1/briefs/:id", async (c) => {
   const firstSection = (brief.sections as Array<{ heading: string; body: string }>)[0];
   const title = firstSection?.heading ?? `Brief ${brief.date}`;
 
-  // ── Resolve linked content_draft by dedupeKey pattern ─────────────────────
-  // daily_briefs are produced by approving a content_draft with targetTable=daily_briefs
-  // dedupeKey format matches computeContentDraftDedupeKey() in content-draft-store.ts
-  const dedupeKey = `${workspaceId}:daily_briefs:${brief.date}:v1`;
+  // ── Resolve linked content_draft ──────────────────────────────────────────
+  // Historical backfills and direct pipelines do not always share the legacy
+  // v1 dedupe key, so resolve by approval ref/date first and keep the old key
+  // pattern as a compatibility fallback.
+  const dedupeKeyPrefix = `${workspaceId}:daily_briefs:${brief.date}:`;
   const draftRows = await db
     .select({ id: contentDrafts.id })
     .from(contentDrafts)
     .where(
       and(
         eq(contentDrafts.workspaceId, workspaceId),
-        eq(contentDrafts.dedupeKey, dedupeKey)
+        eq(contentDrafts.targetTable, "daily_briefs"),
+        or(
+          eq(contentDrafts.approvedRefId, brief.id),
+          eq(contentDrafts.targetEntityId, brief.date),
+          like(contentDrafts.dedupeKey, `${dedupeKeyPrefix}%`)
+        )
       )
     )
     .orderBy(desc(contentDrafts.createdAt))
-    .limit(5);
+    .limit(10);
 
   const draftIds = draftRows.map((r) => r.id);
 
@@ -9461,6 +9720,8 @@ app.get("/api/v1/briefs/:id", async (c) => {
       "content_draft.ai_approved",
       "content_draft.ai_rejected",
       "content_draft.ai_manual_review",
+      "content_draft.source_only_backfill_approved",
+      "content_draft.factual_reject",
       "hallucination_reject"
     ];
     auditRows = await db
@@ -9543,6 +9804,33 @@ app.get("/api/v1/briefs/:id", async (c) => {
     }
   }
 
+  // ── Parse source-only historical backfill gate ────────────────────────────
+  // Backfilled briefs can be safely published by deterministic source checks
+  // without running the full LLM adversarial/RAG chain. Surface that gate
+  // explicitly so the UI does not show a false "not reviewed" state.
+  type SourceOnlyGateResult = {
+    ran: boolean;
+    verdict: "OK" | "HELD";
+    confidence: number | null;
+    reason: string | null;
+    sourcePackId: string | null;
+    auditedAt: string | null;
+  };
+
+  let sourceOnlyGate: SourceOnlyGateResult | null = null;
+  const sourceOnlyRow = auditRows.find((r) => r.action === "content_draft.source_only_backfill_approved");
+  if (sourceOnlyRow) {
+    const p = sourceOnlyRow.payload as Record<string, unknown> | null;
+    sourceOnlyGate = {
+      ran: true,
+      verdict: p?.["verdict"] === "approve" ? "OK" : "HELD",
+      confidence: typeof p?.["confidence"] === "number" ? (p["confidence"] as number) : null,
+      reason: typeof p?.["reason"] === "string" ? (p["reason"] as string) : null,
+      sourcePackId: typeof p?.["sourcePackId"] === "string" ? (p["sourcePackId"] as string) : null,
+      auditedAt: sourceOnlyRow.createdAt.toISOString()
+    };
+  }
+
   // ── Build hard-reject summary ──────────────────────────────────────────────
   // Hard-reject rules are policy constants — report them verbatim so frontend
   // can show what safety gates were in effect for this brief.
@@ -9554,9 +9842,19 @@ app.get("/api/v1/briefs/:id", async (c) => {
     "no tier=red auto-approve",
     "no content_draft.ai_rejected bypass"
   ];
-  const wasRejected = auditRows.some(
-    (r) => r.action === "content_draft.ai_rejected" || r.action === "hallucination_reject"
+  const latestDecisionRow = auditRows.find((r) =>
+    [
+      "content_draft.source_only_backfill_approved",
+      "content_draft.ai_approved",
+      "content_draft.ai_rejected",
+      "content_draft.factual_reject",
+      "hallucination_reject"
+    ].includes(r.action)
   );
+  const wasRejected =
+    latestDecisionRow?.action === "content_draft.ai_rejected" ||
+    latestDecisionRow?.action === "content_draft.factual_reject" ||
+    latestDecisionRow?.action === "hallucination_reject";
 
   const auditChain = {
     hardReject: {
@@ -9564,14 +9862,15 @@ app.get("/api/v1/briefs/:id", async (c) => {
       rejected: wasRejected
     },
     adversarialReview,
-    hallucinationCheck
+    hallucinationCheck,
+    sourceOnlyGate
   };
 
-  // ── Build sections with sourceTrail (sourceTrail not in DB; omit gracefully) ─
-  const sections = (brief.sections as Array<{ heading: string; body: string }>).map((s) => ({
+  // ── Build sections with sourceTrail when the publisher stored it ──────────
+  const sections = (brief.sections as Array<{ heading: string; body: string; sourceTrail?: unknown }>).map((s) => ({
     heading: s.heading,
     body: s.body,
-    sourceTrail: null as string | null  // not persisted in daily_briefs; available on content_drafts.payload
+    sourceTrail: typeof s.sourceTrail === "string" && s.sourceTrail.trim() ? s.sourceTrail : null
   }));
 
   return c.json({
@@ -10233,10 +10532,7 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   // companies.chain_position is stored as English (Yahoo Finance style).
   // Frontend heatmap-industry-label.ts (#700) also normalizes, but Bruce verify
   // checks raw API JSON — backend must be the source of truth.
-  const normalizedTiles = tiles.map((tile) => ({
-    ...tile,
-    industry: normalizeTwseIndustryZhTw(tile.industry),
-  }));
+  const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
 
   return c.json({
     data: normalizedTiles,
@@ -11335,54 +11631,104 @@ app.get("/api/v1/paper/fills", async (c) => {
   return c.json({ data: fills });
 });
 
-// GET /api/v1/paper/portfolio
-// Aggregates FILLED orders into a per-symbol position snapshot.
-// Computation: net qty (buy positive, sell negative), weighted avg cost.
-// Returns 200 + { data: PortfolioPosition[] }.
-app.get("/api/v1/paper/portfolio", async (c) => {
-  const session = c.get("session");
+type ComputedPaperPortfolioPosition = {
+  symbol: string;
+  netQtyShares: number;
+  avgCostPerShare: number | null;
+  fillCount: number;
+  lastPrice: number | null;
+  note: string | null;
+  investedCostTWD: number;
+};
+
+async function computePaperPortfolioPositions(userId: string): Promise<ComputedPaperPortfolioPosition[]> {
   let orders;
   try {
-    orders = await listOrders(session.user.id, { status: "FILLED" });
+    orders = await listOrders(userId, { status: "FILLED" });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error("[paper/portfolio] listOrders failed:", detail);
-    return c.json({ error: "list_orders_failed", detail }, 500);
+    throw new Error(`list_orders_failed: ${detail}`);
   }
 
-  // Aggregate per symbol
   const positions = new Map<string, {
     symbol: string;
     netQty: number;
     totalCost: number;
     fillCount: number;
+    lastPrice: number | null;
   }>();
 
-  for (const o of orders) {
+  const sortedOrders = [...orders].sort((a, b) => {
+    const aTime = a.fill?.fillTime instanceof Date
+      ? a.fill.fillTime.getTime()
+      : Date.parse(String(a.fill?.fillTime ?? ""));
+    const bTime = b.fill?.fillTime instanceof Date
+      ? b.fill.fillTime.getTime()
+      : Date.parse(String(b.fill?.fillTime ?? ""));
+    return (Number.isFinite(aTime) ? aTime : 0) - (Number.isFinite(bTime) ? bTime : 0);
+  });
+
+  for (const o of sortedOrders) {
     if (!o.fill) continue;
     const symbol = o.intent.symbol;
-    const p = positions.get(symbol) ?? { symbol, netQty: 0, totalCost: 0, fillCount: 0 };
-    const shareQty = o.intent.quantity_unit === "LOT"
-      ? o.fill.fillQty * 1000
-      : o.fill.fillQty;
-    const sign = o.intent.side === "buy" ? 1 : -1;
-    p.netQty += sign * shareQty;
+    const p = positions.get(symbol) ?? { symbol, netQty: 0, totalCost: 0, fillCount: 0, lastPrice: null };
+    let shareQty = Math.max(0, Number(o.fill.fillQty) || 0);
+    if (shareQty <= 0) continue;
+
     if (o.intent.side === "buy") {
-      p.totalCost += shareQty * o.fill.fillPrice;
+      if (p.netQty < 0) {
+        const coverQty = Math.min(shareQty, Math.abs(p.netQty));
+        p.netQty += coverQty;
+        shareQty -= coverQty;
+      }
+      if (shareQty > 0) {
+        p.netQty += shareQty;
+        p.totalCost += shareQty * o.fill.fillPrice;
+      }
+    } else {
+      if (p.netQty > 0) {
+        const avgCost = p.totalCost / p.netQty;
+        const closingQty = Math.min(shareQty, p.netQty);
+        p.totalCost -= avgCost * closingQty;
+        p.netQty -= shareQty;
+        if (p.netQty <= 0) p.totalCost = 0;
+      } else {
+        p.netQty -= shareQty;
+        p.totalCost = 0;
+      }
     }
     p.fillCount++;
+    p.lastPrice = o.fill.fillPrice;
     positions.set(symbol, p);
   }
 
-  const positionList = Array.from(positions.values()).map((p) => ({
+  return Array.from(positions.values()).map((p) => ({
     symbol: p.symbol,
     netQtyShares: p.netQty,
     avgCostPerShare: p.netQty > 0
       ? Math.round((p.totalCost / p.netQty) * 100) / 100
       : null,
     fillCount: p.fillCount,
+    lastPrice: p.lastPrice,
+    investedCostTWD: Math.max(0, Math.round(p.totalCost * 100) / 100),
     note: p.netQty <= 0 ? "net_flat_or_short" : null
   }));
+}
+
+// GET /api/v1/paper/portfolio
+// Aggregates FILLED orders into a per-symbol position snapshot.
+// Computation: net qty (buy positive, sell negative), weighted avg cost.
+// Returns 200 + { data: PortfolioPosition[] }.
+app.get("/api/v1/paper/portfolio", async (c) => {
+  const session = c.get("session");
+  let positionList: ComputedPaperPortfolioPosition[];
+  try {
+    positionList = await computePaperPortfolioPositions(session.user.id);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "list_orders_failed", detail }, 500);
+  }
 
   // Base capital per BLOCK #5 §5: paper E2E must show simulated capital, not null.
   // PAPER_BROKER_INITIAL_CASH env var overrides; default NT$10,000,000 (楊董ack 2026-05-13).
@@ -11392,9 +11738,9 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     : 10_000_000;
 
   // Compute invested capital from current open positions (buy cost basis only)
-  const investedCost = Array.from(positions.values())
-    .filter((p) => p.netQty > 0)
-    .reduce((acc, p) => acc + p.totalCost, 0);
+  const investedCost = positionList
+    .filter((p) => p.netQtyShares > 0)
+    .reduce((acc, p) => acc + p.investedCostTWD, 0);
 
   const summary = {
     baseCapitalTWD,
@@ -11425,16 +11771,6 @@ app.get("/api/v1/paper/funds", async (c) => {
   const useSimSource = sourceOverride === "sim" || (sourceOverride !== "paper" && kgiEnv === "sim");
 
   if (useSimSource) {
-    // KGI SIM mode — reconstruct cash/equity from /deals (bypass broken /position + missing /balance)
-    // /position crashes (KGI SDK vendor bug); /balance not implemented in gateway.
-    // Workaround 2026-05-20: derive cash from filled deals using fee model.
-    //   Fee model (per Athena packet 2026-05-19 line 27):
-    //     Buy:  notional + commission(0.3% * 0.7 discount)
-    //     Sell: notional - commission(0.3% * 0.7) - sell_tax(0.3%)
-    //   initial_cash = 10_000_000 TWD (SIM capital)
-    const INITIAL_CASH = 10_000_000;
-    const COMMISSION_RATE = 0.003 * 0.7; // 0.3% with 30% Yang discount
-    const SELL_TAX_RATE = 0.003;         // 0.3‰ → actually 3‰ = 0.003 in TWD context
     const gatewayUrl =
       process.env["KGI_GATEWAY_URL"] ??
       process.env["KGI_GATEWAY_BASE_URL"] ??
@@ -11442,68 +11778,91 @@ app.get("/api/v1/paper/funds", async (c) => {
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
     const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
     try {
-      const deals = await client.getDeals();
-      type DealRecord = { action: string; quantity: number; price: number; [k: string]: unknown };
-      let cashSpent = 0;
-      let posMarketValue = 0;
-      const posMap = new Map<string, { netQty: number; totalCost: number }>();
-      for (const [symbol, dealList] of Object.entries(deals)) {
-        if (!Array.isArray(dealList)) continue;
-        for (const deal of dealList as DealRecord[]) {
-          const isBuy = deal.action === "B";
-          const qty = Number(deal.quantity) || 0;
-          const price = Number(deal.price) || 0;
-          const notional = qty * price;
-          const commission = Math.ceil(notional * COMMISSION_RATE);
-          if (isBuy) {
-            cashSpent += notional + commission;
-            const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0 };
-            existing.netQty += qty;
-            existing.totalCost += notional;
-            posMap.set(symbol, existing);
-          } else {
-            const sellTax = Math.ceil(notional * SELL_TAX_RATE);
-            cashSpent -= notional - commission - sellTax; // selling recovers cash minus fees
-            const existing = posMap.get(symbol) ?? { netQty: 0, totalCost: 0 };
-            existing.netQty -= qty;
-            posMap.set(symbol, existing);
-          }
-        }
-      }
-      // Market value = cost basis (no live quote available in this path)
-      for (const [, v] of posMap.entries()) {
-        if (v.netQty > 0 && v.totalCost > 0) {
-          posMarketValue += v.totalCost;
-        }
-      }
-      const cash = INITIAL_CASH - cashSpent;
-      const equity = cash + posMarketValue;
-      const accountLabel = process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim";
+      const rawPositions = await client.getPosition();
+      const totalUnrealized = rawPositions.reduce((acc, p) => acc + (p.unrealized ?? 0), 0);
+      const totalRealized = rawPositions.reduce((acc, p) => acc + (p.realized ?? 0), 0);
       return c.json({
         data: {
-          source: "kgi_sim_reconstructed",
-          accountId: accountLabel,
+          source: "kgi_sim",
+          accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
           currency: "TWD",
-          initialCash: INITIAL_CASH,
-          cash: Math.round(cash * 100) / 100,
-          availableCash: Math.round(cash * 100) / 100,
-          investedMarketValue: Math.round(posMarketValue * 100) / 100,
-          equity: Math.round(equity * 100) / 100,
-          unrealizedPnl: null, // no live quote
-          realizedPnlToday: null,
-          note: "reconstructed from /deals; fee model: 0.3%*0.7 commission + 0.3% sell tax; no live quote",
-          degraded: false,
+          // KGI SIM SDK does not expose available cash — derive P&L only
+          cash: null,
+          availableCash: null,
+          equity: null,
+          marketValue: null,
+          unrealizedPnl: totalUnrealized,
+          realizedPnlToday: totalRealized,
+          note: "cash/equity not available from KGI SIM SDK; showing P&L from position snapshot",
           updatedAt: new Date().toISOString(),
         },
       });
     } catch (_err) {
-      return c.json({
-        data: {
-          source: "kgi_sim_reconstructed",
-          degraded: true,
-          updatedAt: new Date().toISOString(),
-        },
-      });
+      // KGI /position native crash + /balance not implemented — reconstruct cash from /deals.
+      // Cost model: 0.3% commission × 30% discount (Yang) + 3‰ sell tax (per Athena S1 packet).
+      try {
+        const dealsBySymbol = (await client.getDeals()) as Record<
+          string,
+          Array<{ action?: string; quantity?: number; price?: number }>
+        >;
+        const initialCash = Number(process.env["PAPER_BROKER_INITIAL_CASH"] ?? "10000000");
+        let cashConsumed = 0;
+        let totalMarketValue = 0;
+        let totalCostBasis = 0;
+        for (const [_symbol, deals] of Object.entries(dealsBySymbol)) {
+          if (!Array.isArray(deals)) continue;
+          let netQty = 0;
+          let totalCost = 0;
+          let lastPrice = 0;
+          for (const d of deals) {
+            const action = String(d.action ?? "");
+            const qty = Number(d.quantity ?? 0);
+            const price = Number(d.price ?? 0);
+            if (qty <= 0 || price <= 0) continue;
+            lastPrice = price;
+            const notional = qty * price;
+            if (action === "B") {
+              netQty += qty;
+              totalCost += notional;
+              cashConsumed += notional * 1.0009; // commission 0.09%
+            } else if (action === "S") {
+              netQty -= qty;
+              totalCost -= notional;
+              cashConsumed -= notional * (1 - 0.0009 - 0.003); // commission + tax
+            }
+          }
+          if (netQty !== 0) {
+            totalMarketValue += lastPrice * netQty;
+            totalCostBasis += totalCost;
+          }
+        }
+        const cash = initialCash - cashConsumed;
+        const equity = cash + totalMarketValue;
+        return c.json({
+          data: {
+            source: "kgi_sim_reconstructed",
+            accountId: process.env["KGI_ACCOUNT"] ? maskAccount(process.env["KGI_ACCOUNT"]) : "kgi-sim",
+            currency: "TWD",
+            cash,
+            availableCash: cash,
+            equity,
+            marketValue: totalMarketValue,
+            unrealizedPnl: totalMarketValue - totalCostBasis,
+            realizedPnlToday: 0,
+            marginUsed: 0,
+            note: "reconstructed from /deals (KGI SDK /position crashed; /balance not implemented)",
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      } catch (_recon) {
+        return c.json({
+          data: {
+            source: "kgi_sim",
+            degraded: true,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      }
     }
   }
 
@@ -12407,6 +12766,8 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
 // endpoint GET /api/v1/internal/openalice/dispatcher-debug (Owner-only).
 type DispatcherTickResult =
   | "enqueued"
+  | "pipeline_triggered"
+  | "pipeline_skipped"
   | "skipped_existing_job"
   | "skipped_existing_brief"
   | "no_workspace"
@@ -12429,6 +12790,10 @@ const _lastTickState: DispatcherTickState = {
 
 /**
  * F3 (patched 2026-05-05): daily_brief dispatcher scheduler.
+ * 2026-05-31: route the 09:00 dispatcher into the same OpenAlice v2
+ * pipeline/template path used by pre-market/close ticks. Do not enqueue the
+ * old short-instruction daily_brief job here; that path can bypass the fixed
+ * daily_brief_contract_v2 shape.
  *
  * Bug fixed: original version passed workspaceSlug from env ("default" fallback)
  * but DB workspace slug is "primary-desk" (set by seedOwnerIfEmpty). This caused
@@ -12460,7 +12825,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     return;
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
 
   // Idempotency: skip if TODAY's brief already has a queued job.
   // Pete review 2026-05-05 BLOCKER: must filter by parameters->>'targetDate'.
@@ -12487,7 +12852,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
 
   // Idempotency: skip if today's brief formal row already exists
   const [existingBrief] = await db
-    .select({ id: dailyBriefs.id })
+    .select({ id: dailyBriefs.id, sections: dailyBriefs.sections })
     .from(dailyBriefs)
     .where(
       and(
@@ -12501,44 +12866,35 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
       )
     )
     .limit(1);
-  if (existingBrief) {
+  if (existingBrief && isDailyBriefV2ContractCompliant(existingBrief)) {
     console.log(`[daily-brief-dispatcher] Brief already exists for ${todayStr}, skipping`);
     _lastTickState.lastTickResult = "skipped_existing_brief";
     return;
   }
-
-  // Axis 4: load Lab strategy snapshot (graceful — null if snapshot absent)
-  const strategyRegistry = loadStrategySnapshot();
-  const strategyInstructions = strategyRegistry
-    ? `
-
-Strategy Registry (IUF Quant Lab — ${strategyRegistry.length} strategies, all BACKTESTED_RAW):
-${strategyRegistry.map((s) => `- ${s.strategyId} (${s.name}, type=${s.type}): totalTrades=${s.latestSummary.totalTrades}, rawPnl=${s.latestSummary.rawPnl} TWD, maxDd=${s.latestSummary.maxDd} TWD, avgHold=${s.latestSummary.avgHoldingDays}d. Caveats: ${s.caveats.join(", ")}.`).join("\n")}
-
-Include a "strategy_context" section in the brief: describe what each strategy's entry signals look like in today's market conditions. STRICT constraints for this section:
-- Do NOT state any buy / sell / 進場 / 賣出 / 買進 / 出脫 action.
-- Do NOT mention target price / 目標價 or specific price forecasts.
-- Do NOT claim guaranteed profit / 必賺 / 保證.
-- Do NOT cite win rate (勝率) as a performance claim.
-- Do NOT promote any strategy beyond BACKTESTED_RAW status.
-- Always prefix each strategy mention with its caveats (e.g. "NOT_PAPER_READY").`
-    : "";
+  if (existingBrief) {
+    console.warn(
+      `[daily-brief-dispatcher] Existing brief for ${todayStr} is not v2 contract compliant; routing to v2 pipeline`
+    );
+  }
 
   try {
-    const job = await enqueueOpenAliceJob({
-      workspaceSlug: workspace.slug,
-      taskType: "daily_brief",
-      schemaName: "daily_brief_v1",
-      instructions: `Generate the daily market intelligence brief for ${todayStr}. Summarize key themes, notable signals, and actionable insights from today's market data.${strategyInstructions}`,
-      contextRefs: [{ type: "date", id: todayStr }],
-      parameters: {
-        targetDate: todayStr,
-        autoDispatched: true,
-        ...(strategyRegistry ? { strategyRegistry } : {})
-      }
-    });
-    console.log(`[daily-brief-dispatcher] Enqueued daily_brief for ${todayStr}: jobId=${job.jobId}`);
-    _lastTickState.lastTickResult = "enqueued";
+    const result = await runPipelineTick("pre_market", workspace.slug);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    if (result.skippedReason) {
+      console.log(`[daily-brief-dispatcher] Pipeline skipped for ${todayStr}: ${result.skippedReason}`);
+      _lastTickState.lastTickResult = "pipeline_skipped";
+      _lastTickState.lastEnqueueError = result.skippedReason;
+      _lastTickState.lastEnqueueErrorStack = null;
+      return;
+    }
+
+    console.log(
+      `[daily-brief-dispatcher] Routed to v2 pipeline for ${todayStr}: ` +
+      `jobId=${result.jobId ?? "n/a"} draftId=${result.draftId ?? "n/a"} briefId=${result.publishedBriefId ?? "n/a"}`
+    );
+    _lastTickState.lastTickResult = "pipeline_triggered";
     _lastTickState.lastEnqueueError = null;
     _lastTickState.lastEnqueueErrorStack = null;
   } catch (err) {
@@ -13582,12 +13938,12 @@ app.get("/api/v1/portfolio/kgi/positions", async (c) => {
     KgiGatewayAuthError,
   } = await import("./broker/kgi-gateway-client.js");
 
-  // P0-2 fix (2026-05-15): short 500ms timeout so a cold/offline gateway
-  // does not block the Promise.all on PTR hydration for 3+ seconds.
-  // On timeout the catch block returns degraded=true + positions=[] (200).
+  // KGI get_position can take 2.5-4s after SIM login because the Windows SDK
+  // performs a broker query. Keep the timeout bounded, but do not classify a
+  // healthy gateway as unreachable before the SDK can answer.
   const client = new KgiGatewayClient({
     gatewayBaseUrl,
-    connectTimeoutMs: 500,
+    connectTimeoutMs: 6500,
   });
 
   try {
@@ -14099,7 +14455,9 @@ function startSchedulers(workspaceSlug: string): void {
   // STARTUP CATCH-UP GATE (30s after boot):
   //   If TST >= 09:05 AND today's brief has not been dispatched yet → fire once immediately.
   //   This covers deploys/restarts that happen after 09:00 TST.
-  //   SAFE ON BOOT: dispatcher only enqueues openAliceJobs row — no LLM call at boot.
+  //   The dispatcher now routes into the v2 OpenAlice pipeline. It may create
+  //   a direct draft if no OpenAlice device is active, but dedup still prevents
+  //   duplicate briefs for the same date.
   //
   // idempotency: runDailyBriefDispatcherTick() itself skips if job/brief already exists.
   // NOTE: _briefDispatcherLastFiredDate is now module-level (cycle17 — for observability).
@@ -15195,12 +15553,14 @@ app.get("/api/v1/market/heatmap/finmind", async (c) => {
     primarySource = "twse_openapi_fallback";
   }
 
+  const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
+
   return c.json({
-    data: tiles,
+    data: normalizedTiles,
     source: primarySource,
     primaryFailed,
     staleAfterSec: 60,
-    industryCount: tiles.length,
+    industryCount: normalizedTiles.length,
     mappedTickers: tickerToIndustry.size
   });
 });
@@ -15774,8 +16134,28 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
         state: "pending",
         source: "ai_recommendations_runs",
         owner: "Jason/API",
-        nextAction: "Trigger or wait for AI recommendation v3 refresh; DB migration 0042 must allow v3 trigger persistence."
-      }
+        nextAction: "Trigger or wait for AI recommendation v3 refresh. (DB: migration 0041 creates table; migration 0043 adds score_breakdown column.)"
+      },
+      officialAnnouncementSourceState: {
+        state: "pending",
+        source: "get_news_top10",
+        owner: "API",
+        reason: "尚未有 V3 run，無法判斷官方公告是否已納入。",
+        nextAction: "觸發或等待 V3 refresh 後由後端回傳官方公告來源狀態。",
+        lastUpdated: null,
+        count: 0,
+      },
+      sourceStates: {
+        officialAnnouncements: {
+          state: "pending",
+          source: "get_news_top10",
+          owner: "API",
+          reason: "尚未有 V3 run，無法判斷官方公告是否已納入。",
+          nextAction: "觸發或等待 V3 refresh 後由後端回傳官方公告來源狀態。",
+          lastUpdated: null,
+          count: 0,
+        },
+      },
     });
   }
   // debug=true query param exposes full trace (default: included for Owner; trimmed for public)
@@ -15793,10 +16173,15 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     totalCostUsd: latest.totalCostUsd,
     totalTokens: latest.totalTokens,
     itemCount: latest.items.length,
+    sourceState: latest.sourceState,
+    sourceStates: latest.sourceStates,
+    officialAnnouncementSourceState: latest.officialAnnouncementSourceState,
+    officialAnnouncementsSourceState: latest.officialAnnouncementSourceState,
     fullAiReportParsed: latest.status !== "synthesis_format_error",
     synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
+    scoreBreakdown: latest.scoreBreakdown ?? null,
     // F4 debug fields:
     reactTrace: includeTrace ? latest.reactTrace : undefined,
     finalReportMarkdown: latest.finalReportMarkdown,
@@ -16293,7 +16678,7 @@ app.get("/api/v1/admin/openalice/adversarial-warns", async (c) => {
 // QUANT STRATEGY SUBSCRIBE (2026-05-15)
 // POST /api/v1/quant-strategies/:id/subscribe
 //   Owner-only. sim_only forced true server-side.
-//   capital_twd: 50_000–1_000_000 NTD.
+//   capital_twd: 50_000 - 10_000_000 NTD.
 //   Persists to audit_logs action="quant_strategy.subscribe" (no new DB table).
 //
 // GET /api/v1/quant-strategies/:id/subscriptions/my
@@ -16490,6 +16875,22 @@ type PortfolioSnapshotRecordLike = {
   createdAt: Date;
 };
 
+async function buildPaperPortfolioSnapshotPositions(userId: string): Promise<PortfolioSnapshotPositionsMap> {
+  const paperPositions = await computePaperPortfolioPositions(userId);
+  const positions: PortfolioSnapshotPositionsMap = {};
+
+  for (const position of paperPositions) {
+    if (position.netQtyShares <= 0 || position.avgCostPerShare === null) continue;
+    positions[position.symbol] = {
+      shares: position.netQtyShares,
+      avgCost: position.avgCostPerShare,
+      lastPrice: position.lastPrice ?? undefined
+    };
+  }
+
+  return positions;
+}
+
 function portfolioPositionsToArray(positions: PortfolioSnapshotPositionsMap) {
   return Object.entries(positions ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
@@ -16521,6 +16922,52 @@ function serializePortfolioDiffMap(positions: PortfolioSnapshotPositionsMap) {
     avgCost: position.avgCost
   }));
 }
+
+app.post("/api/v1/portfolio/snapshots/capture-paper", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const workspaceId = session.workspace?.id;
+  if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
+
+  try {
+    const positions = await buildPaperPortfolioSnapshotPositions(session.user.id);
+    const positionCount = Object.keys(positions).length;
+    const { createSnapshot } = await import("./portfolio-snapshot-store.js");
+    const snapshot = await createSnapshot({
+      workspaceId,
+      positions,
+      trigger: "manual",
+      metadata: {
+        source: "paper_portfolio_manual_capture",
+        capturedAt: new Date().toISOString(),
+        userId: session.user.id,
+        simulated: true,
+        brokerWrite: false,
+        kgiWrite: false,
+        note: positionCount === 0
+          ? "Manual paper snapshot capture: no open paper positions"
+          : "Manual paper snapshot capture from filled paper orders"
+      }
+    });
+
+    return c.json({
+      data: {
+        snapshot: serializePortfolioSnapshot(snapshot),
+        positionCount,
+        source: "paper_portfolio",
+        simulated: true,
+        brokerWrite: false,
+        kgiWrite: false
+      }
+    }, 201);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[portfolio/snapshots/capture-paper] failed:", detail);
+    return c.json({ error: "paper_portfolio_capture_failed", detail }, 500);
+  }
+});
 
 app.get("/api/v1/portfolio/snapshots", async (c) => {
   const session = c.get("session");
@@ -17310,13 +17757,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
-    hostname: host
-  },
-  async (info) => {
+if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
+  serve(
+    {
+      fetch: app.fetch,
+      port,
+      hostname: host
+    },
+    async (info) => {
     console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
     const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
     await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
@@ -17396,5 +17844,6 @@ serve(
           console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
         );
     }, 10_000);
-  }
-);
+    }
+  );
+}

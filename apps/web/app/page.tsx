@@ -3,11 +3,14 @@ import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   BarChart3,
+  Brain,
   Building2,
+  GitFork,
   LineChart,
   Newspaper,
   Sparkles,
   Target,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -49,6 +52,7 @@ import {
   type TwseMarketOverview,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
 import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -496,6 +500,38 @@ function maskUnsafeAdviceText(text: string) {
 
 function safeBriefText(text: string) {
   return maskUnsafeAdviceText(cleanNarrativeText(text));
+}
+
+function briefHeadingText(heading: string | null | undefined, index: number) {
+  const raw = heading?.trim() ?? "";
+  const key = raw.toLowerCase().replace(/[_-]/g, " ").replace(/\s+/g, " ");
+  const known: Record<string, string> = {
+    "market overview": "盤勢總覽",
+    "theme summaries": "題材摘要",
+    "company notes": "公司觀察",
+    "risk notes": "風險提示",
+    risks: "風險提示",
+    confirmation: "確認狀態",
+  };
+  if (known[key]) return known[key];
+  const fallback = ["盤勢總覽", "題材摘要", "公司觀察"][index] ?? "簡報段落";
+  return cleanExternalHeadline(raw, fallback);
+}
+
+function polishedBriefText(text: string) {
+  const cleaned = safeBriefText(text);
+  return cleaned
+    .replace(/\bMarket State\s*:\s*/gi, "市場狀態：")
+    .replace(/\bActive Themes\s*:\s*/gi, "活躍題材：")
+    .replace(/\bPriority\s*(\d+)\s*:\s*/gi, "優先級 $1：")
+    .replace(/\bMarket Overview\b/gi, "盤勢總覽")
+    .replace(/\bTheme Summaries\b/gi, "題材摘要")
+    .replace(/\bCompany Notes\b/gi, "公司觀察")
+    .replace(/\[Discovery\/([^\]]+)\]/gi, "（探索／$1）")
+    .replace(/\s+—\s+/g, "；")
+    .replace(/\s*•\s*/g, "、")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function categoryLabel(category: string | null | undefined) {
@@ -1034,6 +1070,75 @@ function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): H
     });
 }
 
+function hasVerifiedMove(tile: HeatTile) {
+  return typeof tile.pct === "number" && Number.isFinite(tile.pct)
+    || typeof tile.change === "number" && Number.isFinite(tile.change)
+    || (
+      typeof tile.close === "number" && Number.isFinite(tile.close)
+      && typeof tile.prevClose === "number" && Number.isFinite(tile.prevClose)
+      && tile.prevClose > 0
+    );
+}
+
+function betterHeatmapName(symbol: string, preferred?: string | null, fallback?: string | null) {
+  const preferredName = preferred?.trim();
+  const fallbackName = fallback?.trim();
+  if (preferredName && preferredName !== symbol) return preferredName;
+  if (fallbackName && fallbackName !== symbol) return fallbackName;
+  return preferredName || fallbackName || symbol;
+}
+
+function mergeHeatmapQuote(base: HeatTile | undefined, overlay: HeatTile) {
+  if (!base) return overlay;
+  const overlayHasMove = hasVerifiedMove(overlay);
+  const baseHasMove = hasVerifiedMove(base);
+  const quote = overlayHasMove ? overlay : baseHasMove ? base : overlay;
+  const context = baseHasMove ? base : overlayHasMove ? overlay : base;
+
+  return {
+    ...context,
+    ...quote,
+    symbol: overlay.symbol || base.symbol,
+    name: betterHeatmapName(overlay.symbol || base.symbol, overlay.name, base.name),
+    sector: overlay.sector ?? base.sector ?? null,
+    source: quote.source || context.source,
+    weight: Number.isFinite(quote.weight) && quote.weight > 0 ? quote.weight : context.weight,
+    date: quote.date ?? context.date,
+    open: quote.open ?? context.open,
+    high: quote.high ?? context.high,
+    low: quote.low ?? context.low,
+    close: quote.close ?? context.close,
+    prevClose: quote.prevClose ?? context.prevClose,
+    change: quote.change ?? context.change,
+    volume: quote.volume ?? context.volume,
+    price: quote.price ?? context.price,
+    pct: quote.pct ?? context.pct,
+    readiness: quote.readiness ?? context.readiness,
+    freshnessStatus: quote.freshnessStatus ?? context.freshnessStatus,
+    sourceState: quote.sourceState ?? context.sourceState,
+    sourceLabel: quote.sourceLabel ?? context.sourceLabel,
+  };
+}
+
+function mergeCoreHeatmapWithRepresentativeFeed(coreTiles: HeatTile[], representativeFeed: HeatTile[]) {
+  const rowsBySymbol = new Map<string, HeatTile>();
+
+  for (const tile of representativeFeed) {
+    if (!tile.symbol || !hasVerifiedMove(tile)) continue;
+    rowsBySymbol.set(tile.symbol, tile);
+  }
+
+  for (const tile of coreTiles) {
+    if (!tile.symbol) continue;
+    const existing = rowsBySymbol.get(tile.symbol);
+    if (tile.sourceState === "live" || !existing || !hasVerifiedMove(existing)) {
+      rowsBySymbol.set(tile.symbol, mergeHeatmapQuote(existing, tile));
+    }
+  }
+
+  return [...rowsBySymbol.values()];
+}
+
 function buildTwseIndustryRows(feed: LoadState<RealtimeMarketDashboard | null>): TwseIndustryHeatmapTile[] {
   return (loadStateData(feed)?.twseHeatmap?.data ?? [])
     .filter((item) => item.industry && Number.isFinite(item.avgChangePct))
@@ -1504,6 +1609,19 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
     { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
   ];
+  const adminNav: Array<{
+    href: string;
+    title: string;
+    sub: string;
+    Icon: LucideIcon;
+  }> = [
+    { href: "/admin/brain/llm", title: "Brain", sub: "LLM 費用", Icon: Brain },
+    { href: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork },
+    { href: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart },
+    { href: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench },
+    { href: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles },
+    { href: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3 },
+  ];
   return (
     <aside className="tac-sidebar">
       <div className="tac-brand">
@@ -1531,6 +1649,25 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
                 <small>{item.sub}</small>
               </div>
               {item.active && <i />}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="tac-sidebar-section-head" aria-label="OpenAlice 管理">
+        <span>OpenAlice</span>
+      </div>
+      <nav className="tac-nav tac-nav-admin" aria-label="OpenAlice 管理導覽">
+        {adminNav.map((item) => {
+          const Icon = item.Icon;
+          return (
+            <Link href={item.href} key={item.href}>
+              <span className="tac-nav-icon" aria-hidden="true">
+                <Icon size={17} strokeWidth={1.9} />
+              </span>
+              <div>
+                <b>{item.title}</b>
+                <small>{item.sub}</small>
+              </div>
             </Link>
           );
         })}
@@ -2003,10 +2140,13 @@ function RealtimeHeatmapPanel({
   const showKgiFallback = kgiTilesAllNull && kgiOffHours;
   const nextOpenLabel = showKgiFallback ? kgiNextOpenLabel(now) : null;
 
-  // If KGI is off-hours and tiles are null, treat as no-core and show TWSE heatmap
-  const hasCore = coreHeatmap.length > 0 && !showKgiFallback;
   const activeMode = heatmapMode === "all" ? "all" : "core";
-  const displayHeatmap = hasCore ? coreHeatmap : heatmap;
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(heatmap);
+  const showCoverageFallback = activeMode === "core" && !showKgiFallback && !hasRepresentativeFeed;
+
+  // If KGI is off-hours or the representative feed is still cold, never render a partial core heatmap.
+  const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
+  const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
     : activeMode === "core"
@@ -2016,15 +2156,17 @@ function RealtimeHeatmapPanel({
     ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
     : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
 
-  // When KGI is off-hours, force-show the full market (TWSE) view
-  const effectiveMode: "core" | "all" = showKgiFallback ? "all" : activeMode;
+  const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
+
+  // When KGI is off-hours or the representative feed is cold, force-show the full market view.
+  const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
 
   return (
     <Panel
       eyebrow="HEATMAP"
       title="台股市場熱力圖"
       sub="核心觀察與全市場收盤視角分開呈現"
-      right={<div className="tac-heat-legend"><span>{sourceLabel}</span></div>}
+      right={<div className="tac-heat-legend"><span>{displaySourceLabel}</span></div>}
     >
       {showKgiFallback && (
         <div className="tac-kgi-offhours-banner">
@@ -2032,15 +2174,20 @@ function RealtimeHeatmapPanel({
           {nextOpenLabel && <small>下次開盤 {nextOpenLabel}</small>}
         </div>
       )}
+      {showCoverageFallback && (
+        <div className="tac-kgi-offhours-banner">
+          <span>核心代表股資料仍在暖機，暫以全市場產業熱力圖顯示，避免呈現不完整代表池。</span>
+        </div>
+      )}
       <div className="tac-heat-mode-tabs" aria-label="熱力圖切換">
-        <Link className={!showKgiFallback && activeMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
-        <Link className={showKgiFallback || activeMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+        <Link className={effectiveMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
+        <Link className={effectiveMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
       </div>
       {effectiveMode === "all" ? (
         <MarketWideHeatmap
           rows={fullMarketRows}
           updatedAt={updatedAt}
-          sourceLabel={sourceLabel}
+          sourceLabel={displaySourceLabel}
           marketState={fullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
           reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
         />
@@ -2049,7 +2196,7 @@ function RealtimeHeatmapPanel({
           heatmap={displayHeatmap}
           initialSector={selectedSectorParam}
           updatedAt={updatedAt}
-          sourceLabel={sourceLabel}
+          sourceLabel={displaySourceLabel}
           marketState={hasCore ? "LIVE" : stateFromLoad(market)}
           reason={!hasCore && market.state === "BLOCKED" ? market.reason : undefined}
         />
@@ -2321,10 +2468,13 @@ function DailyBriefPanel({
           {previewSections.map((section: DailyBrief["sections"][number], index: number) => (
             <article key={`${section.heading}:${index}`}>
               <span>{String(index + 1).padStart(2, "0")}</span>
-              <h3>{cleanExternalHeadline(section.heading)}</h3>
-              <p>{safeBriefText(section.body)}</p>
+              <h3>{briefHeadingText(section.heading, index)}</h3>
+              <p>{polishedBriefText(section.body)}</p>
             </article>
           ))}
+          <div className="tac-brief-quality">
+            AI 簡報只整理盤勢、題材與公司觀察，不直接輸出買賣建議；英文來源名稱只保留在必要的專有名詞。
+          </div>
         </div>
       ) : (
         <div className="tac-warning">{brief.data.reason ?? "今日 AI 簡報尚未發布。"}</div>
@@ -2719,7 +2869,11 @@ async function DashboardContent({
 
   const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
-  const realHeatmap = coreHeatmap.length > 0 ? coreHeatmap : buildHeatmap(market);
+  const marketHeatmap = buildHeatmap(market);
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
+  const realHeatmap = coreHeatmap.length > 0 && hasRepresentativeFeed
+    ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap)
+    : marketHeatmap;
   const heatmap = realHeatmap;
   const quotes = buildTapeQuotes(realHeatmap, realtimeMarket, market);
   const liveCount = sources.filter((source) => source.state === "LIVE").length;
@@ -2740,7 +2894,7 @@ async function DashboardContent({
             <MarketMoversPanel market={market} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">
-            <RealtimeHeatmapPanel heatmap={realHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+            <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
             <FreshnessPanel sources={sources} />
           </section>
           <section className="tac-two-grid">

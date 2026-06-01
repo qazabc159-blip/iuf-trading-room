@@ -26,6 +26,7 @@ Hardlines:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -39,7 +40,9 @@ from config import settings
 from kgi_events import order_event_manager
 from read_only_guard import require_read_only
 from kgi_quote import (
+    KgiQuoteUnavailableError,
     get_latest_bidask,
+    get_quote_auth_status,
     get_quote_status,
     get_recent_ticks,
     is_tick_subscribed,
@@ -91,6 +94,76 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 logger = logging.getLogger("kgi_gateway")
 
 
+def _raise_quote_unavailable(exc: KgiQuoteUnavailableError) -> None:
+    message = str(exc)
+    code = "KGI_QUOTE_AUTH_UNAVAILABLE" if "KGI_QUOTE_AUTH_UNAVAILABLE" in message else "KGI_QUOTE_UNAVAILABLE"
+    raise HTTPException(
+        status_code=503,
+        detail=ErrorEnvelope(
+            error=ErrorDetail(
+                code=code,
+                message=message,
+                upstream=message,
+            )
+        ).model_dump(),
+    ) from exc
+
+
+def _account_value(account: object) -> Optional[str]:
+    if isinstance(account, dict):
+        value = account.get("account")
+    else:
+        value = getattr(account, "account", None)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _select_startup_account(accounts: list[object]) -> Optional[str]:
+    account_values = [value for value in (_account_value(account) for account in accounts) if value]
+    configured = settings.KGI_ACCOUNT.strip()
+    if configured and configured in account_values:
+        return configured
+    if account_values:
+        return account_values[0]
+    return configured or None
+
+
+def _auto_login_from_env() -> None:
+    if not settings.AUTO_LOGIN:
+        logger.info("KGI Gateway startup auto-login disabled (AUTO_LOGIN=false)")
+        return
+    if not settings.KGI_PERSON_ID or not settings.KGI_PERSON_PWD:
+        logger.warning("KGI Gateway startup auto-login skipped: KGI_PERSON_ID/KGI_PERSON_PWD missing")
+        return
+
+    try:
+        accounts = session.login(
+            person_id=settings.KGI_PERSON_ID,
+            person_pwd=settings.KGI_PERSON_PWD,
+            simulation=settings.SIMULATION,
+        )
+        account = _select_startup_account(list(accounts))
+        if not account:
+            logger.warning(
+                "KGI Gateway startup auto-login completed but no account was returned; account_set=false"
+            )
+            return
+
+        session.set_account(account)
+        if session.api is not None:
+            order_event_manager.attach(session.api)
+        logger.info(
+            "KGI Gateway startup auto-login OK: simulation=%s accounts=%d account_set=true",
+            settings.SIMULATION,
+            len(accounts),
+        )
+    except Exception as exc:
+        logger.error(
+            "KGI Gateway startup auto-login failed: simulation=%s exc_class=%s",
+            settings.SIMULATION,
+            type(exc).__name__,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Lifespan: register event loop with managers + start background pumps
 # ---------------------------------------------------------------------------
@@ -110,9 +183,10 @@ async def lifespan(app: FastAPI):
     kbar_pump_task = asyncio.create_task(kbar_manager.kbar_broadcast_pump())
 
     logger.info(
-        "KGI Gateway starting on %s:%d — waiting for POST /session/login",
+        "KGI Gateway starting on %s:%d — auto-login if configured",
         settings.HOST, settings.PORT,
     )
+    _auto_login_from_env()
 
     yield  # server runs here
 
@@ -505,7 +579,7 @@ async def get_position() -> PositionResponse:
         logger.info("position_diag step=after_reset_index rows=%d cols=%d", len(df_reset), len(df_reset.columns))
         df_reset.columns = [str(c) for c in df_reset.columns]
         logger.info("position_diag step=before_to_dict")
-        positions = df_reset.to_dict(orient="records")
+        positions = json.loads(df_reset.to_json(orient="records", force_ascii=False))
         logger.info("position_diag step=after_to_dict count=%d", len(positions))
         logger.info("position_diag step=return reason=ok elapsed_ms=%.1f", (time.perf_counter() - t0) * 1000)
         return PositionResponse(positions=positions)
@@ -636,8 +710,14 @@ async def quote_status():
     Always 200 when gateway is alive.
     """
     status = get_quote_status()
+    quote_auth = get_quote_auth_status(
+        session.api,
+        logged_in=session.is_logged_in,
+        quote_disabled=settings.QUOTE_DISABLED,
+    )
     return {
         **status,
+        **quote_auth,
         "kgi_logged_in": session.is_logged_in,
         "quote_disabled_flag": settings.QUOTE_DISABLED,
     }
@@ -677,6 +757,9 @@ async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
         label = quote_manager.subscribe_tick(session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_tick OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeTickResponse(ok=True, label=label)
+    except KgiQuoteUnavailableError as exc:
+        logger.warning("subscribe_tick quote unavailable: %s", exc)
+        _raise_quote_unavailable(exc)
     except Exception as exc:
         logger.error("subscribe_tick failed: %s", exc)
         raise HTTPException(
@@ -775,6 +858,9 @@ async def subscribe_bidask(body: SubscribeBidAskRequest) -> SubscribeBidAskRespo
         label = quote_manager.subscribe_bidask(session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_bidask OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeBidAskResponse(ok=True, label=label, note=None)
+    except KgiQuoteUnavailableError as exc:
+        logger.warning("subscribe_bidask quote unavailable: %s", exc)
+        _raise_quote_unavailable(exc)
     except NotImplementedError as exc:
         logger.info("subscribe_bidask NOT_IMPLEMENTED: %s", exc)
         from fastapi.responses import JSONResponse as _JSONResponse
@@ -1190,14 +1276,54 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
         )
 
     try:
+        # kgisuperpy Order.create_order expects SDK enum types, not raw strings.
+        # Passing strings triggers AttributeError: 'str' object has no attribute 'value'
+        # inside the SDK. Map the validated request strings to the SDK enums here.
+        from kgisuperpy.trading._trade_base import (
+            Action as _Act,
+            TimeInForce as _TIF,
+            OrderCond as _OC,
+            OddLot as _OL,
+            PriceType as _PT,
+        )
+        _act = _Act.Buy if order_req.action == "Buy" else _Act.Sell
+        _tif = {"ROD": _TIF.ROD, "IOC": _TIF.IOC, "FOK": _TIF.FOK}[order_req.time_in_force]
+        _oc = {
+            "Cash": _OC.CASH,
+            "CashSelling": _OC.CASH_SELLING,
+            "Margin": _OC.MARGIN,
+            "MarginDayTrade": _OC.MARGIN_DayTrade,
+            "ShortSelling": _OC.SHORT_SELLING,
+            "LendSelling": _OC.Lend_SELLING,
+        }[order_req.order_cond]
+        _ol = (
+            order_req.odd_lot
+            if isinstance(order_req.odd_lot, bool)
+            else {
+                "Common": _OL.Common,
+                "Fixing": _OL.Fixing,
+                "Odd": _OL.Odd,
+                "OddAfterMarket": _OL.Odd_AfterMarket,
+            }[order_req.odd_lot]
+        )
+        _price = (
+            order_req.price
+            if not isinstance(order_req.price, str)
+            else {
+                "MKT": _PT.MKT,
+                "Reference": _PT.Reference,
+                "LimitUp": _PT.LimitUp,
+                "LimitDown": _PT.LimitDown,
+            }[order_req.price]
+        )
         sdk_response = session.api.Order.create_order(
-            action=order_req.action,
+            action=_act,
             symbol=order_req.symbol,
             qty=order_req.qty,
-            price=order_req.price,
-            time_in_force=order_req.time_in_force,
-            order_cond=order_req.order_cond,
-            odd_lot=order_req.odd_lot,
+            price=_price,
+            time_in_force=_tif,
+            order_cond=_oc,
+            odd_lot=_ol,
             name=order_req.name,
         )
         logger.info(
