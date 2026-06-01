@@ -149,6 +149,46 @@ export type KgiSimRawOrderItem = {
   submittedAt: string;
 };
 
+type PaperSimPositionRaw = {
+  symbol?: string;
+  quantity?: number | null;
+  qty?: number | null;
+  avgPrice?: number | null;
+  avgCost?: number | null;
+  marketPrice?: number | null;
+  lastPrice?: number | null;
+  marketValue?: number | null;
+  unrealizedPnl?: number | null;
+  note?: string | null;
+};
+
+type PaperSimFundsRaw = {
+  cash?: number | null;
+  cashBalance?: number | null;
+  availableCash?: number | null;
+  availableFunds?: number | null;
+  marketValue?: number | null;
+  totalMarketValue?: number | null;
+  equity?: number | null;
+  totalEquity?: number | null;
+  currency?: string | null;
+  updatedAt?: string | null;
+  fetchedAt?: string | null;
+  note?: string | null;
+};
+
+type KgiSimOrdersRaw =
+  | KgiSimRawOrderItem[]
+  | {
+      orders?: Array<Partial<KgiSimRawOrderItem> & {
+        action?: string | null;
+        qty?: number | null;
+        quantity?: number | null;
+        submitted_at?: string | null;
+        trade_id?: string | null;
+      }>;
+    };
+
 export type KgiSimBalance = {
   totalMarketValue: number | null;
   cashBalance: number | null;
@@ -327,12 +367,39 @@ export async function getKgiStatus() {
 
 /** GET /api/v1/paper/positions?source=sim — KGI SIM reconstructed positions */
 export async function getSimPositions() {
-  return apiFetch<SimPosition[]>("/api/v1/paper/positions?source=sim");
+  const result = await apiFetch<PaperSimPositionRaw[]>("/api/v1/paper/positions?source=sim");
+  if (!result.ok) return result;
+  return {
+    ok: true as const,
+    data: (Array.isArray(result.data) ? result.data : []).map((row) => ({
+      symbol: row.symbol ?? "--",
+      qty: Number(row.qty ?? row.quantity ?? 0),
+      avgCost: row.avgCost ?? row.avgPrice ?? null,
+      unrealizedPnl: row.unrealizedPnl ?? null,
+      lastPrice: row.lastPrice ?? row.marketPrice ?? null,
+      marketValue: row.marketValue ?? null,
+      note: row.note ?? null,
+    } satisfies SimPosition)),
+  };
 }
 
 /** GET /api/v1/paper/funds?source=sim — KGI SIM reconstructed balance */
 export async function getSimFunds() {
-  return apiFetch<SimFunds>("/api/v1/paper/funds?source=sim");
+  const result = await apiFetch<PaperSimFundsRaw>("/api/v1/paper/funds?source=sim");
+  if (!result.ok) return result;
+  const row = result.data ?? {};
+  return {
+    ok: true as const,
+    data: {
+      cashBalance: row.cashBalance ?? row.cash ?? null,
+      availableFunds: row.availableFunds ?? row.availableCash ?? null,
+      totalMarketValue: row.totalMarketValue ?? row.marketValue ?? null,
+      totalEquity: row.totalEquity ?? row.equity ?? null,
+      currency: row.currency ?? "TWD",
+      fetchedAt: row.fetchedAt ?? row.updatedAt ?? undefined,
+      note: row.note ?? null,
+    } satisfies SimFunds,
+  };
 }
 
 /** GET /api/v1/kgi/sim/positions — raw KGI positions from gateway (Owner-only) */
@@ -342,7 +409,37 @@ export async function getKgiSimRawPositions() {
 
 /** GET /api/v1/kgi/sim/orders — KGI SIM order history (Owner-only) */
 export async function getKgiSimOrders() {
-  return apiFetch<KgiSimRawOrderItem[]>("/api/v1/kgi/sim/orders");
+  const result = await apiFetch<KgiSimOrdersRaw>("/api/v1/kgi/sim/orders");
+  if (!result.ok) return result;
+  const rows = (Array.isArray(result.data) ? result.data : (result.data.orders ?? [])) as Array<
+    Partial<KgiSimRawOrderItem> & {
+      action?: string | null;
+      quantity?: number | null;
+      submitted_at?: string | null;
+      trade_id?: string | null;
+    }
+  >;
+  return {
+    ok: true as const,
+    data: rows.map((row, index) => {
+      const sideRaw = String(row.side ?? row.action ?? "").toLowerCase();
+      const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw.includes("short") ? "sell" : "buy";
+      const qty = Number(row.qty ?? row.quantity ?? row.effectiveQtyShares ?? 0);
+      return {
+        tradeId: row.tradeId ?? row.trade_id ?? `kgi-sim-order-${index}`,
+        status: String(row.status ?? "unknown"),
+        symbol: String(row.symbol ?? "--"),
+        side,
+        qty,
+        quantityUnit: row.quantityUnit === "LOT" ? "LOT" : "SHARE",
+        effectiveQtyShares: Number(row.effectiveQtyShares ?? qty),
+        price: row.price ?? null,
+        orderType: row.orderType === "limit" ? "limit" : "market",
+        isOddLot: row.isOddLot === true,
+        submittedAt: row.submittedAt ?? row.submitted_at ?? "",
+      } satisfies KgiSimRawOrderItem;
+    }),
+  };
 }
 
 /** GET /api/v1/kgi/sim/balance — derived balance from positions (Owner-only) */
