@@ -189,8 +189,19 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
         {state.phase === "pending_backend" && <PanelPending label="S1 狀態讀取端點" />}
         {state.phase === "live" && (
           <div className="_fauto-kv-list">
+            <div className="_fauto-note">
+              {state.data.automaticScheduler.enabled
+                ? `自動排程已啟用：訊號 ${state.data.automaticScheduler.signalWindowTst ?? "--"}；委託 ${state.data.automaticScheduler.orderSubmitWindowTst ?? "--"}。下單窗若缺今日訊號籃，系統會先自動補訊號再送 KGI SIM；手動觸發只作備援。`
+                : "自動排程未啟用；此狀態不符合正式 F-AUTO SIM 運作。"}
+            </div>
             {([
               ["今日", state.data.todayTst ?? "--"],
+              ["自動排程", state.data.automaticScheduler.enabled ? "啟用" : "未啟用"],
+              ["排程模式", state.data.automaticScheduler.mode ?? "--"],
+              ["訊號排程", state.data.automaticScheduler.signalWindowTst ?? "--"],
+              ["委託排程", state.data.automaticScheduler.orderSubmitWindowTst ?? "--"],
+              ["缺訊號自動補籃", state.data.automaticScheduler.signalCatchupBeforeOrder ? "啟用" : "未啟用"],
+              ["手動觸發角色", state.data.automaticScheduler.manualTriggerRole === "owner_backup_only" ? "Owner 備援" : state.data.automaticScheduler.manualTriggerRole ?? "--"],
               ["S1 配置資金", state.data.configuredCapitalTwd != null ? fmtTwd(state.data.configuredCapitalTwd) : "--"],
               ["資金來源", state.data.capitalSource ?? "--"],
               ["市場態勢", state.data.regime ?? "--"],

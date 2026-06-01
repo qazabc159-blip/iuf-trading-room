@@ -4406,7 +4406,7 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
   const todayTst = _s1TaipeiDateStr();
 
   // Import s1-sim-runner window checkers (read-only, no side-effects)
-  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow, resolveS1SimCapitalTwd } =
+  const { isS1SignalWindow, isS1OrderSubmitWindow, isS1EodWindow, resolveS1SimCapitalTwd, S1_AUTO_SCHEDULER_POLICY } =
     await import("./s1-sim-runner.js");
   const capitalConfig = await resolveS1SimCapitalTwd(session.workspace.id);
 
@@ -4439,6 +4439,16 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
       signal_open: isS1SignalWindow(),
       order_submit_open: isS1OrderSubmitWindow(),
       eod_open: isS1EodWindow(),
+    },
+    automatic_scheduler: {
+      enabled: S1_AUTO_SCHEDULER_POLICY.enabled,
+      mode: S1_AUTO_SCHEDULER_POLICY.mode,
+      signal_window_tst: S1_AUTO_SCHEDULER_POLICY.signalWindowTst,
+      order_submit_window_tst: S1_AUTO_SCHEDULER_POLICY.orderSubmitWindowTst,
+      eod_window_tst: S1_AUTO_SCHEDULER_POLICY.eodWindowTst,
+      poll_interval_ms: S1_AUTO_SCHEDULER_POLICY.pollIntervalMs,
+      signal_catchup_before_order: S1_AUTO_SCHEDULER_POLICY.signalCatchupBeforeOrder,
+      manual_trigger_role: S1_AUTO_SCHEDULER_POLICY.manualTriggerRole,
     },
     gateway_url_configured: !!(process.env["KGI_GATEWAY_URL"] ?? process.env["KGI_GATEWAY_BASE_URL"]),
     configured_capital_twd: capitalConfig.capitalTwd,
@@ -15254,7 +15264,7 @@ function startSchedulers(workspaceSlug: string): void {
   // SIM_ONLY: no real money. KGI_ENV must be "sim" (default).
   // =============================================================================
   {
-    const S1_SIM_POLL_MS = 15 * 60 * 1000; // 15min poll
+    const S1_SIM_POLL_MS = 15 * 60 * 1000;
 
     ui(async () => {
       try {
@@ -15268,8 +15278,10 @@ function startSchedulers(workspaceSlug: string): void {
 
     ui(async () => {
       try {
-        const { isS1OrderSubmitWindow, runS1OrderSubmitTick } = await import("./s1-sim-runner.js");
+        const { isS1OrderSubmitWindow, ensureS1BasketBeforeOrderSubmit, runS1OrderSubmitTick } = await import("./s1-sim-runner.js");
         if (!isS1OrderSubmitWindow()) return;
+        const catchupResult = await ensureS1BasketBeforeOrderSubmit();
+        console.log(`[s1-order-cron] basket auto-check=${catchupResult}`);
         await runS1OrderSubmitTick();
       } catch (e) {
         console.error("[s1-order-cron] tick failed:", e instanceof Error ? e.message : String(e));
@@ -15286,7 +15298,7 @@ function startSchedulers(workspaceSlug: string): void {
       }
     }, S1_SIM_POLL_MS);
 
-    console.log("[schedulers] S1-SIM-PIPELINE wired: signal(Mon 08:30 TST) + orders(Mon 09:00 TST) + eod(daily 14:00 TST)");
+    console.log("[schedulers] S1-SIM-PIPELINE wired: auto signal(Mon 08:30 TST) + auto orders(Mon 09:00 TST, signal catch-up before submit) + eod(daily 14:00 TST); manual trigger is backup only");
   }
 }
 

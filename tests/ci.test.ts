@@ -191,6 +191,7 @@ import {
 } from "../apps/api/src/admin-openalice-adversarial-warns.ts";
 import {
   resolveS1SimCapitalTwd,
+  S1_AUTO_SCHEDULER_POLICY,
   S1_DEFAULT_CAPITAL_TWD,
 } from "../apps/api/src/s1-sim-runner.ts";
 import {
@@ -14985,6 +14986,19 @@ test("S1-MANUAL-1: server exposes owner-only manual S1 SIM trigger with confirma
   assert.match(serverSource, /runS1OrderSubmitTick/);
   assert.match(serverSource, /runS1EodReportTick/);
   assert.match(serverSource, /prod_write_blocked:\s*true/);
+});
+
+test("S1-AUTO-1: automatic S1 SIM scheduler remains primary and self-heals missing signal basket", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.enabled, true);
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.signalCatchupBeforeOrder, true);
+  assert.equal(S1_AUTO_SCHEDULER_POLICY.manualTriggerRole, "owner_backup_only");
+  assert.match(serverSource, /ensureS1BasketBeforeOrderSubmit/);
+  assert.match(serverSource, /automatic_scheduler/);
+  assert.match(runnerSource, /never submits stale prior-day/i);
+  assert.doesNotMatch(runnerSource, /taipeiDateStr\(-1\).*taipeiDateStr\(-2\)/s);
 });
 
 // =============================================================================
