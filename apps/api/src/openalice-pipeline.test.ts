@@ -20,7 +20,11 @@ import {
   filterSourcePackEntries,
   isDailyBriefV2ContractCompliant,
   isBriefBootRecoveryWindow,
+  loadSourcePackForDraft,
   loadStrategySnapshot,
+  lookupJobSourcePackSummary,
+  registerJobSourcePack,
+  registerJobSourcePackSummary,
   runBatchAiReviewer,
   runPipelinePreMarketBootRecovery,
   runPipelineTick,
@@ -129,6 +133,18 @@ test("daily brief v2 compliance helper rejects empty bodies, raw dumps, and lega
     }),
     false
   );
+});
+
+test("direct daily brief reviewer can recover source pack by draft id", () => {
+  const draftId = `direct-draft-${Date.now()}`;
+  const pack = makePack({ packId: `pack-${draftId}` });
+  const summary = pack.sources.map((s) => `${s.source}(${s.status})`).join(", ");
+
+  registerJobSourcePackSummary(draftId, summary);
+  registerJobSourcePack(draftId, pack);
+
+  assert.equal(lookupJobSourcePackSummary(draftId), summary);
+  assert.equal(loadSourcePackForDraft(draftId)?.packId, pack.packId);
 });
 
 test("daily brief instructions advertise only the v2 five-section contract", () => {
