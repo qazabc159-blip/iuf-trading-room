@@ -14977,6 +14977,16 @@ test("S1-OBS-5: TWSE ClosingPrice / TradeVolume cleaning logic", () => {
   assert.equal(r3.vol, 1000, "S1-OBS-5: plain volume 1000");
 });
 
+test("S1-MANUAL-1: server exposes owner-only manual S1 SIM trigger with confirmation guard", () => {
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /app\.post\("\/api\/v1\/internal\/s1-sim\/manual-run"/);
+  assert.match(serverSource, /RUN_S1_SIM_MANUAL/);
+  assert.match(serverSource, /runS1SignalTick/);
+  assert.match(serverSource, /runS1OrderSubmitTick/);
+  assert.match(serverSource, /runS1EodReportTick/);
+  assert.match(serverSource, /prod_write_blocked:\s*true/);
+});
+
 // =============================================================================
 // C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
 // =============================================================================
