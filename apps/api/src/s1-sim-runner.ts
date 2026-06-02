@@ -5,8 +5,8 @@
  * Yang ACK: 22:34 TST 2026-05-19 "我選F-AUTO ... 明早直接開始正式跑"
  *
  * Schedule (wired by startSchedulers):
- *   Monday ~08:30 TST  → runS1SignalTick()       cont_liq signal + basket
- *   Monday ~09:00 TST  → runS1OrderSubmitTick()  KGI SIM submit x8
+ *   Tuesday ~08:30 TST → runS1SignalTick()       cont_liq signal + basket
+ *   Tuesday ~09:00 TST → runS1OrderSubmitTick()  KGI SIM submit x8
  *   Daily  ~14:00 TST  → runS1EodReportTick()    mark-to-market EOD report
  *
  * Hard lines:
@@ -100,9 +100,9 @@ export interface S1CapitalConfig {
 
 export const S1_AUTO_SCHEDULER_POLICY = {
   enabled: true,
-  mode: "weekly_monday_kgi_sim",
-  signalWindowTst: "Monday 08:30-08:55",
-  orderSubmitWindowTst: "Monday 09:00-09:20",
+  mode: "weekly_tuesday_kgi_sim",
+  signalWindowTst: "Tuesday 08:30-08:55",
+  orderSubmitWindowTst: "Tuesday 09:00-09:20",
   eodWindowTst: "Weekdays 14:00-14:30",
   pollIntervalMs: 15 * 60 * 1000,
   signalCatchupBeforeOrder: true,
@@ -689,7 +689,7 @@ export async function ensureS1BasketBeforeOrderSubmit(): Promise<S1SignalCatchup
 
 /**
  * Read today's basket and submit each entry to KGI SIM via the gateway client.
- * If the signal window was missed but the Monday order window is open, the
+ * If the signal window was missed but the Tuesday order window is open, the
  * runner generates today's basket first. It never submits stale prior-day
  * baskets.
  *
@@ -1035,21 +1035,23 @@ export async function runS1EodReportTick(): Promise<void> {
 // Scheduler tick wrappers (exported — called from startSchedulers)
 // ---------------------------------------------------------------------------
 
-/** Monday ~08:30–08:50 TST: compute cont_liq signal + write basket */
+/** Tuesday ~08:30–08:50 TST: compute cont_liq signal + write basket */
 export function isS1SignalWindow(): boolean {
   const hhmm = taipeiHHMM();
-  // Monday only: check UTC weekday (Mon = 1)
+  // Tuesday only: check UTC weekday (Tue = 2). Weekly SIM-observation anchor
+  // moved Monday→Tuesday per Yang 2026-06-02 (owner decision; forward SIM
+  // observation cadence, not a backtest-matching claim).
   const taipeiMs = Date.now() + 8 * 3600 * 1000;
-  const taipeiDay = new Date(taipeiMs).getUTCDay(); // 1 = Monday
-  return taipeiDay === 1 && hhmm >= 830 && hhmm < 855;
+  const taipeiDay = new Date(taipeiMs).getUTCDay(); // 2 = Tuesday
+  return taipeiDay === 2 && hhmm >= 830 && hhmm < 855;
 }
 
-/** Monday ~09:00–09:15 TST: submit orders */
+/** Tuesday ~09:00–09:15 TST: submit orders */
 export function isS1OrderSubmitWindow(): boolean {
   const hhmm = taipeiHHMM();
   const taipeiMs = Date.now() + 8 * 3600 * 1000;
   const taipeiDay = new Date(taipeiMs).getUTCDay();
-  return taipeiDay === 1 && hhmm >= 900 && hhmm < 920;
+  return taipeiDay === 2 && hhmm >= 900 && hhmm < 920;
 }
 
 /** Daily 14:00–14:30 TST weekdays: EOD report */
