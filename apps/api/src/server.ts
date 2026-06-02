@@ -13829,8 +13829,26 @@ app.post("/api/v1/admin/companies/seed", async (c) => {
 
 const _BULK_SEED_EXPOSURE = { volume: 2, asp: 2, margin: 2, capacity: 2, narrative: 2 } as const;
 const _BULK_SEED_VALIDATION = { capitalFlow: "neutral", consensus: "neutral", relativeStrength: "neutral" } as const;
-const TWSE_OPENDATA_URL = "https://opendata.twse.com.tw/v1/opendata/t187ap03_L";
+// Use openapi.twse.com.tw (reachable from Railway) instead of opendata.twse.com.tw (unreachable)
+const TWSE_OPENDATA_URL = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L";
 const TPEX_OPENDATA_URL = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O";
+
+// TWSE/TPEx official industry code → Chinese industry name
+// Both TWSE t187ap03_L and TPEx t187ap03_O return numeric codes (e.g. "24") not text labels.
+// These are the official TWSE MOPS 產業別 codes (stable, only change on new industry category creation).
+const _TWSE_INDUSTRY_CODE_MAP: Record<string, string> = {
+  "01": "水泥工業", "02": "食品工業", "03": "塑膠工業", "04": "紡織纖維",
+  "05": "電機機械", "06": "電器電纜", "07": "化學生技醫療", "08": "玻璃陶瓷",
+  "09": "造紙工業", "10": "鋼鐵工業", "11": "橡膠工業", "12": "汽車工業",
+  "14": "電子工業", "15": "建材營造", "16": "航運業",   "17": "金融保險",
+  "18": "貿易百貨", "20": "其他",     "21": "化學工業", "22": "生技醫療業",
+  "23": "油電燃氣", "24": "半導體業", "25": "電腦及週邊設備業",
+  "26": "光電業",   "27": "通信網路業", "28": "電子零組件業",
+  "29": "電子通路業", "30": "資訊服務業", "31": "其他電子業",
+  "32": "文化創意業", "33": "電商",     "35": "綠能環保",
+  "36": "數位雲端",  "37": "運動休閒",  "38": "居家生活",
+  "91": "存託憑證",
+};
 
 async function _fetchTwseListedCompanies(): Promise<Array<{ ticker: string; name: string; industry: string }>> {
   try {
@@ -13842,18 +13860,18 @@ async function _fetchTwseListedCompanies(): Promise<Array<{ ticker: string; name
       console.warn(`[bulk-seed] TWSE fetch failed: ${res.status}`);
       return [];
     }
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("json")) {
-      console.warn(`[bulk-seed] TWSE unexpected content-type: ${ct}`);
-      return [];
-    }
-    const raw = (await res.json()) as Array<Record<string, string>>;
+    const text = await res.text();
+    let raw: Array<Record<string, string>>;
+    try { raw = JSON.parse(text); } catch { console.warn("[bulk-seed] TWSE non-JSON body"); return []; }
     if (!Array.isArray(raw)) return [];
-    return raw.map((r) => ({
-      ticker: (r["公司代號"] ?? r["Code"] ?? r["code"] ?? "").trim(),
-      name: (r["公司簡稱"] ?? r["公司名稱"] ?? r["Name"] ?? "").trim(),
-      industry: (r["產業別"] ?? r["Industry"] ?? "").trim(),
-    })).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
+    return raw.map((r) => {
+      const ticker = (r["公司代號"] ?? r["Code"] ?? r["code"] ?? "").trim();
+      const name = (r["公司簡稱"] ?? r["公司名稱"] ?? r["Name"] ?? "").trim();
+      // 產業別 field returns a numeric code — convert to human-readable label
+      const rawCode = (r["產業別"] ?? r["Industry"] ?? "").trim();
+      const industry = _TWSE_INDUSTRY_CODE_MAP[rawCode] ?? rawCode;
+      return { ticker, name, industry };
+    }).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
   } catch (err) {
     console.warn("[bulk-seed] TWSE fetch error:", err instanceof Error ? err.message : String(err));
     return [];
@@ -13870,18 +13888,18 @@ async function _fetchTpexListedCompanies(): Promise<Array<{ ticker: string; name
       console.warn(`[bulk-seed] TPEx fetch failed: ${res.status}`);
       return [];
     }
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("json")) {
-      console.warn(`[bulk-seed] TPEx unexpected content-type: ${ct}`);
-      return [];
-    }
-    const raw = (await res.json()) as Array<Record<string, string>>;
+    const text = await res.text();
+    let raw: Array<Record<string, string>>;
+    try { raw = JSON.parse(text); } catch { console.warn("[bulk-seed] TPEx non-JSON body"); return []; }
     if (!Array.isArray(raw)) return [];
-    return raw.map((r) => ({
-      ticker: (r["SecuritiesCompanyCode"] ?? r["公司代號"] ?? r["Code"] ?? "").trim(),
-      name: (r["CompanyAbbreviation"] ?? r["公司簡稱"] ?? r["Name"] ?? "").trim(),
-      industry: (r["IndustryType"] ?? r["產業別"] ?? "").trim(),
-    })).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
+    return raw.map((r) => {
+      const ticker = (r["SecuritiesCompanyCode"] ?? r["公司代號"] ?? r["Code"] ?? "").trim();
+      const name = (r["CompanyAbbreviation"] ?? r["CompanyName"] ?? r["公司簡稱"] ?? r["Name"] ?? "").trim();
+      // TPEx returns SecuritiesIndustryCode (numeric) — not IndustryType (text, doesn't exist)
+      const rawCode = (r["SecuritiesIndustryCode"] ?? r["IndustryType"] ?? r["產業別"] ?? "").trim();
+      const industry = _TWSE_INDUSTRY_CODE_MAP[rawCode] ?? rawCode;
+      return { ticker, name, industry };
+    }).filter((c) => /^\d{4,6}$/.test(c.ticker) && c.name.length > 0);
   } catch (err) {
     console.warn("[bulk-seed] TPEx fetch error:", err instanceof Error ? err.message : String(err));
     return [];
