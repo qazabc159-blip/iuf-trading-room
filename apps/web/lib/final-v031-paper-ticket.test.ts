@@ -67,7 +67,10 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("syncRealChartFrameFromLocation");
     expect(ticketHtml).toContain("closest('.wrow[data-sym]')");
     expect(ticketHtml).toContain(".chart-panel.is-real-chart .chart-wrap{display:none!important}");
-    expect(liveHydration).toContain("window.updateRealChartFrame(selected.symbol || \"2330\")");
+    expect(ticketHtml).toContain('scrolling="no"');
+    expect(ticketHtml).toContain("contain:layout paint");
+    expect(liveHydration).toContain("const mountedFrameSymbol = frame?.dataset?.symbol || window.__IUF_REAL_KLINE_FRAME_SYMBOL__ || \"\"");
+    expect(liveHydration).toContain("!sameSym(mountedFrameSymbol, nextFrameSymbol)");
     expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
   });
 
@@ -75,6 +78,8 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).not.toContain("nextParams.set('rev',Date.now()");
     expect(ticketHtml).toContain("const nextSrc=buildRealChartFrameSrc(sym)");
     expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__");
+    expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_SYMBOL__=selected");
     expect(ticketHtml).toContain("frame.setAttribute('src',nextSrc)");
   });
 
@@ -119,10 +124,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).not.toContain("document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)))");
     expect(ticketHtml).toContain("frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded')");
     expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__");
+    expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_SYMBOL__=selected");
     expect(ticketHtml).toContain("if(row.dataset.iufEnhanced==='1')return;");
     expect(ticketHtml).toContain("if(!document.getElementById('real-kline-frame')&&typeof drawChart==='function')drawChart(sym);");
     expect(liveHydration).toContain('const realFrameMounted = !!document.getElementById("real-kline-frame")');
     expect(liveHydration).toContain('if (!realFrameMounted && typeof window.drawChart === "function")');
+    expect(liveHydration).toContain("const mountedFrameSymbol = frame?.dataset?.symbol || window.__IUF_REAL_KLINE_FRAME_SYMBOL__ || \"\"");
+    expect(liveHydration).toContain("!sameSym(mountedFrameSymbol, nextFrameSymbol)");
     expect(ticketHtml).not.toContain("pickRow(row.dataset.sym);\n    updateRealChartFrame(row.dataset.sym);");
   });
 

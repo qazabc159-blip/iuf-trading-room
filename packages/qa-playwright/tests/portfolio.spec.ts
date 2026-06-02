@@ -60,6 +60,27 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
   await expectNoServerError(page);
   await expect(page.locator(".troom")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#real-kline-frame")).toBeVisible({ timeout: 30_000 });
+  const initialViewport = await page.evaluate(() => {
+    const body = document.body;
+    const room = document.querySelector<HTMLElement>(".troom");
+    const rightPane = document.querySelector<HTMLElement>(".rpane");
+    const form = document.querySelector<HTMLElement>(".tform");
+    const frameShell = document.querySelector<HTMLElement>(".real-kline-frame-shell");
+    const win = window as typeof window & { __IUF_REAL_KLINE_FRAME_RELOAD_COUNT__?: number };
+    return {
+      bodyOverflow: body.scrollWidth - body.clientWidth,
+      roomOverflow: room ? room.scrollWidth - room.clientWidth : 0,
+      rightPaneOverflow: rightPane ? rightPane.scrollWidth - rightPane.clientWidth : 0,
+      formOverflow: form ? form.scrollWidth - form.clientWidth : 0,
+      frameShellOverflow: frameShell ? frameShell.scrollWidth - frameShell.clientWidth : 0,
+      frameReloads: win.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__ ?? 0,
+    };
+  });
+  expect(initialViewport.bodyOverflow, "trading room body must not create horizontal scrollbar").toBeLessThanOrEqual(2);
+  expect(initialViewport.roomOverflow, "trading room grid must stay within viewport width").toBeLessThanOrEqual(2);
+  expect(initialViewport.rightPaneOverflow, "right ticket pane must not overflow horizontally").toBeLessThanOrEqual(2);
+  expect(initialViewport.formOverflow, "order ticket form must not overflow horizontally").toBeLessThanOrEqual(2);
+  expect(initialViewport.frameShellOverflow, "real K-line iframe shell must not overflow horizontally").toBeLessThanOrEqual(2);
   const quoteQualityBadge = page.locator("#quote-quality-badge");
   const hasQuoteQualityBadge = await quoteQualityBadge.count().then((count) => count > 0);
   if (hasQuoteQualityBadge) {
@@ -118,6 +139,9 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
   const afterFrameSrc = await page.evaluate(
     () => document.querySelector<HTMLIFrameElement>("#real-kline-frame")?.getAttribute("src") ?? null,
   );
+  const afterFrameReloads = await page.evaluate(
+    () => (window as typeof window & { __IUF_REAL_KLINE_FRAME_RELOAD_COUNT__?: number }).__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__ ?? 0,
+  );
 
   expect(before.symbol, "trading room should load the selected symbol").toBe("2330");
   expect(before.pulseStarted, "live quote pulse must start in the trading room").toBe(true);
@@ -131,6 +155,7 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
     ).toContainText(/行情|輪詢|LIVE|退化|延遲/);
   }
   expect(afterFrameSrc, "quote pulse must not reload or change the real K-line iframe").toBe(before.frameSrc);
+  expect(afterFrameReloads, "quote pulse/full refresh must not remount the real K-line iframe").toBe(initialViewport.frameReloads);
 
   expect(
     quoteStreams.length >= 1 || quoteReads.length >= 2,

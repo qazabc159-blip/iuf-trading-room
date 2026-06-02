@@ -11,8 +11,25 @@ function safeTicker(value: unknown) {
 }
 
 function friendlyError(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return typeof error === "string" ? error : "unknown_error";
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "unknown_error";
+  const text = raw.trim();
+  if (/unauthenticated|401/i.test(text)) {
+    return "需要 owner session 才能讀取公司主檔與 K 線資料";
+  }
+  if (/fetch failed|network|timeout|ECONNRESET|ETIMEDOUT/i.test(text)) {
+    return "資料服務暫時無回應";
+  }
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+    const code = String(parsed.error ?? parsed.message ?? "");
+    if (/unauthenticated|401/i.test(code)) {
+      return "需要 owner session 才能讀取公司主檔與 K 線資料";
+    }
+    if (code) return code;
+  } catch {
+    // Not a JSON envelope; keep the sanitized text below.
+  }
+  return text || "資料服務暫時無回應";
 }
 
 function firstPositiveNumber(value: unknown) {
