@@ -69,10 +69,11 @@ describe("Company AI analyst prompt contract", () => {
 
   it("forces honest degraded wording instead of invented facts", () => {
     const prompt = buildCompanyAiAnalystPrompt("2317");
-    expect(prompt).toContain("資料不足：原因");
+    expect(prompt).toContain("缺資料時要說明已查來源、缺哪個欄位、影響哪個判斷");
     expect(prompt).toContain("不可猜測");
     expect(prompt).toContain("不可給保證獲利");
     expect(prompt).toContain("不是下單建議");
+    expect(prompt).toContain("不可輸出 get_company_technical");
   });
 });
 

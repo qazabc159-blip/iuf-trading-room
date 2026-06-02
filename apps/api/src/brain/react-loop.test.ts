@@ -73,7 +73,23 @@ test("company AI analyst fallback is honest and still satisfies the 9-section co
         thought: "Fetch technical data",
         toolName: "get_company_technical",
         toolInput: { ticker: "2330" },
-        observation: { lastPrice: 1000 },
+        observation: {
+          ticker: "2330",
+          companyName: "台積電",
+          lastPrice: 998,
+          changePct: 1.25,
+          volume: 12345678,
+          rsi14: 61.4,
+          ma20: 960,
+          ma60: 915,
+          ma200: 820,
+          aboveMa20: true,
+          aboveMa60: true,
+          aboveMa200: true,
+          volumeRatio20d: 1.12,
+          source: "companies_ohlcv",
+          asOf: "2026-06-01",
+        },
         tokensUsed: 10,
       },
       {
@@ -81,8 +97,29 @@ test("company AI analyst fallback is honest and still satisfies the 9-section co
         thought: "Fetch news",
         toolName: "get_news_top10",
         toolInput: null,
-        observation: { rows: [] },
+        observation: {
+          items: [
+            { title: "半導體先進製程需求升溫", ticker: "2330", source: "mops", publishedAt: "2026-06-01" },
+          ],
+          itemCount: 1,
+          asOf: "2026-06-01T09:30:00Z",
+        },
         tokensUsed: 8,
+      },
+      {
+        round: 3,
+        thought: "Fetch institutional flow",
+        toolName: "get_institutional_flow",
+        toolInput: { ticker: "2330" },
+        observation: {
+          total30dNetShares: 1230000,
+          foreign30dNetShares: 1100000,
+          investmentTrust30dNetShares: 200000,
+          dealer30dNetShares: -700_000,
+          latestDate: "2026-06-01",
+          rowCount: 18,
+        },
+        tokensUsed: 6,
       },
     ],
     companyPrompt,
@@ -93,9 +130,13 @@ test("company AI analyst fallback is honest and still satisfies the 9-section co
 
   assert.deepEqual(validateSynthesisSections(fallback, companyPrompt), []);
   assert.deepEqual(validateCompanyAiAnalystQualityIssues(fallback), []);
-  assert.match(fallback, /資料不足/);
-  assert.match(fallback, /缺少段落 3, 8/);
-  assert.match(fallback, /too_short/);
-  assert.match(fallback, /get_company_technical \/ get_news_top10/);
+  assert.match(fallback, /保守分析版/);
+  assert.match(fallback, /2330（台積電）/);
+  assert.match(fallback, /最新可讀價格為 998/);
+  assert.match(fallback, /MA20 960/);
+  assert.match(fallback, /半導體先進製程需求升溫/);
+  assert.match(fallback, /近 30 日三大法人合計淨買賣 1,230,000 股/);
+  assert.doesNotMatch(fallback, /too_short|generic_data_gap_reason|generic_placeholder_line/);
+  assert.doesNotMatch(fallback, /get_company_technical|get_news_top10|get_institutional_flow/);
   assert.doesNotMatch(fallback, /必漲|重倉|All in/i);
 });

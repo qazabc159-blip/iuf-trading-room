@@ -170,6 +170,10 @@ function fmtDateTime(iso: string | null): string {
   return d.toLocaleString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" });
 }
 
+function isQualityProtectedReport(result: ReactRunResult): boolean {
+  return Boolean(result.report_md?.includes("品質保護版") || result.report_md?.includes("保守分析版"));
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
@@ -384,9 +388,16 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
   // complete or over_budget
   const result = phase.result;
   const isOverBudget = phase.kind === "over-budget";
+  const isProtected = isQualityProtectedReport(result);
   const totalTokens = (result.prompt_tokens ?? 0) + (result.completion_tokens ?? 0);
   const costStr = result.cost_usd != null ? `$${result.cost_usd.toFixed(4)} USD` : "--";
   const budgetStr = result.budget_usd != null ? `$${result.budget_usd.toFixed(2)} USD` : "--";
+  const modelLabel = result.model && result.model !== "--"
+    ? result.model
+    : isProtected
+      ? "品質保護版"
+      : "--";
+  const usageLabel = totalTokens > 0 ? totalTokens.toLocaleString("zh-TW") : isProtected ? "保守整理" : "0";
 
   return (
     <section className="panel hud-frame _ai-report-panel" aria-label="AI 分析師報告">
@@ -400,11 +411,11 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         </div>
         <div className="_ai-meta-cell">
           <span className="_ai-meta-lbl">模型</span>
-          <span className="_ai-meta-val">{result.model ?? "--"}</span>
+          <span className="_ai-meta-val">{modelLabel}</span>
         </div>
         <div className="_ai-meta-cell">
           <span className="_ai-meta-lbl">用量</span>
-          <span className="_ai-meta-val">{totalTokens.toLocaleString("zh-TW")}</span>
+          <span className="_ai-meta-val">{usageLabel}</span>
         </div>
         <div className="_ai-meta-cell">
           <span className="_ai-meta-lbl">費用</span>
@@ -424,6 +435,11 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
       {isOverBudget && (
         <div className="_ai-budget-banner">
           本次分析超出預算 ({budgetStr})，以下為部分結果
+        </div>
+      )}
+      {isProtected && !isOverBudget && (
+        <div className="_ai-budget-banner">
+          品質保護版：原始 AI 回覆未達公司頁報告品質門檻，以下只整理已驗證來源，不作下單建議。
         </div>
       )}
 
