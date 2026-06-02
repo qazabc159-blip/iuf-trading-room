@@ -13848,6 +13848,24 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: rgba(255, 255, 255, 0.018);
 }
 
+/* official_announcement with url=null — no external link affordance */
+.tac-intel-list-row--no-link {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 60px 70px;
+  gap: 10px;
+  align-items: center;
+  min-height: 46px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tac-line);
+  cursor: default;
+  opacity: 0.78;
+}
+
+.tac-intel-feature--no-link {
+  cursor: default;
+  opacity: 0.88;
+}
+
 .tac-intel-list b {
   color: var(--tac-brand);
   font: 900 12px/1 var(--mono);
