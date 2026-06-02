@@ -8215,9 +8215,23 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     return "tse";
   }
 
+  function _isTwseLiveSessionNow(): boolean {
+    const hhmm = getTaipeiHHMM();
+    if (hhmm < 900 || hhmm > 1335) return false;
+    const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const dayOfWeek = taipeiNow.getUTCDay();
+    return dayOfWeek >= 1 && dayOfWeek <= 5;
+  }
+
+  function _isTodayMisTradeDate(tradeDate: string): boolean {
+    const todayYmd = taipeiDate().replace(/-/g, "");
+    return tradeDate === todayYmd;
+  }
+
   // Helper: TWSE MIS intraday quote fetch (mis.twse.com.tw getStockInfo).
-  // Returns live intraday price when market is open and z != "-".
-  // Returns null when market is closed / symbol not found / fetch fails.
+  // Returns live intraday price only during the actual TWSE session with today's trade date.
+  // MIS can keep serving the 13:30 close after hours; those values must not be marked LIVE.
+  // Returns null when market is closed / stale / symbol not found / fetch fails.
   async function _twseMisIntradayFetch(sym: string, market: string): Promise<{
     lastPrice: number;
     open: number | null;
@@ -8271,6 +8285,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const ask = parseNum(aPrices?.[0]);
       const tradeTime = msg["t"] ?? msg["%"] ?? "";
       const tradeDate = msg["d"] ?? "";
+      if (!_isTwseLiveSessionNow() || !_isTodayMisTradeDate(tradeDate)) return null;
 
       return { lastPrice, open, high, low, prevClose, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
     } catch {
@@ -15260,10 +15275,15 @@ function startSchedulers(workspaceSlug: string): void {
     /** Returns true if current Taipei time is in 08:55–14:35 window on a weekday. */
     function isTwseMisQuoteCronWindow(): boolean {
       const hhmm = getTaipeiHHMM();
-      if (hhmm < 855 || hhmm >= 1435) return false;
+      if (hhmm < 900 || hhmm > 1335) return false;
       const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
       const dayOfWeek = taipeiDate.getUTCDay();
       return dayOfWeek >= 1 && dayOfWeek <= 5;
+    }
+
+    function isTodayMisTradeDate(tradeDate: string): boolean {
+      const todayYmd = taipeiDate().replace(/-/g, "");
+      return tradeDate === todayYmd;
     }
 
     /** Map company market string to MIS exchange prefix. */
@@ -15364,6 +15384,7 @@ function startSchedulers(workspaceSlug: string): void {
               if (!zRaw || zRaw === "-" || zRaw.trim() === "") continue;
               const last = Number(zRaw);
               if (!isFinite(last) || last <= 0) continue;
+              if (!isTodayMisTradeDate(msg["d"] ?? "")) continue;
 
               const companyRow = batch.find((r) => r.ticker === ticker);
               const market = mapMktField(companyRow?.market ?? "");
@@ -15442,7 +15463,7 @@ function startSchedulers(workspaceSlug: string): void {
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
-    "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
+    "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 09:00-13:35 TST weekdays) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
   );
