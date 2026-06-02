@@ -35,6 +35,8 @@ import {
   strategyRunRecordSchema
 } from "@iuf-trading-room/contracts";
 import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
+import { and, desc, eq, inArray, ne, sql as drizzleSql } from "drizzle-orm";
 
 import {
   getEffectiveMarketQuotes,
@@ -114,6 +116,8 @@ const supportedDecisionMarkets = ["TWSE", "TPEX", "TWO", "TW_EMERGING", "TW_INDE
 type MarketDecisionSummaryItem = Awaited<ReturnType<typeof getMarketDataDecisionSummary>>["items"][number];
 type MarketHistoryDiagnosticsItem = Awaited<ReturnType<typeof getMarketQuoteHistoryDiagnostics>>["items"][number];
 type MarketBarDiagnosticsItem = Awaited<ReturnType<typeof getMarketBarDiagnostics>>["items"][number];
+type StrategyIdeaQualityDimension = StrategyIdeaQualityView["bars"];
+type StrategyBarQualitySource = { quality: StrategyIdeaQualityDimension };
 type StrategyIdeaThemeContext = {
   topThemes: StrategyIdea["topThemes"];
   themeScore: number;
@@ -503,7 +507,7 @@ function defaultBarQuality(): StrategyIdeaQualityView["bars"] {
 
 function combineIdeaQuality(input: {
   history?: MarketHistoryDiagnosticsItem | null;
-  bars?: MarketBarDiagnosticsItem | null;
+  bars?: StrategyBarQualitySource | null;
 }): StrategyIdeaQualityView {
   const history = input.history
     ? {
@@ -541,6 +545,76 @@ function combineIdeaQuality(input: {
     history,
     bars
   };
+}
+
+function dateAgeDays(dateOnlyValue: string | null, nowIso: string) {
+  if (!dateOnlyValue) return Number.POSITIVE_INFINITY;
+  const dateMs = Date.parse(`${dateOnlyValue.slice(0, 10)}T00:00:00.000Z`);
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(dateMs) || !Number.isFinite(nowMs)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, (nowMs - dateMs) / 86_400_000);
+}
+
+function buildDailyOhlcvQuality(input: {
+  barCount: number;
+  latestDate: string | null;
+  nowIso: string;
+}): StrategyIdeaQualityDimension {
+  if (input.barCount <= 0) {
+    return { grade: "insufficient", strategyUsable: false, primaryReason: "missing_bars" };
+  }
+  if (input.barCount < 20) {
+    return { grade: "insufficient", strategyUsable: false, primaryReason: "insufficient_bars" };
+  }
+
+  const ageDays = dateAgeDays(input.latestDate, input.nowIso);
+  if (ageDays <= 7) {
+    return { grade: "strategy_ready", strategyUsable: true, primaryReason: "bar_series_strategy_ready" };
+  }
+  if (ageDays <= 14) {
+    return { grade: "reference_only", strategyUsable: false, primaryReason: "partial_time_window" };
+  }
+  return { grade: "insufficient", strategyUsable: false, primaryReason: "stale_bars" };
+}
+
+async function getDailyOhlcvQualityMap(input: {
+  session: AppSession;
+  companies: Company[];
+  nowIso: string;
+}): Promise<Map<string, StrategyBarQualitySource>> {
+  const db = getDb();
+  const ids = [...new Set(input.companies.map((company) => company.id).filter(Boolean))];
+  if (!db || ids.length === 0) return new Map();
+
+  const byCompanyId = new Map<string, StrategyBarQualitySource>();
+  try {
+    const rows = await db
+      .select({
+        companyId: companiesOhlcv.companyId,
+        barCount: drizzleSql<number>`COUNT(*)::int`,
+        latestDate: drizzleSql<string | null>`MAX(${companiesOhlcv.dt})::text`
+      })
+      .from(companiesOhlcv)
+      .where(and(
+        eq(companiesOhlcv.workspaceId, input.session.workspace.id),
+        eq(companiesOhlcv.interval, "1d"),
+        ne(companiesOhlcv.source, "mock"),
+        inArray(companiesOhlcv.companyId, ids)
+      ))
+      .groupBy(companiesOhlcv.companyId)
+      .orderBy(desc(drizzleSql`MAX(${companiesOhlcv.dt})`));
+
+    for (const row of rows) {
+      const barCount = Number(row.barCount ?? 0);
+      const latestDate = row.latestDate ? String(row.latestDate) : null;
+      byCompanyId.set(row.companyId, {
+        quality: buildDailyOhlcvQuality({ barCount, latestDate, nowIso: input.nowIso })
+      });
+    }
+  } catch (err) {
+    console.warn("[strategy/ideas] daily OHLCV quality unavailable:", err instanceof Error ? err.message : String(err));
+  }
+  return byCompanyId;
 }
 
 function summarizeQualityReasons(items: StrategyIdea[]) {
@@ -709,6 +783,12 @@ export async function getStrategyIdeas(input: {
     })
     .slice(0, Math.max(limit * 4, 40));
 
+  const dailyOhlcvQualityMap = await getDailyOhlcvQualityMap({
+    session: input.session,
+    companies: shortlist.map((item) => item.company),
+    nowIso
+  });
+
   const byDecisionMarket = new Map<Market, typeof shortlist>();
   for (const item of shortlist) {
     const bucketKey = normalizeDecisionMarket(item.company.market);
@@ -778,6 +858,7 @@ export async function getStrategyIdeas(input: {
           historyQualityMap.get(`OTHER:${entry.company.ticker}`) ??
           null,
         bars:
+          dailyOhlcvQualityMap.get(entry.company.id) ??
           barQualityMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
           barQualityMap.get(`OTHER:${entry.company.ticker}`) ??
           null
