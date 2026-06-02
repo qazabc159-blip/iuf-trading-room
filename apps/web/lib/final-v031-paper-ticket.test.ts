@@ -182,6 +182,15 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("gap:8px;");
   });
 
+  it("does not block the trading-room first paint on paper, KGI, and ideas endpoints", () => {
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
+    expect(routeSource).toContain('fastPaperShell: screen === "paper-trading-room"');
+    expect(liveHydration).toContain("function buildPaperFastShellPayload");
+    expect(liveHydration).toContain("fastShell: true");
+    expect(liveHydration).toContain("refreshClientLive();");
+    expect(liveHydration).toContain("setInterval(refreshClientLive, 15000)");
+  });
+
   it("draws real volume-price indicators instead of decorative technical labels", () => {
     expect(klineChartSource).toContain("function calcVolumePriceLevels");
     expect(klineChartSource).toContain("量價支撐");
