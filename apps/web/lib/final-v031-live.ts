@@ -1122,6 +1122,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
     removeMismatchedPaperPrefill(normalized, activePrefill);
     await refreshClientLive();
+    openPaperQuoteStream();
   }
   window.__IUF_SELECT_PAPER_SYMBOL__ = selectPaperSymbol;
 
@@ -1514,6 +1515,123 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return String(currentPaperSymbol || live.selected?.symbol || "2330").trim().toUpperCase();
   }
 
+  let paperQuoteStream = null;
+  let paperQuoteStreamSymbol = null;
+  let paperQuoteStreamLastMessageAt = 0;
+  let paperQuoteStreamBackoffUntil = 0;
+
+  function setPaperQuoteStreamState(next) {
+    const state = Object.assign({}, window.__IUF_FINAL_V031_QUOTE_STREAM_STATE__ || {}, next, {
+      updatedAt: new Date().toISOString(),
+    });
+    window.__IUF_FINAL_V031_QUOTE_STREAM_STATE__ = state;
+    return state;
+  }
+
+  function closePaperQuoteStream(reason) {
+    if (paperQuoteStream) {
+      try { paperQuoteStream.close(); } catch {}
+    }
+    paperQuoteStream = null;
+    paperQuoteStreamSymbol = null;
+    if (reason) setPaperQuoteStreamState({ state: "closed", reason });
+  }
+
+  function paperQuoteStreamIsFresh() {
+    return paperQuoteStream && paperQuoteStreamLastMessageAt && (Date.now() - paperQuoteStreamLastMessageAt) < 5000;
+  }
+
+  function applyPaperQuoteStreamPayload(payload) {
+    if (!payload || typeof payload !== "object") return;
+    const symbol = String(payload.symbol || paperPulseSymbol()).trim().toUpperCase();
+    if (!sameSym(symbol, paperPulseSymbol())) return;
+    const quote = payload.quote || null;
+    const bidAsk = payload.bidAsk || null;
+    const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
+    const tick = latestTick(ticks);
+    const tickPrice = tickLastPrice(tick);
+    const payloadPrice = payload.lastPrice != null ? Number(payload.lastPrice) : null;
+    const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
+    const lastPrice = tickPrice ?? (Number.isFinite(payloadPrice) && payloadPrice > 0 ? payloadPrice : null) ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+    if (lastPrice == null && !bidAsk && !ticks.length) return;
+    const previous = live.selected?.previous ?? null;
+    const tickChange = tick?.price_chg ?? null;
+    const tickPct = tick?.pct_chg ?? null;
+    const change = payload.change != null ? Number(payload.change) : (tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null));
+    const changePct = payload.changePct != null ? Number(payload.changePct) : (tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null));
+    const nextSelected = Object.assign({}, live.selected || {}, {
+      symbol,
+      price: lastPrice ?? live.selected?.price ?? null,
+      close: lastPrice ?? live.selected?.close ?? null,
+      open: tick?.open ?? live.selected?.open ?? null,
+      high: tick?.high ?? live.selected?.high ?? null,
+      low: tick?.low ?? live.selected?.low ?? null,
+      volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+      bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
+      ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
+      change,
+      changePct,
+      quoteState: payload.degraded ? "DEGRADED" : (ticks.length || lastPrice != null ? "LIVE" : live.selected?.quoteState ?? "NO_DATA"),
+    });
+    applyPaperQuotePulse(nextSelected, bidAsk, ticks);
+  }
+
+  function openPaperQuoteStream() {
+    if (live.screen !== "paper-trading-room") return false;
+    if (typeof window.EventSource !== "function") {
+      setPaperQuoteStreamState({ state: "unsupported", reason: "eventsource_unavailable" });
+      return false;
+    }
+    if (document.hidden) return false;
+    const symbol = paperPulseSymbol();
+    if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return false;
+    if (Date.now() < paperQuoteStreamBackoffUntil) return false;
+    if (paperQuoteStream && paperQuoteStreamSymbol === symbol) return true;
+    closePaperQuoteStream("symbol_changed");
+    const params = new URLSearchParams({ symbol });
+    if (live._companyId) params.set("companyId", String(live._companyId));
+    const url = "/api/ui-final-v031/quote-stream?" + params.toString();
+    try {
+      const stream = new EventSource(url);
+      paperQuoteStream = stream;
+      paperQuoteStreamSymbol = symbol;
+      setPaperQuoteStreamState({ state: "connecting", symbol, url, lastMessageAt: null, degraded: null });
+      stream.addEventListener("open", () => {
+        setPaperQuoteStreamState({ state: "open", symbol, url });
+      });
+      stream.addEventListener("ready", (event) => {
+        paperQuoteStreamLastMessageAt = Date.now();
+        setPaperQuoteStreamState({ state: "ready", symbol, url, lastMessageAt: paperQuoteStreamLastMessageAt, ready: event.data || null });
+      });
+      stream.addEventListener("quote", (event) => {
+        paperQuoteStreamLastMessageAt = Date.now();
+        const payload = JSON.parse(event.data || "{}");
+        setPaperQuoteStreamState({
+          state: "message",
+          symbol,
+          url,
+          lastMessageAt: paperQuoteStreamLastMessageAt,
+          sequence: payload.sequence ?? null,
+          degraded: Boolean(payload.degraded),
+          upstream: payload.upstream || null,
+        });
+        applyPaperQuoteStreamPayload(payload);
+      });
+      stream.addEventListener("error", () => {
+        setPaperQuoteStreamState({ state: "error", symbol, url, lastMessageAt: paperQuoteStreamLastMessageAt || null });
+        if (stream.readyState === EventSource.CLOSED) {
+          paperQuoteStreamBackoffUntil = Date.now() + 5000;
+          closePaperQuoteStream("eventsource_closed");
+        }
+      });
+      return true;
+    } catch (error) {
+      paperQuoteStreamBackoffUntil = Date.now() + 5000;
+      setPaperQuoteStreamState({ state: "error", symbol, reason: error instanceof Error ? error.message : "eventsource_failed" });
+      return false;
+    }
+  }
+
   function applyPaperQuotePulse(nextSelected, bidAsk, ticks) {
     if (!nextSelected?.symbol || !sameSym(nextSelected.symbol, paperPulseSymbol())) return;
     const selected = nextSelected;
@@ -1580,6 +1698,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   let paperQuotePulseBlockedUntil = 0;
   async function refreshPaperQuotePulse() {
     if (live.screen !== "paper-trading-room" || document.hidden || paperQuotePulseBusy) return;
+    openPaperQuoteStream();
+    if (paperQuoteStreamIsFresh()) return;
     if (Date.now() < paperQuotePulseBlockedUntil) return;
     const symbol = paperPulseSymbol();
     if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return;
@@ -2280,6 +2400,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   if (live.screen === "paper-trading-room") {
     if (!window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__) {
       window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__ = true;
+      openPaperQuoteStream();
       refreshPaperQuotePulse();
       setInterval(refreshPaperQuotePulse, 3000);
     }

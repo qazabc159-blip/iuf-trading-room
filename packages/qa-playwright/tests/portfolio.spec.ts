@@ -28,16 +28,24 @@ function isTradingRoomQuoteRead(url: string): boolean {
   }
 }
 
-test("/portfolio trading room keeps K-line stable while live quote pulse reads real endpoints @smoke", async ({ page }, testInfo) => {
+function isTradingRoomQuoteStream(url: string): boolean {
+  return url.includes("/api/ui-final-v031/quote-stream");
+}
+
+test("/portfolio trading room keeps K-line stable while live quote stream/pulse reads real endpoints @smoke", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
 
   const quoteReads: Array<{ url: string; status: number }> = [];
+  const quoteStreams: Array<{ url: string; status: number }> = [];
   const consoleErrors: string[] = [];
 
   page.on("response", (response) => {
     const url = response.url();
     if (isTradingRoomQuoteRead(url)) {
       quoteReads.push({ url, status: response.status() });
+    }
+    if (isTradingRoomQuoteStream(url)) {
+      quoteStreams.push({ url, status: response.status() });
     }
   });
   page.on("console", (message) => {
@@ -58,11 +66,29 @@ test("/portfolio trading room keeps K-line stable while live quote pulse reads r
     { timeout: 45_000 },
   );
   await expect
-    .poll(() => quoteReads.length, {
-      message: "live quote pulse must read quote/bidask/ticks endpoints",
+    .poll(
+      () => (quoteStreams.length >= 1 || quoteReads.length >= 2 ? 1 : 0),
+      {
+        message: "live quote stream or fallback pulse must read real quote endpoints",
+        timeout: 45_000,
+      },
+    )
+    .toBe(1);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const state = (window as typeof window & {
+            __IUF_FINAL_V031_QUOTE_STREAM_STATE__?: { state?: string; lastMessageAt?: number | null };
+          }).__IUF_FINAL_V031_QUOTE_STREAM_STATE__;
+          return Boolean(state?.lastMessageAt || state?.state === "message" || state?.state === "ready");
+        }),
+      {
+        message: "live quote stream should open or the fallback pulse should remain available",
       timeout: 45_000,
-    })
-    .toBeGreaterThanOrEqual(2);
+      },
+    )
+    .toBeTruthy();
 
   const before = await page.evaluate(() => {
     const frame = document.querySelector<HTMLIFrameElement>("#real-kline-frame");
@@ -70,6 +96,7 @@ test("/portfolio trading room keeps K-line stable while live quote pulse reads r
       __IUF_FINAL_V031_QUOTE_PULSE_STARTED__?: boolean;
       __IUF_FINAL_V031_LIVE_REFRESH_STARTED__?: boolean;
       __IUF_FINAL_V031_QUOTE_PULSE_ERROR__?: string | null;
+      __IUF_FINAL_V031_QUOTE_STREAM_STATE__?: { state?: string; lastMessageAt?: number | null; degraded?: boolean | null };
       __IUF_FINAL_V031_LIVE__?: { selected?: { symbol?: string } };
     };
     return {
@@ -77,6 +104,7 @@ test("/portfolio trading room keeps K-line stable while live quote pulse reads r
       pulseStarted: Boolean(iufWindow.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__),
       fullRefreshStarted: Boolean(iufWindow.__IUF_FINAL_V031_LIVE_REFRESH_STARTED__),
       pulseError: iufWindow.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__ ?? null,
+      streamState: iufWindow.__IUF_FINAL_V031_QUOTE_STREAM_STATE__ ?? null,
       symbol: iufWindow.__IUF_FINAL_V031_LIVE__?.selected?.symbol ?? null,
     };
   });
@@ -90,9 +118,21 @@ test("/portfolio trading room keeps K-line stable while live quote pulse reads r
   expect(before.pulseStarted, "live quote pulse must start in the trading room").toBe(true);
   expect(before.fullRefreshStarted, "full live refresh guard must start once").toBe(true);
   expect(before.pulseError, "quote pulse should not throw client errors").toBeNull();
+  expect(before.streamState?.state, "live quote SSE stream must expose browser-visible state").toBeTruthy();
   expect(afterFrameSrc, "quote pulse must not reload or change the real K-line iframe").toBe(before.frameSrc);
 
-  expect(quoteReads.length, "live quote pulse must read quote/bidask/ticks endpoints").toBeGreaterThanOrEqual(2);
+  expect(
+    quoteStreams.length >= 1 || quoteReads.length >= 2,
+    "live quote SSE stream or fallback pulse must read quote/bidask/ticks endpoints",
+  ).toBe(true);
+  expect(
+    quoteStreams.filter((entry) => entry.status === 401 || entry.status === 403),
+    "owner-session trading room quote stream must not be blocked by auth",
+  ).toEqual([]);
+  expect(
+    quoteStreams.filter((entry) => entry.status >= 500 || entry.status === 404),
+    "trading room quote stream must not hit missing or server-error endpoints",
+  ).toEqual([]);
   expect(
     quoteReads.filter((entry) => entry.status === 401 || entry.status === 403),
     "owner-session trading room quote reads must not be blocked by auth",
