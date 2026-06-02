@@ -3872,6 +3872,8 @@ type KgiGatewayQuoteAuthSummary = {
   state: string;
   errorCode: string | null;
   subscribedTickCount: number | null;
+  kgiLoggedIn: boolean | null;
+  accountSet: boolean | null;
 };
 
 async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSummary> {
@@ -3884,19 +3886,30 @@ async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSumm
   try {
     const res = await fetch(`${gatewayUrl}/quote/status`, { method: "GET", signal: controller.signal });
     if (!res.ok) {
-      return { available: null, state: "gateway_error", errorCode: `HTTP_${res.status}`, subscribedTickCount: null };
+      return {
+        available: null,
+        state: "gateway_error",
+        errorCode: `HTTP_${res.status}`,
+        subscribedTickCount: null,
+        kgiLoggedIn: null,
+        accountSet: null
+      };
     }
     const body = await res.json() as {
       quote_auth_available?: boolean;
       quote_auth_state?: string;
       quote_auth_error_code?: string | null;
       subscribed_symbols?: { tick?: string[] };
+      kgi_logged_in?: boolean;
+      account_set?: boolean;
     };
     return {
       available: typeof body.quote_auth_available === "boolean" ? body.quote_auth_available : null,
       state: body.quote_auth_state ?? "unknown",
       errorCode: body.quote_auth_error_code ?? null,
       subscribedTickCount: Array.isArray(body.subscribed_symbols?.tick) ? body.subscribed_symbols.tick.length : null,
+      kgiLoggedIn: typeof body.kgi_logged_in === "boolean" ? body.kgi_logged_in : null,
+      accountSet: typeof body.account_set === "boolean" ? body.account_set : null,
     };
   } catch {
     return {
@@ -3904,6 +3917,8 @@ async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSumm
       state: "gateway_unreachable",
       errorCode: "KGI_GATEWAY_UNREACHABLE",
       subscribedTickCount: null,
+      kgiLoggedIn: null,
+      accountSet: null
     };
   } finally {
     clearTimeout(timer);
@@ -3920,12 +3935,22 @@ app.get("/api/v1/kgi/status", async (c) => {
 
   const state = getKgiSimState();
   const gatewayQuoteAuth = await readKgiGatewayQuoteAuthSummary();
+  const gatewayLoggedIn = gatewayQuoteAuth.kgiLoggedIn === true;
+  const effectiveKgiLoggedIn = gatewayLoggedIn || state.quoteConnected || state.tradeConnected;
+  const effectiveQuoteConnected =
+    state.quoteConnected ||
+    (gatewayLoggedIn && gatewayQuoteAuth.available !== false && gatewayQuoteAuth.state !== "gateway_unreachable");
+  const effectiveTradeConnected = state.tradeConnected || gatewayLoggedIn;
 
   return c.json({
     sim_only: true,
     kgi_env: state.kgiEnv,
-    quote_connected: state.quoteConnected,
-    trade_connected: state.tradeConnected,
+    kgi_logged_in: effectiveKgiLoggedIn,
+    account_set: gatewayQuoteAuth.accountSet ?? effectiveKgiLoggedIn,
+    quote_connected: effectiveQuoteConnected,
+    trade_connected: effectiveTradeConnected,
+    raw_quote_connected: state.quoteConnected,
+    raw_trade_connected: state.tradeConnected,
     last_quote_time: state.lastQuoteTime,
     last_sim_order_status: state.lastSimOrderStatus,
     last_sim_order_detail: state.lastSimOrderDetail,
@@ -4960,7 +4985,14 @@ function handleKgiQuoteError(c: Context, err: unknown): Response {
 app.get("/api/v1/kgi/quote/status", async (c) => {
   try {
     const status = await getKgiQuoteClient().getQuoteStatus();
-    return c.json({ data: status });
+    const quoteConnected = Boolean(status.kgi_logged_in && !status.quote_disabled_flag);
+    return c.json({
+      data: {
+        ...status,
+        quote_connected: quoteConnected,
+        trade_connected: Boolean(status.kgi_logged_in)
+      }
+    });
   } catch (err) {
     return handleKgiQuoteError(c, err);
   }
