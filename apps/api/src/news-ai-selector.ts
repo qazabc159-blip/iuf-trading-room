@@ -52,7 +52,9 @@ import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENAI_MODEL_NEWS = "gpt-4o-mini";
+// Use global OPENAI_MODEL pin (default gpt-4o-mini if env not set).
+// Per team rule: OPENAI_MODEL is pinned to gpt-5.4-mini in Railway env vars.
+const OPENAI_MODEL_NEWS = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 const MAX_INPUT_ROWS = 200;
 const MAX_TOKENS_RESPONSE = 2000;
 const AI_SELECTOR_MAX_ATTEMPTS = 2;
