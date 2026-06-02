@@ -15276,7 +15276,7 @@ test("TWSE-MIS-3: MIS response z=dash means no intraday data (off hours)", () =>
   assert.equal(hasData, false, "TWSE-MIS-3: z=dash means no intraday data — must return null");
 });
 
-test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE (not STALE)", () => {
+test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE only after freshness guards", () => {
   const mockMisResponse = {
     lastPrice: 2355,
     bid: 2355,
@@ -15292,6 +15292,11 @@ test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE (not STA
   assert.equal(mockMisResponse.state, "LIVE", "TWSE-MIS-4: intraday state must be LIVE");
   assert.equal(mockMisResponse.freshness, "fresh", "TWSE-MIS-4: intraday freshness must be fresh");
   assert.ok(mockMisResponse.bid !== null, "TWSE-MIS-4: bid must be populated from MIS b field");
+
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(source, /function _isTwseLiveSessionNow\(\): boolean/);
+  assert.match(source, /function _isTodayMisTradeDate\(tradeDate: string\): boolean/);
+  assert.match(source, /if \(!_isTwseLiveSessionNow\(\) \|\| !_isTodayMisTradeDate\(tradeDate\)\) return null/);
 });
 
 test("TWSE-MIS-5: source chain: twse_intraday LIVE takes priority over twse_openapi_eod STALE", () => {
@@ -15315,6 +15320,13 @@ test("TWSE-MIS-5: source chain: twse_intraday LIVE takes priority over twse_open
   const withoutMis = pickBestQuote(null, eodStale);
   assert.equal(withoutMis.source, "twse_openapi_eod", "TWSE-MIS-5: when MIS null, fall back to EOD");
   assert.equal(withoutMis.state, "STALE", "TWSE-MIS-5: EOD fallback state is STALE");
+});
+
+test("TWSE-MIS-6: cron does not inject after-hours MIS close as fresh manual quote", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(source, /if \(hhmm < 900 \|\| hhmm > 1335\) return false/);
+  assert.match(source, /if \(!isTodayMisTradeDate\(msg\["d"\] \?\? ""\)\) continue/);
+  assert.match(source, /TWSE-MIS-QUOTE-CRON \(45s intraday injection, fires 09:00-13:35 TST weekdays\)/);
 });
 
 // Teardown pollers that may be started by imported API modules.
