@@ -194,6 +194,11 @@ describe("final-v031 paper ticket price gate", () => {
   it("keeps trading-room price, depth, and tape moving from live quote endpoints without reloading the K-line frame", () => {
     expect(liveHydration).toContain("function refreshPaperQuotePulse()");
     expect(liveHydration).toContain("function applyPaperQuotePulse(nextSelected, bidAsk, ticks)");
+    expect(liveHydration).toContain("function updatePaperQuoteQualityBadge(mode, options={})");
+    expect(liveHydration).toContain("quote-quality-badge");
+    expect(liveHydration).toContain("行情串流 LIVE");
+    expect(liveHydration).toContain("行情串流重連中");
+    expect(liveHydration).toContain("輪詢備援 LIVE");
     expect(liveHydration).toContain('"/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"');
     expect(liveHydration).toContain("/api/v1/kgi/quote/bidask?symbol=");
     expect(liveHydration).toContain("/api/v1/kgi/quote/ticks?symbol=");
