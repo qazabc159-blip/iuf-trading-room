@@ -86,6 +86,8 @@ const REASON_LABEL_MAP: Record<string, string> = {
   quote_not_paper_safe: "報價未達模擬交易門檻",
   no_reference_price: "無參考價",
   missing_market_decision: "無市場決策輸出",
+  daily_ohlcv_reference: "日線 OHLCV 參考價可用",
+  no_live_quote: "盤中報價暫無，改用日線參考",
 
   // rationale
   recent_signals_present: "近期有訊號支持",

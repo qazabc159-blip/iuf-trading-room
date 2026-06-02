@@ -886,6 +886,33 @@ export async function getStrategyIdeas(input: {
         decisionMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
         decisionMap.get(`OTHER:${entry.company.ticker}`) ??
         null;
+      const rawDecisionView = pickDecisionSummary(decision, decisionMode);
+      const dailyOhlcvReferenceReady =
+        dailyOhlcvQuality?.history.quality.grade === "strategy_ready" &&
+        dailyOhlcvQuality?.bars.quality.grade === "strategy_ready";
+      const dailyOhlcvDecisionView = dailyOhlcvReferenceReady
+        ? {
+            decision: "review" as const,
+            usable: true,
+            safe: false,
+            primaryReason: "daily_ohlcv_reference"
+          }
+        : null;
+      const useDailyOhlcvDecision =
+        dailyOhlcvDecisionView !== null &&
+        (
+          rawDecisionView === null ||
+          (
+            rawDecisionView.decision === "block" &&
+            (
+              rawDecisionView.primaryReason === "missing_market_decision" ||
+              rawDecisionView.primaryReason === "missing_quote" ||
+              decision?.fallbackReason === "no_quote" ||
+              decision?.staleReason === "missing_quote"
+            )
+          )
+        );
+      const decisionView = useDailyOhlcvDecision ? dailyOhlcvDecisionView : rawDecisionView;
       const quality = combineIdeaQuality({
         history:
           dailyOhlcvQuality?.history ??
@@ -898,7 +925,6 @@ export async function getStrategyIdeas(input: {
           barQualityMap.get(`OTHER:${entry.company.ticker}`) ??
           null
       });
-      const decisionView = pickDecisionSummary(decision, decisionMode);
       const decisionName = decisionView?.decision ?? "block";
       const marketDataScore = decisionName === "allow" ? 15 : decisionName === "review" ? 8 : 0;
       const score = clamp(entry.preliminaryScore + marketDataScore, 0, 100);
@@ -946,15 +972,15 @@ export async function getStrategyIdeas(input: {
         topThemes: entry.themeContext.topThemes,
         marketData: {
           decisionMode,
-          selectedSource: decision?.selectedSource ?? null,
-          readiness: decision?.readiness ?? "blocked",
-          freshnessStatus: decision?.freshnessStatus ?? "missing",
+          selectedSource: decision?.selectedSource ?? (useDailyOhlcvDecision ? "finmind:companies_ohlcv" : null),
+          readiness: decision?.readiness ?? (useDailyOhlcvDecision ? "degraded" : "blocked"),
+          freshnessStatus: decision?.freshnessStatus ?? (useDailyOhlcvDecision ? "stale" : "missing"),
           decision: decisionName,
           usable: decisionView?.usable ?? false,
           safe: decisionView?.safe ?? false,
           primaryReason: decisionView?.primaryReason ?? "missing_market_decision",
-          fallbackReason: decision?.fallbackReason ?? "no_quote",
-          staleReason: decision?.staleReason ?? "missing_quote"
+          fallbackReason: decision?.fallbackReason ?? (useDailyOhlcvDecision ? "no_live_quote" : "no_quote"),
+          staleReason: decision?.staleReason ?? (useDailyOhlcvDecision ? "daily_ohlcv_reference" : "missing_quote")
         },
         quality,
         rationale: {
@@ -979,14 +1005,14 @@ export async function getStrategyIdeas(input: {
           marketData: {
             mode: decisionMode,
             decision: decisionName,
-            selectedSource: decision?.selectedSource ?? null,
-            readiness: decision?.readiness ?? "blocked",
-            freshnessStatus: decision?.freshnessStatus ?? "missing",
+            selectedSource: decision?.selectedSource ?? (useDailyOhlcvDecision ? "finmind:companies_ohlcv" : null),
+            readiness: decision?.readiness ?? (useDailyOhlcvDecision ? "degraded" : "blocked"),
+            freshnessStatus: decision?.freshnessStatus ?? (useDailyOhlcvDecision ? "stale" : "missing"),
             usable: decisionView?.usable ?? false,
             safe: decisionView?.safe ?? false,
             primaryReason: decisionView?.primaryReason ?? "missing_market_decision",
-            fallbackReason: decision?.fallbackReason ?? "no_quote",
-            staleReason: decision?.staleReason ?? "missing_quote"
+            fallbackReason: decision?.fallbackReason ?? (useDailyOhlcvDecision ? "no_live_quote" : "no_quote"),
+            staleReason: decision?.staleReason ?? (useDailyOhlcvDecision ? "daily_ohlcv_reference" : "missing_quote")
           },
           quality: {
             grade: quality.grade,

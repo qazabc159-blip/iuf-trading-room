@@ -4263,6 +4263,16 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
   assert.equal(symbolIdeas.items[0]?.marketData.decisionMode, "execution");
 });
 
+test("STRATEGY-IDEAS-DAILY-OHLCV-1: daily OHLCV can downgrade missing live quote to review", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/strategy-engine.ts"), "utf8");
+
+  assert.match(source, /dailyOhlcvReferenceReady/);
+  assert.match(source, /daily_ohlcv_reference/);
+  assert.match(source, /finmind:companies_ohlcv/);
+  assert.match(source, /no_live_quote/);
+  assert.match(source, /rawDecisionView\.primaryReason === "missing_market_decision"/);
+});
+
 test("strategy runs persist query, summary, and score outputs", async () => {
   const repo = new MemoryTradingRoomRepository();
   const workspaceSlug = `strategy-runs-${randomUUID()}`;
@@ -7436,6 +7446,15 @@ test("W2d-T4: getQuoteStatus returns gateway status object", async () => {
   } finally {
     globalThis.fetch = orig;
   }
+});
+
+test("W2d-T4b: quote status route respects quote auth unavailable", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+
+  assert.match(source, /quoteAuthUnavailable/);
+  assert.match(source, /status\.quote_auth_available === false/);
+  assert.match(source, /status\.quote_auth_state === "unavailable"/);
+  assert.match(source, /status\.kgi_logged_in && !status\.quote_disabled_flag && !quoteAuthUnavailable/);
 });
 
 // ---------------------------------------------------------------------------

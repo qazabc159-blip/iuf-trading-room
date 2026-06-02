@@ -4985,7 +4985,10 @@ function handleKgiQuoteError(c: Context, err: unknown): Response {
 app.get("/api/v1/kgi/quote/status", async (c) => {
   try {
     const status = await getKgiQuoteClient().getQuoteStatus();
-    const quoteConnected = Boolean(status.kgi_logged_in && !status.quote_disabled_flag);
+    const quoteAuthUnavailable =
+      status.quote_auth_available === false ||
+      status.quote_auth_state === "unavailable";
+    const quoteConnected = Boolean(status.kgi_logged_in && !status.quote_disabled_flag && !quoteAuthUnavailable);
     return c.json({
       data: {
         ...status,

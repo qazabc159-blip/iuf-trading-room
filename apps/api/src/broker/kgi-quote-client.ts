@@ -102,6 +102,9 @@ export interface KgiQuoteStatusRaw {
   };
   kgi_logged_in: boolean;
   quote_disabled_flag: boolean;
+  quote_auth_available?: boolean;
+  quote_auth_state?: string;
+  quote_auth_error_code?: string | null;
 }
 
 export interface KgiTickRaw {
