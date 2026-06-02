@@ -191,6 +191,20 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("setInterval(refreshClientLive, 15000)");
   });
 
+  it("keeps trading-room price, depth, and tape moving from live quote endpoints without reloading the K-line frame", () => {
+    expect(liveHydration).toContain("function refreshPaperQuotePulse()");
+    expect(liveHydration).toContain("function applyPaperQuotePulse(nextSelected, bidAsk, ticks)");
+    expect(liveHydration).toContain('"/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"');
+    expect(liveHydration).toContain("/api/v1/kgi/quote/bidask?symbol=");
+    expect(liveHydration).toContain("/api/v1/kgi/quote/ticks?symbol=");
+    expect(liveHydration).toContain("setInterval(refreshPaperQuotePulse, 3000)");
+    expect(liveHydration).toContain("window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__");
+    expect(liveHydration).toContain("paperQuotePulseBlockedUntil = Date.now() + 15000");
+    expect(liveHydration).toContain("window.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__");
+    expect(liveHydration).toContain("if (!sameSym(symbol, paperPulseSymbol())) return;");
+    expect(liveHydration).not.toContain("refreshPaperQuotePulse();\n    window.updateRealChartFrame");
+  });
+
   it("draws real volume-price indicators instead of decorative technical labels", () => {
     expect(klineChartSource).toContain("function calcVolumePriceLevels");
     expect(klineChartSource).toContain("量價支撐");

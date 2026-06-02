@@ -1492,6 +1492,149 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
+  function latestTick(ticks) {
+    const arr = Array.isArray(ticks) ? ticks.filter(Boolean) : [];
+    if (!arr.length) return null;
+    const scored = arr.map((tick, index) => {
+      const ts = Date.parse(tick._received_at || tick.datetime || tick.timestamp || tick.ts || "");
+      return { tick, score: Number.isFinite(ts) ? ts : index };
+    });
+    scored.sort((a, b) => a.score - b.score);
+    return scored[scored.length - 1].tick;
+  }
+
+  function tickLastPrice(tick) {
+    if (!tick) return null;
+    const raw = tick.close ?? tick.price ?? tick.closePrice ?? tick.lastPrice ?? null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function paperPulseSymbol() {
+    return String(currentPaperSymbol || live.selected?.symbol || "2330").trim().toUpperCase();
+  }
+
+  function applyPaperQuotePulse(nextSelected, bidAsk, ticks) {
+    if (!nextSelected?.symbol || !sameSym(nextSelected.symbol, paperPulseSymbol())) return;
+    const selected = nextSelected;
+    const chg = selected.change;
+    const pct = selected.changePct;
+    const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
+    live = Object.assign({}, live, {
+      selected: Object.assign({}, live.selected || {}, selected),
+      bidAsk: bidAsk !== undefined ? bidAsk : live.bidAsk,
+      ticks: ticks !== undefined ? ticks : live.ticks,
+    });
+    window.__IUF_FINAL_V031_LIVE__ = live;
+    window.__IUF_SELECTED_PRICE__ = selected.price != null && Number.isFinite(Number(selected.price)) ? Number(selected.price) : window.__IUF_SELECTED_PRICE__;
+    setText(".symhead .sym", selected.symbol || "--");
+    setText(".symhead .nm", selected.name || selected.symbol || "--");
+    const pv = $(".symhead .price .v"); if (pv) { pv.textContent = price(selected.price); pv.className = "v " + tone; }
+    const pd = $(".symhead .price .d"); if (pd) {
+      const state = selected.quoteState && selected.quoteState !== "LIVE" ? String(selected.quoteState) + " " : "";
+      pd.textContent = chg == null ? state + "等待即時價" : state + (Number(chg) >= 0 ? "▲ +" : "▼ -") + Math.abs(Number(chg)).toFixed(2) + "  " + (Number(pct) >= 0 ? "+" : "-") + Math.abs(Number(pct || 0)).toFixed(2) + "%";
+      pd.className = "d " + tone;
+    }
+    const stats = $$(".symhead .stats .s .v");
+    if (stats[0] && selected.open != null) stats[0].textContent = price(selected.open);
+    if (stats[1] && selected.high != null) stats[1].textContent = price(selected.high);
+    if (stats[2] && selected.low != null) stats[2].textContent = price(selected.low);
+    if (stats[3] && selected.previous != null) stats[3].textContent = price(selected.previous);
+    if (stats[4] && selected.volume != null) stats[4].textContent = n(selected.volume) + " 股";
+    const activeRow = $$(".wrow[data-sym]").find((row) => sameSym(row.dataset.sym, selected.symbol));
+    if (activeRow) {
+      activeRow.classList.add("on");
+      const priceCell = $(".price", activeRow);
+      if (priceCell) priceCell.outerHTML = rowPrice({ price: selected.price, changePct: selected.changePct });
+    }
+    const priceInput = $("#t-price");
+    if (priceInput && document.activeElement !== priceInput && selected.price != null) {
+      priceInput.value = Number(selected.price).toFixed(2);
+      priceInput.setAttribute("value", priceInput.value);
+    }
+    const ohlcC = $("#ohlc-c"); if (ohlcC && selected.price != null) ohlcC.textContent = price(selected.price);
+    if (typeof window.updPreview === "function") {
+      try { window.updPreview(); } catch {}
+    }
+    const depth = $("#depth");
+    if (depth && bidAsk) {
+      const asks = (bidAsk.ask_prices || []).map((p, i) => [p, bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5).reverse();
+      const bids = (bidAsk.bid_prices || []).map((p, i) => [p, bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
+      const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
+      depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">LIVE</span><span class="qty">--</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
+    }
+    const tape = $("#tape");
+    if (tape && Array.isArray(ticks) && ticks.length) {
+      const previous = selected.previous;
+      tape.innerHTML = ticks.slice(-12).reverse().map((t) => {
+        const px = tickLastPrice(t);
+        const qty = t.volume ?? t.qty ?? t.quantity ?? t.total_volume ?? null;
+        const ts = t.datetime || t.timestamp || t.ts || t._received_at || "";
+        const tone2 = previous != null && px != null ? (Number(px) >= Number(previous) ? "up" : "dn") : "up";
+        return '<div class="row" style="grid-template-columns:80px 1fr 70px"><span class="px '+esc(tone2)+'">'+price(px)+'</span><span class="qty" style="color:var(--fg-3);text-align:left">'+esc(String(ts).slice(11,19) || String(ts).slice(0,8) || "--")+'</span><span class="qty">'+esc(qty ?? "--")+'</span></div>';
+      }).join("");
+    }
+  }
+
+  let paperQuotePulseBusy = false;
+  let paperQuotePulseBlockedUntil = 0;
+  async function refreshPaperQuotePulse() {
+    if (live.screen !== "paper-trading-room" || document.hidden || paperQuotePulseBusy) return;
+    if (Date.now() < paperQuotePulseBlockedUntil) return;
+    const symbol = paperPulseSymbol();
+    if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return;
+    paperQuotePulseBusy = true;
+    try {
+      const companyId = live._companyId || null;
+      const [quoteResult, bidAskResult, ticksResult] = await Promise.all([
+        companyId ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime")) : soft(Promise.resolve(null)),
+        soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(symbol))),
+        soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(symbol) + "&limit=16"))
+      ]);
+      if (!sameSym(symbol, paperPulseSymbol())) return;
+      const quote = quoteResult.ok ? quoteResult.data : null;
+      const bidAsk = bidAskResult.ok ? bidAskResult.data : null;
+      const ticksData = ticksResult.ok ? ticksResult.data : null;
+      const ticks = ticksData?.ticks || [];
+      const hasUsableResponse = Boolean(quote || bidAsk || ticksData);
+      const hasFailedResponse = !quoteResult.ok || !bidAskResult.ok || !ticksResult.ok;
+      if (!hasUsableResponse && hasFailedResponse) {
+        paperQuotePulseBlockedUntil = Date.now() + 15000;
+        return;
+      }
+      paperQuotePulseBlockedUntil = 0;
+      const tick = latestTick(ticks);
+      const tickPrice = tickLastPrice(tick);
+      const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
+      const lastPrice = tickPrice ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+      if (lastPrice == null && !bidAsk && !ticks.length) return;
+      const previous = live.selected?.previous ?? null;
+      const tickChange = tick?.price_chg ?? null;
+      const tickPct = tick?.pct_chg ?? null;
+      const change = tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null);
+      const changePct = tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null);
+      const nextSelected = Object.assign({}, live.selected || {}, {
+        symbol,
+        price: lastPrice ?? live.selected?.price ?? null,
+        close: lastPrice ?? live.selected?.close ?? null,
+        open: tick?.open ?? live.selected?.open ?? null,
+        high: tick?.high ?? live.selected?.high ?? null,
+        low: tick?.low ?? live.selected?.low ?? null,
+        volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+        bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
+        ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
+        change,
+        changePct,
+        quoteState: quote?.state ?? (ticks.length ? "LIVE" : live.selected?.quoteState ?? "NO_DATA"),
+      });
+      applyPaperQuotePulse(nextSelected, bidAsk, ticks);
+    } catch (error) {
+      window.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__ = error instanceof Error ? error.message : "quote_pulse_failed";
+    } finally {
+      paperQuotePulseBusy = false;
+    }
+  }
+
   const kgiQuoteAuth = () => live.kgiStatus?.gateway_quote_auth || null;
   const kgiQuoteBlockedReason = (label) => {
     const auth = kgiQuoteAuth();
@@ -2135,7 +2278,15 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   if (live.screen === "paper-trading-room") hydratePaper();
   refreshClientLive();
   if (live.screen === "paper-trading-room") {
-    setInterval(refreshClientLive, 15000);
+    if (!window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__) {
+      window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__ = true;
+      refreshPaperQuotePulse();
+      setInterval(refreshPaperQuotePulse, 3000);
+    }
+    if (!window.__IUF_FINAL_V031_LIVE_REFRESH_STARTED__) {
+      window.__IUF_FINAL_V031_LIVE_REFRESH_STARTED__ = true;
+      setInterval(refreshClientLive, 15000);
+    }
   }
 })();
 </script>`;
