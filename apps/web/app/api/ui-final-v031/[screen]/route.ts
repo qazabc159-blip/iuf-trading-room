@@ -63,6 +63,12 @@ function contentShellOverrides(screen: ScreenKey) {
     height: 100dvh !important;
     min-height: 100dvh !important;
     overflow: hidden !important;
+    scrollbar-width: none !important;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
   }
 
   .tbar {
@@ -85,6 +91,14 @@ function contentShellOverrides(screen: ScreenKey) {
     margin: 0 !important;
     padding: 12px 16px !important;
     overflow: hidden !important;
+    grid-template-columns: clamp(232px, 14vw, 264px) minmax(640px, 1fr) clamp(366px, 20vw, 430px) !important;
+  }
+
+  .rpane,
+  .tform,
+  .real-kline-frame-shell {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
   }
 
   .rec-prefill-box {
