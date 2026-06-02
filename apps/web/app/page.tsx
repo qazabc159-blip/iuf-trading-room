@@ -2386,7 +2386,13 @@ function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboar
 function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   const featured = intel.data.items[0] ?? null;
   const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
-  const itemHref = (item: IntelItem) => item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
+  // url=null on official_announcement means no source link exists — fall back to internal company page
+  // url=null on ai_selected means no external link — same internal fallback
+  const itemHref = (item: IntelItem): string =>
+    item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
+  // For official_announcement with no url: render as non-link (div) to avoid false external-link affordance
+  const isLinkable = (item: IntelItem): boolean =>
+    Boolean(item.url) || item.feedKind !== "official_announcement";
   const panelState = marketIntelPanelState(intel);
   const source = intel.data.sourceState;
   const staleLabel = marketIntelStaleLabel(source.newsStaleReason);
@@ -2400,23 +2406,40 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
       className="tac-intel-panel"
     >
       {featured ? (
-        <Link href={itemHref(featured)} className="tac-intel-feature">
-          <span>{featured.feedKind === "ai_selected" ? "AI 精選" : categoryLabel(featured.category)}</span>
-          <strong>{intelTitleText(featured)}</strong>
-          <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</small>
-          {featured.whyMatters && <p>{cleanNarrativeText(featured.whyMatters)}</p>}
-        </Link>
+        isLinkable(featured) ? (
+          <Link href={itemHref(featured)} className="tac-intel-feature">
+            <span>{featured.feedKind === "ai_selected" ? "AI 精選" : categoryLabel(featured.category)}</span>
+            <strong>{intelTitleText(featured)}</strong>
+            <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</small>
+            {featured.whyMatters && <p>{cleanNarrativeText(featured.whyMatters)}</p>}
+          </Link>
+        ) : (
+          <div className="tac-intel-feature tac-intel-feature--no-link">
+            <span>{categoryLabel(featured.category)}</span>
+            <strong>{intelTitleText(featured)}</strong>
+            <small>{featured.ticker} · {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</small>
+          </div>
+        )
       ) : (
         <MarketIntelEmptyState intel={intel} />
       )}
       <div className="tac-intel-list">
         {rows.map((item) => (
-          <Link href={itemHref(item)} key={`${item.ticker}-${item.id}`}>
-            <b>{item.ticker}</b>
-            <span>{intelTitleText(item)}</span>
-            <small>{formatDate(item.date)}</small>
-            <em>{item.feedKind === "ai_selected" ? categoryLabel(item.impactTier ?? "ai_selected") : categoryLabel(item.category)}</em>
-          </Link>
+          isLinkable(item) ? (
+            <Link href={itemHref(item)} key={`${item.ticker}-${item.id}`}>
+              <b>{item.ticker}</b>
+              <span>{intelTitleText(item)}</span>
+              <small>{formatDate(item.date)}</small>
+              <em>{item.feedKind === "ai_selected" ? categoryLabel(item.impactTier ?? "ai_selected") : categoryLabel(item.category)}</em>
+            </Link>
+          ) : (
+            <div className="tac-intel-list-row--no-link" key={`${item.ticker}-${item.id}`}>
+              <b>{item.ticker}</b>
+              <span>{intelTitleText(item)}</span>
+              <small>{formatDate(item.date)}</small>
+              <em>{categoryLabel(item.category)}</em>
+            </div>
+          )
         ))}
       </div>
       <div className="tac-intel-foot">

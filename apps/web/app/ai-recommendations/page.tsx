@@ -556,10 +556,12 @@ export default async function AiRecommendationsPage() {
     error: v3Result.error,
     visibleCount: v3Cards.length,
   });
-  const showV3Primary = Boolean(v3Result.data || v3Result.error);
+  // v3 is the canonical primary — always show v3 panel regardless of v2 state
   const v3BackendItemCount = v3Result.data?.itemCount ?? v3Items.length;
   const hasEnoughV3Cards = v3BackendItemCount >= 5 && v3Cards.length >= 5;
   const isV3Complete = v3Result.data?.status === "complete";
+  // v2 brain_react: only show as demoted "研究參考" secondary panel when v3 has no cards
+  const showV2ResearchRef = v3Cards.length === 0 && items.length > 0;
   const v3MarketScores = getV3MarketScores(v3Items);
   const sourceMode = formatRecommendationSourceMode({
     hasData: Boolean(data),
@@ -1235,66 +1237,69 @@ export default async function AiRecommendationsPage() {
         <Link href="/signals">訊號中心</Link>
       </div>
 
+      {/* AI-01: v3 is always the canonical primary recommendation panel */}
       <Panel
         code="AI-01"
-        title={showV3Primary ? "今日 AI 推薦" : "推薦清單"}
-        sub={showV3Primary
-          ? `產生時間 ${v3GeneratedAtLabel || "-"} / ${v3PanelState.label}`
-          : `交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode}`}
-        right={showV3Primary ? `${v3Cards.length} 檔` : `${items.length} 檔`}
+        title="今日 AI 推薦"
+        sub={`產生時間 ${v3GeneratedAtLabel || "-"} / ${v3PanelState.label}`}
+        right={`${v3Cards.length} 檔`}
       >
-        {showV3Primary ? (
-          <div style={{ padding: "16px" }}>
-            <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
-              <b>{v3PanelState.title}</b>
-              <p>{v3PanelState.detail}</p>
-              <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
-            </div>
-            {v3Cards.length > 0 ? (
-              <div className="_rec-v3-card-grid">
-                {v3Cards.map((card) => (
-                  <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
-                ))}
-              </div>
-            ) : (
-              <div className="_rec-empty _rec-empty-single">
-                <b>v3 沒有回傳可顯示卡片</b>
-                <p>前端沒有用 mock 或舊推薦補卡；等待推薦引擎回傳正式資料。</p>
-              </div>
-            )}
+        <div style={{ padding: "16px" }}>
+          <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
+            <b>{v3PanelState.title}</b>
+            <p>{v3PanelState.detail}</p>
+            <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
           </div>
-        ) : (
-          <>
-            <div className="_rec-bucket-grid">
-              {BUCKETS.map((bucket) => {
-                const bucketItems = grouped.get(bucket.value) ?? [];
-                return (
-                  <article key={bucket.value} className="_rec-bucket">
-                    <span>{bucket.range}</span>
-                    <b>{bucket.label}</b>
-                    <small>{bucketItems.length} 檔</small>
-                  </article>
-                );
-              })}
+          {v3Cards.length > 0 ? (
+            <div className="_rec-v3-card-grid">
+              {v3Cards.map((card) => (
+                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
+              ))}
             </div>
-
-            {items.length > 0 ? (
-              BUCKETS.map((bucket) => (
-                <BucketSection
-                  key={bucket.value}
-                  bucket={bucket}
-                  items={grouped.get(bucket.value) ?? []}
-                  error={error}
-                />
-              ))
-            ) : (
-              <div style={{ padding: "0 16px 18px" }}>
-                <RecommendationListEmptyState error={error} />
-              </div>
-            )}
-          </>
-        )}
+          ) : (
+            <div className="_rec-empty _rec-empty-single">
+              <b>推薦引擎尚未回傳可顯示卡片</b>
+              <p>等待 v3 推薦引擎回傳正式資料；前端不用舊資料補卡。</p>
+            </div>
+          )}
+        </div>
       </Panel>
+
+      {/* AI-RES: v2 brain_react demoted to research-reference — only shown when v3 has no cards */}
+      {showV2ResearchRef && (
+        <Panel
+          code="AI-RES"
+          title="研究參考（非主推薦）"
+          sub={`交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode} / 僅研究參考`}
+          right={`${items.length} 檔`}
+        >
+          <div style={{ padding: "8px 16px 4px", background: "rgba(245,166,35,0.06)", borderBottom: "1px solid rgba(245,166,35,0.2)" }}>
+            <span style={{ color: "var(--tac-amber, #f5a623)", fontSize: 11, fontWeight: 900, letterSpacing: "0.06em" }}>
+              此區塊為 brain_react v2 輸出，非 v3 SOP 主推薦。資料僅供研究比對，請勿作為交易依據。
+            </span>
+          </div>
+          <div className="_rec-bucket-grid">
+            {BUCKETS.map((bucket) => {
+              const bucketItems = grouped.get(bucket.value) ?? [];
+              return (
+                <article key={bucket.value} className="_rec-bucket">
+                  <span>{bucket.range}</span>
+                  <b>{bucket.label}</b>
+                  <small>{bucketItems.length} 檔</small>
+                </article>
+              );
+            })}
+          </div>
+          {BUCKETS.map((bucket) => (
+            <BucketSection
+              key={bucket.value}
+              bucket={bucket}
+              items={grouped.get(bucket.value) ?? []}
+              error={error}
+            />
+          ))}
+        </Panel>
+      )}
 
     </PageFrame>
   );
