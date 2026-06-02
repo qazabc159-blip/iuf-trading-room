@@ -923,11 +923,33 @@ export async function runS1EodReportTick(): Promise<void> {
     notes.push(`gateway_unavailable: ${msg}`);
     dataSource = "order_file_fallback";
 
-    // Fallback: read today's order submit file
+    // Fallback 1: read today's order submit file (ephemeral — may be gone after redeploy)
     const orderPath = join(reportsBase(), "s1_sim_daily", `${todayTst}_orders.json`);
+    let orderResult: S1OrderSubmitResult | null = null;
     try {
       const raw = await fs.readFile(orderPath, "utf-8");
-      const orderResult = JSON.parse(raw) as S1OrderSubmitResult;
+      orderResult = JSON.parse(raw) as S1OrderSubmitResult;
+      notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
+    } catch {
+      // File not found (ephemeral) — try audit log as durable fallback
+    }
+
+    // Fallback 2: audit log (durable DB — survives redeploy)
+    if (!orderResult) {
+      const auditOrders = await readS1ObservationAudit<S1OrderSubmitResult>(
+        S1_AUDIT_ACTIONS.ordersSubmitted,
+        todayTst,
+      );
+      if (auditOrders) {
+        orderResult = auditOrders;
+        notes.push("positions_from_audit_log: avg_cost and last_price unknown without KGI fill confirmation");
+        dataSource = "audit_log_fallback";
+      } else {
+        notes.push("no_order_file_found: positions unknown (file ephemeral, no audit_log entry)");
+      }
+    }
+
+    if (orderResult) {
       positions = orderResult.results
         .filter((r) => r.status === "accepted")
         .map((r) => ({
@@ -937,9 +959,6 @@ export async function runS1EodReportTick(): Promise<void> {
           last_price: null,
           unrealized_pnl_twd: null
         }));
-      notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
-    } catch {
-      notes.push("no_order_file_found: positions unknown");
     }
   }
 
@@ -951,14 +970,24 @@ export async function runS1EodReportTick(): Promise<void> {
     : null;
 
   // Estimated cash residual from basket (best effort)
+  // Try file first, then audit log (durable fallback for post-redeploy)
   let cashResidual = S1_DEFAULT_CAPITAL_TWD; // assume default capital undeployed until basket found
+  let basketForResidual: S1Basket | null = null;
   try {
     const basketPath = join(reportsBase(), "s1_sim_basket", `${todayTst}.json`);
     const raw = await fs.readFile(basketPath, "utf-8");
-    const basket = JSON.parse(raw) as S1Basket;
-    const deployed = basket.basket.reduce((s, e) => s + e.target_notional_twd, 0);
-    cashResidual = basket.capital_twd - deployed;
+    basketForResidual = JSON.parse(raw) as S1Basket;
   } catch {
+    // File gone (redeploy) — try audit log
+    basketForResidual = await readS1ObservationAudit<S1Basket>(
+      S1_AUDIT_ACTIONS.signalGenerated,
+      todayTst,
+    );
+  }
+  if (basketForResidual) {
+    const deployed = basketForResidual.basket.reduce((s, e) => s + e.target_notional_twd, 0);
+    cashResidual = basketForResidual.capital_twd - deployed;
+  } else {
     notes.push("basket_not_found: cash_residual is estimated as full capital");
   }
 

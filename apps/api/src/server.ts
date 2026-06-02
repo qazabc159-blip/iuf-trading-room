@@ -4663,6 +4663,10 @@ app.post("/api/v1/internal/s1-sim/manual-run", async (c) => {
 //
 // Returns the full S1EodReport JSON for the requested date.
 // date param defaults to today (Asia/Taipei). Returns empty state if file not found.
+//
+// Positions rebuild: if eod_generated audit has positions=[] (gateway unavailable + ephemeral
+// order file gone after redeploy), we reconstruct positions from the orders_submitted audit
+// log so day-1 orders are visible in the product UI.
 app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
@@ -4679,8 +4683,9 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
   const base = _s1ReportsBase();
   const path = pathJoin(base, "s1_sim_daily", `${dateParam}.json`);
 
-  // Import S1EodReport type (dynamic, type-only at runtime)
+  // Import S1EodReport + S1OrderSubmitResult types (dynamic, type-only at runtime)
   type S1EodReport = import("./s1-sim-runner.js").S1EodReport;
+  type S1OrderSubmitResult = import("./s1-sim-runner.js").S1OrderSubmitResult;
   let report = await _readJsonSafe<S1EodReport>(path);
   let source: "file" | "audit_log" | null = report ? "file" : null;
   if (!report) {
@@ -4699,12 +4704,48 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
     });
   }
 
+  // Positions rebuild: if EOD was written with positions=[] because KGI gateway was
+  // unavailable AND the order file was ephemeral (gone after redeploy), reconstruct
+  // positions from the durable orders_submitted audit log entry.
+  let positionsRebuilt = false;
+  if (Array.isArray(report.positions) && report.positions.length === 0) {
+    const orderAudit = await _readS1ObservationAudit<S1OrderSubmitResult>(
+      session.workspace.id,
+      "s1_sim.orders_submitted",
+      dateParam,
+    );
+    if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
+      const rebuiltPositions = orderAudit.results
+        .filter((r) => r.status === "accepted")
+        .map((r) => ({
+          symbol: r.symbol,
+          shares: r.shares,
+          avg_cost: 0,
+          last_price: null,
+          unrealized_pnl_twd: null,
+        }));
+      if (rebuiltPositions.length > 0) {
+        report = {
+          ...report,
+          positions: rebuiltPositions,
+          data_source: "orders_submitted_audit_rebuilt",
+          notes: [
+            ...(report.notes ?? []),
+            `positions_rebuilt_from_audit: ${rebuiltPositions.length} accepted orders from orders_submitted audit log (gateway unavailable at EOD time, order file ephemeral)`,
+          ],
+        };
+        positionsRebuilt = true;
+      }
+    }
+  }
+
   return c.json({
     sim_only: true,
     prod_write_blocked: true,
     date: dateParam,
     source,
     found: true,
+    positions_rebuilt: positionsRebuilt,
     report,
   });
 });
