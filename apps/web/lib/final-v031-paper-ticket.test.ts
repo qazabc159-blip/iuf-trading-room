@@ -173,13 +173,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("height: 100dvh !important;");
     expect(routeSource).toContain("overflow: hidden !important;");
     expect(routeSource).toContain("scrollbar-width: none !important;");
-    expect(routeSource).toContain("grid-template-columns: clamp(232px, 14vw, 264px) minmax(640px, 1fr) clamp(366px, 20vw, 430px) !important;");
+    expect(routeSource).toContain("grid-template-columns: clamp(210px, 16vw, 232px) minmax(620px, 1fr) clamp(320px, 24vw, 352px) !important;");
     expect(routeSource).toContain("height: 34px;");
     expect(routeSource).toContain("overflow: hidden;");
     expect(routeSource).toContain("height: calc(100dvh - 34px) !important;");
     expect(ticketHtml).toContain("overflow:hidden;");
-    expect(ticketHtml).toContain("grid-template-columns:clamp(232px,14vw,264px) minmax(640px,1fr) clamp(366px,20vw,430px);");
-    expect(ticketHtml).toContain("gap:10px;");
+    expect(ticketHtml).toContain("grid-template-columns:clamp(210px,16vw,232px) minmax(620px,1fr) clamp(320px,24vw,352px);");
+    expect(ticketHtml).toContain("gap:8px;");
   });
 
   it("draws real volume-price indicators instead of decorative technical labels", () => {

@@ -89,9 +89,10 @@ function contentShellOverrides(screen: ScreenKey) {
     min-height: 0 !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 12px 16px !important;
+    padding: 10px !important;
     overflow: hidden !important;
-    grid-template-columns: clamp(232px, 14vw, 264px) minmax(640px, 1fr) clamp(366px, 20vw, 430px) !important;
+    gap: 8px !important;
+    grid-template-columns: clamp(210px, 16vw, 232px) minmax(620px, 1fr) clamp(320px, 24vw, 352px) !important;
   }
 
   .rpane,
