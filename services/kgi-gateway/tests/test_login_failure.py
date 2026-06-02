@@ -47,6 +47,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kgi_session import (
+    _install_ca_env_patch_for_tradecom_api,
     KgiLoginFailedError,
     KgiLoginObjectMissingAttr,
     KgiPermissionOrCredentialRejected,
@@ -82,6 +83,55 @@ def _make_success_login_result(accounts: list) -> MagicMock:
     stub.IsSucceed = True
     stub.show_account.return_value = accounts
     return stub
+
+
+def test_ca_env_patch_sets_pfx_before_tradecom_login(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeTradeComAPI:
+        def SetCA_PFX(self, path: str) -> None:  # noqa: N802 - SDK API shape
+            calls.append(("pfx", path))
+
+        def SetCA_PW(self, password: str) -> None:  # noqa: N802 - SDK API shape
+            calls.append(("pw", password))
+
+        def Login(self, user_id: str, password: str) -> str:  # noqa: N802 - SDK API shape
+            calls.append(("login", f"{user_id}:{password}"))
+            return "ok"
+
+    monkeypatch.setenv("KGI_CA_PATH", r"C:\secure\kgi.pfx")
+    monkeypatch.setenv("KGI_CA_PWD", "cert-password")
+
+    assert _install_ca_env_patch_for_tradecom_api(FakeTradeComAPI) is True
+    assert FakeTradeComAPI().Login("USER", "login-password") == "ok"
+    assert calls == [
+        ("pfx", r"C:\secure\kgi.pfx"),
+        ("pw", "cert-password"),
+        ("login", "USER:login-password"),
+    ]
+
+
+def test_ca_env_patch_skips_pfx_when_env_missing(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeTradeComAPI:
+        def SetCA_PFX(self, path: str) -> None:  # noqa: N802 - SDK API shape
+            calls.append(("pfx", path))
+
+        def SetCA_PW(self, password: str) -> None:  # noqa: N802 - SDK API shape
+            calls.append(("pw", password))
+
+        def Login(self, user_id: str, password: str) -> str:  # noqa: N802 - SDK API shape
+            calls.append(("login", f"{user_id}:{password}"))
+            return "ok"
+
+    monkeypatch.delenv("KGI_CA_PATH", raising=False)
+    monkeypatch.delenv("KGI_CA_PWD", raising=False)
+    monkeypatch.delenv("KGI_CA_PW", raising=False)
+
+    assert _install_ca_env_patch_for_tradecom_api(FakeTradeComAPI) is True
+    assert FakeTradeComAPI().Login("USER", "login-password") == "ok"
+    assert calls == [("login", "USER:login-password")]
 
 
 # ---------------------------------------------------------------------------
