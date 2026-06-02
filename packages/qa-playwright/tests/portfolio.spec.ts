@@ -60,6 +60,7 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
   await expectNoServerError(page);
   await expect(page.locator(".troom")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#real-kline-frame")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#quote-quality-badge")).toBeVisible({ timeout: 30_000 });
 
   await page.waitForFunction(
     () => Boolean((window as { __IUF_FINAL_V031_QUOTE_PULSE_STARTED__?: boolean }).__IUF_FINAL_V031_QUOTE_PULSE_STARTED__),
@@ -119,6 +120,9 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
   expect(before.fullRefreshStarted, "full live refresh guard must start once").toBe(true);
   expect(before.pulseError, "quote pulse should not throw client errors").toBeNull();
   expect(before.streamState?.state, "live quote SSE stream must expose browser-visible state").toBeTruthy();
+  await expect(page.locator("#quote-quality-badge"), "visible quote quality badge must describe stream/fallback freshness").toContainText(
+    /行情|輪詢|LIVE|退化|延遲/,
+  );
   expect(afterFrameSrc, "quote pulse must not reload or change the real K-line iframe").toBe(before.frameSrc);
 
   expect(

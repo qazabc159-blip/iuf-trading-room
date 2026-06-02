@@ -1315,6 +1315,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         };
         return;
       }
+      if (live.screen === "paper-trading-room" && next?.selected) {
+        next.selected = mergePaperSelectedWithLastGoodQuote(next.selected);
+      }
       live = Object.assign({}, live, next);
       window.__IUF_FINAL_V031_LIVE__ = live;
       if (live.screen === "market-intel") hydrateMarket();
@@ -1519,12 +1522,133 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   let paperQuoteStreamSymbol = null;
   let paperQuoteStreamLastMessageAt = 0;
   let paperQuoteStreamBackoffUntil = 0;
+  let paperLastGoodQuote = null;
+
+  function usableQuotePrice(value) {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  }
+
+  function rememberPaperGoodQuote(selected, bidAsk, ticks) {
+    if (!selected?.symbol || !sameSym(selected.symbol, paperPulseSymbol())) return;
+    const lastPrice = usableQuotePrice(selected.price ?? selected.close ?? selected.lastPrice);
+    if (lastPrice == null) return;
+    paperLastGoodQuote = {
+      symbol: String(selected.symbol).toUpperCase(),
+      selected: Object.assign({}, selected, { price: lastPrice }),
+      bidAsk: bidAsk !== undefined ? bidAsk : live.bidAsk,
+      ticks: ticks !== undefined ? ticks : live.ticks,
+      at: Date.now(),
+    };
+  }
+
+  function mergePaperSelectedWithLastGoodQuote(selected) {
+    const current = selected || {};
+    const symbol = String(current.symbol || paperPulseSymbol() || "").toUpperCase();
+    const currentPrice = usableQuotePrice(current.price ?? current.close ?? current.lastPrice);
+    if (currentPrice != null) {
+      return usableQuotePrice(current.price) == null
+        ? Object.assign({}, current, { price: currentPrice })
+        : current;
+    }
+    if (
+      !symbol
+      || !paperLastGoodQuote
+      || !sameSym(paperLastGoodQuote.symbol, symbol)
+      || Date.now() - paperLastGoodQuote.at > 60000
+    ) {
+      return current;
+    }
+    window.__IUF_FINAL_V031_LAST_GOOD_QUOTE_USED__ = {
+      symbol,
+      at: new Date().toISOString(),
+      ageMs: Date.now() - paperLastGoodQuote.at,
+    };
+    return Object.assign({}, current, paperLastGoodQuote.selected);
+  }
+
+  function quoteAgeText(ts) {
+    const value = Number(ts);
+    if (!Number.isFinite(value) || value <= 0) return "尚未更新";
+    const seconds = Math.max(0, Math.round((Date.now() - value) / 1000));
+    return seconds <= 1 ? "剛剛" : seconds + " 秒前";
+  }
+
+  function ensurePaperQuoteQualityBadge() {
+    let badge = $("#quote-quality-badge");
+    if (badge) return badge;
+    const bar = $(".psafe") || $(".symhead .meta");
+    if (!bar) return null;
+    badge = document.createElement("span");
+    badge.id = "quote-quality-badge";
+    badge.className = "badge read quote-quality-badge";
+    badge.innerHTML = "<i></i><span>行情串流連線中</span>";
+    bar.appendChild(badge);
+    return badge;
+  }
+
+  function updatePaperQuoteQualityBadge(mode, options={}) {
+    if (live.screen !== "paper-trading-room") return;
+    const badge = ensurePaperQuoteQualityBadge();
+    if (!badge) return;
+    const degraded = Boolean(options.degraded);
+    const lastMessageAt = options.lastMessageAt ?? paperQuoteStreamLastMessageAt;
+    const age = quoteAgeText(lastMessageAt);
+    const upstream = options.upstream || null;
+    const blocked = upstream && (upstream.bidAsk?.status === 401 || upstream.ticks?.status === 401);
+    let label = "行情串流連線中";
+    let className = "badge read quote-quality-badge";
+    if (mode === "stream" && !degraded) {
+      label = "行情串流 LIVE · " + age;
+      className = "badge iso quote-quality-badge";
+    } else if (mode === "stream" && degraded) {
+      label = blocked ? "行情需登入 · " + age : "行情串流退化 · " + age;
+      className = blocked ? "badge locked quote-quality-badge" : "badge read quote-quality-badge";
+    } else if (mode === "fallback") {
+      label = degraded ? "輪詢備援退化 · " + age : "輪詢備援 LIVE · " + age;
+      className = degraded ? "badge read quote-quality-badge" : "badge iso quote-quality-badge";
+    } else if (mode === "reconnecting") {
+      label = "行情串流重連中 · " + age;
+      className = "badge read quote-quality-badge";
+    } else if (mode === "stale") {
+      label = "行情延遲 · " + age;
+      className = "badge locked quote-quality-badge";
+    } else if (mode === "blocked") {
+      label = "行情暫不可用";
+      className = "badge locked quote-quality-badge";
+    }
+    badge.className = className;
+    badge.dataset.mode = mode;
+    badge.dataset.degraded = String(degraded);
+    badge.title = "交易室價格來源狀態；串流優先，斷線才退回輪詢。";
+    badge.innerHTML = "<i></i><span>" + esc(label) + "</span>";
+  }
 
   function setPaperQuoteStreamState(next) {
     const state = Object.assign({}, window.__IUF_FINAL_V031_QUOTE_STREAM_STATE__ || {}, next, {
       updatedAt: new Date().toISOString(),
     });
     window.__IUF_FINAL_V031_QUOTE_STREAM_STATE__ = state;
+    if (state.state === "message") {
+      updatePaperQuoteQualityBadge("stream", {
+        degraded: Boolean(state.degraded),
+        lastMessageAt: state.lastMessageAt,
+        upstream: state.upstream || null,
+      });
+    } else if (state.state === "ready") {
+      updatePaperQuoteQualityBadge("stream", {
+        degraded: true,
+        lastMessageAt: state.lastMessageAt,
+        upstream: state.upstream || null,
+      });
+    } else if (state.state === "error") {
+      const recent = paperQuoteStreamLastMessageAt && (Date.now() - paperQuoteStreamLastMessageAt) < 15000;
+      updatePaperQuoteQualityBadge(recent ? "reconnecting" : (paperQuoteStreamLastMessageAt ? "stale" : "blocked"), {
+        lastMessageAt: paperQuoteStreamLastMessageAt,
+      });
+    } else if (state.state === "connecting" || state.state === "open") {
+      updatePaperQuoteQualityBadge("stream", { degraded: true, lastMessageAt: paperQuoteStreamLastMessageAt });
+    }
     return state;
   }
 
@@ -1634,7 +1758,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
 
   function applyPaperQuotePulse(nextSelected, bidAsk, ticks) {
     if (!nextSelected?.symbol || !sameSym(nextSelected.symbol, paperPulseSymbol())) return;
-    const selected = nextSelected;
+    const selected = mergePaperSelectedWithLastGoodQuote(nextSelected);
+    rememberPaperGoodQuote(selected, bidAsk, ticks);
     const chg = selected.change;
     const pct = selected.changePct;
     const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
@@ -1644,7 +1769,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       ticks: ticks !== undefined ? ticks : live.ticks,
     });
     window.__IUF_FINAL_V031_LIVE__ = live;
-    window.__IUF_SELECTED_PRICE__ = selected.price != null && Number.isFinite(Number(selected.price)) ? Number(selected.price) : window.__IUF_SELECTED_PRICE__;
+    const selectedPrice = usableQuotePrice(selected.price ?? selected.close ?? selected.lastPrice);
+    window.__IUF_SELECTED_PRICE__ = selectedPrice != null ? selectedPrice : window.__IUF_SELECTED_PRICE__;
     setText(".symhead .sym", selected.symbol || "--");
     setText(".symhead .nm", selected.name || selected.symbol || "--");
     const pv = $(".symhead .price .v"); if (pv) { pv.textContent = price(selected.price); pv.className = "v " + tone; }
@@ -1720,6 +1846,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const hasFailedResponse = !quoteResult.ok || !bidAskResult.ok || !ticksResult.ok;
       if (!hasUsableResponse && hasFailedResponse) {
         paperQuotePulseBlockedUntil = Date.now() + 15000;
+        updatePaperQuoteQualityBadge("blocked", { degraded: true });
         return;
       }
       paperQuotePulseBlockedUntil = 0;
@@ -1748,8 +1875,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         quoteState: quote?.state ?? (ticks.length ? "LIVE" : live.selected?.quoteState ?? "NO_DATA"),
       });
       applyPaperQuotePulse(nextSelected, bidAsk, ticks);
+      updatePaperQuoteQualityBadge("fallback", {
+        degraded: hasFailedResponse,
+        lastMessageAt: Date.now(),
+        upstream: {
+          quote: { ok: quoteResult.ok },
+          bidAsk: { ok: bidAskResult.ok },
+          ticks: { ok: ticksResult.ok },
+        },
+      });
     } catch (error) {
       window.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__ = error instanceof Error ? error.message : "quote_pulse_failed";
+      updatePaperQuoteQualityBadge("blocked", { degraded: true });
     } finally {
       paperQuotePulseBusy = false;
     }
@@ -1890,7 +2027,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   function hydratePaper() {
-    const selected = live.selected || {};
+    const selected = mergePaperSelectedWithLastGoodQuote(live.selected || {});
+    if (selected !== live.selected) {
+      live = Object.assign({}, live, { selected });
+      window.__IUF_FINAL_V031_LIVE__ = live;
+    }
     const chg = selected.change;
     const pct = selected.changePct;
     const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
@@ -1974,7 +2115,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wtSig = $('#wtabs button[data-tab="sig"] .c'); if (wtSig) wtSig.textContent = String((live.ideas || []).length);
     const wtPaper = $('#wtabs button[data-tab="paper"] .c'); if (wtPaper) wtPaper.textContent = String((live.ideas || []).filter((idea) => String(idea.status || "").toLowerCase() !== "block").length);
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }
-    window.__IUF_SELECTED_PRICE__ = selected.price != null && Number.isFinite(Number(selected.price)) ? Number(selected.price) : null;
+    const selectedPrice = usableQuotePrice(selected.price ?? selected.close ?? selected.lastPrice);
+    if (selectedPrice != null) window.__IUF_SELECTED_PRICE__ = selectedPrice;
     const priceInput = $("#t-price"); if (priceInput && selected.price != null) { priceInput.value = Number(selected.price).toFixed(2); priceInput.setAttribute("value", priceInput.value); }
     applyPaperPrefill(selected);
     const ordersArr = (live.orders || []).slice(0, 12);
@@ -2398,6 +2540,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   if (live.screen === "paper-trading-room") hydratePaper();
   refreshClientLive();
   if (live.screen === "paper-trading-room") {
+    updatePaperQuoteQualityBadge("stream", { degraded: true });
     if (!window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__) {
       window.__IUF_FINAL_V031_QUOTE_PULSE_STARTED__ = true;
       openPaperQuoteStream();
