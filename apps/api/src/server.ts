@@ -10609,15 +10609,38 @@ app.get("/api/v1/quotes", async (c) => {
 
 // ── P0 #4: GET /api/v1/breadth ────────────────────────────────────────────────
 // Vendor shape: { up, flat, down, total, asOf }
-// We have no breadth DB table currently → return empty/stale state honestly.
+// Task D fix: was returning all-zeros because companies_ohlcv table is empty.
+// Now uses getTwseMarketBreadth() (TWSE STOCK_DAY_ALL — same data used by dashboard)
+// as primary source. Falls back to companies_ohlcv when TWSE unavailable.
+// Note: TWSE STOCK_DAY_ALL is T+0 EOD data. During trading hours (09:00-13:30)
+// it may be yesterday's data; after 14:00 it reflects today's final prices.
 app.get("/api/v1/breadth", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
+  // ── Path 1: TWSE STOCK_DAY_ALL breadth (covers 1400+ listed stocks) ────────
+  try {
+    const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
+    const breadth = await getTwseMarketBreadth();
+    if (breadth.total > 0) {
+      return c.json({
+        up: breadth.up,
+        flat: breadth.flat,
+        down: breadth.down,
+        total: breadth.total,
+        asOf: breadth.asOf,
+        source: "twse_openapi",
+        note: "TWSE STOCK_DAY_ALL EOD — reflects T+0 final prices after 14:00 TST, T-1 before market close",
+      });
+    }
+  } catch (err) {
+    console.warn("[breadth] TWSE path failed:", err instanceof Error ? err.message : String(err));
+  }
+
+  // ── Path 2: companies_ohlcv fallback ──────────────────────────────────────
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
 
-  // Try to derive breadth from companies_ohlcv latest day
   let up = 0, flat = 0, down = 0, total = 0;
   let asOf: string | null = null;
 
@@ -10650,7 +10673,7 @@ app.get("/api/v1/breadth", async (c) => {
     }
   }
 
-  return c.json({ up, flat, down, total, asOf });
+  return c.json({ up, flat, down, total, asOf, source: total > 0 ? "ohlcv_fallback" : "unavailable" });
 });
 
 // ── P0 #5: GET /api/v1/heatmap ────────────────────────────────────────────────
@@ -15483,6 +15506,125 @@ function startSchedulers(workspaceSlug: string): void {
     }, 30_000);
   }
 
+  // TWSE-EOD-QUOTE-CRON: Outside trading hours (before 08:55 and after 14:35 TST, all days),
+  // inject TWSE STOCK_DAY_ALL EOD prices into the manual quote cache. This ensures
+  // getMarketDataDecisionSummary sees EOD prices even when market is closed → decision
+  // upgrades from "block" to "review", unblocking strategy ideas in the morning/evening.
+  // Cadence: 10 min poll. Source: "manual" with staleMs=10min. Fires any day/time OUTSIDE
+  // the MIS intraday window (which already injects fresh prices during trading hours).
+  {
+    const TWSE_EOD_CRON_MS = 10 * 60 * 1000; // 10 min poll
+    let _twseEodCronLastFiredAt: string | null = null;
+    let _twseEodCronLastCount = 0;
+    let _twseEodCronLastError: string | null = null;
+
+    /** Returns true when we should inject EOD quotes (not already covered by MIS cron). */
+    function _isTwseEodCronWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      // Skip during MIS intraday window (08:55-14:35) — MIS cron covers that
+      return hhmm < 855 || hhmm >= 1435;
+    }
+
+    async function _runTwseEodCron(): Promise<void> {
+      if (!_isTwseEodCronWindow()) return;
+      try {
+        const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+        const stockRows = await getStockDayAllRows();
+        if (!stockRows.length) return;
+
+        // Build minimal cron session for upsertManualQuotes
+        const cronSession = {
+          workspace: { id: "00000000-0000-0000-0000-000000000000", name: workspaceSlug, slug: workspaceSlug },
+          user: { id: "00000000-0000-0000-0000-000000000001", name: "twse-eod-cron", email: "cron@system", role: "Owner" as const },
+          persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
+        };
+
+        // Resolve actual workspace id for manual quote injection
+        const db2 = isDatabaseMode() ? getDb() : null;
+        if (!db2) return;
+        const wsRows = await db2.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, workspaceSlug)).limit(1).catch(() => [] as Array<{ id: string }>);
+        if (!wsRows.length) return;
+        cronSession.workspace.id = wsRows[0].id;
+
+        const parseEodNum = (s?: string): number | null => {
+          if (!s || s === "--" || s.trim() === "") return null;
+          const n = Number(s.replace(/,/g, "").trim());
+          return isFinite(n) && n > 0 ? n : null;
+        };
+
+        const computeEodChangePct = (closingPrice: string, change: string): number | null => {
+          const close = parseEodNum(closingPrice);
+          const chg = parseFloat(change.trim().replace(/^\+/, ""));
+          if (!close || !isFinite(chg)) return null;
+          const prevClose = close - chg;
+          if (prevClose <= 0) return null;
+          return Math.round((chg / prevClose) * 10000) / 100;
+        };
+
+        // Convert TWSE STOCK_DAY_ALL rows to manual quote upsert format
+        const quotes: Array<{
+          symbol: string; market: "TWSE"; source: "manual"; last: number | null;
+          bid: null; ask: null; open: number | null; high: number | null; low: number | null;
+          prevClose: number | null; volume: number | null; changePct: number | null;
+          timestamp: string;
+        }> = [];
+
+        // STOCK_DAY_ALL date is "114/05/12" (ROC), parse to ISO
+        let tradingDateIso = "";
+        if (stockRows[0]?.Date) {
+          const parts = stockRows[0].Date.trim().split("/");
+          if (parts.length === 3) {
+            const year = parseInt(parts[0], 10) + 1911;
+            tradingDateIso = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T13:30:00+08:00`;
+          }
+        }
+        const ts = tradingDateIso || new Date().toISOString();
+
+        for (const row of stockRows) {
+          const ticker = row.Code?.trim();
+          if (!ticker || !/^\d{4,6}$/.test(ticker)) continue;
+          const last = parseEodNum(row.ClosingPrice);
+          if (!last) continue;
+          const open = parseEodNum(row.OpeningPrice);
+          const high = parseEodNum(row.HighestPrice);
+          const low = parseEodNum(row.LowestPrice);
+          const vol = parseFloat(row.TradeVolume?.replace(/,/g, "") ?? "");
+          const volume = isFinite(vol) ? vol : null;
+          const changePct = computeEodChangePct(row.ClosingPrice, row.Change);
+          const chgNum = parseFloat(row.Change?.trim().replace(/^\+/, "") ?? "");
+          const prevClose = isFinite(chgNum) && last ? last - chgNum : null;
+          quotes.push({
+            symbol: ticker, market: "TWSE", source: "manual", last, bid: null, ask: null,
+            open, high, low, prevClose: prevClose && prevClose > 0 ? prevClose : null,
+            volume, changePct, timestamp: ts,
+          });
+        }
+
+        if (!quotes.length) return;
+        // upsertManualQuotes schema: max 200 per call — batch for 1400+ TWSE rows
+        const UPSERT_BATCH = 200;
+        for (let i = 0; i < quotes.length; i += UPSERT_BATCH) {
+          await upsertManualQuotes({ session: cronSession, quotes: quotes.slice(i, i + UPSERT_BATCH) });
+        }
+        _twseEodCronLastFiredAt = new Date().toISOString();
+        _twseEodCronLastCount = quotes.length;
+        _twseEodCronLastError = null;
+        console.log(`[twse-eod-cron] injected ${quotes.length} EOD quotes into manual cache (outside trading hours)`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        _twseEodCronLastError = msg;
+        console.warn("[twse-eod-cron] tick failed:", msg);
+      }
+    }
+
+    ui(_runTwseEodCron, TWSE_EOD_CRON_MS);
+
+    // Boot fire: 45s — slightly after MIS cron boot fire so they don't race
+    setTimeout(() => {
+      void _runTwseEodCron();
+    }, 45_000);
+  }
+
   console.log(
     "[schedulers] F2 OHLCV (6h) + F3 daily_brief (23h) + " +
     "PR-A monthly-revenue (24h) + PR-A financials (24h) + " +
@@ -15499,6 +15641,7 @@ function startSchedulers(workspaceSlug: string): void {
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
     "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 09:00-13:35 TST weekdays) + " +
+    "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
   );
