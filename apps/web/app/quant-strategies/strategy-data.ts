@@ -58,7 +58,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     name: "S1 連續動能流動性策略",
     shortName: "S1",
     role: "F-AUTO KGI SIM 觀察主策略",
-    cadence: "每週一 08:30 產生訊號、09:00-09:20 送出 SIM",
+    cadence: "每週二 08:30 產生訊號、09:00-09:20 送出 SIM",
     basketSize: "Top 8 台股",
     accent: "gold",
     displayStatus: "WATCH",
@@ -83,7 +83,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
     ],
     caveats: [
       "S1 目前是觀察窗，不是正式投資建議，不宣稱 L5/L10 或 alpha 已確認。",
-      "今天若已錯過週一 08:30/09:00 視窗，新的資金設定會套用到下一次 S1 signal run，除非另開 owner-only catch-up。",
+      "今天若已錯過週二 08:30/09:00 視窗，新的資金設定會套用到下一次 S1 signal run，除非另開 owner-only catch-up。",
     ],
     metrics: {
       netReturnPct: 400.89,
@@ -95,8 +95,8 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
       sampleCount: 13,
     },
     current: {
-      asOf: "2026-06-01",
-      status: "KGI SIM 管線已驗，等待下一次 S1 週一訊號視窗",
+      asOf: "2026-06-02",
+      status: "KGI SIM 自動送單已啟動；2026-06-02 送出 8 檔觀察單，下次為週二盤前訊號視窗",
       primaryReadout: "資金配置會接到 S1 runner",
       secondaryReadout: "只跑 SIM，不開 real order",
     },
