@@ -3,7 +3,7 @@ export function DerivativesPanel() {
     <section className="panel hud-frame company-intel-panel company-secondary-status-panel company-derivatives-console">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">衍生品</span> 權證與選擇權
-        <span className="dim" style={{ fontSize: 11, marginLeft: 10 }}>COMING_SOON_DISABLED</span>
+        <span className="dim" style={{ fontSize: 11, marginLeft: 10 }}>即將推出</span>
       </h3>
       <div className="state-panel">
         <span className="badge badge-yellow">未啟用</span>
