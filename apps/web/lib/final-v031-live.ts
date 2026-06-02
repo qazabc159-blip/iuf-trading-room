@@ -51,6 +51,7 @@ export type PaperPrefillHandoff = {
 
 type FinalV031PayloadOptions = {
   paperPrefill?: PaperPrefillHandoff | null;
+  fastPaperShell?: boolean;
 };
 
 type Settled<T> = PromiseSettledResult<T>;
@@ -447,6 +448,73 @@ function sameSymbol(left: string | null | undefined, right: string | null | unde
   return String(left ?? "").toUpperCase() === String(right ?? "").toUpperCase();
 }
 
+function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
+  const prefill = options.paperPrefill ?? null;
+  const selectedSymbol = prefill?.symbol ?? "2330";
+  const selectedDefault = DEFAULT_TRADING_ROOM_WATCHLIST.find((item) => sameSymbol(item.symbol, selectedSymbol));
+  const prefillWatch = prefill?.enabled && selectedSymbol
+    ? [{
+        symbol: selectedSymbol,
+        name: selectedDefault?.name ?? selectedSymbol,
+        meta: paperPrefillWatchMeta(prefill),
+        price: null,
+        changePct: null,
+      }]
+    : [];
+
+  return {
+    screen: "paper-trading-room" as const,
+    generatedAt: new Date().toISOString(),
+    fastShell: true,
+    health: null,
+    baseCapitalTWD: null,
+    selected: {
+      symbol: selectedSymbol,
+      name: selectedDefault?.name ?? selectedSymbol,
+      sector: industryLabel(selectedDefault?.meta ?? ""),
+      price: null,
+      open: null,
+      high: null,
+      low: null,
+      close: null,
+      previous: null,
+      change: null,
+      changePct: null,
+      volume: null,
+      quoteState: "LOADING",
+    },
+    watchlist: [
+      ...prefillWatch,
+      ...DEFAULT_TRADING_ROOM_WATCHLIST.map((item) => ({
+        symbol: item.symbol,
+        name: item.name,
+        meta: item.meta,
+        price: null,
+        changePct: null,
+      })),
+    ].filter((item, index, arr) => arr.findIndex((other) => sameSymbol(other.symbol, item.symbol)) === index),
+    ideas: [],
+    portfolio: [],
+    orders: [],
+    fills: [],
+    kgi: null,
+    kgiStatus: null,
+    dataStates: {
+      health: "loading",
+      portfolio: "loading",
+      fills: "loading",
+      orders: "loading",
+      kgi: "loading",
+      kgiStatus: "loading",
+      ideas: "loading",
+    },
+    ohlcv: [],
+    bidAsk: null,
+    ticks: [],
+    prefill,
+  };
+}
+
 async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.allSettled([
     getPaperHealth(),
@@ -573,6 +641,7 @@ export async function buildFinalV031LivePayload(screen: FinalV031Screen, options
   try {
     if (screen === "market-intel") return await buildMarketIntelPayload();
     if (screen === "strategy-ideas") return await buildIdeasPayload();
+    if (options.fastPaperShell) return buildPaperFastShellPayload(options);
     return await buildPaperPayload(options);
   } catch (error) {
     return {

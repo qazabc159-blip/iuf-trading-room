@@ -254,6 +254,7 @@ async function renderFinalHtml(screen: ScreenKey) {
 async function injectLiveData(screen: ScreenKey, html: string, request: Request) {
   const payload = await buildFinalV031LivePayload(screen as FinalV031Screen, {
     paperPrefill: screen === "paper-trading-room" ? parsePaperPrefillSearchParams(new URL(request.url).searchParams) : null,
+    fastPaperShell: screen === "paper-trading-room",
   });
   const script = finalV031HydrationScript(payload);
   return html.replace("</body>", () => `${script}\n</body>`);
