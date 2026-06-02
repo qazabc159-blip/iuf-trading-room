@@ -10653,9 +10653,38 @@ app.get("/api/v1/breadth", async (c) => {
   return c.json({ up, flat, down, total, asOf });
 });
 
+// ── TWSE Official Industry Map cache ─────────────────────────────────────────
+// Fetches TWSE + TPEx t187ap03 listing data (公司基本資料) to build ticker→industry
+// mapping using the official 產業別 classification (e.g. 半導體業, 電子零組件業).
+// This replaces chain_position (per-stock Yahoo Finance labels) for heatmap grouping.
+// Cache TTL: 4 hours (industry changes rarely, only on listing/delisting events).
+let _twseIndustryMapCache: { map: Map<string, string>; expiresAt: number } | null = null;
+
+async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
+  if (_twseIndustryMapCache && Date.now() < _twseIndustryMapCache.expiresAt) {
+    return _twseIndustryMapCache.map;
+  }
+  try {
+    const [twse, tpex] = await Promise.all([
+      _fetchTwseListedCompanies().catch(() => [] as Array<{ ticker: string; name: string; industry: string }>),
+      _fetchTpexListedCompanies().catch(() => [] as Array<{ ticker: string; name: string; industry: string }>),
+    ]);
+    const map = new Map<string, string>();
+    // TPEx first, TWSE overwrites (same dedup policy as bulk-seed)
+    for (const c of tpex) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
+    for (const c of twse) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
+    _twseIndustryMapCache = { map, expiresAt: Date.now() + 4 * 60 * 60 * 1000 };
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 // ── P0 #5: GET /api/v1/heatmap ────────────────────────────────────────────────
-// Vendor shape: array of { sym, name, pct, mcap } OR { sourceState, tiles }
-// sourceState=empty when no OHLCV data. mcap from tw_market_value if available.
+// Vendor shape: { sourceState, tiles }
+// Delegates to TWSE OpenAPI industry heatmap (same as dashboard/snapshot).
+// Falls back to OHLCV table when TWSE unavailable.
+// Task B fix: was reading from companies_ohlcv only → sourceState:"error" when table empty.
 app.get("/api/v1/heatmap", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
@@ -10664,12 +10693,39 @@ app.get("/api/v1/heatmap", async (c) => {
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
 
-  if (!db) {
-    return c.json({ sourceState: "empty", tiles: [] });
+  // ── Path 1: TWSE OpenAPI industry heatmap (same as /market/heatmap/twse) ──
+  try {
+    const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+    // Build official industry map from TWSE t187ap03 (proper 產業別 classification)
+    const officialIndustryMap = await _getTwseOfficialIndustryMap();
+
+    // Pre-warm STOCK_DAY_ALL cache in parallel
+    await getStockDayAllRows().catch(() => {});
+    const industryTiles = await getTwseIndustryHeatmap(officialIndustryMap);
+    const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(industryTiles);
+    if (normalizedTiles.length > 0) {
+      return c.json({
+        sourceState: "live",
+        source: "twse_openapi",
+        tiles: normalizedTiles.slice(0, 30).map((t) => ({
+          sym: t.industry,
+          name: t.industry,
+          pct: t.avgChangePct,
+          mcap: null,
+          stockCount: t.stockCount,
+          gainerCount: t.gainerCount,
+          loserCount: t.loserCount,
+        })),
+      });
+    }
+  } catch (err) {
+    console.warn("[heatmap] TWSE path failed:", err instanceof Error ? err.message : String(err));
   }
 
+  // ── Path 2: OHLCV fallback ─────────────────────────────────────────────────
+  if (!db) return c.json({ sourceState: "empty", tiles: [] });
+
   try {
-    // Get latest OHLCV day for pct change, joined with companies for name
     const res = await db.execute(drizzleSql`
       WITH latest AS (
         SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval = 'day'
@@ -10702,19 +10758,14 @@ app.get("/api/v1/heatmap", async (c) => {
       LIMIT 30
     `);
     const rows = ((res as { rows?: Record<string, unknown>[] }).rows ?? (Array.isArray(res) ? res : [])) as Record<string, unknown>[];
-
-    if (rows.length === 0) {
-      return c.json({ sourceState: "empty", tiles: [] });
-    }
-
+    if (rows.length === 0) return c.json({ sourceState: "empty", tiles: [] });
     const tiles = rows.map((r) => ({
       sym: String(r.sym ?? ""),
       name: String(r.name ?? r.sym ?? ""),
       pct: typeof r.pct === "number" ? r.pct : parseFloat(String(r.pct ?? "0")),
-      mcap: typeof r.mcap === "number" ? r.mcap : null
+      mcap: typeof r.mcap === "number" ? r.mcap : null,
     }));
-
-    return c.json({ sourceState: "live", tiles });
+    return c.json({ sourceState: "live", source: "ohlcv_fallback", tiles });
   } catch {
     return c.json({ sourceState: "error", tiles: [] });
   }
@@ -10774,53 +10825,18 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
-  const session = c.get("session");
-  const dbMode = isDatabaseMode();
-  const db = dbMode ? getDb() : null;
-
   const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
 
-  // Build ticker → industry mapping from companies DB (chainPosition as industry proxy).
-  // Run DB query and STOCK_DAY_ALL fetch in parallel — STOCK_DAY_ALL is large (~1400 rows)
-  // and slow; pre-warming populates the shared dedup cache so getTwseIndustryHeatmap() hits
-  // cache immediately after DB returns.
-  const tickerToIndustry = new Map<string, string>();
-  await Promise.all([
-    // Lane 1: DB query for ticker → industry mapping
-    (async () => {
-      if (!db) return;
-      try {
-        const companyRes = await db.execute(drizzleSql`
-          SELECT ticker, chain_position AS industry
-          FROM companies
-          WHERE workspace_id = ${session.workspace.id}
-            AND ticker IS NOT NULL
-            AND ticker != ''
-            AND chain_position IS NOT NULL
-            AND chain_position != ''
-        `);
-        const companyRows = ((companyRes as { rows?: Record<string, unknown>[] }).rows
-          ?? (Array.isArray(companyRes) ? companyRes : [])) as Record<string, unknown>[];
-        for (const row of companyRows) {
-          const ticker = String(row.ticker ?? "").trim();
-          const industry = String(row.industry ?? "").trim();
-          if (ticker && industry) tickerToIndustry.set(ticker, industry);
-        }
-      } catch (err) {
-        console.warn("[market/heatmap/twse] company query failed:", err instanceof Error ? err.message : String(err));
-      }
-    })(),
-    // Lane 2: pre-warm STOCK_DAY_ALL shared cache (no-op if already cached)
-    getStockDayAllRows().catch(() => {}),
+  // Task C fix: use official TWSE 産業別 classification (t187ap03_L) instead of
+  // companies.chain_position (per-stock Yahoo Finance labels). This ensures each tile
+  // groups 10-100+ stocks per industry (e.g. 半導體業, 電子零組件業) rather than
+  // single-stock micro-categories (e.g. "Electronics Distribution stockCount:1").
+  const [officialIndustryMap] = await Promise.all([
+    _getTwseOfficialIndustryMap(),
+    getStockDayAllRows().catch(() => {}), // pre-warm shared cache
   ]);
 
-  // getTwseIndustryHeatmap() will hit the shared STOCK_DAY_ALL cache (populated above)
-  const tiles = await getTwseIndustryHeatmap(tickerToIndustry);
-
-  // Normalize industry labels to zh-TW before API response.
-  // companies.chain_position is stored as English (Yahoo Finance style).
-  // Frontend heatmap-industry-label.ts (#700) also normalizes, but Bruce verify
-  // checks raw API JSON — backend must be the source of truth.
+  const tiles = await getTwseIndustryHeatmap(officialIndustryMap);
   const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
 
   return c.json({
@@ -10828,7 +10844,8 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
     source: "twse_openapi",
     staleAfterSec: 60,
     industryCount: normalizedTiles.length,
-    mappedTickers: tickerToIndustry.size
+    mappedTickers: officialIndustryMap.size,
+    industrySource: "twse_t187ap03",
   });
 });
 
