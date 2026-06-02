@@ -117,7 +117,11 @@ type MarketDecisionSummaryItem = Awaited<ReturnType<typeof getMarketDataDecision
 type MarketHistoryDiagnosticsItem = Awaited<ReturnType<typeof getMarketQuoteHistoryDiagnostics>>["items"][number];
 type MarketBarDiagnosticsItem = Awaited<ReturnType<typeof getMarketBarDiagnostics>>["items"][number];
 type StrategyIdeaQualityDimension = StrategyIdeaQualityView["bars"];
-type StrategyBarQualitySource = { quality: StrategyIdeaQualityDimension };
+type StrategyQualitySource = { quality: StrategyIdeaQualityDimension };
+type DailyOhlcvQualitySource = {
+  history: StrategyQualitySource;
+  bars: StrategyQualitySource;
+};
 type StrategyIdeaThemeContext = {
   topThemes: StrategyIdea["topThemes"];
   themeScore: number;
@@ -506,8 +510,8 @@ function defaultBarQuality(): StrategyIdeaQualityView["bars"] {
 }
 
 function combineIdeaQuality(input: {
-  history?: MarketHistoryDiagnosticsItem | null;
-  bars?: StrategyBarQualitySource | null;
+  history?: StrategyQualitySource | null;
+  bars?: StrategyQualitySource | null;
 }): StrategyIdeaQualityView {
   const history = input.history
     ? {
@@ -555,38 +559,69 @@ function dateAgeDays(dateOnlyValue: string | null, nowIso: string) {
   return Math.max(0, (nowMs - dateMs) / 86_400_000);
 }
 
-function buildDailyOhlcvQuality(input: {
+function buildDailyOhlcvQualityDimension(input: {
   barCount: number;
   latestDate: string | null;
   nowIso: string;
+  readyReason: string;
+  staleReason: string;
+  missingReason: string;
+  insufficientReason: string;
 }): StrategyIdeaQualityDimension {
   if (input.barCount <= 0) {
-    return { grade: "insufficient", strategyUsable: false, primaryReason: "missing_bars" };
+    return { grade: "insufficient", strategyUsable: false, primaryReason: input.missingReason };
   }
   if (input.barCount < 20) {
-    return { grade: "insufficient", strategyUsable: false, primaryReason: "insufficient_bars" };
+    return { grade: "insufficient", strategyUsable: false, primaryReason: input.insufficientReason };
   }
 
   const ageDays = dateAgeDays(input.latestDate, input.nowIso);
   if (ageDays <= 7) {
-    return { grade: "strategy_ready", strategyUsable: true, primaryReason: "bar_series_strategy_ready" };
+    return { grade: "strategy_ready", strategyUsable: true, primaryReason: input.readyReason };
   }
   if (ageDays <= 14) {
     return { grade: "reference_only", strategyUsable: false, primaryReason: "partial_time_window" };
   }
-  return { grade: "insufficient", strategyUsable: false, primaryReason: "stale_bars" };
+  return { grade: "insufficient", strategyUsable: false, primaryReason: input.staleReason };
+}
+
+function buildDailyOhlcvQuality(input: {
+  barCount: number;
+  latestDate: string | null;
+  nowIso: string;
+}): DailyOhlcvQualitySource {
+  return {
+    history: {
+      quality: buildDailyOhlcvQualityDimension({
+        ...input,
+        readyReason: "history_strategy_ready",
+        staleReason: "stale_history",
+        missingReason: "missing_history",
+        insufficientReason: "insufficient_points"
+      })
+    },
+    bars: {
+      quality: buildDailyOhlcvQualityDimension({
+        ...input,
+        readyReason: "bar_series_strategy_ready",
+        staleReason: "stale_bars",
+        missingReason: "missing_bars",
+        insufficientReason: "insufficient_bars"
+      })
+    }
+  };
 }
 
 async function getDailyOhlcvQualityMap(input: {
   session: AppSession;
   companies: Company[];
   nowIso: string;
-}): Promise<Map<string, StrategyBarQualitySource>> {
+}): Promise<Map<string, DailyOhlcvQualitySource>> {
   const db = getDb();
   const ids = [...new Set(input.companies.map((company) => company.id).filter(Boolean))];
   if (!db || ids.length === 0) return new Map();
 
-  const byCompanyId = new Map<string, StrategyBarQualitySource>();
+  const byCompanyId = new Map<string, DailyOhlcvQualitySource>();
   try {
     const rows = await db
       .select({
@@ -607,9 +642,7 @@ async function getDailyOhlcvQualityMap(input: {
     for (const row of rows) {
       const barCount = Number(row.barCount ?? 0);
       const latestDate = row.latestDate ? String(row.latestDate) : null;
-      byCompanyId.set(row.companyId, {
-        quality: buildDailyOhlcvQuality({ barCount, latestDate, nowIso: input.nowIso })
-      });
+      byCompanyId.set(row.companyId, buildDailyOhlcvQuality({ barCount, latestDate, nowIso: input.nowIso }));
     }
   } catch (err) {
     console.warn("[strategy/ideas] daily OHLCV quality unavailable:", err instanceof Error ? err.message : String(err));
@@ -848,17 +881,19 @@ export async function getStrategyIdeas(input: {
   const items = shortlist
     .map((entry) => {
       const decisionMarket = normalizeDecisionMarket(entry.company.market);
+      const dailyOhlcvQuality = dailyOhlcvQualityMap.get(entry.company.id) ?? null;
       const decision =
         decisionMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
         decisionMap.get(`OTHER:${entry.company.ticker}`) ??
         null;
       const quality = combineIdeaQuality({
         history:
+          dailyOhlcvQuality?.history ??
           historyQualityMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
           historyQualityMap.get(`OTHER:${entry.company.ticker}`) ??
           null,
         bars:
-          dailyOhlcvQualityMap.get(entry.company.id) ??
+          dailyOhlcvQuality?.bars ??
           barQualityMap.get(`${decisionMarket}:${entry.company.ticker}`) ??
           barQualityMap.get(`OTHER:${entry.company.ticker}`) ??
           null
