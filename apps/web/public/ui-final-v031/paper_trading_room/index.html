@@ -53,18 +53,27 @@ body[data-screen-label="Trading Room v1"] .wlist{
 body[data-screen-label="Trading Room v1"] .rpane{
   overflow:hidden;
   min-width:0;
+  max-width:100%;
 }
 body[data-screen-label="Trading Room v1"] .tform{
   flex:1;
   min-height:0;
-  overflow:hidden;
+  max-width:100%;
+  overflow-y:auto;
+  overflow-x:hidden;
   padding:12px 12px 10px;
   gap:10px;
   scrollbar-width:none;
+  overscroll-behavior:contain;
 }
 body[data-screen-label="Trading Room v1"] .tform,
 body[data-screen-label="Trading Room v1"] .tform *{
   min-width:0;
+  max-width:100%;
+}
+body[data-screen-label="Trading Room v1"] .tform::-webkit-scrollbar{
+  width:0;
+  height:0;
 }
 body[data-screen-label="Trading Room v1"] .tform .field.row2{
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
@@ -82,6 +91,23 @@ body[data-screen-label="Trading Room v1"] .preview{
   grid-template-columns:repeat(2,minmax(0,1fr));
   padding:10px 11px;
   gap:8px 10px;
+}
+body[data-screen-label="Trading Room v1"] .seg2,
+body[data-screen-label="Trading Room v1"] .field,
+body[data-screen-label="Trading Room v1"] .units,
+body[data-screen-label="Trading Room v1"] .gate,
+body[data-screen-label="Trading Room v1"] .preview,
+body[data-screen-label="Trading Room v1"] .tactions,
+body[data-screen-label="Trading Room v1"] .tfoot{
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+}
+body[data-screen-label="Trading Room v1"] .field input,
+body[data-screen-label="Trading Room v1"] .field select,
+body[data-screen-label="Trading Room v1"] .submit{
+  width:100%;
+  max-width:100%;
 }
 body[data-screen-label="Trading Room v1"] .tactions,
 body[data-screen-label="Trading Room v1"] .tfoot{
@@ -198,6 +224,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
   overflow:hidden;
   border-top:1px solid rgba(148,163,184,.14);
   background:#080b10;
+  contain:layout paint;
 }
 .real-kline-loading-overlay{
   position:absolute;
@@ -227,9 +254,10 @@ body[data-screen-label="Trading Room v1"] .tnote{
   display:block;
   width:100%;
   height:100%;
+  max-width:100%;
   border:0;
   background:#080b10;
-  overflow:hidden;
+  overflow:clip;
 }
 </style>
 </head>
@@ -443,6 +471,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
           title="交易室真實 K 線"
           src="/final-v031/portfolio/kline-frame?symbol=2330"
           loading="eager"
+          scrolling="no"
           referrerpolicy="same-origin"
           onload="this.closest('.real-kline-frame-shell')?.classList.add('is-loaded')"
         ></iframe>
@@ -814,7 +843,8 @@ function buildRealChartFrameSrc(sym){
 function updateRealChartFrame(sym){
   const frame=document.getElementById('real-kline-frame');
   if(!frame||!sym)return;
-  __realChartSymbol=String(sym);
+  const selected=String(sym).toUpperCase();
+  __realChartSymbol=selected;
   const nextSrc=buildRealChartFrameSrc(sym);
   let current='';
   try{
@@ -822,8 +852,14 @@ function updateRealChartFrame(sym){
     current=url.pathname+url.search;
   }catch{}
   if(current!==nextSrc){
+    window.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__=(window.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__||0)+1;
     frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded');
+    frame.dataset.symbol=selected;
+    window.__IUF_REAL_KLINE_FRAME_SYMBOL__=selected;
     frame.setAttribute('src',nextSrc);
+  }else{
+    frame.dataset.symbol=selected;
+    window.__IUF_REAL_KLINE_FRAME_SYMBOL__=selected;
   }
 }
 window.updateRealChartFrame=updateRealChartFrame;

@@ -2076,7 +2076,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       window.drawChart(selected.symbol || "2330");
     }
     if (typeof window.updateRealChartFrame === "function") {
-      window.updateRealChartFrame(selected.symbol || "2330");
+      const nextFrameSymbol = selected.symbol || "2330";
+      const frame = document.getElementById("real-kline-frame");
+      const mountedFrameSymbol = frame?.dataset?.symbol || window.__IUF_REAL_KLINE_FRAME_SYMBOL__ || "";
+      if (!realFrameMounted || !sameSym(mountedFrameSymbol, nextFrameSymbol)) {
+        window.updateRealChartFrame(nextFrameSymbol);
+      }
     }
     // ──────────────────────────────────────────────────────────────────────────
 
