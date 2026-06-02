@@ -110,7 +110,153 @@ function extractCompanyAiAnalystTicker(initialPrompt: string): string {
 function summarizeTraceSources(trace: ReactStep[]): string {
   const tools = Array.from(new Set(trace.map((step) => step.toolName).filter((tool): tool is string => Boolean(tool))));
   if (tools.length === 0) return "未取得可用工具觀察";
-  return tools.join(" / ");
+  return tools.map(formatCompanyAiToolLabel).join(" / ");
+}
+
+function formatNumberZh(value: unknown, digits = 2): string | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString("zh-TW", { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+}
+
+function formatPctZh(value: unknown): string | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return null;
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+function formatDateZh(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  return value.slice(0, 19).replace("T", " ");
+}
+
+function formatCompanyAiToolLabel(toolName: string): string {
+  switch (toolName) {
+    case "get_company_technical":
+      return "個股技術面與日K資料";
+    case "get_news_top10":
+      return "AI 精選新聞與市場事件";
+    case "get_market_overview":
+      return "台股大盤概況";
+    case "get_institutional_flow":
+      return "三大法人籌碼";
+    case "get_sector_rotation":
+      return "產業輪動";
+    default:
+      return "已授權唯讀資料源";
+  }
+}
+
+function formatCompanyAiDataSourceLabel(source: unknown): string {
+  if (source === "companies_ohlcv") return "日K線資料";
+  if (source === "finmind_ohlcv") return "FinMind 日K線資料";
+  if (source === "tw_institutional_buysell") return "三大法人買賣超資料";
+  if (source === "twse_openapi") return "TWSE OpenAPI";
+  return "個股技術面與日K資料";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function mapQualityIssueLabel(issue: string): string {
+  switch (issue) {
+    case "too_short":
+      return "原始回覆篇幅不足";
+    case "generic_data_gap_reason":
+      return "原始回覆過度泛化";
+    case "generic_placeholder_line":
+      return "原始回覆含占位段落";
+    case "engineering_artifact":
+      return "原始回覆含工程標籤";
+    default:
+      return "原始回覆未達產品品質門檻";
+  }
+}
+
+function collectCompanyAiTraceFacts(trace: ReactStep[]) {
+  const facts = {
+    companyName: null as string | null,
+    lastPrice: null as string | null,
+    changePct: null as string | null,
+    volume: null as string | null,
+    technicalAsOf: null as string | null,
+    rsi14: null as string | null,
+    ma20: null as string | null,
+    ma60: null as string | null,
+    ma200: null as string | null,
+    aboveMa20: null as boolean | null,
+    aboveMa60: null as boolean | null,
+    aboveMa200: null as boolean | null,
+    volumeRatio20d: null as string | null,
+    technicalSource: null as string | null,
+    newsCount: null as number | null,
+    newsAsOf: null as string | null,
+    headlines: [] as string[],
+    taiexChangePct: null as string | null,
+    marketAsOf: null as string | null,
+    marketState: null as string | null,
+    total30dNetShares: null as string | null,
+    foreign30dNetShares: null as string | null,
+    investmentTrust30dNetShares: null as string | null,
+    dealer30dNetShares: null as string | null,
+    institutionalDate: null as string | null,
+    institutionalRowCount: null as number | null,
+  };
+
+  for (const step of trace) {
+    const obs = asRecord(step.observation);
+    if (!obs) continue;
+
+    if (step.toolName === "get_company_technical") {
+      facts.companyName = typeof obs["companyName"] === "string" && obs["companyName"] ? obs["companyName"] as string : facts.companyName;
+      facts.lastPrice = formatNumberZh(obs["lastPrice"]);
+      facts.changePct = formatPctZh(obs["changePct"]);
+      facts.volume = formatNumberZh(obs["volume"], 0);
+      facts.technicalAsOf = formatDateZh(obs["asOf"]);
+      facts.rsi14 = formatNumberZh(obs["rsi14"]);
+      facts.ma20 = formatNumberZh(obs["ma20"]);
+      facts.ma60 = formatNumberZh(obs["ma60"]);
+      facts.ma200 = formatNumberZh(obs["ma200"]);
+      facts.aboveMa20 = typeof obs["aboveMa20"] === "boolean" ? obs["aboveMa20"] as boolean : null;
+      facts.aboveMa60 = typeof obs["aboveMa60"] === "boolean" ? obs["aboveMa60"] as boolean : null;
+      facts.aboveMa200 = typeof obs["aboveMa200"] === "boolean" ? obs["aboveMa200"] as boolean : null;
+      facts.volumeRatio20d = formatNumberZh(obs["volumeRatio20d"]);
+      facts.technicalSource = formatCompanyAiDataSourceLabel(obs["source"]);
+    }
+
+    if (step.toolName === "get_news_top10") {
+      const items = Array.isArray(obs["items"]) ? obs["items"] as Array<Record<string, unknown>> : [];
+      facts.newsCount = typeof obs["itemCount"] === "number" ? obs["itemCount"] as number : items.length;
+      facts.newsAsOf = formatDateZh(obs["asOf"]);
+      facts.headlines = items
+        .map((item) => {
+          const title = typeof item["title"] === "string" ? item["title"] : typeof item["headline"] === "string" ? item["headline"] : "";
+          const ticker = typeof item["ticker"] === "string" && item["ticker"] ? `（${item["ticker"]}）` : "";
+          return `${title}${ticker}`.trim();
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+
+    if (step.toolName === "get_market_overview") {
+      const taiex = asRecord(obs["taiex"]);
+      facts.taiexChangePct = taiex ? formatPctZh(taiex["changePct"]) : null;
+      facts.marketAsOf = formatDateZh(obs["asOf"]);
+      facts.marketState = typeof obs["sourceState"] === "string" ? obs["sourceState"] as string : null;
+    }
+
+    if (step.toolName === "get_institutional_flow") {
+      facts.total30dNetShares = formatNumberZh(obs["total30dNetShares"], 0);
+      facts.foreign30dNetShares = formatNumberZh(obs["foreign30dNetShares"], 0);
+      facts.investmentTrust30dNetShares = formatNumberZh(obs["investmentTrust30dNetShares"], 0);
+      facts.dealer30dNetShares = formatNumberZh(obs["dealer30dNetShares"], 0);
+      facts.institutionalDate = formatDateZh(obs["latestDate"]);
+      facts.institutionalRowCount = typeof obs["rowCount"] === "number" ? obs["rowCount"] as number : null;
+    }
+  }
+
+  return facts;
 }
 
 export function buildCompanyAiAnalystContractFallbackReport(
@@ -122,35 +268,60 @@ export function buildCompanyAiAnalystContractFallbackReport(
 ): string {
   const ticker = extractCompanyAiAnalystTicker(initialPrompt);
   const sourceSummary = summarizeTraceSources(trace);
-  const missing = missingSections.length ? missingSections.join(", ") : "無缺段落";
-  const quality = qualityIssues.length ? `；品質問題 ${qualityIssues.join(", ")}` : "";
+  const facts = collectCompanyAiTraceFacts(trace);
+  const companyLabel = facts.companyName ? `${ticker}（${facts.companyName}）` : ticker;
+  const missingText = missingSections.length
+    ? `原始 AI 回覆缺少第 ${missingSections.join(", ")} 段，已改用保守分析版。`
+    : "原始 AI 回覆段落齊全但品質門檻未過，已改用保守分析版。";
+  const qualityText = Array.from(new Set(qualityIssues.map(mapQualityIssueLabel))).join("、") || "語意品質未達產品門檻";
+  const priceLine = facts.lastPrice
+    ? `最新可讀價格為 ${facts.lastPrice}，漲跌幅 ${facts.changePct ?? "未回傳"}，日K日期 ${facts.technicalAsOf ?? "未回傳"}，來源為 ${facts.technicalSource ?? "個股技術面與日K資料"}。`
+    : "本輪尚未取得可驗證最新價，因此不推估合理價位，也不產生進出場建議。";
+  const maLine = facts.ma20 || facts.ma60 || facts.ma200
+    ? `均線結構：MA20 ${facts.ma20 ?? "--"}、MA60 ${facts.ma60 ?? "--"}、MA200 ${facts.ma200 ?? "--"}；目前價格相對 MA20 ${facts.aboveMa20 === null ? "未判定" : facts.aboveMa20 ? "偏強" : "偏弱"}、相對 MA60 ${facts.aboveMa60 === null ? "未判定" : facts.aboveMa60 ? "偏強" : "偏弱"}。`
+    : "均線資料未完整回傳，技術面只保留觀察，不做趨勢定論。";
+  const rsiLine = facts.rsi14
+    ? `RSI14 為 ${facts.rsi14}，量能相對 20 日均量為 ${facts.volumeRatio20d ?? "未回傳"} 倍；這些數字只能作為量價溫度，不構成買賣訊號。`
+    : "RSI 與量能比未完整回傳，暫不判讀超買超賣。";
+  const newsLine = facts.headlines.length > 0
+    ? `本輪讀到 ${facts.newsCount ?? facts.headlines.length} 則 AI 精選新聞，更新時間 ${facts.newsAsOf ?? "未回傳"}；較相關的標題包括：${facts.headlines.join("；")}。`
+    : `本輪未取得足以連回 ${ticker} 的可驗證新聞標題，因此事件面保持中性，不補故事。`;
+  const instLine = facts.total30dNetShares
+    ? `近 30 日三大法人合計淨買賣 ${facts.total30dNetShares} 股，外資 ${facts.foreign30dNetShares ?? "--"}、投信 ${facts.investmentTrust30dNetShares ?? "--"}、自營商 ${facts.dealer30dNetShares ?? "--"}，最新日期 ${facts.institutionalDate ?? "未回傳"}。`
+    : "三大法人資料本輪未形成可驗證結論，籌碼面不拉高評級。";
 
   return `## 1. 公司概況與定位
-資料不足：${ticker} 的 AI 分析回覆未通過固定 9 段模板檢查，缺少段落 ${missing}${quality}。系統已停止展示原始破格式內容。
+${companyLabel} 的公司頁 AI 分析目前採「保守分析版」呈現：只整理已取得的唯讀資料，不把未通過品質檢查的原始 AI 文字當成正式研究報告。
+${missingText}品質檢查重點為：${qualityText}；這代表系統有擋住破格式內容，不代表可以直接下判斷。
 
 ## 2. 今日/最近資料狀態
-資料不足：本次工具觀察來源為 ${sourceSummary}，但最終彙整文字未符合產品模板，因此不把行情判斷包裝成正式分析。
+${priceLine}
+大盤資料狀態：TAIEX 漲跌幅 ${facts.taiexChangePct ?? "未回傳"}，市場資料狀態 ${facts.marketState ?? "未回傳"}，更新時間 ${facts.marketAsOf ?? "未回傳"}。若來源延遲，本頁只做資料整理，不做盤中即時判斷。
 
 ## 3. 近期事件與新聞
-資料不足：新聞與事件內容需要重新生成並通過模板檢查後才可展示。不可 raw dump 新聞，也不可補故事。
+${newsLine}
+事件解讀原則：只有能連回公司、產業或供應鏈的新聞才納入分析；若缺少關聯，本報告會明確保留，不用泛泛新聞包裝成利多或利空。
 
 ## 4. 技術結構
-資料不足：技術結構需由 quote / kline / get_company_technical 等來源生成並通過固定段落檢查。
+${maLine}
+${rsiLine}
 
 ## 5. 籌碼與法人
-資料不足：籌碼與法人資料需由 institutional / margin / FinMind 等來源生成並通過固定段落檢查。
+${instLine}
+籌碼判讀採保守口徑：若法人資料筆數或日期不足，系統不把單一數字延伸成趨勢結論。
 
 ## 6. 主題與產業鏈位置
-資料不足：主題與產業鏈描述需由 company_profile / theme / news 等來源生成並通過固定段落檢查。
+${facts.companyName ? `${facts.companyName} 目前先依公司基本資料與新聞關聯做主題觀察。` : `${ticker} 的公司名稱或主題標籤本輪未完整回傳。`}
+若主題資料沒有直接連到公司或產業鏈，本頁不會自行補上供應鏈故事；下一步應補公司基本資料、主題雷達與新聞關聯的交叉驗證。
 
 ## 7. 主要風險
-資料風險：AI 回覆格式不合格。價格風險：本頁不提供下單建議。事件風險：事件與新聞需重新確認。
+資料風險：原始 AI 回覆未達公司頁固定模板品質，已由保守分析版接手。價格風險：${facts.changePct ? `最新漲跌幅為 ${facts.changePct}，` : ""}盤中價格可能快速變動，本頁不提供下單建議。事件風險：新聞若無法連回公司或主題，不能視為交易理由。
 
 ## 8. AI 結論與觀察等級
-觀察等級：資料不足。這不是下單建議；請重新生成，直到報告通過固定 9 段模板與來源檢查。
+觀察等級：中性觀察（品質保護版）。目前可以把 ${ticker} 放入觀察清單，但不能把本報告當成進場、加碼或停損依據；若要升級為正式分析，需重新生成並通過 9 段模板、來源完整度與語意品質檢查。
 
 ## 9. 資料來源與生成時間
-資料來源：${sourceSummary}。模板版本：${COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION}。生成時間：${now}。`;
+資料來源：${sourceSummary}。報告模式：品質保護版。生成時間：${now}。`;
 }
 
 // ── System prompt template ─────────────────────────────────────────────────────
@@ -189,16 +360,16 @@ ${traceText}
 必須完全照以下 9 個段落與順序輸出，不可改名、不可省略：
 
 ## 1. 公司概況與定位
-說明公司名稱、主要業務、產業位置。沒有資料就寫「資料不足：原因」。
+說明公司名稱、主要業務、產業位置。資料缺口要寫已查來源與缺哪個欄位，不可只寫「資料不足」。
 
 ## 2. 今日/最近資料狀態
-列出最新價、漲跌、K 線日期、資料是否即時或延遲。沒有資料就寫「資料不足：原因」。
+列出最新價、漲跌、K 線日期、資料是否即時或延遲。資料缺口要寫已查來源與缺哪個欄位，不可只寫「資料不足」。
 
 ## 3. 近期事件與新聞
 只列與公司或產業直接相關的事件，並說明為什麼重要。不可 raw dump 新聞。
 
 ## 4. 技術結構
-整理趨勢、均線、支撐壓力、量能。沒有資料就寫缺哪個 endpoint 或工具。
+整理趨勢、均線、支撐壓力、量能。沒有資料就寫缺哪個資料源或欄位，不可輸出內部工具 key。
 
 ## 5. 籌碼與法人
 整理法人、融資融券或可取得的籌碼資料。沒有資料就明確降級。
@@ -216,10 +387,12 @@ ${traceText}
 列出使用過的資料來源類型與生成時間：${now}
 
 硬性規則：
-- 每個關鍵判斷都要標出資料來源類型，例如 quote / kline / company_profile / news / institutional / margin / FinMind / KGI。
+- 每個關鍵判斷都要標出資料來源類型，例如即時行情、日K線、公司基本資料、AI 精選新聞、三大法人、融資融券、FinMind、KGI 唯讀。
 - 不可給保證獲利、必漲、勝率、重倉、All in 等語句。
-- 不可輸出內部推理、工具 JSON、run_id、token 或工程除錯內容。
-- 如果資料不足，照實寫「資料不足：原因」，不可猜測或補故事。`;
+- 不可輸出內部推理、工具 JSON、run_id、token、模板版本或工程除錯內容。
+- 不可輸出 get_company_technical、get_news_top10、get_market_overview、get_institutional_flow、too_short、generic_data_gap_reason、generic_placeholder_line 等工程標籤。
+- 每一段至少兩句；不要只寫「資料不足」。缺資料時要說明「已查哪些來源、缺哪個欄位、這會影響哪個判斷」。
+- 全篇必須像研究摘要，不可像錯誤訊息或 raw dump；不可猜測或補故事。`;
 }
 
 function buildSynthesisPrompt(trace: ReactStep[], initialPrompt: string): string {
@@ -305,6 +478,9 @@ export function validateCompanyAiAnalystQualityIssues(report: string): string[] 
     .some((line) => /^資料不足[：:]\s*(原因|需補充)?[。.\s]*$/u.test(line.trim()));
   if (genericPlaceholderLine) {
     issues.add("generic_placeholder_line");
+  }
+  if (/(too_short|generic_data_gap_reason|generic_placeholder_line|company_ai_analyst_report_v1|get_company_technical|get_news_top10|get_market_overview|get_institutional_flow)/u.test(text)) {
+    issues.add("engineering_artifact");
   }
 
   return Array.from(issues);
