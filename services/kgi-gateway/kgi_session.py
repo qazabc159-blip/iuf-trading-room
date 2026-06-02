@@ -9,14 +9,75 @@ quote callbacks run in the kgisuperpy internal thread — gate access with a loc
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import re
 import threading
-from typing import Optional
+from typing import Optional, Type
 
 import kgisuperpy
 
 from schemas import Account
+
+
+_CA_ENV_PATCH_ATTR = "_iuf_ca_env_patch_installed"
+
+
+def _ca_env_values() -> tuple[str, str]:
+    ca_path = os.environ.get("KGI_CA_PATH", "").strip()
+    ca_pwd = (
+        os.environ.get("KGI_CA_PWD", "") or os.environ.get("KGI_CA_PW", "")
+    ).strip()
+    return ca_path, ca_pwd
+
+
+def _install_ca_env_patch_for_tradecom_api(tradecom_api_cls: Type[object]) -> bool:
+    """
+    kgisuperpy normally asks Windows CryptoAPI for the CA cert. If the host
+    provides a PFX path + password, inject it immediately before DLL Login().
+    """
+    original_login = getattr(tradecom_api_cls, "Login", None)
+    if not callable(original_login):
+        return False
+    if getattr(original_login, _CA_ENV_PATCH_ATTR, False):
+        return True
+
+    def login_with_ca(self: object, ID: str, Password: str):  # noqa: N803 - SDK API shape
+        ca_path, ca_pwd = _ca_env_values()
+        if ca_path and ca_pwd:
+            set_ca_pfx = getattr(self, "SetCA_PFX", None)
+            set_ca_pw = getattr(self, "SetCA_PW", None)
+            if callable(set_ca_pfx) and callable(set_ca_pw):
+                set_ca_pfx(ca_path)
+                set_ca_pw(ca_pwd)
+        return original_login(self, ID, Password)
+
+    setattr(login_with_ca, _CA_ENV_PATCH_ATTR, True)
+    setattr(login_with_ca, "_iuf_original_login", original_login)
+    setattr(tradecom_api_cls, "Login", login_with_ca)
+    return True
+
+
+def _install_ca_env_patch_if_configured(_log: logging.Logger) -> bool:
+    ca_path, ca_pwd = _ca_env_values()
+    if not ca_path or not ca_pwd:
+        return False
+    try:
+        from kgisuperpy.pushClient.pyTradeCom import TradeComAPI
+    except Exception as exc:  # pragma: no cover - depends on host SDK install
+        _log.warning(
+            "[kgi-session] CA PFX env patch unavailable sdk_import=%s",
+            type(exc).__name__,
+        )
+        return False
+    installed = _install_ca_env_patch_for_tradecom_api(TradeComAPI)
+    if installed:
+        _log.info(
+            "[kgi-session] CA PFX env patch installed ca_path_set=%s ca_pwd_set=%s",
+            bool(ca_path),
+            bool(ca_pwd),
+        )
+    return installed
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +325,6 @@ class KgiSession:
         POSITIVE CONFIRMATION GUARD: even on apparent success, verify show_account
         exists before calling it to avoid AttributeError on unexpected SDK shapes.
         """
-        import logging
         _log = logging.getLogger("kgi_session")
 
         # Log safe diagnostic info (never log password)
@@ -275,6 +335,7 @@ class KgiSession:
         )
 
         with self._lock:
+            _install_ca_env_patch_if_configured(_log)
             login_result = kgisuperpy.login(
                 person_id=person_id.upper(),
                 person_pwd=person_pwd,

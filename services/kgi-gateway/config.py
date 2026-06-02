@@ -12,6 +12,10 @@ class Settings:
     # KGI credentials — loaded from env, MUST be set before starting
     KGI_PERSON_ID: str = os.environ.get("KGI_PERSON_ID", "")
     KGI_PERSON_PWD: str = os.environ.get("KGI_PERSON_PWD", "")
+    KGI_CA_PATH: str = os.environ.get("KGI_CA_PATH", "").strip()
+    KGI_CA_PWD: str = (
+        os.environ.get("KGI_CA_PWD", "") or os.environ.get("KGI_CA_PW", "")
+    ).strip()
 
     # Server bind
     HOST: str = os.environ.get("GATEWAY_HOST", "127.0.0.1")
