@@ -12,17 +12,13 @@ html,
 body{
   height:100%;
   overflow:hidden;
-  scrollbar-color:rgba(148,163,184,.34) transparent;
-  scrollbar-width:thin;
+  scrollbar-width:none;
 }
 *{box-sizing:border-box}
-*::-webkit-scrollbar{width:8px;height:8px}
-*::-webkit-scrollbar-track{background:transparent}
-*::-webkit-scrollbar-thumb{background:rgba(148,163,184,.28);border-radius:999px;border:2px solid transparent;background-clip:content-box}
-*::-webkit-scrollbar-thumb:hover{background:rgba(216,166,74,.42);border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar{width:0;height:0}
 body[data-screen-label="Trading Room v1"]{
   height:100dvh;
-  min-width:1180px;
+  min-width:0;
   background:var(--bg-0);
 }
 body[data-screen-label="Trading Room v1"] .tbar{
@@ -38,7 +34,7 @@ body[data-screen-label="Trading Room v1"] .troom{
   min-height:0;
   overflow:hidden;
   align-items:stretch;
-  grid-template-columns:minmax(232px,252px) minmax(0,1fr) minmax(322px,352px);
+  grid-template-columns:clamp(232px,14vw,264px) minmax(640px,1fr) clamp(366px,20vw,430px);
 }
 body[data-screen-label="Trading Room v1"] .lpane,
 body[data-screen-label="Trading Room v1"] .rpane{
@@ -54,17 +50,16 @@ body[data-screen-label="Trading Room v1"] .wlist{
   overflow-x:hidden;
 }
 body[data-screen-label="Trading Room v1"] .rpane{
-  overflow-x:hidden;
+  overflow:hidden;
   min-width:0;
 }
 body[data-screen-label="Trading Room v1"] .tform{
   flex:1;
   min-height:0;
-  overflow-y:hidden;
-  overflow-x:clip;
+  overflow:hidden;
   padding:12px 12px 10px;
   gap:10px;
-  scrollbar-width:thin;
+  scrollbar-width:none;
 }
 body[data-screen-label="Trading Room v1"] .tform,
 body[data-screen-label="Trading Room v1"] .tform *{
@@ -75,11 +70,11 @@ body[data-screen-label="Trading Room v1"] .tform .field.row2{
 }
 body[data-screen-label="Trading Room v1"] .tform .field .step{
   display:grid;
-  grid-template-columns:32px minmax(0,1fr) 32px;
+  grid-template-columns:34px minmax(0,1fr) 34px;
   gap:5px;
 }
 body[data-screen-label="Trading Room v1"] .tform .field .step .stepbtn{
-  width:32px;
+  width:34px;
   height:34px;
 }
 body[data-screen-label="Trading Room v1"] .preview{

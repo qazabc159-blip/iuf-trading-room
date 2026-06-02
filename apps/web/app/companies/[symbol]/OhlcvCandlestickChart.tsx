@@ -1040,17 +1040,14 @@ export function OhlcvCandlestickChart({
     return filterRange(aggregateDailyBars(bars, interval), range);
   }, [bars, interval, intradayRange, kbarRows, range]);
   const chartViewportKey = useMemo(() => {
-    const first = chartBars[0];
-    const last = chartBars.at(-1);
+    // Keep the viewport key stable while live data appends new bars.
+    // Otherwise every refresh changes length/last-dt and resets user pan/zoom.
     return [
       symbol,
       interval,
       isIntraday ? intradayRange : range,
-      chartBars.length,
-      first?.dt ?? "",
-      last?.dt ?? "",
     ].join("|");
-  }, [chartBars, interval, intradayRange, isIntraday, range, symbol]);
+  }, [interval, intradayRange, isIntraday, range, symbol]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {

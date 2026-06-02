@@ -135,6 +135,18 @@ const frameCss = `
     background: #080b10;
     color: #d7dde8;
     overflow: hidden;
+    scrollbar-width: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
 
   body:has(.trading-room-real-kline-frame) .app-sidebar,
@@ -149,11 +161,13 @@ const frameCss = `
     margin: 0 !important;
     padding: 0 !important;
     max-width: none !important;
+    width: 100vw !important;
     min-height: 100vh !important;
+    overflow: hidden !important;
   }
 
   body:has(.trading-room-real-kline-frame) {
-    overflow: hidden;
+    overflow: hidden !important;
   }
 
   .trading-room-real-kline-frame {
@@ -227,11 +241,12 @@ const frameCss = `
 
   .trading-room-kline-host .kline-chart-shell {
     box-sizing: border-box;
-    width: calc(100% - 20px) !important;
+    width: 100% !important;
     max-width: none !important;
     flex: 1 1 auto;
     min-height: 0;
-    margin: 0 10px 10px;
+    margin: 0;
+    padding: 0 8px 8px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -247,8 +262,12 @@ const frameCss = `
     max-width: none !important;
     order: 1;
     flex: 1 1 auto;
-    min-height: 320px !important;
-    height: auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+  }
+
+  .trading-room-kline-host ._ind-sub-section {
+    display: none !important;
   }
 
   .trading-room-kline-host ._ind-toggle-bar {
@@ -283,7 +302,7 @@ const frameCss = `
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
-    margin: 0 10px;
+    margin: 0 8px;
     padding: 4px 6px;
     border: 1px solid rgba(148, 163, 184, 0.11);
     border-radius: 6px;
@@ -317,7 +336,7 @@ const frameCss = `
   .trading-room-kline-host .kline-signal-strip {
     order: 7;
     flex: 0 0 auto;
-    margin: 0 10px 6px;
+    margin: 0 8px 6px;
     padding: 5px;
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
