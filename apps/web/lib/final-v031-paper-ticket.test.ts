@@ -8,6 +8,7 @@ const fautoSimApi = readFileSync(new URL("./fauto-sim-api.ts", import.meta.url),
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -103,6 +104,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-readout-ribbon");
     expect(tradingRoomKlineFrameSource).toContain("position: static !important;");
     expect(tradingRoomKlineFrameSource).toContain("min-height: 260px !important;");
+  });
+
+  it("keeps the company-page K-line readout out of the chart canvas", () => {
+    expect(globalCss).toContain(".company-workbench-shell .kline-price-ribbon");
+    expect(globalCss).toContain("position: static;");
+    expect(globalCss).toContain("grid-template-columns: max-content max-content max-content minmax(0, 1fr);");
+    expect(globalCss).toContain(".company-workbench-shell .kline-chart-canvas");
+    expect(globalCss).toContain("order: 2;");
   });
 
   it("shows a real loading state for the embedded K-line instead of a blank iframe", () => {

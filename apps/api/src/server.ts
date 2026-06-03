@@ -9591,7 +9591,7 @@ app.get("/api/v1/lab/strategy-snapshot", async (c) => {
           "This is expected in prod/Railway (lab repo not deployed). " +
           "In local dev: ensure IUF_QUANT_LAB repo is present as sibling to IUF_TRADING_ROOM_APP.",
         labGovernancePath:
-          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v15.json",
+          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v16.json",
         labTrAlignmentLock: "board/lab_tr_alignment_lock_2026-05-07.md"
       }
     });
@@ -9648,7 +9648,7 @@ app.get("/api/v1/lab/strategies", async (c) => {
           "This is expected in prod/Railway (lab repo not deployed). " +
           "In local dev: ensure IUF_QUANT_LAB repo is present as sibling to IUF_TRADING_ROOM_APP.",
         labGovernancePath:
-          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v15.json",
+          "IUF_QUANT_LAB/research/finmind_sponsor_999_data_factory/codex_next/final_strategy_count_board_v16.json",
         labTrAlignmentLock: "board/lab_tr_alignment_lock_2026-05-07.md"
       }
     });

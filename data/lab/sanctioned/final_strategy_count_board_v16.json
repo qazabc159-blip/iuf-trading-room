@@ -1,0 +1,104 @@
+{
+  "createdAtTaipei": "2026-06-02T15:22:00+08:00",
+  "current_strategy_count": {
+    "do_we_have_3_strategy_candidates_now": false,
+    "killed_hold": 6,
+    "killed_hold_names": [
+      "old_S2_Family_C_x_SBL",
+      "S3_X2_forced_liquidation_short",
+      "WARR_FINMIND_FLOW",
+      "S2_00631L_CHALLENGER_R1",
+      "MAIN_execution_rank_buffer_top20_legacy_fixture",
+      "rs_20_60_low_drawdown_legacy_fixture"
+    ],
+    "missing_to_target_3": 2,
+    "probation": 0,
+    "probation_names": [],
+    "serious_research_lead_names": [
+      "S2_00631L_CHALLENGER_R2_sparse_risk_overlay_internal_design_only"
+    ],
+    "serious_research_leads": 1,
+    "strong_candidate_names": [
+      "iuf_ls_omni_v1_router"
+    ],
+    "strong_candidates": 1
+  },
+  "plainLanguageAnswer": "NO",
+  "portfolioVerdict": "ONE_SIM_OBSERVATION_LANE__NO_THREE_STRATEGY_PORTFOLIO",
+  "rows": [
+    {
+      "biggest_caveat": "L5 completed-return and L10 elapsed observation are time-pending; no capital permission or broker action.",
+      "candidate_id": "iuf_ls_omni_v1_router",
+      "counts_as_strategy_candidate": true,
+      "key_metrics": "Current S1 lane only: top8 cont_liq + regime de-risk, no fixed hedge. Forward observation is ongoing/time-pending; no L5/L10 completion claim.",
+      "next_action": "continue source-finality/forward-observation ledger; no owner-facing capital wording",
+      "status": "SIM_OBSERVATION_CANDIDATE_RESEARCH_ONLY",
+      "verdict": "ONLY_CURRENT_SIM_OBSERVATION_LANE"
+    },
+    {
+      "biggest_caveat": "5/8-5/9 TR fixture, not current 6/2 Lab state.",
+      "candidate_id": "MAIN_execution_rank_buffer_top20",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Legacy fixture row only; not sanctioned as current active strategy.",
+      "next_action": "do not display as current unless Lab re-sanctions with fresh evidence",
+      "status": "LEGACY_FIXTURE_NOT_CURRENT",
+      "verdict": "NOT_CURRENT_LAB_STATE"
+    },
+    {
+      "biggest_caveat": "5/8-5/9 TR fixture, not current 6/2 Lab state.",
+      "candidate_id": "rs_20_60_low_drawdown__h20__top5",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Legacy fixture row only; not sanctioned as current active strategy.",
+      "next_action": "do not display as current unless Lab re-sanctions with fresh evidence",
+      "status": "LEGACY_FIXTURE_NOT_CURRENT",
+      "verdict": "NOT_CURRENT_LAB_STATE"
+    },
+    {
+      "biggest_caveat": "Legacy cont_liq fixture is not the same thing as current S1 router evidence packet.",
+      "candidate_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Legacy 5/8-5/9 fixture row only. Current S1 should be referenced by iuf_ls_omni_v1_router, not this old fixture identifier.",
+      "next_action": "replace client-visible row with S1 router status if UI needs a single current strategy card",
+      "status": "LEGACY_FIXTURE_SUPERSEDED_BY_S1_ROUTER_LABELING",
+      "verdict": "NOT_CURRENT_STANDALONE_STRATEGY"
+    },
+    {
+      "biggest_caveat": "Retired/killed lane; not to be resurrected in TR wording.",
+      "candidate_id": "old_S2_Family_C_x_SBL",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Full-universe and follow-on evidence did not produce a surviving second-strategy candidate.",
+      "next_action": "keep retired; do not tune or display as active",
+      "status": "KILLED_RETIRED_INTERNAL_ONLY",
+      "verdict": "NOT_CURRENT_STRATEGY"
+    },
+    {
+      "biggest_caveat": "Discovery sprint killed the forced-liquidation short track; X2A_R is internal lead only.",
+      "candidate_id": "S3_X2_forced_liquidation_short",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "X2 short track killed; X2A_R sign-flip lead is not a client-visible strategy.",
+      "next_action": "do not display on product/lab page except as internal research archive if needed",
+      "status": "KILLED_INTERNAL_RESEARCH_TRACK",
+      "verdict": "NOT_CURRENT_STRATEGY"
+    },
+    {
+      "biggest_caveat": "Full L0 failed 0/6 with 00631L hurdle included.",
+      "candidate_id": "WARR_FINMIND_FLOW",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Warrant-flow source validated, but locked full L0 failed 0/6; no usable lead.",
+      "next_action": "do not tune or resurrect locked WARR candidates in place",
+      "status": "L0_FAILED_INTERNAL_ONLY",
+      "verdict": "NOT_CURRENT_STRATEGY"
+    },
+    {
+      "biggest_caveat": "R1 L0 failed 0/6; R2 is architecture design only and same-sample evidence would be exploratory.",
+      "candidate_id": "S2_00631L_CHALLENGER",
+      "counts_as_strategy_candidate": false,
+      "key_metrics": "Source feasibility passed; R1 locked L0 failed. R2 sparse-risk-overlay idea is not a strategy candidate.",
+      "next_action": "only continue as internal research if contamination handling is explicit",
+      "status": "R1_KILLED_R2_INTERNAL_DESIGN_ONLY",
+      "verdict": "NOT_CURRENT_STRATEGY"
+    }
+  ],
+  "schema": "final_strategy_count_board_v16",
+  "selectedStrategy3": "none"
+}

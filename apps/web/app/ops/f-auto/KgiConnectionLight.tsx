@@ -79,20 +79,71 @@ function ConnStatusGroup({ state }: { state: LoadState }) {
   }
 
   const { kgi_logged_in, trade_connected, quote_connected } = state.data;
-  const allGreen = kgi_logged_in && trade_connected && quote_connected;
+  const summary = getConnectionSummary(state.data);
 
   return (
-    <div className="_fauto-conn-lights">
-      <ConnDot label="登入" active={kgi_logged_in} />
-      <ConnDot label="下單" active={trade_connected} />
-      <ConnDot label="報價" active={quote_connected} />
-      <span
-        className={`_fauto-conn-badge ${allGreen ? "_fauto-conn-badge-green" : "_fauto-conn-badge-amber"}`}
-      >
-        {allGreen ? "全通" : "部分斷線"}
-      </span>
+    <div className="_fauto-conn-status-stack">
+      <div className="_fauto-conn-lights">
+        <ConnDot label="登入" active={kgi_logged_in} />
+        <ConnDot label="下單" active={trade_connected} />
+        <ConnDot label="報價" active={quote_connected} />
+        <span className={`_fauto-conn-badge ${summary.badgeClass}`}>
+          {summary.badgeText}
+        </span>
+      </div>
+      <span className="_fauto-conn-detail">{summary.detail}</span>
     </div>
   );
+}
+
+function getConnectionSummary(data: KgiStatus): {
+  badgeText: string;
+  badgeClass: "_fauto-conn-badge-green" | "_fauto-conn-badge-amber" | "_fauto-conn-badge-red";
+  detail: string;
+} {
+  const auth = data.gateway_quote_auth;
+  const quoteAuthUnavailable =
+    auth?.available === false ||
+    auth?.state === "unavailable" ||
+    auth?.errorCode === "KGI_QUOTE_AUTH_UNAVAILABLE";
+
+  if (data.kgi_logged_in && data.trade_connected && data.quote_connected) {
+    return {
+      badgeText: "全通",
+      badgeClass: "_fauto-conn-badge-green",
+      detail: "gateway 已登入；KGI SIM 下單與即時報價都可用。",
+    };
+  }
+
+  if (data.kgi_logged_in && data.trade_connected && quoteAuthUnavailable) {
+    return {
+      badgeText: "下單已連／報價授權未開",
+      badgeClass: "_fauto-conn-badge-amber",
+      detail: "SIM gateway 已登入且下單線可用；即時報價因凱基 SIM 行情權限或 token 未開而暫停，不補假報價。",
+    };
+  }
+
+  if (data.kgi_logged_in && data.trade_connected && !data.quote_connected) {
+    return {
+      badgeText: "下單已連／報價暫停",
+      badgeClass: "_fauto-conn-badge-amber",
+      detail: "KGI SIM 下單線可用；報價線暫無可用 tick，畫面會改用明確降級狀態。",
+    };
+  }
+
+  if (data.kgi_logged_in || data.trade_connected || data.quote_connected) {
+    return {
+      badgeText: "部分可用",
+      badgeClass: "_fauto-conn-badge-amber",
+      detail: "至少一條 KGI SIM 線路有回應；請看登入、下單、報價三顆燈判斷可用範圍。",
+    };
+  }
+
+  return {
+    badgeText: "未連線",
+    badgeClass: "_fauto-conn-badge-red",
+    detail: "目前沒有可用的 KGI SIM gateway 狀態；Paper 模式仍不受影響。",
+  };
 }
 
 function ConnDot({ label, active }: { label: string; active: boolean }) {

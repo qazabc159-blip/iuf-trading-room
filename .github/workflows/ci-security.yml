@@ -21,7 +21,8 @@ concurrency:
 jobs:
   w6_audit:
     name: W6 No-Real-Order Audit
-    runs-on: ${{ fromJSON('["self-hosted", "iuf-taipei"]') }}
+    # Toggle: set repo var USE_SELF_HOSTED=false to fall back to ubuntu-latest (e.g. if EC2 runner is busy/offline)
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -38,7 +39,7 @@ jobs:
 
       - name: Run W6 no-real-order audit (Windows)
         if: runner.os == 'Windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $python = Get-Command python -ErrorAction SilentlyContinue
           if ($python) {
@@ -61,7 +62,8 @@ jobs:
 
   secret_regression:
     name: Secret Regression Check (A2)
-    runs-on: ${{ fromJSON('["self-hosted", "iuf-taipei"]') }}
+    # Toggle: set repo var USE_SELF_HOSTED=false to fall back to ubuntu-latest (e.g. if EC2 runner is busy/offline)
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -78,7 +80,7 @@ jobs:
 
       - name: Run secret regression check (Windows)
         if: runner.os == 'Windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $python = Get-Command python -ErrorAction SilentlyContinue
           if ($python) {

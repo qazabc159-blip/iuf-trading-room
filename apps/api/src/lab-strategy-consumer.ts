@@ -120,7 +120,7 @@ const MANDATORY_CAVEAT =
   "RESEARCH_ONLY: Not approved for paper/live trading. Awaiting Athena/Bruce gate passage.";
 
 // Sprint version to resolve — bump this when lab publishes a newer version
-const CURRENT_SPRINT_VERSION = "v15";
+const CURRENT_SPRINT_VERSION = "v16";
 
 // ── Path resolution ───────────────────────────────────────────────────────────
 
