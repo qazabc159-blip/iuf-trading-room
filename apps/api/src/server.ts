@@ -14860,10 +14860,24 @@ let _tsweMisQuoteCronLastError: string | null = null;
 let _tsweMisQuoteCronLastCount = 0;
 
 // Module-level: MIS intraday tile cache for heatmap enrichment.
-// Written by _runTwseMisQuoteCron, read by /api/v1/market/heatmap/kgi-core.
+// Written by _runTwseMisQuoteCron (Tier A core 40) and _runMisFullSweepSlice (Tier B full universe).
 // Key: ticker symbol (e.g. "2330"). Value: last price + tradeDateYmd for freshness check.
 // Cleared implicitly when MIS z="-" (盤後) — next MIS cron tick simply won't update.
 const _misTileCache = new Map<string, { last: number; changePct: number | null; ts: string; tradeDateYmd: string }>();
+
+// Module-level: MIS full-universe sweep state (Tier B — ~1978 stocks, rolling slice every 10s).
+// Universe is loaded from DB companies once per 30min, then iterated slice-by-slice during
+// trading hours so all ~1978 stocks get intraday MIS quotes injected into the manual cache.
+// This feeds decision-summary / strategy ideas / portfolio for the full universe, not just
+// the 40 heatmap core symbols covered by Tier A.
+let _misUniverseCache: Array<{ ticker: string; market: string }> = [];
+let _misUniverseCacheUpdatedAt = 0;
+const MIS_UNIVERSE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min refresh
+let _misUniverseSweepIdx = 0;
+let _misFullSweepRunning = false;
+// Per-round stats (reset when sweep index wraps back to 0)
+let _misFullSweepInjectedThisRound = 0;
+let _misFullSweepRoundsCompleted = 0;
 
 /**
  * Start all schedulers. Called once after server is ready.
@@ -15669,6 +15683,277 @@ function startSchedulers(workspaceSlug: string): void {
     }, 30_000);
   }
 
+  // MIS-FULL-UNIVERSE-SWEEP (Tier B): During trading hours (08:55–14:35 TST weekdays),
+  // sweep the entire DB companies universe (~1978 stocks) in rolling 50-ticker slices
+  // every 10s. One full sweep round covers all stocks in ~400s (≈6.7 min).
+  // Purpose: inject intraday MIS quotes for all companies, not just the 40 heatmap core.
+  // This powers decision-summary / strategy ideas / search / portfolio for the full universe.
+  // Design:
+  //   - Universe: DB companies (ticker+market), filtered to /^\d{4,6}$/ tickers, cached 30min.
+  //   - Slice: 50 tickers per HTTP request (MIS supports up to ~100, we use 50 conservatively).
+  //   - Throttle: 1 request per 10s, 5s HTTP timeout, concurrent guard prevents overlap.
+  //   - Thin stocks: vol=0 guard relaxed — any stock with bid or ask price is injected.
+  //     This ensures low-liquidity stocks show bid-based reference prices, not "block".
+  //   - Tier A (core 40, 45s) continues unchanged for heatmap freshness.
+  //   - _misTileCache written for all stocks, heatmap enricher only reads core 40 keys.
+  {
+    const MIS_SWEEP_INTERVAL_MS = 10 * 1000; // 10s per slice
+    const MIS_SWEEP_BATCH_SIZE = 50;         // 50 tickers per MIS request
+    const MIS_SWEEP_HTTP_TIMEOUT_MS = 5000;
+
+    /** Reload universe cache from DB companies. Idempotent — skipped if cache is fresh. */
+    async function _refreshMisUniverseCache(): Promise<void> {
+      const now = Date.now();
+      if (_misUniverseCache.length > 0 && now - _misUniverseCacheUpdatedAt < MIS_UNIVERSE_CACHE_TTL_MS) {
+        return; // cache still valid
+      }
+      if (!isDatabaseMode()) return;
+      const db2 = getDb();
+      if (!db2) return;
+      try {
+        // Resolve workspace id for companies query
+        const wsSlugResolved = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows = await db2
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlugResolved))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string }>);
+        if (!wsRows.length) return;
+        const wsId = wsRows[0].id;
+
+        const rows = await db2
+          .select({ ticker: companies.ticker, market: companies.market })
+          .from(companies)
+          .where(eq(companies.workspaceId, wsId))
+          .catch(() => [] as Array<{ ticker: string; market: string }>);
+
+        // Filter to valid ticker format and known exchange prefixes
+        const valid = rows.filter(
+          (r) => r.ticker && /^\d{4,6}$/.test(r.ticker.trim())
+        );
+        _misUniverseCache = valid;
+        _misUniverseCacheUpdatedAt = now;
+        console.log(`[mis-sweep] universe cache refreshed: ${valid.length} tickers from DB`);
+      } catch (err) {
+        console.warn("[mis-sweep] universe cache refresh failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    /** Determine MIS exchange prefix from company market string. */
+    function _misSwpExPrefix(market: string): "tse" | "otc" {
+      const m = market.trim().toUpperCase();
+      if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+        return "otc";
+      }
+      return "tse";
+    }
+
+    /** Parse a MIS numeric string field. Returns null for "-" / empty / non-positive. */
+    function _misSwpParseNum(s?: string): number | null {
+      if (!s || s === "-" || s.trim() === "") return null;
+      const n = Number(s.replace(/,/g, "").trim());
+      return isFinite(n) && n > 0 ? n : null;
+    }
+
+    /** Map company market string to canonical market enum value. */
+    function _misSwpMapMkt(m: string): "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER" {
+      const upper = m.trim().toUpperCase();
+      if (upper === "TWSE" || upper.includes("上市")) return "TWSE";
+      if (upper === "TPEX" || upper.includes("上櫃")) return "TPEX";
+      if (upper === "TWO") return "TWO";
+      if (upper === "TW_EMERGING" || upper.includes("EMERGING")) return "TW_EMERGING";
+      return "OTHER";
+    }
+
+    /**
+     * Run one sweep slice: fetch MIS quotes for 50 tickers at current pointer position,
+     * inject into manual cache + _misTileCache. Advances pointer by BATCH_SIZE.
+     * If pointer wraps to 0, logs round completion stats.
+     */
+    async function _runMisFullSweepSlice(): Promise<void> {
+      // Only during trading hours
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 855 || hhmm > 1435) return;
+
+      // Concurrent guard
+      if (_misFullSweepRunning) return;
+      _misFullSweepRunning = true;
+
+      try {
+        // Refresh universe cache if stale (no-op if fresh)
+        await _refreshMisUniverseCache();
+        if (!_misUniverseCache.length) return;
+
+        const total = _misUniverseCache.length;
+
+        // Detect wrap-around: if idx reached end, log round stats and reset counters
+        if (_misUniverseSweepIdx >= total) {
+          _misUniverseSweepIdx = 0;
+          _misFullSweepRoundsCompleted++;
+          console.log(
+            `[mis-sweep] round ${_misFullSweepRoundsCompleted} complete: ` +
+            `${_misFullSweepInjectedThisRound} quotes injected over ${total} stocks, ` +
+            `_misTileCache size=${_misTileCache.size}`
+          );
+          _misFullSweepInjectedThisRound = 0;
+        }
+
+        const slice = _misUniverseCache.slice(_misUniverseSweepIdx, _misUniverseSweepIdx + MIS_SWEEP_BATCH_SIZE);
+        _misUniverseSweepIdx += MIS_SWEEP_BATCH_SIZE;
+
+        if (!slice.length) return;
+
+        // Build MIS ex_ch query string: tse_XXXX.tw|otc_YYYY.tw|...
+        const exChParts = slice.map((c) => `${_misSwpExPrefix(c.market)}_${c.ticker.trim()}.tw`);
+        const exCh = exChParts.join("|");
+        const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
+
+        let data: { msgArray?: Array<Record<string, string>>; rtcode?: string };
+        try {
+          const resp = await fetch(url, {
+            signal: AbortSignal.timeout(MIS_SWEEP_HTTP_TIMEOUT_MS),
+            headers: { "Accept": "application/json" }
+          });
+          if (!resp.ok) {
+            console.warn(`[mis-sweep] HTTP ${resp.status} for slice idx=${_misUniverseSweepIdx - MIS_SWEEP_BATCH_SIZE}`);
+            return;
+          }
+          data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+        } catch (fetchErr) {
+          console.warn(`[mis-sweep] fetch failed idx=${_misUniverseSweepIdx - MIS_SWEEP_BATCH_SIZE}:`, fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+          return;
+        }
+
+        if (data.rtcode !== "0000" || !data.msgArray?.length) return;
+
+        // Build minimal cron session for upsertManualQuotes
+        if (!isDatabaseMode()) return;
+        const db3 = getDb();
+        if (!db3) return;
+
+        // Resolve workspace id (cached from universe refresh)
+        const wsSlug2 = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows2 = await db3
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlug2))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string }>);
+        if (!wsRows2.length) return;
+
+        const sweepSession = {
+          workspace: { id: wsRows2[0].id, name: wsSlug2, slug: wsSlug2 },
+          user: { id: "00000000-0000-0000-0000-000000000002", name: "twse-mis-sweep", email: "cron@system", role: "Owner" as const },
+          persistenceMode: "database" as const
+        };
+
+        const now = new Date().toISOString();
+        const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+          .toISOString().slice(0, 10).replace(/-/g, "");
+
+        /** Check if MIS data date matches today in Taipei. */
+        function isTodayMisDate(d: string): boolean {
+          // MIS d field: "20260603" format
+          return d?.replace(/-/g, "") === todayYmd;
+        }
+
+        const quotes: Array<{
+          symbol: string;
+          market: "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER";
+          source: "manual";
+          last: number | null;
+          bid: number | null;
+          ask: number | null;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          prevClose: number | null;
+          volume: number | null;
+          changePct: number | null;
+          timestamp: string;
+        }> = [];
+
+        for (const msg of data.msgArray) {
+          const ticker = msg["c"]?.trim();
+          if (!ticker) continue;
+          if (!isTodayMisDate(msg["d"] ?? "")) continue;
+
+          // Resolve last price: z (last trade) → best bid → best ask
+          // For thin/illiquid stocks, z is often "-" or absent; bid/ask gives a valid reference.
+          const zNum = _misSwpParseNum(msg["z"]);
+          const bPrices = msg["b"]?.split("_").filter(Boolean);
+          const aPrices = msg["a"]?.split("_").filter(Boolean);
+          const bidNum = _misSwpParseNum(bPrices?.[0]);
+          const askNum = _misSwpParseNum(aPrices?.[0]);
+          const last = zNum ?? bidNum ?? askNum;
+
+          // Require a valid last price (bid or ask is enough for thin stocks)
+          if (!last || last <= 0) continue;
+
+          // Volume: thin stocks may have vol=0 — that is OK for reference price
+          // We only require a valid quote (bid/ask/trade) to inject.
+          // Downstream: source="manual" → decision="review" (not block), never "allow".
+          const vol = _misSwpParseNum(msg["v"]);
+
+          const companyRow = slice.find((r) => r.ticker.trim() === ticker);
+          const market = _misSwpMapMkt(companyRow?.market ?? "");
+
+          const open = _misSwpParseNum(msg["o"]);
+          const high = _misSwpParseNum(msg["h"]);
+          const low = _misSwpParseNum(msg["l"]);
+          const prevClose = _misSwpParseNum(msg["y"]);
+          const changePct =
+            prevClose && prevClose > 0
+              ? Math.round(((last - prevClose) / prevClose) * 10000) / 100
+              : null;
+
+          quotes.push({
+            symbol: ticker,
+            market,
+            source: "manual",
+            last,
+            bid: bidNum,
+            ask: askNum,
+            open,
+            high,
+            low,
+            prevClose,
+            volume: vol,
+            changePct,
+            timestamp: now,
+          });
+
+          // Write to _misTileCache (readable by heatmap enricher for any ticker)
+          _misTileCache.set(ticker, {
+            last,
+            changePct,
+            ts: now,
+            tradeDateYmd: todayYmd,
+          });
+        }
+
+        if (!quotes.length) return;
+
+        // upsertManualQuotes max 200 per call — slice already ≤50, so single call is fine
+        await upsertManualQuotes({ session: sweepSession, quotes });
+        _misFullSweepInjectedThisRound += quotes.length;
+
+      } finally {
+        _misFullSweepRunning = false;
+      }
+    }
+
+    // Register interval: 10s per slice
+    ui(_runMisFullSweepSlice, MIS_SWEEP_INTERVAL_MS);
+
+    // Boot fire: 60s — after Tier A (30s) and EOD cron (45s) boot fires settle
+    setTimeout(async () => {
+      await _refreshMisUniverseCache();
+      void _runMisFullSweepSlice();
+    }, 60_000);
+  }
+
   // TWSE-EOD-QUOTE-CRON: Outside trading hours (before 08:55 and after 14:35 TST, all days),
   // inject TWSE STOCK_DAY_ALL EOD prices into the manual quote cache. This ensures
   // getMarketDataDecisionSummary sees EOD prices even when market is closed → decision
@@ -15804,6 +16089,7 @@ function startSchedulers(workspaceSlug: string): void {
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
     "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
+    "MIS-FULL-UNIVERSE-SWEEP (10s/slice, 50 tickers/slice, ~400s/round for ~1978 stocks, fires 08:55-14:35 TST weekdays) + " +
     "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
