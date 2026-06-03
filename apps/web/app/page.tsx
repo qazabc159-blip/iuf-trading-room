@@ -1609,18 +1609,18 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
     { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
   ];
-  const adminNav: Array<{
+  const internalNav: Array<{
     href: string;
     title: string;
     sub: string;
     Icon: LucideIcon;
   }> = [
-    { href: "/admin/brain/llm", title: "Brain", sub: "LLM 費用", Icon: Brain },
-    { href: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork },
+    { href: "/admin/brain/llm", title: "Brain", sub: "AI 成本與用量", Icon: Brain },
+    { href: "/admin/events", title: "EventLog", sub: "事件與稽核", Icon: GitFork },
     { href: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart },
-    { href: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench },
-    { href: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles },
-    { href: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3 },
+    { href: "/admin/tools", title: "Tools", sub: "工具執行紀錄", Icon: Wrench },
+    { href: "/admin/uta/accounts", title: "UTA", sub: "帳號與權限", Icon: Sparkles },
+    { href: "/admin/strategies", title: "Strategies", sub: "策略治理", Icon: BarChart3 },
   ];
   return (
     <aside className="tac-sidebar">
@@ -1653,25 +1653,28 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
           );
         })}
       </nav>
-      <div className="tac-sidebar-section-head" aria-label="OpenAlice 管理">
-        <span>OpenAlice</span>
-      </div>
-      <nav className="tac-nav tac-nav-admin" aria-label="OpenAlice 管理導覽">
-        {adminNav.map((item) => {
-          const Icon = item.Icon;
-          return (
-            <Link href={item.href} key={item.href}>
-              <span className="tac-nav-icon" aria-hidden="true">
-                <Icon size={17} strokeWidth={1.9} />
-              </span>
-              <div>
-                <b>{item.title}</b>
-                <small>{item.sub}</small>
-              </div>
-            </Link>
-          );
-        })}
-      </nav>
+      <details className="tac-sidebar-internal">
+        <summary aria-label="內部控管導覽">
+          <span>內部控管</span>
+          <small>Owner / 系統</small>
+        </summary>
+        <nav className="tac-nav tac-nav-admin" aria-label="內部控管導覽">
+          {internalNav.map((item) => {
+            const Icon = item.Icon;
+            return (
+              <Link href={item.href} key={item.href}>
+                <span className="tac-nav-icon" aria-hidden="true">
+                  <Icon size={17} strokeWidth={1.9} />
+                </span>
+                <div>
+                  <b>{item.title}</b>
+                  <small>{item.sub}</small>
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+      </details>
       <div className="tac-sidebar-radar">
         <span className="tac-mini-radar" />
         <div>
