@@ -23,6 +23,7 @@ import {
   buildCompanyAiAnalystPrompt,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
 } from "./aiAnalystReportContract";
+import { assessCompanyAiReportQuality } from "./aiAnalystReportQuality";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ function fmtDateTime(iso: string | null): string {
   return d.toLocaleString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" });
 }
 
-function isQualityProtectedReport(result: ReactRunResult): boolean {
+export function isQualityProtectedReport(result: ReactRunResult): boolean {
   return Boolean(result.report_md?.includes("品質保護版") || result.report_md?.includes("保守分析版"));
 }
 
@@ -389,6 +390,7 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
   const result = phase.result;
   const isOverBudget = phase.kind === "over-budget";
   const isProtected = isQualityProtectedReport(result);
+  const reportQuality = assessCompanyAiReportQuality(result.report_md);
   const totalTokens = (result.prompt_tokens ?? 0) + (result.completion_tokens ?? 0);
   const costStr = result.cost_usd != null ? `$${result.cost_usd.toFixed(4)} USD` : "--";
   const budgetStr = result.budget_usd != null ? `$${result.budget_usd.toFixed(2)} USD` : "--";
@@ -443,11 +445,30 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
         </div>
       )}
 
+      {reportQuality.reason === "engineering_leak" && (
+        <div className="_ai-budget-banner _ai-quality-banner">
+          報告品質未通過：AI 回傳內容含有內部工具或工程標籤，已停止當作正式分析展示。請重新分析，系統會重新取得公司資料、新聞、技術面與法人資料後再產出報告。
+        </div>
+      )}
+
       {/* ── Report body ── */}
       <div className="_ai-report-body">
-        {result.report_md ? (
+        {result.report_md && reportQuality.ok ? (
           <div className="_ai-md-content">
             {renderMarkdownSimple(result.report_md)}
+          </div>
+        ) : reportQuality.reason === "engineering_leak" ? (
+          <div className="_ai-quality-state">
+            <b>這份 AI 報告需要重新生成</b>
+            <span>目前結果仍帶有工程內部資訊，不適合給客戶當成投資研究閱讀。</span>
+            <ul>
+              <li>已攔截：工具名、run id、token、placeholder 或 raw dump 類內容。</li>
+              <li>下一步：按「重新分析」，重新產出 9 段正式公司報告。</li>
+              <li>原始資料來源仍保留在後端紀錄，不會冒充正式結論。</li>
+            </ul>
+            <button className="_ai-generate-btn btn-sm" onClick={handleRefresh}>
+              重新分析
+            </button>
           </div>
         ) : (
           <div className="dim" style={{ padding: "16px 0" }}>報告內容未回傳</div>
