@@ -15329,17 +15329,60 @@ body:has(.mobile-route) .header-dock-drawer {
 
 /* ═══ end parity layer ══════════════════════════════════════════════ */
 
-/* ── OpenAlice admin sidebar section (Pass 120) ──────────────────── */
-.tac-sidebar-section-head {
-  padding: 6px 16px 4px;
-  font: 700 9px/1.2 var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--tac-fg-3);
-  border-top: 1px solid var(--tac-line);
+/* ── Internal control sidebar section ────────────────────────────── */
+.tac-sidebar-internal {
+  flex: 0 0 auto;
   margin-top: 4px;
+  border-top: 1px solid var(--tac-line);
 }
+
+.tac-sidebar-internal summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 16px 6px;
+  color: var(--tac-fg-3);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.tac-sidebar-internal summary::-webkit-details-marker {
+  display: none;
+}
+
+.tac-sidebar-internal summary span {
+  font: 800 9px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+}
+
+.tac-sidebar-internal summary small {
+  color: var(--tac-fg-4);
+  font: 600 9px/1.2 var(--mono);
+}
+
+.tac-sidebar-internal summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform 160ms ease;
+}
+
+.tac-sidebar-internal[open] summary::after {
+  transform: rotate(-135deg) translateY(-1px);
+}
+
 .tac-nav-admin {
   flex: 0 0 auto;
+  padding-bottom: 4px;
 }
-/* ── end OpenAlice admin sidebar section ─────────────────────────── */
+
+.tac-nav-admin a {
+  opacity: 0.84;
+}
+/* ── end internal control sidebar section ────────────────────────── */
