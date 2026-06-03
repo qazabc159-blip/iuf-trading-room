@@ -15341,11 +15341,99 @@ test("TWSE-MIS-5: source chain: twse_intraday LIVE takes priority over twse_open
   assert.equal(withoutMis.state, "STALE", "TWSE-MIS-5: EOD fallback state is STALE");
 });
 
-test("TWSE-MIS-6: cron does not inject after-hours MIS close as fresh manual quote", () => {
+test("TWSE-MIS-6: cron window is 08:55-14:35 and date guard prevents after-hours injection", () => {
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
-  assert.match(source, /if \(hhmm < 900 \|\| hhmm > 1335\) return false/);
+  // Window now starts at 08:55 (含試撮) and ends at 14:35
+  assert.match(source, /if \(hhmm < 855 \|\| hhmm > 1435\) return false/);
   assert.match(source, /if \(!isTodayMisTradeDate\(msg\["d"\] \?\? ""\)\) continue/);
-  assert.match(source, /TWSE-MIS-QUOTE-CRON \(45s intraday injection, fires 09:00-13:35 TST weekdays\)/);
+  assert.match(source, /TWSE-MIS-QUOTE-CRON \(45s intraday injection, fires 08:55-14:35 TST weekdays\)/);
+});
+
+// MIS-HEATMAP: TWSE MIS as Tier 1.5 in kgi-heatmap-enricher (MIS-HEATMAP-1..4)
+// ─────────────────────────────────────────────────────────────────────────────
+test("MIS-HEATMAP-1: enrichHeatmapTiles uses MIS cache as Tier 1.5 when KGI null", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  const misCache = new Map([
+    ["2330", { last: 945.0, changePct: 1.5, ts: new Date().toISOString(), tradeDateYmd: todayYmd }],
+  ]);
+
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const result = enrichHeatmapTiles(kgiTiles, [], misCache);
+
+  assert.equal(result.tiles.length, 1, "MIS-HEATMAP-1: must have 1 tile");
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_mis_intraday", "MIS-HEATMAP-1: KGI null + today MIS → twse_mis_intraday");
+  assert.equal(tile.price, 945.0, "MIS-HEATMAP-1: price must come from MIS cache");
+  assert.equal(tile.changePct, 1.5, "MIS-HEATMAP-1: changePct must come from MIS cache");
+  assert.equal(result.misIntradayTileCount, 1, "MIS-HEATMAP-1: misIntradayTileCount must be 1");
+  assert.equal(result.dataFreshness, "intraday", "MIS-HEATMAP-1: dataFreshness must be intraday");
+});
+
+test("MIS-HEATMAP-2: enrichHeatmapTiles skips MIS cache when tradeDateYmd is yesterday (stale)", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  // Yesterday's date
+  const yesterday = new Date(Date.now() + 8 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  const misCache = new Map([
+    ["2330", { last: 940.0, changePct: -0.5, ts: new Date().toISOString(), tradeDateYmd: yesterday }],
+  ]);
+
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const result = enrichHeatmapTiles(kgiTiles, [], misCache);
+
+  const tile = result.tiles[0]!;
+  // Yesterday's MIS data must NOT be used — fall through to Tier 2 (no TWSE) → Tier 3 (no cache) → no_data
+  assert.notEqual(tile.sourceState, "twse_mis_intraday", "MIS-HEATMAP-2: yesterday MIS must NOT be used");
+  assert.equal(result.misIntradayTileCount, 0, "MIS-HEATMAP-2: misIntradayTileCount must be 0 for stale data");
+});
+
+test("MIS-HEATMAP-3: KGI live tick takes priority over MIS cache (Tier 1 wins)", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  const misCache = new Map([
+    ["2330", { last: 945.0, changePct: 1.5, ts: new Date().toISOString(), tradeDateYmd: todayYmd }],
+  ]);
+
+  // KGI tile has live data (price not null)
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: 950.0, change: 10.0, changePct: 1.06, tier: "CORE", ts: new Date().toISOString() }];
+  const result = enrichHeatmapTiles(kgiTiles, [], misCache);
+
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "live", "MIS-HEATMAP-3: KGI live tick must win over MIS cache");
+  assert.equal(tile.price, 950.0, "MIS-HEATMAP-3: price must be KGI price 950, not MIS 945");
+  assert.equal(result.liveTileCount, 1, "MIS-HEATMAP-3: liveTileCount must be 1");
+  assert.equal(result.misIntradayTileCount, 0, "MIS-HEATMAP-3: MIS not used when KGI live");
+});
+
+test("MIS-HEATMAP-4: sourceLabel for twse_mis_intraday is '盤中即時 (MIS)'", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  const misCache = new Map([
+    ["2454", { last: 325.0, changePct: 0.8, ts: new Date().toISOString(), tradeDateYmd: todayYmd }],
+  ]);
+
+  const kgiTiles = [{ symbol: "2454", name: "聯發科", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const result = enrichHeatmapTiles(kgiTiles, [], misCache);
+
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceLabel, "盤中即時 (MIS)", "MIS-HEATMAP-4: sourceLabel must be '盤中即時 (MIS)'");
+  assert.equal(tile.sourceState, "twse_mis_intraday", "MIS-HEATMAP-4: sourceState must be twse_mis_intraday");
 });
 
 // Teardown pollers that may be started by imported API modules.

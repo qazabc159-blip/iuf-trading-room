@@ -11086,9 +11086,9 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const twseRows = await getStockDayAllRows().catch(() => []);
 
-    // 3-tier enrichment: live → twse_eod → cache → no_data (never drops tiles)
+    // 4-tier enrichment: live → mis_intraday → twse_eod → cache → no_data (never drops tiles)
     const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
-    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows);
+    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache);
 
     return c.json(enriched);
   } catch (err) {
@@ -14799,6 +14799,12 @@ let _tsweMisQuoteCronLastFiredAt: string | null = null;
 let _tsweMisQuoteCronLastError: string | null = null;
 let _tsweMisQuoteCronLastCount = 0;
 
+// Module-level: MIS intraday tile cache for heatmap enrichment.
+// Written by _runTwseMisQuoteCron, read by /api/v1/market/heatmap/kgi-core.
+// Key: ticker symbol (e.g. "2330"). Value: last price + tradeDateYmd for freshness check.
+// Cleared implicitly when MIS z="-" (盤後) — next MIS cron tick simply won't update.
+const _misTileCache = new Map<string, { last: number; changePct: number | null; ts: string; tradeDateYmd: string }>();
+
 /**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
@@ -15406,10 +15412,13 @@ function startSchedulers(workspaceSlug: string): void {
   {
     const TWSE_MIS_CRON_MS = 45 * 1000; // 45s — keeps manual quotes fresh (staleMs=60s)
 
-    /** Returns true if current Taipei time is in 08:55–14:35 window on a weekday. */
+    /** Returns true if current Taipei time is in 08:55–14:35 window on a weekday.
+     *  08:55 = trial auction open; 14:35 = 2min buffer after 14:30 close + tail prints.
+     */
     function isTwseMisQuoteCronWindow(): boolean {
       const hhmm = getTaipeiHHMM();
-      if (hhmm < 900 || hhmm > 1335) return false;
+      // 855 = 08:55 (試撮開始); 1435 = 14:35 (尾盤完成後 5min buffer)
+      if (hhmm < 855 || hhmm > 1435) return false;
       const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
       const dayOfWeek = taipeiDate.getUTCDay();
       return dayOfWeek >= 1 && dayOfWeek <= 5;
@@ -15563,10 +15572,28 @@ function startSchedulers(workspaceSlug: string): void {
         if (!allQuotes.length) return;
 
         await upsertManualQuotes({ session: cronSession, quotes: allQuotes });
+
+        // Also update the MIS tile cache so heatmap/kgi-core can use MIS as Tier 1.5.
+        // We only keep entries where last > 0 (i.e. valid 盤中成交價).
+        // tradeDateYmd is today's date in Taipei timezone "YYYYMMDD".
+        const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+          .toISOString().slice(0, 10).replace(/-/g, "");
+        const now2 = new Date().toISOString();
+        for (const q of allQuotes) {
+          if (q.last !== null && q.last > 0) {
+            _misTileCache.set(q.symbol, {
+              last: q.last,
+              changePct: q.changePct,
+              ts: now2,
+              tradeDateYmd: todayYmd,
+            });
+          }
+        }
+
         _tsweMisQuoteCronLastFiredAt = new Date().toISOString();
         _tsweMisQuoteCronLastCount = allQuotes.length;
         _tsweMisQuoteCronLastError = null;
-        console.log(`[twse-mis-cron] injected ${allQuotes.length} intraday quotes into manual cache`);
+        console.log(`[twse-mis-cron] injected ${allQuotes.length} intraday quotes into manual cache + _misTileCache (${_misTileCache.size} symbols)`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         _tsweMisQuoteCronLastError = msg;
@@ -15716,7 +15743,7 @@ function startSchedulers(workspaceSlug: string): void {
     "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
-    "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 09:00-13:35 TST weekdays) + " +
+    "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
     "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
