@@ -228,6 +228,18 @@ export default function SubscriptionSettingsPage() {
               </p>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399", flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <b>券商連線另有安全邊界</b>
+              <p style={{ margin: "6px 0 10px", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
+                KGI read-only / SIM 即使在高級方案，也需要安全憑證、後端 vault、風控與連線狀態通過。
+              </p>
+              <Link href="/settings/broker" style={{ color: "var(--accent, #c8943f)", fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
+                查看券商連線設定
+              </Link>
+            </div>
+          </div>
         </section>
       </div>
     </main>

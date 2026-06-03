@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CreditCard, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
+import { Bell, CreditCard, FileText, GripHorizontal, KeyRound, LogOut, Radio, RotateCcw, Settings, User, X } from "lucide-react";
 
 import { apiGetMe, apiLogout, type AuthUser } from "@/lib/auth-client";
 import { getHeaderDockNotifications, markHeaderDockNotificationRead, type NotificationEntry } from "@/lib/api";
@@ -510,6 +510,15 @@ export function HeaderDock() {
             >
               <CreditCard size={15} strokeWidth={1.9} />
               <span>訂閱與權限</span>
+            </Link>
+            <Link
+              className="header-account-menu-link"
+              role="menuitem"
+              href="/settings/broker"
+              onClick={() => setAccountOpen(false)}
+            >
+              <Radio size={15} strokeWidth={1.9} />
+              <span>券商連線</span>
             </Link>
             <Link
               className="header-account-menu-link"
