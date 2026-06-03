@@ -73,7 +73,7 @@ export function WatchlistTable({ rows, cap = 10 }: { rows: WatchlistRow[]; cap?:
           <div className="row watchlist-row" key={row.symbol} style={rowStyle}>
             <Link className="tg gold" href={`/companies/${row.symbol}`}>{row.symbol}</Link>
             <span className="tc soft" style={nameStyle}>{row.symbolName ?? "--"}</span>
-            <QuoteCellRender cell={row.last} />
+            <QuoteCellRender cell={row.last} showBadge />
             <QuoteCellRender cell={row.bid} />
             <QuoteCellRender cell={row.ask} />
             <QuoteCellRender cell={row.changePct} suffix="%" />

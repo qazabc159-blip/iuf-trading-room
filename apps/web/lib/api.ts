@@ -1315,6 +1315,98 @@ export async function getCompanyQuoteRealtime(companyId: string): Promise<Compan
   }
 }
 
+// ── Realtime Snapshot Multi (PARTIAL — canonical shape, fan-out stub) ──────────
+// PARTIAL: 等 Jason 補 GET /api/v1/realtime/snapshot?symbols=... 後端端點。
+// 目前 fan-out 至 /api/v1/companies/:id/quote/realtime（per-symbol），
+// 之後後端上線後只需換成 single-call；前端 hook API 不變。
+//
+// freshness_mode canonical 語義（給 UI 層消費）：
+//   live     — KGI 即時 (<= 2s)
+//   intraday — TWSE MIS 盤中近即時
+//   stale    — age > 2s（風控界線：不可假裝 live）
+//   eod      — 昨收 / 盤後 / 資料不可用
+export type RealtimeSnapshotItem = {
+  symbol: string;
+  lastPrice: number | null;
+  bid: number | null;
+  ask: number | null;
+  volume: number | null;
+  freshness_mode: "live" | "intraday" | "stale" | "eod";
+  freshness_ms: number;
+  source: string;
+  updatedAt: string;
+};
+
+export type RealtimeSnapshotResponse = {
+  items: RealtimeSnapshotItem[];
+  /** PARTIAL — backend endpoint not yet deployed; fan-out via per-symbol route */
+  _stub: true;
+};
+
+function _stateToFreshnessMode(quote: CompanyRealtimeQuote): "live" | "intraday" | "stale" | "eod" {
+  if (quote.source === "twse_openapi_eod") return "eod";
+  if (quote.state === "BLOCKED" || quote.state === "NO_DATA") return "eod";
+  if (quote.source === "twse_intraday") return "intraday";
+  if (quote.source === "kgi-gateway") {
+    const ageMs = Date.now() - Date.parse(quote.updatedAt);
+    return quote.freshness === "fresh" && ageMs <= 2000 ? "live" : "stale";
+  }
+  if (quote.state === "LIVE") return "live";
+  if (quote.state === "STALE") return "stale";
+  return "eod";
+}
+
+/**
+ * getRealtimeSnapshotMulti — 批次取得多個 symbol 的 canonical 報價快照。
+ *
+ * PARTIAL: 此函式目前 fan-out 至 per-symbol realtime endpoint。
+ * 後端 GET /api/v1/realtime/snapshot?symbols=... 上線後，切換實作即可。
+ * 呼叫方不需改動。
+ */
+export async function getRealtimeSnapshotMulti(
+  symbols: string[],
+): Promise<RealtimeSnapshotResponse> {
+  const results = await Promise.allSettled(
+    symbols.map((sym) => getCompanyQuoteRealtime(sym)),
+  );
+
+  const items: RealtimeSnapshotItem[] = [];
+  for (let i = 0; i < symbols.length; i++) {
+    const r = results[i];
+    const sym = symbols[i];
+    if (r.status === "fulfilled" && r.value) {
+      const q = r.value;
+      const nowMs = Date.now();
+      items.push({
+        symbol: sym,
+        lastPrice: q.lastPrice,
+        bid: q.bid,
+        ask: q.ask,
+        volume: q.volume,
+        freshness_mode: _stateToFreshnessMode(q),
+        freshness_ms: q.updatedAt ? Math.max(0, nowMs - Date.parse(q.updatedAt)) : -1,
+        source: q.source,
+        updatedAt: q.updatedAt,
+      });
+    } else {
+      // fetch 失敗 → eod fallback（不假裝有資料）
+      items.push({
+        symbol: sym,
+        lastPrice: null,
+        bid: null,
+        ask: null,
+        volume: null,
+        freshness_mode: "eod",
+        freshness_ms: -1,
+        source: "unavailable",
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  return { items, _stub: true };
+}
+
 // ── Dashboard Snapshot (PR #326 — 6-panel aggregation, 30s cache) ─────────────
 // GET /api/v1/dashboard/snapshot
 // Returns 6 panels in 1 fetch: industry_heatmap, news_recent, brief_today,
