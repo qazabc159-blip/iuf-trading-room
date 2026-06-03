@@ -60,6 +60,10 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
   await expectNoServerError(page);
   await expect(page.locator(".troom")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#real-kline-frame")).toBeVisible({ timeout: 30_000 });
+  const realFrameHandle = await page.locator("#real-kline-frame").elementHandle();
+  const realFrame = await realFrameHandle?.contentFrame();
+  expect(realFrame, "direct trading room real K-line iframe must be inspectable").toBeTruthy();
+  await realFrame!.waitForSelector(".trading-room-real-kline-frame", { state: "visible", timeout: 30_000 });
   const initialViewport = await page.evaluate(() => {
     const body = document.body;
     const room = document.querySelector<HTMLElement>(".troom");
@@ -69,18 +73,53 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
     const win = window as typeof window & { __IUF_REAL_KLINE_FRAME_RELOAD_COUNT__?: number };
     return {
       bodyOverflow: body.scrollWidth - body.clientWidth,
+      bodyVerticalOverflow: body.scrollHeight - body.clientHeight,
       roomOverflow: room ? room.scrollWidth - room.clientWidth : 0,
       rightPaneOverflow: rightPane ? rightPane.scrollWidth - rightPane.clientWidth : 0,
+      rightPaneVerticalOverflow: rightPane ? rightPane.scrollHeight - rightPane.clientHeight : 0,
       formOverflow: form ? form.scrollWidth - form.clientWidth : 0,
+      formVerticalOverflow: form ? form.scrollHeight - form.clientHeight : 0,
       frameShellOverflow: frameShell ? frameShell.scrollWidth - frameShell.clientWidth : 0,
+      frameShellVerticalOverflow: frameShell ? frameShell.scrollHeight - frameShell.clientHeight : 0,
       frameReloads: win.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__ ?? 0,
     };
   });
+  const initialInnerViewport = await realFrame!.evaluate(() => {
+    const body = document.body;
+    const root = document.querySelector<HTMLElement>(".trading-room-real-kline-frame");
+    const host = document.querySelector<HTMLElement>(".trading-room-kline-host");
+    const bodyStyle = window.getComputedStyle(body);
+    return {
+      bodyOverflow: body.scrollWidth - body.clientWidth,
+      bodyVerticalOverflow: body.scrollHeight - body.clientHeight,
+      bodyOverflowX: bodyStyle.overflowX,
+      bodyOverflowY: bodyStyle.overflowY,
+      rootOverflow: root ? root.scrollWidth - root.clientWidth : 0,
+      rootVerticalOverflow: root ? root.scrollHeight - root.clientHeight : 0,
+      hostOverflow: host ? host.scrollWidth - host.clientWidth : 0,
+      hostVerticalOverflow: host ? host.scrollHeight - host.clientHeight : 0,
+    };
+  });
   expect(initialViewport.bodyOverflow, "trading room body must not create horizontal scrollbar").toBeLessThanOrEqual(2);
+  expect(initialViewport.bodyVerticalOverflow, "trading room body must not create vertical scrollbar").toBeLessThanOrEqual(2);
   expect(initialViewport.roomOverflow, "trading room grid must stay within viewport width").toBeLessThanOrEqual(2);
   expect(initialViewport.rightPaneOverflow, "right ticket pane must not overflow horizontally").toBeLessThanOrEqual(2);
+  expect(initialViewport.rightPaneVerticalOverflow, "right ticket pane must fit the viewport without native vertical scrollbars").toBeLessThanOrEqual(2);
   expect(initialViewport.formOverflow, "order ticket form must not overflow horizontally").toBeLessThanOrEqual(2);
+  expect(initialViewport.formVerticalOverflow, "order ticket form must not overflow vertically").toBeLessThanOrEqual(2);
   expect(initialViewport.frameShellOverflow, "real K-line iframe shell must not overflow horizontally").toBeLessThanOrEqual(2);
+  expect(initialViewport.frameShellVerticalOverflow, "real K-line iframe shell must not overflow vertically").toBeLessThanOrEqual(2);
+  expect(initialInnerViewport.bodyOverflow, "real K-line iframe body must not create a horizontal scrollbar").toBeLessThanOrEqual(2);
+  expect(["hidden", "clip"], "real K-line iframe body must suppress native horizontal scrollbars").toContain(
+    initialInnerViewport.bodyOverflowX,
+  );
+  expect(["hidden", "clip"], "real K-line iframe body must suppress native vertical scrollbars").toContain(
+    initialInnerViewport.bodyOverflowY,
+  );
+  expect(initialInnerViewport.rootOverflow, "real K-line frame root must stay inside its viewport").toBeLessThanOrEqual(2);
+  expect(initialInnerViewport.rootVerticalOverflow, "real K-line frame root must not overflow vertically").toBeLessThanOrEqual(2);
+  expect(initialInnerViewport.hostOverflow, "real K-line host must stay inside its viewport").toBeLessThanOrEqual(2);
+  expect(initialInnerViewport.hostVerticalOverflow, "real K-line host must not overflow vertically").toBeLessThanOrEqual(2);
   const quoteQualityBadge = page.locator("#quote-quality-badge");
   const hasQuoteQualityBadge = await quoteQualityBadge.count().then((count) => count > 0);
   if (hasQuoteQualityBadge) {
@@ -194,6 +233,9 @@ test("/portfolio supports 5-symbol handoff, visible ticket update, indicator tog
 
     await page.goto(`/portfolio?symbol=${symbol}`, { waitUntil: "domcontentloaded" });
     await expectNoServerError(page);
+    await expect(page.locator(".header-dock"), "full trading room route must hide the floating app header dock").toBeHidden({
+      timeout: 30_000,
+    });
     await expect(page.locator("iframe")).toHaveCount(1);
 
     const frame = extractFrame(page);
@@ -207,6 +249,46 @@ test("/portfolio supports 5-symbol handoff, visible ticket update, indicator tog
 
     const klineFrame = frame.frameLocator("#real-kline-frame");
     await expect(frame.locator("#real-kline-frame"), "real K-line frame must be mounted").toBeVisible({ timeout: 30_000 });
+    const outerFit = await page.evaluate(() => {
+      const body = document.body;
+      const shell = document.querySelector<HTMLElement>(".iuf-final-content-frame");
+      return {
+        bodyOverflow: body.scrollWidth - body.clientWidth,
+        bodyVerticalOverflow: body.scrollHeight - body.clientHeight,
+        shellOverflow: shell ? shell.scrollWidth - shell.clientWidth : 0,
+        shellVerticalOverflow: shell ? shell.scrollHeight - shell.clientHeight : 0,
+      };
+    });
+    expect(outerFit.bodyOverflow, "/portfolio app shell must not create a horizontal scrollbar").toBeLessThanOrEqual(2);
+    expect(outerFit.bodyVerticalOverflow, "/portfolio app shell must not create a vertical scrollbar").toBeLessThanOrEqual(2);
+    expect(outerFit.shellOverflow, "FinalOnlyFrame shell must stay inside viewport width").toBeLessThanOrEqual(2);
+    expect(outerFit.shellVerticalOverflow, "FinalOnlyFrame shell must stay inside viewport height").toBeLessThanOrEqual(2);
+    const nestedFrameHandle = await frame.locator("#real-kline-frame").elementHandle();
+    const nestedFrame = await nestedFrameHandle?.contentFrame();
+    expect(nestedFrame, "real K-line iframe should be inspectable from portfolio route").toBeTruthy();
+    await nestedFrame!.waitForSelector(".trading-room-real-kline-frame", { state: "visible", timeout: 30_000 });
+    const innerFit = await nestedFrame!.evaluate(() => {
+      const body = document.body;
+      const root = document.querySelector<HTMLElement>(".trading-room-real-kline-frame");
+      const bodyStyle = window.getComputedStyle(body);
+      return {
+        bodyOverflow: body.scrollWidth - body.clientWidth,
+        bodyVerticalOverflow: body.scrollHeight - body.clientHeight,
+        bodyOverflowX: bodyStyle.overflowX,
+        bodyOverflowY: bodyStyle.overflowY,
+        rootOverflow: root ? root.scrollWidth - root.clientWidth : 0,
+        rootVerticalOverflow: root ? root.scrollHeight - root.clientHeight : 0,
+      };
+    });
+    expect(innerFit.bodyOverflow, "nested K-line iframe body must not create horizontal scrollbars").toBeLessThanOrEqual(2);
+    expect(["hidden", "clip"], "nested K-line iframe body must suppress native horizontal scrollbars").toContain(
+      innerFit.bodyOverflowX,
+    );
+    expect(["hidden", "clip"], "nested K-line iframe body must suppress native vertical scrollbars").toContain(
+      innerFit.bodyOverflowY,
+    );
+    expect(innerFit.rootOverflow, "nested K-line root must stay inside viewport width").toBeLessThanOrEqual(2);
+    expect(innerFit.rootVerticalOverflow, "nested K-line root must stay inside viewport height").toBeLessThanOrEqual(2);
 
     const viewportTools = klineFrame.getByTestId("kline-viewport-tools");
     await expect(viewportTools, "real K-line viewport controls must be visible in the trading room").toBeVisible({

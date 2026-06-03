@@ -147,12 +147,15 @@ const frameCss = `
   html,
   body {
     margin: 0;
+    width: 100%;
+    max-width: 100%;
     height: 100%;
     min-height: 100%;
     background: #080b10;
     color: #d7dde8;
-    overflow: hidden;
-    scrollbar-width: none;
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+    overscroll-behavior: none;
   }
 
   *,
@@ -175,11 +178,24 @@ const frameCss = `
   }
 
   body:has(.trading-room-real-kline-frame) .app-main-shell {
+    position: fixed !important;
+    inset: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     max-width: none !important;
     width: 100vw !important;
-    min-height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: block !important;
+  }
+
+  body.app-root:has(.trading-room-real-kline-frame),
+  body:has(.trading-room-real-kline-frame) .app-root {
+    display: block !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
     overflow: hidden !important;
   }
 
@@ -189,9 +205,11 @@ const frameCss = `
 
   .trading-room-real-kline-frame {
     box-sizing: border-box;
+    position: fixed;
+    inset: 0;
     width: 100vw;
     max-width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     min-height: 0;
     background: #080b10;
     padding: 0;
@@ -231,6 +249,7 @@ const frameCss = `
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    height: 100%;
     overflow: hidden;
   }
 
@@ -241,6 +260,7 @@ const frameCss = `
     align-self: stretch;
     flex: 1 1 auto;
     min-height: 0;
+    height: 100%;
     display: flex;
     overflow: hidden;
   }
@@ -260,8 +280,9 @@ const frameCss = `
     box-sizing: border-box;
     width: 100% !important;
     max-width: none !important;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
+    height: 100%;
     margin: 0;
     padding: 0 8px 6px;
     display: flex;
@@ -311,9 +332,10 @@ const frameCss = `
     width: 100% !important;
     max-width: none !important;
     order: 1;
-    flex: 1 1 auto;
-    min-height: 260px !important;
-    height: 100% !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 100% !important;
   }
 
   .trading-room-kline-host ._ind-sub-section {
@@ -417,6 +439,20 @@ const frameCss = `
     padding: 4px;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
+  }
+
+  @media (max-height: 760px) {
+    .trading-room-kline-host ._ind-level-readout,
+    .trading-room-kline-host .kline-signal-strip {
+      display: none !important;
+    }
+
+    .trading-room-kline-host .kline-toolbar,
+    .trading-room-kline-host ._ind-toggle-bar,
+    .trading-room-kline-host .kline-viewport-tools {
+      padding-top: 3px !important;
+      padding-bottom: 3px !important;
+    }
   }
 
   .trading-room-kline-host .kline-signal-chip {

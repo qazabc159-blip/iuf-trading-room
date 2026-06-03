@@ -60,10 +60,13 @@ function contentShellOverrides(screen: ScreenKey) {
   html,
   body,
   body.iuf-v031-embedded {
+    width: 100vw !important;
+    max-width: 100vw !important;
     height: 100dvh !important;
     min-height: 100dvh !important;
     overflow: hidden !important;
     scrollbar-width: none !important;
+    overscroll-behavior: none !important;
   }
 
   *::-webkit-scrollbar {
@@ -79,20 +82,32 @@ function contentShellOverrides(screen: ScreenKey) {
     position: sticky;
     top: 0;
     z-index: 30;
-    height: 34px;
-    min-height: 34px;
+    height: 32px;
+    min-height: 32px;
+    max-height: 32px;
     overflow: hidden;
+    flex-wrap: nowrap !important;
+    white-space: nowrap !important;
+    padding: 6px 12px !important;
+  }
+
+  .psafe > span:last-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
 
   .troom {
-    height: calc(100dvh - 34px) !important;
+    box-sizing: border-box !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: calc(100dvh - 32px) !important;
     min-height: 0 !important;
-    max-width: none !important;
     margin: 0 !important;
-    padding: 8px !important;
+    padding: 6px !important;
     overflow: hidden !important;
-    gap: 8px !important;
-    grid-template-columns: clamp(226px, 14vw, 252px) minmax(0, 1fr) clamp(372px, 22vw, 420px) !important;
+    gap: 6px !important;
+    grid-template-columns: clamp(220px, 13.5vw, 252px) minmax(0, 1fr) clamp(344px, 20.5vw, 392px) !important;
     align-items: stretch !important;
   }
 
@@ -115,7 +130,10 @@ function contentShellOverrides(screen: ScreenKey) {
   .real-kline-frame-shell {
     flex: 1 1 auto !important;
     min-height: 0 !important;
-    height: auto !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    position: relative !important;
+    contain: size layout paint !important;
   }
 
   .rpane,
@@ -130,6 +148,17 @@ function contentShellOverrides(screen: ScreenKey) {
     height: 100% !important;
     max-height: 100% !important;
     align-self: stretch !important;
+    min-height: 0 !important;
+    scrollbar-width: none !important;
+  }
+
+  .lpane::-webkit-scrollbar,
+  .rpane::-webkit-scrollbar,
+  .wlist::-webkit-scrollbar,
+  .ltab::-webkit-scrollbar,
+  .ltab.on::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
   }
 
   .rpane,
@@ -139,19 +168,26 @@ function contentShellOverrides(screen: ScreenKey) {
 
   .rpane .th {
     flex: 0 0 auto !important;
-    padding: 10px 14px !important;
+    padding: 8px 12px !important;
+  }
+
+  .rpane .th h3 {
+    font-size: 13px !important;
   }
 
   .tform {
     flex: 1 1 auto !important;
-    padding: 12px 14px 10px !important;
-    gap: 10px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    padding: 9px 12px 8px !important;
+    gap: 7px !important;
     overflow-y: hidden !important;
     overflow-x: hidden !important;
+    justify-content: stretch !important;
   }
 
   .tform .field {
-    gap: 4px !important;
+    gap: 3px !important;
   }
 
   .tform .field .l {
@@ -160,19 +196,20 @@ function contentShellOverrides(screen: ScreenKey) {
 
   .tform .field input,
   .tform .field select {
-    min-height: 36px !important;
-    padding: 8px 10px !important;
+    min-height: 32px !important;
+    padding: 7px 9px !important;
+    font-size: 12.5px !important;
   }
 
   .tform .field .step {
     display: grid !important;
-    grid-template-columns: 34px minmax(0, 1fr) 34px !important;
-    gap: 6px !important;
+    grid-template-columns: 31px minmax(0, 1fr) 31px !important;
+    gap: 5px !important;
   }
 
   .tform .field .step .stepbtn {
-    width: 34px !important;
-    height: 36px !important;
+    width: 31px !important;
+    height: 32px !important;
   }
 
   .tform .field .units {
@@ -183,20 +220,32 @@ function contentShellOverrides(screen: ScreenKey) {
 
   .preview {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 8px 10px !important;
-    padding: 10px 11px !important;
+    gap: 6px 9px !important;
+    padding: 8px 10px !important;
+  }
+
+  .preview .v {
+    font-size: 13px !important;
   }
 
   .gate {
-    padding: 10px 11px !important;
+    padding: 8px 10px !important;
+    gap: 4px !important;
+  }
+
+  .gate .li {
+    padding: 3px 0 !important;
+    line-height: 1.3 !important;
   }
 
   .tactions {
     padding: 0 !important;
+    gap: 6px !important;
   }
 
   .tactions .submit {
-    min-height: 48px !important;
+    min-height: 40px !important;
+    padding: 9px 10px !important;
     white-space: normal !important;
     line-height: 1.35 !important;
   }
@@ -207,15 +256,111 @@ function contentShellOverrides(screen: ScreenKey) {
   }
 
   .tactions .liveex {
-    padding: 9px 10px !important;
+    padding: 7px 9px !important;
     flex-wrap: wrap !important;
     gap: 6px 8px !important;
+    line-height: 1.25 !important;
   }
 
   .tfoot {
-    font-size: 11px !important;
-    line-height: 1.55 !important;
+    font-size: 10.5px !important;
+    line-height: 1.42 !important;
     padding: 0 1px !important;
+    max-height: 58px !important;
+    overflow: hidden !important;
+  }
+
+  .real-kline-frame-shell iframe {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    border: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .ledger .ltab.on {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+  }
+
+  @media (max-height: 900px) {
+    .psafe {
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
+      padding-top: 4px !important;
+      padding-bottom: 4px !important;
+    }
+
+    .troom {
+      height: calc(100dvh - 28px) !important;
+    }
+
+    .symhead {
+      padding: 10px 14px !important;
+      gap: 12px !important;
+    }
+
+    .symhead .sym {
+      font-size: 24px !important;
+    }
+
+    .symhead .price .v {
+      font-size: 30px !important;
+    }
+
+    .cpane {
+      grid-template-rows: auto minmax(0, 1fr) 70px 104px !important;
+      gap: 6px !important;
+    }
+
+    .tape {
+      height: 70px !important;
+    }
+
+    .tape > div {
+      padding: 6px 8px !important;
+    }
+
+    .ledger {
+      height: 104px !important;
+    }
+
+    .lhead .tb {
+      padding: 9px 10px !important;
+      font-size: 11px !important;
+    }
+
+    .ltab.on {
+      height: 66px !important;
+    }
+
+    .tform {
+      gap: 5px !important;
+      padding: 8px 10px 7px !important;
+    }
+
+    .tform .field .l,
+    .preview .l,
+    .gate .h {
+      font-size: 9.5px !important;
+    }
+
+    .preview {
+      padding: 7px 9px !important;
+    }
+
+    .gate .list {
+      max-height: 38px !important;
+      overflow: hidden !important;
+    }
+
+    .tfoot {
+      max-height: 42px !important;
+    }
   }
 
   .rec-prefill-box {

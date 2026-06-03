@@ -69,7 +69,7 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("closest('.wrow[data-sym]')");
     expect(ticketHtml).toContain(".chart-panel.is-real-chart .chart-wrap{display:none!important}");
     expect(ticketHtml).toContain('scrolling="no"');
-    expect(ticketHtml).toContain("contain:layout paint");
+    expect(ticketHtml).toContain("contain:size layout paint");
     expect(liveHydration).toContain("const mountedFrameSymbol = frame?.dataset?.symbol || window.__IUF_REAL_KLINE_FRAME_SYMBOL__ || \"\"");
     expect(liveHydration).toContain("!sameSym(mountedFrameSymbol, nextFrameSymbol)");
     expect(middleware).toContain('"/final-v031/portfolio/kline-frame"');
@@ -86,6 +86,8 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("keeps the trading room in a single viewport without hiding tape or ledger", () => {
     expect(ticketHtml).toContain("grid-template-rows:auto minmax(0,1fr) 86px 132px");
+    expect(ticketHtml).toContain("width:100vw;");
+    expect(ticketHtml).toContain("height:calc(100dvh - 32px);");
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .tape");
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .ledger");
     expect(ticketHtml).not.toContain("body[data-screen-label=\"Trading Room v1\"] .ledger,\nbody[data-screen-label=\"Trading Room v1\"] .tape");
@@ -93,9 +95,10 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("forces the embedded trading-room K-line frame to fill its viewport", () => {
     expect(tradingRoomKlineFrameSource).toContain("width: 100vw;");
+    expect(tradingRoomKlineFrameSource).toContain("position: fixed;");
     expect(tradingRoomKlineFrameSource).toContain("width: 100% !important;");
     expect(tradingRoomKlineFrameSource).toContain("overflow: hidden !important;");
-    expect(tradingRoomKlineFrameSource).toContain("scrollbar-width: none;");
+    expect(tradingRoomKlineFrameSource).toContain("scrollbar-width: none !important;");
     expect(tradingRoomKlineFrameSource).toContain("align-self: stretch;");
   });
 
@@ -103,7 +106,8 @@ describe("final-v031 paper ticket price gate", () => {
     expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 300");
     expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-readout-ribbon");
     expect(tradingRoomKlineFrameSource).toContain("position: static !important;");
-    expect(tradingRoomKlineFrameSource).toContain("min-height: 260px !important;");
+    expect(tradingRoomKlineFrameSource).toContain("flex: 1 1 0 !important;");
+    expect(tradingRoomKlineFrameSource).toContain("min-height: 0 !important;");
   });
 
   it("keeps the company-page K-line readout out of the chart canvas", () => {
@@ -201,15 +205,27 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("height: 100dvh !important;");
     expect(routeSource).toContain("overflow: hidden !important;");
     expect(routeSource).toContain("scrollbar-width: none !important;");
-    expect(routeSource).toContain("grid-template-columns: clamp(226px, 14vw, 252px) minmax(0, 1fr) clamp(372px, 22vw, 420px) !important;");
+    expect(routeSource).toContain("grid-template-columns: clamp(220px, 13.5vw, 252px) minmax(0, 1fr) clamp(344px, 20.5vw, 392px) !important;");
     expect(routeSource).toContain(".rpane,\n  .rpane *");
     expect(routeSource).toContain("overflow-y: hidden !important;");
-    expect(routeSource).toContain("height: 34px;");
+    expect(routeSource).toContain("height: 32px;");
     expect(routeSource).toContain("overflow: hidden;");
-    expect(routeSource).toContain("height: calc(100dvh - 34px) !important;");
+    expect(routeSource).toContain("height: calc(100dvh - 32px) !important;");
     expect(ticketHtml).toContain("overflow:hidden;");
-    expect(ticketHtml).toContain("grid-template-columns:clamp(226px,14vw,252px) minmax(0,1fr) clamp(372px,22vw,420px);");
-    expect(ticketHtml).toContain("gap:8px;");
+    expect(ticketHtml).toContain("grid-template-columns:clamp(220px,13.5vw,252px) minmax(0,1fr) clamp(344px,20.5vw,392px);");
+    expect(ticketHtml).toContain("gap:6px;");
+  });
+
+  it("isolates the trading room from the app chrome and native scrollbars", () => {
+    const frameSource = readFileSync(new URL("../components/FinalOnlyFrame.tsx", import.meta.url), "utf8");
+    expect(frameSource).toContain('data-final-screen={isTradingRoom ? "paper-trading-room" : "final-v031"}');
+    expect(frameSource).toContain('position: fixed;');
+    expect(frameSource).toContain('z-index: 2147483000;');
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock');
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar');
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .command-palette');
+    expect(ticketHtml).toContain("scrollbar-width:none;");
+    expect(ticketHtml).toContain("contain:size layout paint;");
   });
 
   it("does not block the trading-room first paint on paper, KGI, and ideas endpoints", () => {
