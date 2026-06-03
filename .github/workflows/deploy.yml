@@ -26,7 +26,7 @@ defaults:
     # Self-hosted Windows runners can keep a restrictive machine policy.
     # Use an explicit bypass for GitHub's generated temporary scripts so
     # skip gates and deploy commands do not fail before product code runs.
-    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+    shell: pwsh
 
 jobs:
   deploy:
