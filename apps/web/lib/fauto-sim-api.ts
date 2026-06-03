@@ -97,6 +97,16 @@ export type KgiStatus = {
   account_set: boolean;
   trade_connected: boolean;
   quote_connected: boolean;
+  raw_trade_connected?: boolean;
+  raw_quote_connected?: boolean;
+  gateway_quote_auth?: {
+    available: boolean | null;
+    state: string | null;
+    errorCode: string | null;
+    subscribedTickCount: number | null;
+    kgiLoggedIn: boolean | null;
+    accountSet: boolean | null;
+  } | null;
   last_sim_order_status?: string | null;
   smoke_results?: {
     quote_smoke?: "pass" | "fail" | "skip" | null;

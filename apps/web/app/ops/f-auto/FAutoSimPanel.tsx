@@ -898,6 +898,12 @@ const FAUTO_CSS = `
   gap: 10px;
   flex-wrap: wrap;
 }
+._fauto-conn-status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
 ._fauto-conn-dot-wrap {
   display: flex;
   align-items: center;
@@ -931,6 +937,13 @@ const FAUTO_CSS = `
 }
 ._fauto-conn-badge-green { background: rgba(46,204,113,0.12); color: #4adb88; }
 ._fauto-conn-badge-amber { background: rgba(200,148,63,0.12); color: #e2b85c; }
+._fauto-conn-badge-red { background: rgba(230,57,70,0.12); color: #ff6b77; }
+._fauto-conn-detail {
+  max-width: 560px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(145,160,181,0.72);
+}
 ._fauto-conn-loading  { font-size: 11px; color: rgba(145,160,181,0.45); font-style: italic; }
 ._fauto-conn-forbidden { font-size: 11px; color: rgba(200,148,63,0.65); }
 ._fauto-conn-err      { font-size: 11px; color: #ff6b77; }
