@@ -4896,14 +4896,52 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
     });
   } catch (err) {
     const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
+    const reason = degraded
+      ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable")
+      : "gateway_error";
+
+    // Gateway not reachable — fall back to orders_submitted audit log.
+    // Look back up to 7 trading days for the most recent order submission.
+    // This lets traders see "what did F-AUTO do most recently" even when KGI SIM is offline.
+    let auditOrders: Array<{ symbol: string; shares: number; status: string; trade_id: string | null; error: string | null }> = [];
+    let auditDate: string | null = null;
+    if (isDatabaseMode()) {
+      for (let daysBack = 0; daysBack <= 7; daysBack++) {
+        const tryDate = _s1TaipeiDateStr(-daysBack);
+        type _S1OrderSubmitResult = { schema: string; submitted_at_tst: string; trading_date: string; results: Array<{ symbol: string; shares: number; status: string; trade_id: string | null; error: string | null }> };
+        const orderAudit = await _readS1ObservationAudit<_S1OrderSubmitResult>(
+          session.workspace.id,
+          "s1_sim.orders_submitted",
+          tryDate,
+        );
+        if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
+          auditOrders = orderAudit.results.map((r) => ({
+            symbol: r.symbol,
+            shares: r.shares,
+            status: r.status,
+            trade_id: r.trade_id,
+            error: r.error,
+            trading_date: orderAudit.trading_date ?? tryDate,
+            submitted_at_tst: orderAudit.submitted_at_tst ?? null,
+          }));
+          auditDate = tryDate;
+          break;
+        }
+      }
+    }
+
     return c.json({
       sim_only: true,
       prod_write_blocked: true,
       data: {
-        orders: [],
-        source: "kgi_sim",
+        orders: auditOrders,
+        source: auditOrders.length > 0 ? "audit_log_fallback" : "kgi_sim",
         degraded: true,
-        reason: degraded ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable") : "gateway_error",
+        reason,
+        auditDate: auditDate,
+        note: auditOrders.length > 0
+          ? `KGI SIM gateway unavailable (${reason}). Showing last F-AUTO order submission from audit log (${auditDate}). Settlement status unknown — these orders were submitted to KGI SIM but confirmation was not received.`
+          : `KGI SIM gateway unavailable (${reason}). No recent F-AUTO order activity found in audit log.`,
         fetchedAt: new Date().toISOString(),
       },
     });
@@ -15545,11 +15583,23 @@ function startSchedulers(workspaceSlug: string): void {
             for (const msg of data.msgArray) {
               const ticker = msg["c"];
               if (!ticker) continue;
-              const zRaw = msg["z"];
-              if (!zRaw || zRaw === "-" || zRaw.trim() === "") continue;
-              const last = Number(zRaw);
-              if (!isFinite(last) || last <= 0) continue;
               if (!isTodayMisTradeDate(msg["d"] ?? "")) continue;
+
+              // Resolve last price: prefer z (last trade), fallback to best bid (b[0]),
+              // then best ask (a[0]). MIS frequently returns z="-" when no tick has
+              // printed in the current second even though the stock is actively traded.
+              // Using bid as proxy gives a real-time level-2 price rather than skipping.
+              const zRaw = msg["z"];
+              const bPrices = msg["b"]?.split("_").filter(Boolean);
+              const aPrices = msg["a"]?.split("_").filter(Boolean);
+              const zNum = parseNum(zRaw);
+              const bidNum = parseNum(bPrices?.[0]);
+              const askNum = parseNum(aPrices?.[0]);
+              const last = zNum ?? bidNum ?? askNum;
+              // Require non-null last AND that volume > 0 (stock is actively traded today)
+              const vol = parseNum(msg["v"]);
+              if (!last || last <= 0) continue;
+              if (!vol || vol <= 0) continue;
 
               const companyRow = batch.find((r) => r.ticker === ticker);
               const market = mapMktField(companyRow?.market ?? "");
@@ -15558,11 +15608,9 @@ function startSchedulers(workspaceSlug: string): void {
               const high = parseNum(msg["h"]);
               const low = parseNum(msg["l"]);
               const prevClose = parseNum(msg["y"]);
-              const vol = parseNum(msg["v"]);
-              const bPrices = msg["b"]?.split("_").filter(Boolean);
-              const aPrices = msg["a"]?.split("_").filter(Boolean);
-              const bid = parseNum(bPrices?.[0]);
-              const ask = parseNum(aPrices?.[0]);
+              // bid/ask/vol already resolved above for last-price fallback
+              const bid = bidNum;
+              const ask = askNum;
 
               // Calculate changePct vs prevClose
               const changePct =
