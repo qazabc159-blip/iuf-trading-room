@@ -2457,6 +2457,219 @@ app.post("/api/v1/strategy/:strategyId/toggle-mode", async (c) => {
   return c.json({ data: outcome.result }, 200);
 });
 
+// =============================================================================
+// GET /api/v1/realtime/snapshot — Canonical quote snapshot endpoint
+//
+// Returns the latest known QuoteSnapshot for each requested symbol.
+// Data source priority (today):
+//   1. TWSE MIS intraday cache (_misTileCache, refreshed every 10–45s during
+//      trading hours 08:55–14:35 by the MIS sweep cron)
+//   2. TWSE STOCK_DAY_ALL EOD (shared 5-min cache, official close)
+// Both sources are honest about what they are — freshness_mode is always set.
+//
+// Contract guarantee: when Fubon Neo WS adapter ships, only the data-fetch
+// section changes. This path, response schema, and freshness labeling stays.
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES)
+// Query: ?symbols=2330,0050 (comma-separated, required, max 50)
+// =============================================================================
+app.get("/api/v1/realtime/snapshot", async (c) => {
+  const session = c.get("session");
+  const role = session.user.role as string;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const rawSymbols = (c.req.query("symbols") ?? "").trim();
+  if (!rawSymbols) {
+    return c.json({ error: "missing_symbols", message: "?symbols= is required (comma-separated)" }, 400);
+  }
+
+  const requested = [...new Set(
+    rawSymbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
+  )].slice(0, 50);
+
+  if (requested.length === 0) {
+    return c.json({ error: "missing_symbols", message: "No valid symbol found in ?symbols=" }, 400);
+  }
+
+  const { quoteSnapshotResponseSchema } = await import("@iuf-trading-room/contracts");
+  const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+
+  // --- Build TWSE EOD lookup (shared dedup cache — no extra upstream call if warm) ---
+  const eodRows = await getStockDayAllRows().catch(() => []);
+  type EodEntry = {
+    last_price: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    change: number | null;
+    change_pct: number | null;
+    prev_close: number | null;
+    total_volume: number | null;
+    source_time: string;
+  };
+  const eodMap = new Map<string, EodEntry>();
+  for (const row of eodRows) {
+    const code = row.Code?.trim();
+    if (!code) continue;
+    const close = parseFloat(row.ClosingPrice);
+    if (!isFinite(close)) continue;
+    const chgRaw = parseFloat(row.Change?.trim() ?? "");
+    const chg = isFinite(chgRaw) ? chgRaw : null;
+    const open = isFinite(parseFloat(row.OpeningPrice)) ? parseFloat(row.OpeningPrice) : null;
+    const high = isFinite(parseFloat(row.HighestPrice)) ? parseFloat(row.HighestPrice) : null;
+    const low = isFinite(parseFloat(row.LowestPrice)) ? parseFloat(row.LowestPrice) : null;
+    const vol = isFinite(parseFloat(row.TradeVolume)) ? parseFloat(row.TradeVolume) : null;
+    const prevClose = chg != null ? close - chg : null;
+    const changePct = prevClose != null && prevClose !== 0
+      ? Math.round((chg! / prevClose) * 10000) / 100
+      : null;
+
+    // Derive ISO source_time from TWSE ROC date "114/05/18" → "2026-05-18T13:30:00+08:00"
+    const dateParts = (row.Date ?? "").trim().split("/");
+    let sourceTime = nowIso;
+    if (dateParts.length === 3) {
+      const rocYear = parseInt(dateParts[0]!, 10);
+      const dateStr = `${rocYear + 1911}-${dateParts[1]!.padStart(2, "0")}-${dateParts[2]!.padStart(2, "0")}`;
+      sourceTime = `${dateStr}T13:30:00+08:00`;
+    }
+
+    eodMap.set(code, {
+      last_price: close,
+      open,
+      high,
+      low,
+      change: chg,
+      change_pct: changePct,
+      prev_close: prevClose,
+      total_volume: vol,
+      source_time: sourceTime
+    });
+  }
+
+  // --- Freshness helpers ---
+  // MIS intraday threshold: 5 min (MIS cron fires every 45s / sweep every 10s)
+  const MIS_STALE_MS = 5 * 60 * 1000;
+  // EOD is always classified as "eod" regardless of age
+  const TAIPEI_HHMM = (() => {
+    const d = new Date(now + 8 * 60 * 60 * 1000);
+    return d.getUTCHours() * 100 + d.getUTCMinutes();
+  })();
+  const isTradingHours = TAIPEI_HHMM >= 855 && TAIPEI_HHMM <= 1435;
+  const todayYmd = new Date(now + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
+
+  // --- Resolve each symbol ---
+  const snapshots = [];
+  const found: string[] = [];
+  const missing: string[] = [];
+
+  for (const sym of requested) {
+    // Tier 1: MIS intraday cache
+    const misEntry = _misTileCache.get(sym);
+    const misIsToday = misEntry?.tradeDateYmd === todayYmd;
+    const misAgeMs = misEntry ? now - new Date(misEntry.ts).getTime() : Infinity;
+    const misIsValid = misEntry != null && misIsToday && misAgeMs < MIS_STALE_MS;
+
+    if (misIsValid && isTradingHours) {
+      // MIS data: last_price + changePct available; no OHLC or depth
+      const misSourceTime = misEntry!.ts;
+      const freshnessMs = Math.max(0, now - new Date(misSourceTime).getTime());
+
+      // Try to blend EOD reference for prev_close / open / high / low
+      const eod = eodMap.get(sym);
+
+      found.push(sym);
+      snapshots.push(quoteSnapshotResponseSchema.shape.snapshots.element.parse({
+        symbol: sym,
+        exchange: "TWSE" as const,
+        market: "TSE" as const,
+        channel: "quote" as const,
+        source: "twse_mis" as const,
+        source_time: misSourceTime,
+        ingest_time: nowIso,
+        serial: null,
+        last_price: misEntry!.last,
+        last_size: null,
+        total_volume: eod?.total_volume ?? null,
+        bid: null,
+        ask: null,
+        bid_size: null,
+        ask_size: null,
+        flags: {},
+        freshness_mode: "intraday" as const,
+        freshness_ms: freshnessMs,
+        version: "1" as const,
+        prev_close: eod?.prev_close ?? null,
+        change: misEntry!.changePct != null && eod?.prev_close != null
+          ? Math.round((misEntry!.changePct / 100) * eod.prev_close * 100) / 100
+          : null,
+        change_pct: misEntry!.changePct,
+        open: eod?.open ?? null,
+        high: eod?.high ?? null,
+        low: eod?.low ?? null
+      }));
+      continue;
+    }
+
+    // Tier 2: TWSE EOD
+    const eod = eodMap.get(sym);
+    if (eod) {
+      const freshnessMs = Math.max(0, now - new Date(eod.source_time).getTime());
+      // If MIS entry exists but is stale/off-hours, call it "stale"; pure EOD = "eod"
+      const freshnessMode = (misEntry != null && !misIsToday)
+        ? "stale" as const
+        : "eod" as const;
+
+      found.push(sym);
+      snapshots.push(quoteSnapshotResponseSchema.shape.snapshots.element.parse({
+        symbol: sym,
+        exchange: "TWSE" as const,
+        market: "TSE" as const,
+        channel: "quote" as const,
+        source: "eod" as const,
+        source_time: eod.source_time,
+        ingest_time: nowIso,
+        serial: null,
+        last_price: eod.last_price,
+        last_size: null,
+        total_volume: eod.total_volume,
+        bid: null,
+        ask: null,
+        bid_size: null,
+        ask_size: null,
+        flags: {},
+        freshness_mode: freshnessMode,
+        freshness_ms: freshnessMs,
+        version: "1" as const,
+        prev_close: eod.prev_close,
+        change: eod.change,
+        change_pct: eod.change_pct,
+        open: eod.open,
+        high: eod.high,
+        low: eod.low
+      }));
+      continue;
+    }
+
+    // No data
+    missing.push(sym);
+  }
+
+  return c.json(quoteSnapshotResponseSchema.parse({
+    generated_at: nowIso,
+    symbols_found: found,
+    symbols_missing: missing,
+    snapshots
+  }));
+});
+
 app.post("/api/v1/signals", async (c) => {
   const payload = signalCreateInputSchema.parse(await c.req.json());
   return c.json(

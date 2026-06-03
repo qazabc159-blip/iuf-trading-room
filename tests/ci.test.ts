@@ -15598,6 +15598,110 @@ test("MIS-UNIVERSE-5: scheduler description includes MIS-FULL-UNIVERSE-SWEEP ent
   );
 });
 
+// =============================================================================
+// REALTIME-SNAPSHOT tests
+// =============================================================================
+
+test("REALTIME-SNAPSHOT-1: quoteSnapshotResponseSchema exists in contracts and has required fields", async () => {
+  const contracts = await import("../packages/contracts/src/index.js");
+  assert.ok(
+    "quoteSnapshotResponseSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: quoteSnapshotResponseSchema must be exported from contracts"
+  );
+  assert.ok(
+    "quoteSnapshotSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: quoteSnapshotSchema must be exported from contracts"
+  );
+  assert.ok(
+    "freshnessModeSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: freshnessModeSchema must be exported from contracts"
+  );
+  assert.ok(
+    "realtimeQuoteSourceSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: realtimeQuoteSourceSchema must be exported from contracts"
+  );
+});
+
+test("REALTIME-SNAPSHOT-2: freshnessModeSchema has expected enum values", async () => {
+  const { freshnessModeSchema } = await import("../packages/contracts/src/realtime.js");
+  const parsed = freshnessModeSchema.parse("intraday");
+  assert.strictEqual(parsed, "intraday");
+  assert.ok(freshnessModeSchema.safeParse("live").success);
+  assert.ok(freshnessModeSchema.safeParse("stale").success);
+  assert.ok(freshnessModeSchema.safeParse("eod").success);
+  assert.ok(!freshnessModeSchema.safeParse("unknown").success);
+});
+
+test("REALTIME-SNAPSHOT-3: quoteSnapshotSchema parses a minimal intraday snapshot", async () => {
+  const { quoteSnapshotSchema } = await import("../packages/contracts/src/realtime.js");
+  const snap = quoteSnapshotSchema.parse({
+    symbol: "2330",
+    exchange: "TWSE",
+    market: "TSE",
+    channel: "quote",
+    source: "twse_mis",
+    source_time: new Date().toISOString(),
+    ingest_time: new Date().toISOString(),
+    last_price: 1050.0,
+    freshness_mode: "intraday",
+    freshness_ms: 12345
+  });
+  assert.strictEqual(snap.symbol, "2330");
+  assert.strictEqual(snap.source, "twse_mis");
+  assert.strictEqual(snap.freshness_mode, "intraday");
+  assert.strictEqual(snap.version, "1");
+  assert.strictEqual(snap.bid, null);       // no depth data → null
+  assert.strictEqual(snap.serial, null);    // no serial → null
+  assert.strictEqual(snap.prev_close, null); // not provided → null
+});
+
+test("REALTIME-SNAPSHOT-4: quoteSnapshotSchema parses an EOD snapshot with OHLC", async () => {
+  const { quoteSnapshotSchema } = await import("../packages/contracts/src/realtime.js");
+  const snap = quoteSnapshotSchema.parse({
+    symbol: "0050",
+    exchange: "TWSE",
+    market: "TSE",
+    channel: "quote",
+    source: "eod",
+    source_time: "2026-06-03T13:30:00+08:00",
+    ingest_time: new Date().toISOString(),
+    last_price: 220.5,
+    freshness_mode: "eod",
+    freshness_ms: 60000,
+    prev_close: 218.0,
+    change: 2.5,
+    change_pct: 1.15,
+    open: 219.0,
+    high: 221.0,
+    low: 218.5
+  });
+  assert.strictEqual(snap.symbol, "0050");
+  assert.strictEqual(snap.source, "eod");
+  assert.strictEqual(snap.freshness_mode, "eod");
+  assert.strictEqual(snap.change_pct, 1.15);
+  assert.strictEqual(snap.open, 219.0);
+});
+
+test("REALTIME-SNAPSHOT-5: GET /api/v1/realtime/snapshot route is defined in server.ts", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.ok(
+    source.includes('"/api/v1/realtime/snapshot"'),
+    "REALTIME-SNAPSHOT-5: snapshot route must be registered in server.ts"
+  );
+  assert.ok(
+    source.includes("_misTileCache.get(sym)"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must read from _misTileCache"
+  );
+  assert.ok(
+    source.includes("getStockDayAllRows"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must use getStockDayAllRows for EOD fallback"
+  );
+  assert.ok(
+    source.includes("freshness_mode"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must set freshness_mode"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
