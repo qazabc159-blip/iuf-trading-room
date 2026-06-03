@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { apiLogout } from "@/lib/auth-client";
+import { apiGetMe, apiLogout } from "@/lib/auth-client";
 
 type NavItem = {
   path: string;
@@ -80,9 +80,23 @@ export function Sidebar() {
   const router = useRouter();
   const navRef = useRef<HTMLElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void apiGetMe().then((result) => {
+      if (cancelled) return;
+      setUserRole(result.ok ? result.user.role : null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -96,6 +110,7 @@ export function Sidebar() {
     router.push("/login");
   }
 
+  const isOwner = userRole === "Owner";
   const internalActive = INTERNAL_NAV.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
 
   return (
@@ -137,35 +152,37 @@ export function Sidebar() {
         })}
       </nav>
 
-      <details className="tac-sidebar-internal" open={internalActive || undefined}>
-        <summary aria-label="內部控管導覽">
-          <span>內部控管</span>
-          <small>Owner / 系統</small>
-        </summary>
-        <nav className="tac-nav tac-nav-admin" aria-label="內部控管導覽">
-          {INTERNAL_NAV.map((item) => {
-            const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
-            const Icon = item.Icon;
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={active ? "active" : ""}
-                aria-current={active ? "page" : undefined}
-              >
-                <span className="tac-nav-icon" aria-hidden="true">
-                  <Icon size={17} strokeWidth={1.9} />
-                </span>
-                <div>
-                  <b>{item.title}</b>
-                  <small>{item.sub}</small>
-                </div>
-                {active && <i />}
-              </Link>
-            );
-          })}
-        </nav>
-      </details>
+      {isOwner && (
+        <details className="tac-sidebar-internal" open={internalActive || undefined}>
+          <summary aria-label="內部控管導覽">
+            <span>內部控管</span>
+            <small>Owner-only</small>
+          </summary>
+          <nav className="tac-nav tac-nav-admin" aria-label="內部控管導覽">
+            {INTERNAL_NAV.map((item) => {
+              const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
+              const Icon = item.Icon;
+              return (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={active ? "active" : ""}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <span className="tac-nav-icon" aria-hidden="true">
+                    <Icon size={17} strokeWidth={1.9} />
+                  </span>
+                  <div>
+                    <b>{item.title}</b>
+                    <small>{item.sub}</small>
+                  </div>
+                  {active && <i />}
+                </Link>
+              );
+            })}
+          </nav>
+        </details>
+      )}
 
       <div className="tac-sidebar-radar">
         <span className="tac-mini-radar" />

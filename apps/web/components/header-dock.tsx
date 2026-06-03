@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
+import { Bell, CreditCard, FileText, GripHorizontal, KeyRound, LogOut, RotateCcw, Settings, User, X } from "lucide-react";
 
-import { apiLogout } from "@/lib/auth-client";
+import { apiGetMe, apiLogout, type AuthUser } from "@/lib/auth-client";
 import { getHeaderDockNotifications, markHeaderDockNotificationRead, type NotificationEntry } from "@/lib/api";
 
 type Drawer = "notifications" | "system" | null;
@@ -159,6 +159,7 @@ export function HeaderDock() {
   const router = useRouter();
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountUser, setAccountUser] = useState<AuthUser | null>(null);
   const [notificationDrawer, setNotificationDrawer] = useState<NotificationDrawerState>({
     status: "idle",
     notifications: [],
@@ -299,6 +300,19 @@ export function HeaderDock() {
   }, [loadNotificationDrawer]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void apiGetMe().then((result) => {
+      if (cancelled) return;
+      setAccountUser(result.ok ? result.user : null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!drawer) return;
     const frame = window.requestAnimationFrame(() => {
       drawerCloseButtonRef.current?.focus();
@@ -376,6 +390,12 @@ export function HeaderDock() {
   }
 
   const drawerTitle = drawer === "notifications" ? "警示" : "系統狀態";
+  const accountName = accountUser?.name?.trim() || accountUser?.email || "IUF 使用者";
+  const accountRoleLabel = accountUser?.role === "Owner"
+    ? "Owner 管理者"
+    : accountUser?.role
+      ? `${accountUser.role} 帳號`
+      : "帳號";
 
   // Build inline style for position
   const dockStyle: React.CSSProperties = {};
@@ -479,9 +499,18 @@ export function HeaderDock() {
         {accountOpen && (
           <div className="header-account-menu" role="menu" aria-label="帳戶選單">
             <div className="header-account-card">
-              <span>個資</span>
-              <b>Owner Workspace</b>
+              <span>{accountRoleLabel}</span>
+              <b>{accountName}</b>
             </div>
+            <Link
+              className="header-account-menu-link"
+              role="menuitem"
+              href="/settings/subscription"
+              onClick={() => setAccountOpen(false)}
+            >
+              <CreditCard size={15} strokeWidth={1.9} />
+              <span>訂閱與權限</span>
+            </Link>
             <Link
               className="header-account-menu-link"
               role="menuitem"
