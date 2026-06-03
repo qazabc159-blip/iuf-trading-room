@@ -11,6 +11,7 @@ import {
   tierPriceLabel,
   type EntitlementStatus,
 } from "@/lib/subscription-entitlements";
+import { getMyEntitlements } from "@/lib/api";
 
 const pageStyle = {
   minHeight: "100vh",
@@ -76,7 +77,22 @@ function StatusBadge({ status }: { status: EntitlementStatus }) {
   );
 }
 
-export default function SubscriptionSettingsPage() {
+function SourceLabel({ source }: { source: string }) {
+  const labels: Record<string, string> = {
+    role_default: "依帳號角色預設",
+    billing_pending: "等待正式金流",
+    owner_override: "Owner 內部權限",
+  };
+  return <>{labels[source] ?? source}</>;
+}
+
+export default async function SubscriptionSettingsPage() {
+  const entitlementEnvelope = await getMyEntitlements().catch(() => null);
+  const entitlements = entitlementEnvelope?.data ?? null;
+  const currentTier = entitlements
+    ? subscriptionTiers.find((tier) => tier.id === entitlements.subscription.tier)
+    : null;
+
   return (
     <main style={pageStyle}>
       <div style={shellStyle}>
@@ -105,6 +121,56 @@ export default function SubscriptionSettingsPage() {
             不屬於任何客戶訂閱方案；正式付款、折扣與試用天數尚未串接，不在此頁假裝已收費。
           </p>
         </header>
+
+        <section style={{ ...panelStyle, padding: 20, marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+            <ShieldCheck size={18} strokeWidth={1.7} style={{ color: "var(--accent, #c8943f)" }} />
+            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號權限</h2>
+          </div>
+          {entitlements ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+                gap: 12,
+                color: "var(--fg-2, #b9c0cc)",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              <div>
+                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>方案</div>
+                <strong style={{ color: "var(--fg-1, #ddd)", fontSize: 18 }}>
+                  {entitlements.subscription.tierName}
+                  {currentTier ? ` / ${currentTier.levelLabel}` : ""}
+                </strong>
+              </div>
+              <div>
+                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>判定來源</div>
+                <strong style={{ color: "var(--fg-1, #ddd)" }}>
+                  <SourceLabel source={entitlements.subscription.source} />
+                </strong>
+              </div>
+              <div>
+                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>角色</div>
+                <strong style={{ color: "var(--fg-1, #ddd)" }}>{entitlements.user.role}</strong>
+              </div>
+              <div>
+                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>Owner 後台</div>
+                <strong style={{ color: entitlements.ownerInternal.visible ? "#34d399" : "#94a3b8" }}>
+                  {entitlements.ownerInternal.visible ? "可見" : "不顯示給一般客戶"}
+                </strong>
+              </div>
+              <p style={{ gridColumn: "1 / -1", margin: 0, color: "var(--fg-3, #8a93a3)" }}>
+                後端 API 已負責回傳此帳號可用功能；正式付款、試用期與年/月費金流接上前，價格仍標示待定，不假裝已收費。
+              </p>
+            </div>
+          ) : (
+            <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
+              目前無法讀取後端權限 API。下方只顯示方案模型，不假裝此帳號已正式開通任何方案。
+            </p>
+          )}
+        </section>
 
         <section
           style={{

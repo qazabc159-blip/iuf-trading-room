@@ -201,7 +201,7 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps the embedded trading room locked to one viewport", () => {
-    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(routeSource).toContain("height: 100dvh !important;");
     expect(routeSource).toContain("overflow: hidden !important;");
     expect(routeSource).toContain("scrollbar-width: none !important;");

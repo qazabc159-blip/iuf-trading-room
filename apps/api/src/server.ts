@@ -7,6 +7,7 @@ import type { Context } from "hono";
 import {
   type AppSession,
   autopilotExecuteInputSchema,
+  buildMyEntitlements,
   companyMergeInputSchema,
   companyCreateInputSchema,
   companyKeywordsReplaceInputSchema,
@@ -764,6 +765,13 @@ app.get("/api/v1/session", (c) =>
     data: c.get("session")
   })
 );
+
+app.get("/api/v1/entitlements/me", (c) => {
+  const session = c.get("session");
+  return c.json({
+    data: buildMyEntitlements(session.user)
+  });
+});
 
 app.get("/api/v1/audit-logs/summary", async (c) => {
   const query = auditLogSummaryQuerySchema.parse(c.req.query());
