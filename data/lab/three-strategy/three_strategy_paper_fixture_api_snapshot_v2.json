@@ -1,0 +1,147 @@
+{
+  "schema_version": "three_strategy_paper_fixture_api_v2",
+  "created_at_taipei": "2026-06-02T15:22:00+08:00",
+  "mode": "SANCTIONED_CURRENT_STATUS_READ_ONLY",
+  "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+  "broker_write_side_touched": false,
+  "broker_route": "NONE",
+  "health": {
+    "ok": true,
+    "endpoint_count": 0,
+    "source_file_count": 2,
+    "missing_source_files": [],
+    "note": "This v2 snapshot supersedes the 5/8-5/9 fixture for current-state display. It is not a paper-order fixture."
+  },
+  "contract": {
+    "schema_version": "three_strategy_current_status_contract_v2",
+    "created_at_taipei": "2026-06-02T15:22:00+08:00",
+    "mode": "SANCTIONED_CURRENT_STATUS_READ_ONLY",
+    "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+    "broker_write_side_required": false,
+    "broker_route": "NONE",
+    "client_notes": [
+      "Use this snapshot to prevent stale 5/8-5/9 fixture rows from being shown as current Lab state.",
+      "The legacy paper fixture can remain archived but must not be interpreted as current strategy readiness.",
+      "No broker orders, registry writes, tokens, or credential fields are present."
+    ]
+  },
+  "files": [
+    {
+      "key": "strategy_count_board",
+      "path": "reports/trading_room/sanctioned/final_strategy_count_board_v16.json",
+      "exists": true
+    },
+    {
+      "key": "battle_log",
+      "path": "reports/data_lane/second_strategy_slot_battle_log_2026_06_02_v3.json",
+      "exists": true
+    }
+  ],
+  "status": {
+    "current_three_strategy_portfolio": false,
+    "current_counted_strategy_candidates": 1,
+    "current_strategy_ids": [
+      "iuf_ls_omni_v1_router"
+    ],
+    "legacy_fixture_state": "SUPERSEDED_FOR_CURRENT_DISPLAY",
+    "next_step": "TR should refresh from sanctioned v16 if it wants current Lab state; do not infer from 5/8-5/9 fixture.",
+    "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH"
+  },
+  "strategies": [
+    {
+      "strategy_id": "iuf_ls_omni_v1_router",
+      "display_name_zh": "S1 iuf_ls_omni_v1_router",
+      "pilot_role": "SINGLE_CURRENT_SIM_OBSERVATION_LANE",
+      "pilot_status": "RESEARCH_ONLY_TIME_PENDING",
+      "capital_cap_twd_max": 0,
+      "position_cap": 0,
+      "latest_state": "Only current Lab SIM-observation lane; L5 completed-return and L10 elapsed observation are time-pending.",
+      "caveat": "No capital permission, no broker action, no L5/L10 completion claim.",
+      "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+      "broker_route": "NONE"
+    },
+    {
+      "strategy_id": "MAIN_execution_rank_buffer_top20",
+      "display_name_zh": "Legacy MAIN fixture",
+      "pilot_role": "LEGACY_FIXTURE",
+      "pilot_status": "NOT_CURRENT_LAB_STATE",
+      "capital_cap_twd_max": 0,
+      "position_cap": 0,
+      "latest_state": "5/8-5/9 fixture row only; not sanctioned as current active strategy.",
+      "caveat": "Do not show as current unless Lab re-sanctions with fresh evidence.",
+      "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+      "broker_route": "NONE"
+    },
+    {
+      "strategy_id": "rs_20_60_low_drawdown__h20__top5",
+      "display_name_zh": "Legacy rs_20_60 fixture",
+      "pilot_role": "LEGACY_FIXTURE",
+      "pilot_status": "NOT_CURRENT_LAB_STATE",
+      "capital_cap_twd_max": 0,
+      "position_cap": 0,
+      "latest_state": "5/8-5/9 fixture row only; not sanctioned as current active strategy.",
+      "caveat": "Do not show as current unless Lab re-sanctions with fresh evidence.",
+      "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+      "broker_route": "NONE"
+    },
+    {
+      "strategy_id": "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25",
+      "display_name_zh": "Legacy cont_liq fixture",
+      "pilot_role": "LEGACY_FIXTURE",
+      "pilot_status": "SUPERSEDED_BY_S1_ROUTER_LABELING",
+      "capital_cap_twd_max": 0,
+      "position_cap": 0,
+      "latest_state": "Legacy fixture identifier; current S1 should be shown as iuf_ls_omni_v1_router.",
+      "caveat": "Not a standalone current strategy row.",
+      "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH",
+      "broker_route": "NONE"
+    }
+  ],
+  "risk_config": {
+    "schema_version": "three_strategy_current_status_risk_config_v2",
+    "mode_default": "READ_ONLY_STATUS",
+    "global": {
+      "no_leverage_instruction_from_this_snapshot": true,
+      "no_discretionary_override": true,
+      "cash_order_requires_yang_final_manual_ack": true,
+      "broker_route": "NONE"
+    }
+  },
+  "signal_schema": {
+    "schema_version": "three_strategy_current_status_signal_schema_v2",
+    "classification": "status_only_no_signals",
+    "common_signal_record": null,
+    "order_translation": {
+      "from_signal_to_cash_order": "NOT_AVAILABLE_IN_THIS_SNAPSHOT"
+    },
+    "no_token_in_payload": true,
+    "no_credentials_in_payload": true
+  },
+  "signals": [],
+  "paper_orders": [],
+  "positions": [],
+  "risk_events": [],
+  "decision_matrix": {
+    "schema_version": "three_strategy_current_status_decision_matrix_v2",
+    "created_at_taipei": "2026-06-02T15:22:00+08:00",
+    "decision_options": [
+      {
+        "option": "A",
+        "name": "Refresh TR current Lab state from v16",
+        "cash_cap_change": 0,
+        "evidence": "v16 sanctioned snapshot says only S1 is current; no three-strategy portfolio.",
+        "risk": "Requires TR consumer to accept v2 status-only fixture or map v16 board directly.",
+        "codex_view": "recommended"
+      },
+      {
+        "option": "B",
+        "name": "Keep stale fixture visible",
+        "cash_cap_change": 0,
+        "evidence": "No new implementation work.",
+        "risk": "Displays 5/8-5/9 state as if it were current; not recommended.",
+        "codex_view": "not recommended"
+      }
+    ],
+    "cash_order_path": "BLOCKED_NO_CURRENT_THREE_STRATEGY_CASH_PATH"
+  }
+}
