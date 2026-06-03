@@ -15456,6 +15456,21 @@ test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
   assert.match(source, /const rocYear = parseInt\(raw\.slice\(0, 3\)/);
 });
 
+test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB companies LIMIT 200", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // MIS cron must import and use HEATMAP_CORE_SYMBOLS — not DB companies query with LIMIT 200
+  // Root cause: DB has 1900+ companies (full TWSE bulk-seed); LIMIT 200 missed most heatmap core symbols
+  assert.match(source, /const \{ HEATMAP_CORE_SYMBOLS \} = await import\("\.\/kgi-subscription-manager\.js"\)/);
+  assert.match(source, /Array\.from\(HEATMAP_CORE_SYMBOLS\)\.map\(/);
+  // Must NOT have the old DB query for MIS cron (the old LIMIT 200 approach)
+  // Note: the query may still exist in other contexts (s1-sim, etc.) — check for ABSENCE near MIS cron
+  const misCronIdx = source.indexOf('async function _runTwseMisQuoteCron');
+  assert.ok(misCronIdx !== -1, 'TWSE-MIS-9: _runTwseMisQuoteCron must exist');
+  // Within the cron function, HEATMAP_CORE_SYMBOLS reference should appear
+  const cronBody = source.slice(misCronIdx, misCronIdx + 2000);
+  assert.ok(cronBody.includes('HEATMAP_CORE_SYMBOLS'), 'TWSE-MIS-9: cron must use HEATMAP_CORE_SYMBOLS');
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
