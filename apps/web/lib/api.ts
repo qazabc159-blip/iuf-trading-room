@@ -27,6 +27,7 @@ import type {
   MarketDataConsumerSummary,
   MarketDataDecisionSummary,
   MarketDataDecisionSummaryItem,
+  MyEntitlements,
   Order,
   OrderCancelInput,
   OrderCreateInput,
@@ -179,6 +180,10 @@ export async function getThemes() {
 
 export async function getSession() {
   return request<AppSession>("/api/v1/session");
+}
+
+export async function getMyEntitlements() {
+  return request<MyEntitlements>("/api/v1/entitlements/me");
 }
 
 export type RecommendationListResponse = {

@@ -5,6 +5,10 @@ const sidebarSource = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "u
 const homepageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const headerDockSource = readFileSync(new URL("./header-dock.tsx", import.meta.url), "utf8");
 const entitlementSource = readFileSync(new URL("../lib/subscription-entitlements.ts", import.meta.url), "utf8");
+const contractEntitlementSource = readFileSync(
+  new URL("../../../packages/contracts/src/entitlements.ts", import.meta.url),
+  "utf8"
+);
 
 describe("product navigation owner boundary", () => {
   it("shows internal controls only after the current account is confirmed as Owner", () => {
@@ -28,7 +32,8 @@ describe("product navigation owner boundary", () => {
   });
 
   it("keeps owner internal controls outside customer subscription tiers", () => {
-    expect(entitlementSource).toContain('owner_internal: "not_included"');
-    expect(entitlementSource).toContain('return role === "Owner"');
+    expect(entitlementSource).toContain("@iuf-trading-room/contracts");
+    expect(contractEntitlementSource).toContain('owner_internal: "not_included"');
+    expect(contractEntitlementSource).toContain('return role === "Owner"');
   });
 });
