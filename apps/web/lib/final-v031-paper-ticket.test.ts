@@ -115,12 +115,19 @@ describe("final-v031 paper ticket price gate", () => {
   it("keeps trading-room K-line controls actionable and data-driven", () => {
     expect(klineChartSource).toContain("handleScroll");
     expect(klineChartSource).toContain("handleScale");
+    expect(klineChartSource).toContain("data-testid=\"kline-viewport-tools\"");
+    expect(klineChartSource).toContain("zoomLogicalRange(0.72)");
+    expect(klineChartSource).toContain("zoomLogicalRange(1.38)");
+    expect(klineChartSource).toContain("applyDefaultLatestRange");
+    expect(klineChartSource).toContain("fitAllBars");
     expect(klineChartSource).toContain("buildIndicatorSignals");
     expect(klineChartSource).toContain("trading-room-kline-signal-strip");
     expect(klineChartSource).toContain("calcNullableEMA");
     expect(klineChartSource).toContain("chooseVolumePriceLevel");
     expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-toolbar");
+    expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-viewport-tools");
     expect(tradingRoomKlineFrameSource).toContain("order: 2;");
+    expect(tradingRoomKlineFrameSource).toContain("order: 4;");
   });
 
   it("does not reload the real K-line frame twice when selecting a watchlist row", () => {

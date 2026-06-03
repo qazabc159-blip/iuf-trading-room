@@ -330,6 +330,32 @@ const frameCss = `
     border-top: 1px solid rgba(220, 228, 240, 0.06);
   }
 
+  .trading-room-kline-host .kline-viewport-tools {
+    order: 4;
+    flex: 0 0 auto;
+    margin: 0 8px 2px;
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(148, 163, 184, 0.11);
+    border-radius: 6px;
+    background: rgba(3, 7, 12, 0.42);
+  }
+
+  .trading-room-kline-host .kline-viewport-tools button {
+    min-height: 22px !important;
+    padding: 3px 6px !important;
+    font-size: 10px !important;
+  }
+
+  .trading-room-kline-host .kline-viewport-tools .count {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .trading-room-kline-host ._ind-toggle-bar-label,
   .trading-room-kline-host .kline-toolbar-label {
     font-size: 10px;

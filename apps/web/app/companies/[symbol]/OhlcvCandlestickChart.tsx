@@ -957,8 +957,46 @@ const INDICATOR_CSS = `
 .kline-signal-chip.up b { color: #e63946; }
 .kline-signal-chip.down b { color: #2ecc71; }
 .kline-signal-chip.muted b { color: #f0bd62; }
+.kline-viewport-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(220,228,240,0.06);
+  background: rgba(3, 7, 12, 0.34);
+  color: rgba(203,213,225,0.62);
+  font: 800 10px/1.4 var(--mono, monospace);
+}
+.kline-viewport-tools .label {
+  color: rgba(203,213,225,0.42);
+}
+.kline-viewport-tools button {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid rgba(220,228,240,0.14);
+  border-radius: 4px;
+  background: rgba(15,23,34,0.54);
+  color: rgba(226,232,240,0.78);
+  font: inherit;
+  cursor: pointer;
+}
+.kline-viewport-tools button:hover:not(:disabled) {
+  border-color: rgba(226,184,92,0.42);
+  color: #e2b85c;
+}
+.kline-viewport-tools button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.kline-viewport-tools .count {
+  margin-left: auto;
+  color: rgba(226,184,92,0.9);
+  white-space: nowrap;
+}
 @media (max-width: 900px) {
   .kline-signal-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kline-viewport-tools .count { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   ._ind-toggle-btn { transition: none; }
@@ -998,6 +1036,7 @@ export function OhlcvCandlestickChart({
   const [range, setRange] = useState<RangeKey>("all");
   const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("1d");
   const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
+  const [visibleRange, setVisibleRange] = useState<ChartLogicalRange | null>(null);
 
   // Indicator toggles — initialized from localStorage on first render
   const [indicators, setIndicators] = useState<IndicatorPrefs>(() => {
@@ -1113,9 +1152,53 @@ export function OhlcvCandlestickChart({
     }
   };
 
+  const applyLogicalRange = (nextRange: ChartLogicalRange) => {
+    if (!chartRef.current || chartBars.length === 0) return;
+    const width = Math.max(8, nextRange.to - nextRange.from);
+    const maxTo = chartBars.length + 6;
+    const to = Math.min(maxTo, Math.max(width, nextRange.to));
+    const from = Math.max(0, to - width);
+    const clamped = { from, to };
+    chartRef.current.timeScale().setVisibleLogicalRange(clamped);
+    viewportRef.current = { key: chartViewportKey, range: clamped };
+    setVisibleRange(clamped);
+  };
+
+  const applyDefaultLatestRange = () => {
+    if (!chartRef.current || chartBars.length === 0) return;
+    const count = visibleBarsFor(interval, range);
+    applyLogicalRange({
+      from: Math.max(0, chartBars.length - count),
+      to: chartBars.length + 4,
+    });
+  };
+
+  const zoomLogicalRange = (multiplier: number) => {
+    if (!chartRef.current || chartBars.length === 0) return;
+    const current = chartRef.current.timeScale().getVisibleLogicalRange();
+    if (!current || !Number.isFinite(current.from) || !Number.isFinite(current.to) || current.to <= current.from) return;
+    const currentWidth = current.to - current.from;
+    const minWidth = Math.min(chartBars.length, Math.max(12, isIntraday ? 48 : 36));
+    const maxWidth = Math.max(minWidth, chartBars.length + 8);
+    const nextWidth = Math.min(maxWidth, Math.max(minWidth, currentWidth * multiplier));
+    const center = (current.from + current.to) / 2;
+    applyLogicalRange({
+      from: center - nextWidth / 2,
+      to: center + nextWidth / 2,
+    });
+  };
+
+  const fitAllBars = () => {
+    if (!chartRef.current || chartBars.length === 0) return;
+    chartRef.current.timeScale().fitContent();
+    viewportRef.current = { key: chartViewportKey, range: null };
+    setVisibleRange(null);
+  };
+
   useEffect(() => {
     setHoverBar(null);
-  }, [chartBars]);
+    setVisibleRange(null);
+  }, [chartViewportKey]);
 
   // ── Lightweight-charts effect (candlestick + MA overlays) ──────────────────
   useEffect(() => {
@@ -1323,6 +1406,7 @@ export function OhlcvCandlestickChart({
         const setLogicalRange = (nextRange: ChartLogicalRange) => {
           chart?.timeScale().setVisibleLogicalRange(nextRange);
           viewportRef.current = { key: chartViewportKey, range: nextRange };
+          setVisibleRange(nextRange);
         };
         const savedViewport = viewportRef.current.key === chartViewportKey ? viewportRef.current.range : null;
         if (
@@ -1341,6 +1425,7 @@ export function OhlcvCandlestickChart({
         } else {
           chart.timeScale().fitContent();
           viewportRef.current = { key: chartViewportKey, range: null };
+          setVisibleRange(null);
         }
 
         rememberRange = (nextRange: import("lightweight-charts").LogicalRange | null) => {
@@ -1349,6 +1434,7 @@ export function OhlcvCandlestickChart({
             key: chartViewportKey,
             range: { from: nextRange.from, to: nextRange.to },
           };
+          setVisibleRange({ from: nextRange.from, to: nextRange.to });
         };
         chart.timeScale().subscribeVisibleLogicalRangeChange(rememberRange);
 
@@ -1417,6 +1503,9 @@ export function OhlcvCandlestickChart({
     if (signal.key === "support-gap" || signal.key === "resistance-gap") return indicators.sr;
     return true;
   }).slice(0, 5);
+  const visibleBarCount = visibleRange
+    ? Math.max(1, Math.min(chartBars.length, Math.round(visibleRange.to - visibleRange.from)))
+    : Math.min(chartBars.length, visibleBarsFor(interval, range));
 
   return (
     <section className="panel hud-frame kline-panel">
@@ -1641,6 +1730,27 @@ export function OhlcvCandlestickChart({
           </div>
         )}
       </div>
+
+      {chartBars.length > 0 && !insufficientTrend && (
+        <div className="kline-viewport-tools" data-testid="kline-viewport-tools" aria-label="K 線視窗控制">
+          <span className="label">視窗</span>
+          <button type="button" onClick={() => zoomLogicalRange(0.72)} title="放大目前視窗，顯示更少 K 棒">
+            放大
+          </button>
+          <button type="button" onClick={() => zoomLogicalRange(1.38)} title="縮小目前視窗，顯示更多 K 棒">
+            縮小
+          </button>
+          <button type="button" onClick={applyDefaultLatestRange} title="回到最新 K 棒附近，保留目前週期的合理視窗">
+            回最新
+          </button>
+          <button type="button" onClick={fitAllBars} title="顯示目前資料範圍內全部 K 棒">
+            全覽
+          </button>
+          <span className="count">
+            顯示 {visibleBarCount.toLocaleString("zh-TW")} / {chartBars.length.toLocaleString("zh-TW")} 根
+          </span>
+        </div>
+      )}
 
       <div className="kline-pending-line">
         <span className={`tg ${stateToneClass(kbarState)}`}>{stateLabel(kbarState)}</span>
