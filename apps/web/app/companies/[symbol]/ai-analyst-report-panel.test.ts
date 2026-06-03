@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ReactRunResult, ReactTraceStep } from "./AiAnalystReportPanel";
+import { assessCompanyAiReportQuality } from "./aiAnalystReportQuality";
 import {
   buildCompanyAiAnalystPrompt,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
@@ -177,6 +178,42 @@ describe("Complete state", () => {
   it("report_md is present and non-empty", () => {
     expect(completedResult.report_md).toBeTruthy();
     expect(completedResult.report_md!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Company AI analyst report quality gate", () => {
+  it("allows a customer-facing report without engineering internals", () => {
+    const report = [
+      "## 1. 公司概況與定位",
+      "台積電仍是全球先進製程與高階封裝的核心供應商。",
+      "## 2. 今日/最近資料狀態",
+      "近期行情與新聞資料可用，但仍需搭配法人與量價確認。",
+    ].join("\n\n");
+
+    expect(assessCompanyAiReportQuality(report)).toEqual({
+      ok: true,
+      reason: "ok",
+      blockedTerms: [],
+    });
+  });
+
+  it("blocks reports that leak tool names and placeholder reasons", () => {
+    const report = [
+      "資料不足：本次工具觀察來源為 get_market_overview / get_news_top10。",
+      "品質問題 too_short, generic_data_gap_reason, generic_placeholder_line。",
+      "run_id=abc prompt_tokens=123 completion_tokens=0",
+    ].join("\n");
+
+    const quality = assessCompanyAiReportQuality(report);
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("engineering_leak");
+    expect(quality.blockedTerms.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("blocks quality-protected placeholder reports instead of treating them as formal research", () => {
+    const quality = assessCompanyAiReportQuality("品質保護版：資料不足，僅提供保守分析版。");
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("quality_protected");
   });
 });
 

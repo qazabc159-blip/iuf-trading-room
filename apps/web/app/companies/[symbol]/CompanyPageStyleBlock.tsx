@@ -276,6 +276,33 @@ export function CompanyPageStyleBlock() {
   border-radius: 3px;
   margin-bottom: 14px;
 }
+._ai-quality-banner {
+  border-color: rgba(226,184,92,0.45);
+  background: rgba(226,184,92,0.09);
+  color: #e2b85c;
+}
+._ai-quality-state {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(226,184,92,0.28);
+  background: rgba(226,184,92,0.06);
+  border-radius: 4px;
+  font-family: var(--mono);
+}
+._ai-quality-state b {
+  color: #e2b85c;
+  font-size: 13px;
+}
+._ai-quality-state span,
+._ai-quality-state li {
+  color: rgba(220,228,240,0.75);
+  font-size: 11px;
+}
+._ai-quality-state ul {
+  margin: 0 0 0 18px;
+  padding: 0;
+}
 
 /* Report markdown body */
 ._ai-report-body {
