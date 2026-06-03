@@ -15436,6 +15436,26 @@ test("MIS-HEATMAP-4: sourceLabel for twse_mis_intraday is '盤中即時 (MIS)'",
   assert.equal(tile.sourceState, "twse_mis_intraday", "MIS-HEATMAP-4: sourceState must be twse_mis_intraday");
 });
 
+test("TWSE-MIS-7: cron z='-' fallback — server.ts uses bid as proxy when z is missing", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // Verify the fallback logic: zNum ?? bidNum ?? askNum
+  assert.match(source, /const zNum = parseNum\(zRaw\)/);
+  assert.match(source, /const bidNum = parseNum\(bPrices\?\.\[0\]\)/);
+  assert.match(source, /const askNum = parseNum\(aPrices\?\.\[0\]\)/);
+  assert.match(source, /const last = zNum \?\? bidNum \?\? askNum/);
+  // Volume guard: volume > 0 prevents pre-market / suspended stocks
+  assert.match(source, /if \(!vol \|\| vol <= 0\) continue/);
+  // Date guard is now before z-resolution (early exit on non-today dates)
+  assert.match(source, /if \(!isTodayMisTradeDate\(msg\["d"\] \?\? ""\)\) continue/);
+});
+
+test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
+  // Handles "1150602" compact format: first 3 chars = ROC year, next 2 = month, next 2 = day
+  assert.match(source, /\/\^\d\{7\}\$\/.test\(raw\)/);
+  assert.match(source, /const rocYear = parseInt\(raw\.slice\(0, 3\)/);
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
