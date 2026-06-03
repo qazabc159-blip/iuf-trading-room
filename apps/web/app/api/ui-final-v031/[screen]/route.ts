@@ -89,10 +89,33 @@ function contentShellOverrides(screen: ScreenKey) {
     min-height: 0 !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 10px !important;
+    padding: 8px !important;
     overflow: hidden !important;
     gap: 8px !important;
-    grid-template-columns: clamp(210px, 16vw, 232px) minmax(620px, 1fr) clamp(320px, 24vw, 352px) !important;
+    grid-template-columns: clamp(226px, 14vw, 252px) minmax(0, 1fr) clamp(372px, 22vw, 420px) !important;
+    align-items: stretch !important;
+  }
+
+  .cpane {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) 86px 132px !important;
+    gap: 8px !important;
+  }
+
+  .chart-panel.is-real-chart {
+    min-height: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .real-kline-frame-shell {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
   }
 
   .rpane,
@@ -100,6 +123,99 @@ function contentShellOverrides(screen: ScreenKey) {
   .real-kline-frame-shell {
     overflow: hidden !important;
     scrollbar-width: none !important;
+  }
+
+  .lpane,
+  .rpane {
+    height: 100% !important;
+    max-height: 100% !important;
+    align-self: stretch !important;
+  }
+
+  .rpane,
+  .rpane * {
+    min-width: 0 !important;
+  }
+
+  .rpane .th {
+    flex: 0 0 auto !important;
+    padding: 10px 14px !important;
+  }
+
+  .tform {
+    flex: 1 1 auto !important;
+    padding: 12px 14px 10px !important;
+    gap: 10px !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
+  }
+
+  .tform .field {
+    gap: 4px !important;
+  }
+
+  .tform .field .l {
+    line-height: 1.25 !important;
+  }
+
+  .tform .field input,
+  .tform .field select {
+    min-height: 36px !important;
+    padding: 8px 10px !important;
+  }
+
+  .tform .field .step {
+    display: grid !important;
+    grid-template-columns: 34px minmax(0, 1fr) 34px !important;
+    gap: 6px !important;
+  }
+
+  .tform .field .step .stepbtn {
+    width: 34px !important;
+    height: 36px !important;
+  }
+
+  .tform .field .units {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    width: 100% !important;
+  }
+
+  .preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 10px !important;
+    padding: 10px 11px !important;
+  }
+
+  .gate {
+    padding: 10px 11px !important;
+  }
+
+  .tactions {
+    padding: 0 !important;
+  }
+
+  .tactions .submit {
+    min-height: 48px !important;
+    white-space: normal !important;
+    line-height: 1.35 !important;
+  }
+
+  .tactions .submit span:first-child {
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .tactions .liveex {
+    padding: 9px 10px !important;
+    flex-wrap: wrap !important;
+    gap: 6px 8px !important;
+  }
+
+  .tfoot {
+    font-size: 11px !important;
+    line-height: 1.55 !important;
+    padding: 0 1px !important;
   }
 
   .rec-prefill-box {
