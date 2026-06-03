@@ -172,6 +172,36 @@ function sha256Hex(input: string): string {
   return createHash("sha256").update(input, "utf8").digest("hex");
 }
 
+const MAX_UPSERT_ERROR_LOGS_PER_DATASET = 5;
+
+export function normalizeDividendYear(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value !== "string") return null;
+
+  const match = value.trim().match(/\d{2,4}/);
+  if (!match) return null;
+
+  const year = Number(match[0]);
+  return Number.isFinite(year) && year > 0 ? Math.trunc(year) : null;
+}
+
+function normalizeDividendAmount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/,/g, "").trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function compactErrorMessage(err: unknown): string {
+  const source = err instanceof Error ? err.message : String(err);
+  return source.split(/\r?\n/)[0]?.slice(0, 240) || "unknown_error";
+}
+
 // ── 5. TaiwanStockDividend ────────────────────────────────────────────────────
 
 /**
@@ -222,6 +252,7 @@ export async function runDividendSync(
   let tickersFailed = 0;
   let rowsUpserted = 0;
   let rowsQuarantined = 0;
+  let upsertErrorLogs = 0;
 
   for (const { ticker } of tickers) {
     const result = await withFinMindRetry<FinMindDividendRow>(dataset, () =>
@@ -234,8 +265,10 @@ export async function runDividendSync(
     }
 
     for (const row of result.rows) {
+      const dividendYear = normalizeDividendYear(row.year);
+
       // QA: year must be present and positive, stock_id must be set
-      if (!row.stock_id || !row.year || row.year <= 0) {
+      if (!row.stock_id || dividendYear === null) {
         rowsQuarantined++;
         await quarantineRow("tw_dividend", {
           stock_id: row.stock_id,
@@ -247,7 +280,18 @@ export async function runDividendSync(
       }
 
       // Derive dividend_type from totals
-      const dividendType = (row.TotalStockDividend ?? 0) > 0 ? "stock" : "cash";
+      const stockEarningsDistribution = normalizeDividendAmount(row.StockEarningsDistribution);
+      const stockStatutoryReserveTransfer = normalizeDividendAmount(row.StockStatutoryReserveTransfer);
+      const stockCapitalReserveTransfer = normalizeDividendAmount(row.StockCapitalReserveTransfer);
+      const stockReward = normalizeDividendAmount(row.StockReward);
+      const totalStockDividend = normalizeDividendAmount(row.TotalStockDividend);
+      const cashEarningsDistribution = normalizeDividendAmount(row.CashEarningsDistribution);
+      const cashStatutoryReserveTransfer = normalizeDividendAmount(row.CashStatutoryReserveTransfer);
+      const cashCapitalReserveTransfer = normalizeDividendAmount(row.CashCapitalReserveTransfer);
+      const cashReward = normalizeDividendAmount(row.CashReward);
+      const totalCashDividend = normalizeDividendAmount(row.TotalCashDividend);
+      const totalDividend = normalizeDividendAmount(row.TotalDividend);
+      const dividendType = totalStockDividend > 0 ? "stock" : "cash";
 
       try {
         await db.execute(drizzleSql`
@@ -259,12 +303,12 @@ export async function runDividendSync(
              cash_capital_reserve_transfer, cash_reward, total_cash_dividend,
              total_dividend, fetched_at, source)
           VALUES
-            (${row.stock_id}, ${row.year}, ${dividendType}, ${row.date ?? null},
-             ${row.StockEarningsDistribution ?? 0}, ${row.StockStatutoryReserveTransfer ?? 0},
-             ${row.StockCapitalReserveTransfer ?? 0}, ${row.StockReward ?? 0}, ${row.TotalStockDividend ?? 0},
-             ${row.CashEarningsDistribution ?? 0}, ${row.CashStatutoryReserveTransfer ?? 0},
-             ${row.CashCapitalReserveTransfer ?? 0}, ${row.CashReward ?? 0}, ${row.TotalCashDividend ?? 0},
-             ${row.TotalDividend ?? 0}, ${fetchedAt}, 'finmind')
+            (${row.stock_id}, ${dividendYear}, ${dividendType}, ${row.date ?? null},
+             ${stockEarningsDistribution}, ${stockStatutoryReserveTransfer},
+             ${stockCapitalReserveTransfer}, ${stockReward}, ${totalStockDividend},
+             ${cashEarningsDistribution}, ${cashStatutoryReserveTransfer},
+             ${cashCapitalReserveTransfer}, ${cashReward}, ${totalCashDividend},
+             ${totalDividend}, ${fetchedAt}, 'finmind')
           ON CONFLICT (stock_id, year, dividend_type)
           DO UPDATE SET
             announcement_date                  = EXCLUDED.announcement_date,
@@ -284,8 +328,18 @@ export async function runDividendSync(
         `);
         rowsUpserted++;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[market-intel-sync] ${dataset} upsert error ticker=${ticker} year=${row.year}: ${msg}`);
+        if (upsertErrorLogs < MAX_UPSERT_ERROR_LOGS_PER_DATASET) {
+          console.error(
+            `[market-intel-sync] ${dataset} upsert error ticker=${ticker} rawYear=${String(row.year)} ` +
+            `normalizedYear=${dividendYear} error=${compactErrorMessage(err)}`
+          );
+        } else if (upsertErrorLogs === MAX_UPSERT_ERROR_LOGS_PER_DATASET) {
+          console.error(
+            `[market-intel-sync] ${dataset} suppressing additional upsert errors ` +
+            `after ${MAX_UPSERT_ERROR_LOGS_PER_DATASET}; see DONE failed count`
+          );
+        }
+        upsertErrorLogs++;
         tickersFailed++;
       }
     }

@@ -25,10 +25,20 @@ import {
   runStockNewsSync,
   isWeekendTriggerDay,
   isSundayTriggerDay,
-  queryMarketIntelDatasetStats
+  queryMarketIntelDatasetStats,
+  normalizeDividendYear
 } from "./market-intel-finmind-sync.js";
 
 // ── T1: killswitch blocks dividend ───────────────────────────────────────────
+
+test("T0: normalizeDividendYear accepts FinMind ROC year labels", () => {
+  assert.equal(normalizeDividendYear("111年"), 111);
+  assert.equal(normalizeDividendYear("113年後半年度"), 113);
+  assert.equal(normalizeDividendYear("112年上半年度"), 112);
+  assert.equal(normalizeDividendYear(2024), 2024);
+  assert.equal(normalizeDividendYear("not-a-year"), null);
+  assert.equal(normalizeDividendYear(null), null);
+});
 
 test("T1: runDividendSync with killswitch ON returns skipped=killswitch_on", async () => {
   const original = process.env.FINMIND_KILL_SWITCH;
