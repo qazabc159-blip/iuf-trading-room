@@ -18,7 +18,18 @@ import type { StockDayAllRow } from "./data-sources/twse-openapi-client.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type TileSourceState = "live" | "twse_eod" | "cache" | "no_data";
+export type TileSourceState = "live" | "twse_mis_intraday" | "twse_eod" | "cache" | "no_data";
+
+// ── MIS intraday tile cache entry (written by server.ts cron, read by enricher) ───
+export interface MisTileEntry {
+  /** Last traded price (盤中成交價) */
+  last: number;
+  changePct: number | null;
+  /** ISO 8601 timestamp of when MIS was fetched */
+  ts: string;
+  /** TWSE trade date "YYYYMMDD" — used to detect if data is from today */
+  tradeDateYmd: string;
+}
 
 export interface EnrichedHeatmapTile {
   symbol: string;
@@ -41,10 +52,11 @@ export interface EnrichedHeatmapResult {
   staleAfterSec: number;
   tileCount: number;
   liveTileCount: number;
+  misIntradayTileCount: number;
   twseEodTileCount: number;
   cacheTileCount: number;
   /** Top-level freshness bucket for frontend banner */
-  dataFreshness: "live" | "eod" | "cache" | "none";
+  dataFreshness: "live" | "intraday" | "eod" | "cache" | "none";
 }
 
 // ── In-process last-known-close cache (F2 — no DB migration) ──────────────────
@@ -126,11 +138,12 @@ function parseTwseDate(raw: string): string {
 /** Build a human-readable sourceLabel for a tile. */
 function buildSourceLabel(sourceState: TileSourceState, ts: string | null): string {
   if (sourceState === "live") return "即時";
+  if (sourceState === "twse_mis_intraday") return "盤中即時 (MIS)";
   if (!ts) return "無資料";
 
   // Try to build a readable date string
   const date = ts.slice(0, 10); // "YYYY-MM-DD"
-  const [year, month, day] = date.split("-") as [string, string, string];
+  const [, month, day] = date.split("-") as [string, string, string];
   const dow = ["日", "一", "二", "三", "四", "五", "六"][new Date(date).getDay()] ?? "";
   const dateLabel = `${month}/${day} (${dow}) 收盤`;
 
@@ -142,15 +155,22 @@ function buildSourceLabel(sourceState: TileSourceState, ts: string | null): stri
 // ── Core enrichment function ───────────────────────────────────────────────────
 
 /**
- * Enrich KGI heatmap tiles using 3-tier fallback.
+ * Enrich KGI heatmap tiles using 4-tier fallback.
+ *
+ * Tier 1  (live):              KGI gateway tick — market hours, EC2 running
+ * Tier 1.5 (twse_mis_intraday): TWSE MIS盤中 — 5-20s delayed, injected by MIS cron (08:55-14:35)
+ * Tier 2  (twse_eod):          TWSE STOCK_DAY_ALL — per-symbol EOD price + changePct
+ * Tier 3  (cache):             In-process last-known-close — survives off-hours gap
  *
  * @param kgiTiles     Raw tiles from getKgiCoreHeatmap() — may have null price
  * @param twseRows     TWSE STOCK_DAY_ALL rows (may be empty if TWSE unreachable)
+ * @param misCache     TWSE MIS intraday cache from _runTwseMisQuoteCron (may be undefined)
  * @returns            Fully enriched tiles with sourceState for every tile
  */
 export function enrichHeatmapTiles(
   kgiTiles: KgiHeatmapTile[],
-  twseRows: StockDayAllRow[]
+  twseRows: StockDayAllRow[],
+  misCache?: Map<string, MisTileEntry>
 ): EnrichedHeatmapResult {
   // Update last-close cache from TWSE data (write-through for future requests)
   if (twseRows.length > 0) {
@@ -173,7 +193,14 @@ export function enrichHeatmapTiles(
     twseMap.set(code, { price: close, change: changeVal, changePct: pct, ts });
   }
 
+  // Derive today's date string "YYYYMMDD" in Taipei timezone for MIS freshness check
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
+
   let liveTileCount = 0;
+  let misIntradayTileCount = 0;
   let twseEodTileCount = 0;
   let cacheTileCount = 0;
 
@@ -201,6 +228,34 @@ export function enrichHeatmapTiles(
         ts: kgiTile.ts,
         sourceState: "live" as TileSourceState,
         sourceLabel: buildSourceLabel("live", kgiTile.ts),
+      };
+    }
+
+    // ── Tier 1.5: TWSE MIS intraday (盤中即時, 5-20s delay) ────────────────
+    // Only used when MIS cache is available and contains today's trade data.
+    // Honest: only fires during 08:55-14:35 window when MIS cron is running.
+    const misEntry = misCache?.get(symbol);
+    if (misEntry && misEntry.tradeDateYmd === todayYmd) {
+      // Derive change from MIS last vs EOD prevClose (best-effort)
+      const twseForChange = twseMap.get(symbol);
+      const prevClose = twseForChange
+        ? twseForChange.price - (twseForChange.change ?? 0)
+        : null;
+      const change = prevClose && prevClose > 0
+        ? Math.round((misEntry.last - prevClose) * 100) / 100
+        : null;
+
+      misIntradayTileCount++;
+      return {
+        symbol,
+        name: kgiTile.name,
+        price: misEntry.last,
+        change,
+        changePct: misEntry.changePct,
+        tier,
+        ts: misEntry.ts,
+        sourceState: "twse_mis_intraday" as TileSourceState,
+        sourceLabel: buildSourceLabel("twse_mis_intraday", misEntry.ts),
       };
     }
 
@@ -258,6 +313,7 @@ export function enrichHeatmapTiles(
 
   const dataFreshness: EnrichedHeatmapResult["dataFreshness"] =
     liveTileCount > 0 ? "live"
+    : misIntradayTileCount > 0 ? "intraday"
     : twseEodTileCount > 0 ? "eod"
     : cacheTileCount > 0 ? "cache"
     : "none";
@@ -265,9 +321,10 @@ export function enrichHeatmapTiles(
   return {
     tiles,
     source: liveTileCount > 0 ? "kgi_tick" : "kgi_heatmap_enricher",
-    staleAfterSec: liveTileCount > 0 ? 5 : twseEodTileCount > 0 ? 300 : 3600,
+    staleAfterSec: liveTileCount > 0 ? 5 : misIntradayTileCount > 0 ? 60 : twseEodTileCount > 0 ? 300 : 3600,
     tileCount: tiles.length,
     liveTileCount,
+    misIntradayTileCount,
     twseEodTileCount,
     cacheTileCount,
     dataFreshness,
