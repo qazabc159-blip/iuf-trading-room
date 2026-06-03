@@ -252,7 +252,84 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
   }
 }
 
+function realtimeSourceText(realtime: CompanyRealtimeQuote) {
+  if (realtime.source === "kgi-gateway") return "KGI SIM 即時";
+  if (realtime.source === "twse_intraday") return "TWSE MIS 盤中";
+  if (realtime.referenceReason === "pre_open_reference") return "盤前收盤參考";
+  if (realtime.referenceReason === "post_close_reference") return "盤後收盤參考";
+  if (realtime.referenceReason === "kgi_unavailable_eod_fallback") return "KGI 不可用，使用 TWSE 收盤參考";
+  return "TWSE 收盤參考";
+}
+
+function realtimeFreshnessText(realtime: CompanyRealtimeQuote) {
+  if (realtime.freshness === "fresh") return "即時";
+  if (realtime.referenceReason === "pre_open_reference") return "盤前參考";
+  if (realtime.referenceReason === "post_close_reference") return "盤後參考";
+  if (realtime.freshness === "stale") return "收盤參考";
+  return "無資料";
+}
+
 function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null }) {
+  if (!realtime || realtime.state === "BLOCKED" || realtime.state === "NO_DATA") {
+    const reason = realtime?.reason ?? realtime?.note ?? "目前沒有可用報價來源。";
+    return (
+      <Panel code="QTE-REALTIME" title="即時報價" right="source=BLOCKED">
+        <div className="state-panel">
+          <span className="badge badge-red">報價不可用</span>
+          <span className="tg soft">KGI / TWSE 來源都沒有可顯示資料</span>
+          <span className="state-reason">{reason}</span>
+        </div>
+      </Panel>
+    );
+  }
+
+  const sourceBadge = realtime.state === "LIVE" ? "badge-green" : "badge-yellow";
+  const sourceLabel = realtimeFreshnessText(realtime);
+
+  return (
+    <Panel
+      code="QTE-REALTIME"
+      title="即時報價"
+      right={
+        <span className="source-line" style={{ margin: 0 }}>
+          <span className={`badge ${sourceBadge}`}>{sourceLabel}</span>
+          <span>{realtimeSourceText(realtime)}</span>
+          <span>更新 {formatDateTime(realtime.updatedAt)}</span>
+        </span>
+      }
+    >
+      <div className="quote-snapshot-grid">
+        <div>
+          <span className="tg soft">成交價</span>
+          <b className="num">{fmtNumber(realtime.lastPrice)}</b>
+        </div>
+        <div>
+          <span className="tg soft">買價</span>
+          <b className="num up">{fmtNumber(realtime.bid)}</b>
+        </div>
+        <div>
+          <span className="tg soft">賣價</span>
+          <b className="num down">{fmtNumber(realtime.ask)}</b>
+        </div>
+        <div>
+          <span className="tg soft">成交量</span>
+          <b className="num">{realtime.volume !== null ? realtime.volume.toLocaleString("zh-TW") : "--"}</b>
+        </div>
+        <div>
+          <span className="tg soft">狀態</span>
+          <b className="tg">{sourceLabel}</b>
+        </div>
+      </div>
+      {realtime.note || realtime.reason ? (
+        <div className="state-reason" style={{ marginTop: 12 }}>
+          {realtime.note ?? realtime.reason}
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function LegacyKgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null }) {
   if (!realtime || realtime.state === "BLOCKED" || realtime.state === "NO_DATA") {
     const reason = realtime?.reason ?? (realtime ? "此股無即時報價資料。" : "KGI gateway (EC2) 尚未回傳即時報價。");
     return (
