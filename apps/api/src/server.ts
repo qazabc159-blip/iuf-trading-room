@@ -15508,26 +15508,16 @@ function startSchedulers(workspaceSlug: string): void {
           persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
         };
 
-        // Get companies lite (cached, 5min TTL) — only need ticker + market
-        // We need a repo for this; skip if DB unavailable
-        const db = getDb();
-        if (!db) return;
-
-        // Direct query: SELECT ticker, market FROM companies WHERE workspace_id = ?
-        // Use drizzle companies table (already imported)
-        const workspaceRows = await db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(eq(workspaces.slug, workspaceSlug))
-          .limit(1);
-        const wsId = workspaceRows[0]?.id;
-        if (!wsId) return;
-
-        const companyRows = await db
-          .select({ ticker: companies.ticker, market: companies.market })
-          .from(companies)
-          .where(eq(companies.workspaceId, wsId))
-          .limit(200);
+        // Use HEATMAP_CORE_SYMBOLS as the fetch universe (40 tickers, all TWSE).
+        // Previously used DB companies LIMIT 200, but DB has 1900+ companies (full TWSE
+        // bulk-seed). The LIMIT 200 missed most of the 40 heatmap core symbols.
+        // MIS cron purpose is to feed _misTileCache for kgi-core heatmap Tier 1.5 —
+        // so fetching exactly the 40 heatmap symbols is correct and efficient.
+        const { HEATMAP_CORE_SYMBOLS } = await import("./kgi-subscription-manager.js");
+        const companyRows: Array<{ ticker: string; market: string }> = Array.from(HEATMAP_CORE_SYMBOLS).map((ticker) => ({
+          ticker,
+          market: "TWSE", // All HEATMAP_CORE_SYMBOLS are TWSE-listed
+        }));
 
         if (!companyRows.length) return;
 
