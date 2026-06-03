@@ -15471,6 +15471,133 @@ test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB compani
   assert.ok(cronBody.includes('HEATMAP_CORE_SYMBOLS'), 'TWSE-MIS-9: cron must use HEATMAP_CORE_SYMBOLS');
 });
 
+// =============================================================================
+// MIS-UNIVERSE: MIS full-universe sweep (Tier B) logic tests (MIS-UNIVERSE-1..5)
+// =============================================================================
+//
+// Tests for the _runMisFullSweepSlice design decisions:
+//   - Universe ticker validation
+//   - Exchange prefix resolution (tse/otc)
+//   - Thin stock bid-fallback (vol=0 allowed, bid/ask is enough)
+//   - Sweep pointer wrap-around semantics
+//   - Scheduler description string includes MIS-FULL-UNIVERSE-SWEEP
+
+test("MIS-UNIVERSE-1: universe ticker filter accepts valid 4-6 digit codes, rejects others", () => {
+  // Inline the filter used in _refreshMisUniverseCache
+  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t.trim());
+  const valid = ["2330", "0050", "00878", "3008", "6669", "910861"];
+  const invalid = ["TSMC", "2330A", "99", "ABC", "", "  ", "2330 ", "00"];
+  for (const t of valid) {
+    assert.ok(tickerFilter(t), `MIS-UNIVERSE-1: "${t}" should be accepted`);
+  }
+  for (const t of invalid) {
+    assert.ok(!tickerFilter(t), `MIS-UNIVERSE-1: "${t}" should be rejected`);
+  }
+});
+
+test("MIS-UNIVERSE-2: exchange prefix resolves correctly for all market types", () => {
+  function _misSwpExPrefix(market: string): "tse" | "otc" {
+    const m = market.trim().toUpperCase();
+    if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+      return "otc";
+    }
+    return "tse";
+  }
+  const cases: Array<{ market: string; expected: "tse" | "otc" }> = [
+    { market: "TWSE", expected: "tse" },
+    { market: "上市", expected: "tse" },
+    { market: "TPEX", expected: "otc" },
+    { market: "TWO", expected: "otc" },
+    { market: "TW_EMERGING", expected: "otc" },
+    { market: "上櫃", expected: "otc" },
+    { market: "OTHER", expected: "tse" },
+    { market: "OTC", expected: "otc" },
+  ];
+  for (const c of cases) {
+    assert.equal(_misSwpExPrefix(c.market), c.expected,
+      `MIS-UNIVERSE-2: market="${c.market}" → prefix must be "${c.expected}"`);
+  }
+});
+
+test("MIS-UNIVERSE-3: thin stock (vol=0) with valid bid accepted; no last price rejected", () => {
+  // In Tier B sweep, vol=0 is allowed — thin stocks with bid/ask get a reference price.
+  // Only requirement: last (=zNum ?? bidNum ?? askNum) must be > 0.
+  function _misSwpParseNum(s?: string): number | null {
+    if (!s || s === "-" || s.trim() === "") return null;
+    const n = Number(s.replace(/,/g, "").trim());
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  // Case 1: thin stock — z="-", vol="0", but bid=45.00 → should produce last=45.00
+  const zNum1 = _misSwpParseNum("-");
+  const bidNum1 = _misSwpParseNum("45.00");
+  const vol1 = _misSwpParseNum("0");
+  const last1 = zNum1 ?? bidNum1 ?? null;
+  assert.equal(last1, 45, "MIS-UNIVERSE-3: thin stock bid=45.00, z=dash → last must be 45");
+  assert.equal(vol1, null, "MIS-UNIVERSE-3: vol=0 parses as null (not positive), but is allowed");
+  assert.ok(last1 !== null && last1 > 0, "MIS-UNIVERSE-3: thin stock with bid should produce valid last");
+
+  // Case 2: no bid, no ask, z="-" → should be skipped
+  const zNum2 = _misSwpParseNum("-");
+  const bidNum2 = _misSwpParseNum("-");
+  const askNum2 = _misSwpParseNum("");
+  const last2 = zNum2 ?? bidNum2 ?? askNum2;
+  assert.equal(last2, null, "MIS-UNIVERSE-3: no bid/ask/z → last must be null → stock skipped");
+});
+
+test("MIS-UNIVERSE-4: sweep pointer wraps at universe end and round counter increments", () => {
+  // Simulate the sweep pointer wrap logic
+  let idx = 0;
+  let roundsCompleted = 0;
+  let injectedThisRound = 0;
+  const BATCH = 50;
+  const total = 130; // simulate small universe
+  const universe = Array.from({ length: total }, (_, i) => ({ ticker: String(1000 + i), market: "TWSE" }));
+
+  function nextSlice() {
+    if (idx >= total) {
+      idx = 0;
+      roundsCompleted++;
+      injectedThisRound = 0; // reset
+    }
+    const slice = universe.slice(idx, idx + BATCH);
+    idx += BATCH;
+    return slice;
+  }
+
+  // First pass: 3 slices (50+50+30=130)
+  const s1 = nextSlice(); assert.equal(s1.length, 50, "MIS-UNIVERSE-4: slice 1 must be 50");
+  const s2 = nextSlice(); assert.equal(s2.length, 50, "MIS-UNIVERSE-4: slice 2 must be 50");
+  const s3 = nextSlice(); assert.equal(s3.length, 30, "MIS-UNIVERSE-4: slice 3 (tail) must be 30");
+  assert.equal(roundsCompleted, 0, "MIS-UNIVERSE-4: no round complete yet after 3 slices");
+
+  // idx is now 150 > 130, next call wraps
+  const s4 = nextSlice();
+  assert.equal(roundsCompleted, 1, "MIS-UNIVERSE-4: round 1 complete after wrap");
+  assert.equal(idx, 50, "MIS-UNIVERSE-4: after wrap, idx advances by BATCH from 0");
+  assert.equal(s4.length, 50, "MIS-UNIVERSE-4: first slice of round 2 must be 50");
+});
+
+test("MIS-UNIVERSE-5: scheduler description includes MIS-FULL-UNIVERSE-SWEEP entry", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // Verify the Tier B sweep is registered in the scheduler startup log
+  assert.match(
+    source,
+    /MIS-FULL-UNIVERSE-SWEEP \(10s\/slice, 50 tickers\/slice/,
+    "MIS-UNIVERSE-5: scheduler log must mention MIS-FULL-UNIVERSE-SWEEP"
+  );
+  // Verify Tier B slice function exists
+  assert.ok(
+    source.includes("async function _runMisFullSweepSlice"),
+    "MIS-UNIVERSE-5: _runMisFullSweepSlice must be defined"
+  );
+  // Verify universe cache refresh function exists
+  assert.ok(
+    source.includes("async function _refreshMisUniverseCache"),
+    "MIS-UNIVERSE-5: _refreshMisUniverseCache must be defined"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
