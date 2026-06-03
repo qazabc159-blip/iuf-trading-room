@@ -1284,7 +1284,7 @@ export async function getKgiQuoteStatus() {
 // GET /api/v1/companies/:id/quote/realtime
 // :id may be UUID or ticker symbol.
 // state: 'LIVE' | 'STALE' | 'BLOCKED' | 'NO_DATA'
-// source: 'kgi-gateway' always (no mock fallback)
+// source: KGI when quote gateway is live, TWSE intraday/EOD when KGI is unavailable.
 export type CompanyRealtimeQuote = {
   symbol: string;
   lastPrice: number | null;
@@ -1294,7 +1294,10 @@ export type CompanyRealtimeQuote = {
   freshness: "fresh" | "stale" | "not-available";
   state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
   reason?: string;
-  source: "kgi-gateway";
+  source: "kgi-gateway" | "twse_intraday" | "twse_openapi_eod";
+  note?: string;
+  marketSession?: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+  referenceReason?: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   updatedAt: string;
 };
 

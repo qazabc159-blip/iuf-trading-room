@@ -8280,6 +8280,14 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   const symbol = companyIdToTicker(company.ticker);
   const client = getKgiQuoteClient();
   const updatedAt = new Date().toISOString();
+  const marketSession = composeTaiwanMarketState().state;
+
+  function _eodReferenceReason(blockReason?: string | null): "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback" {
+    if (marketSession === "PRE-OPEN") return "pre_open_reference";
+    if (marketSession === "POST-CLOSE") return "post_close_reference";
+    if (marketSession !== "OPEN" && marketSession !== "MIDDAY") return "closed_reference";
+    return blockReason ? "kgi_unavailable_eod_fallback" : "closed_reference";
+  }
 
   // Helper: determine MIS ex prefix (tse/otc) from company market string.
   // Strategy: if market field contains recognizable TPEX/OTC indicator → otc, else → tse.
@@ -8371,20 +8379,22 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
 
   // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
   // Used when both KGI and MIS intraday are unavailable.
-  async function _twseEodFallback(sym: string): Promise<{
+  async function _twseEodFallback(sym: string, blockReason?: string | null): Promise<{
     lastPrice: number | null;
     volume: number | null;
     source: "twse_openapi_eod";
     state: "STALE" | "NO_DATA";
     freshness: "stale" | "not-available";
     note: string;
+    marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+    referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   }> {
     try {
       const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
       const rows = await getStockDayAllRows();
       const row = rows.find((r) => r.Code === sym);
       if (!row) {
-        return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all" };
+        return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", marketSession, referenceReason: _eodReferenceReason(blockReason) };
       }
       const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
       const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
@@ -8397,10 +8407,12 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         state: close !== null ? "STALE" : "NO_DATA",
         freshness: close !== null ? "stale" : "not-available",
         note: `twse_eod date=${row.Date ?? "unknown"}`,
+        marketSession,
+        referenceReason: _eodReferenceReason(blockReason),
       };
     } catch (e) {
       console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
-      return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed" };
+      return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
   }
 
@@ -8421,6 +8433,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           freshness: "fresh" as const,
           state: mis.state,
           source: mis.source,
+          marketSession,
           note: `mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
         }
@@ -8438,6 +8451,8 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         state: fb.state,
         reason: fb.state === "NO_DATA" ? fb.note : undefined,
         source: fb.source,
+        marketSession: fb.marketSession,
+        referenceReason: fb.referenceReason,
         note: fb.note,
         updatedAt
       }
@@ -8474,12 +8489,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
             state: mis.state,
             reason: subscribeBlockReason,
             source: mis.source,
+            marketSession,
             note: `kgi_subscribe_failed:${subscribeBlockReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
             updatedAt
           }
         });
       }
-      const fb = await _twseRealtimeFallback(symbol);
+      const fb = await _twseRealtimeFallback(symbol, subscribeBlockReason);
       return c.json({
         data: {
           symbol,
@@ -8491,6 +8507,8 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           state: fb.state,
           reason: subscribeBlockReason,
           source: fb.source,
+          marketSession: fb.marketSession,
+          referenceReason: fb.referenceReason,
           note: `kgi_subscribe_failed:${subscribeBlockReason} → ${fb.note}`,
           updatedAt
         }
@@ -8574,13 +8592,14 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           state: mis.state,
           reason: blockedReason,
           source: mis.source,
+          marketSession,
           note: `kgi_blocked:${blockedReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
         }
       });
     }
     // MIS also unavailable (e.g. non-trading hours) — fall back to EOD
-    const fb = await _twseRealtimeFallback(symbol);
+    const fb = await _twseRealtimeFallback(symbol, blockedReason);
     return c.json({
       data: {
         symbol,
@@ -8592,6 +8611,8 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         state: fb.state,
         reason: blockedReason,
         source: fb.source,
+        marketSession: fb.marketSession,
+        referenceReason: fb.referenceReason,
         note: `kgi_blocked:${blockedReason} → ${fb.note}`,
         updatedAt
       }
@@ -8614,6 +8635,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       freshness,
       state,
       source: "kgi-gateway" as const,
+      marketSession,
       updatedAt
     }
   });

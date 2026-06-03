@@ -601,6 +601,8 @@ async function computeBreakouts(
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
+  const querySymbols = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  if (querySymbols.length === 0) return [];
 
   const results: Array<{ symbol: string; close: number; sma5: number; vol: number; avgVol5: number }> = [];
 
@@ -612,6 +614,7 @@ async function computeBreakouts(
 
   try {
     // Raw SQL approach — join companies on ticker to get company_id
+    const tickerList = sql.join(querySymbols.map((symbol) => sql`${symbol}`), sql`, `);
     const query = await db.execute(
       sql`
         SELECT c.ticker, o.dt, CAST(o.close AS float) as close, o.volume
@@ -622,7 +625,7 @@ async function computeBreakouts(
           AND o.interval = '1d'
           AND o.source != 'mock'
           AND o.dt >= ${sixDaysAgoStr}
-          AND c.ticker = ANY(${symbols})
+          AND c.ticker IN (${tickerList})
         ORDER BY c.ticker, o.dt DESC
       `
     );
