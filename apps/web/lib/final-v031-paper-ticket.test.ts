@@ -84,7 +84,7 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps the trading room in a single viewport without hiding tape or ledger", () => {
-    expect(ticketHtml).toContain("grid-template-rows:auto minmax(0,1fr) 92px 150px");
+    expect(ticketHtml).toContain("grid-template-rows:auto minmax(0,1fr) 86px 132px");
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .tape");
     expect(ticketHtml).toContain("body[data-screen-label=\"Trading Room v1\"] .ledger");
     expect(ticketHtml).not.toContain("body[data-screen-label=\"Trading Room v1\"] .ledger,\nbody[data-screen-label=\"Trading Room v1\"] .tape");
@@ -99,7 +99,10 @@ describe("final-v031 paper ticket price gate", () => {
   });
 
   it("keeps compact trading-room K-line height inside the frame instead of clipping the readout", () => {
-    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 340");
+    expect(klineChartSource).toContain("const chartHeight = compactTradingRoom ? 300");
+    expect(tradingRoomKlineFrameSource).toContain(".trading-room-kline-host .kline-readout-ribbon");
+    expect(tradingRoomKlineFrameSource).toContain("position: static !important;");
+    expect(tradingRoomKlineFrameSource).toContain("min-height: 260px !important;");
   });
 
   it("shows a real loading state for the embedded K-line instead of a blank iframe", () => {
@@ -182,12 +185,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("height: 100dvh !important;");
     expect(routeSource).toContain("overflow: hidden !important;");
     expect(routeSource).toContain("scrollbar-width: none !important;");
-    expect(routeSource).toContain("grid-template-columns: clamp(210px, 16vw, 232px) minmax(620px, 1fr) clamp(320px, 24vw, 352px) !important;");
+    expect(routeSource).toContain("grid-template-columns: clamp(226px, 14vw, 252px) minmax(0, 1fr) clamp(372px, 22vw, 420px) !important;");
+    expect(routeSource).toContain(".rpane,\n  .rpane *");
+    expect(routeSource).toContain("overflow-y: hidden !important;");
     expect(routeSource).toContain("height: 34px;");
     expect(routeSource).toContain("overflow: hidden;");
     expect(routeSource).toContain("height: calc(100dvh - 34px) !important;");
     expect(ticketHtml).toContain("overflow:hidden;");
-    expect(ticketHtml).toContain("grid-template-columns:clamp(210px,16vw,232px) minmax(620px,1fr) clamp(320px,24vw,352px);");
+    expect(ticketHtml).toContain("grid-template-columns:clamp(226px,14vw,252px) minmax(0,1fr) clamp(372px,22vw,420px);");
     expect(ticketHtml).toContain("gap:8px;");
   });
 

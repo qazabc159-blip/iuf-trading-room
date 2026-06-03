@@ -1027,7 +1027,7 @@ export function OhlcvCandlestickChart({
 
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
-  const chartHeight = compactTradingRoom ? 340 : isIntraday ? 460 : 440;
+  const chartHeight = compactTradingRoom ? 300 : isIntraday ? 460 : 440;
   const activeIntradayMinutes = activeMeta?.kind === "intraday" ? activeMeta.minutes ?? 1 : 1;
   const chartBars = useMemo(() => {
     const meta = ENABLED_INTERVALS.find((item) => item.value === interval);
@@ -1409,6 +1409,14 @@ export function OhlcvCandlestickChart({
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
   const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+  const compactIndicatorSignals = indicatorSignals.filter((signal) => {
+    if (signal.key === "ma20" || signal.key === "ma60") return indicators.ma;
+    if (signal.key === "vwap") return indicators.vwap;
+    if (signal.key === "rsi") return indicators.rsi;
+    if (signal.key === "macd") return indicators.macd;
+    if (signal.key === "support-gap" || signal.key === "resistance-gap") return indicators.sr;
+    return true;
+  }).slice(0, 5);
 
   return (
     <section className="panel hud-frame kline-panel">
@@ -1489,9 +1497,7 @@ export function OhlcvCandlestickChart({
           計畫點位
         </button>
 
-        {!compactTradingRoom && (
-          <>
-            <div className="_ind-divider" />
+        <div className="_ind-divider" />
 
         {/* RSI toggle */}
         <button
@@ -1514,8 +1520,6 @@ export function OhlcvCandlestickChart({
         >
           MACD
         </button>
-          </>
-        )}
       </div>
 
       {(volumePriceLevels.support !== null || volumePriceLevels.resistance !== null || planLevels) && (
@@ -1528,9 +1532,14 @@ export function OhlcvCandlestickChart({
         </div>
       )}
 
-      {compactTradingRoom && indicatorSignals.length > 0 && (
+      {compactTradingRoom && (compactIndicatorSignals.length > 0 || chartBars.length > 0) && (
         <div className="kline-signal-strip" data-testid="trading-room-kline-signal-strip" aria-label="交易室量價指標摘要">
-          {indicatorSignals.map((signal) => (
+          <div className="kline-signal-chip source">
+            <span>資料基礎</span>
+            <b>{chartBars.length.toLocaleString("zh-TW")} 根</b>
+            <small>{isIntraday ? `${activeMeta?.label ?? "分K"} 真實成交分鐘` : `${activeMeta?.label ?? "日K"} OHLCV`}</small>
+          </div>
+          {compactIndicatorSignals.map((signal) => (
             <div key={signal.key} className={`kline-signal-chip ${signal.tone}`}>
               <span>{signal.label}</span>
               <b>{signal.value}</b>
