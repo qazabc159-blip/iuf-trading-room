@@ -1103,11 +1103,20 @@ export async function getTwseMarketBreadth(
     enriched.push({ code: row.Code, name: row.Name, close, change, changePct, tradeValue });
 
     if (!asOf && row.Date) {
-      // TWSE STOCK_DAY_ALL date is "114/05/12" (ROC slash format)
-      const parts = row.Date.trim().split("/");
-      if (parts.length === 3) {
-        const year = parseInt(parts[0], 10) + 1911;
-        asOf = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T13:30:00+08:00`;
+      // TWSE STOCK_DAY_ALL date field may be:
+      //   "1150602"  — compact ROC format (7 chars: YYY + MM + DD, no separator)
+      //   "114/05/12" — slash-separated ROC format (legacy, still present in some endpoints)
+      const raw = row.Date.trim();
+      const slashParts = raw.split("/");
+      if (slashParts.length === 3) {
+        const year = parseInt(slashParts[0], 10) + 1911;
+        asOf = `${year}-${slashParts[1].padStart(2, "0")}-${slashParts[2].padStart(2, "0")}T13:30:00+08:00`;
+      } else if (/^\d{7}$/.test(raw)) {
+        // e.g. "1150602" → ROC 115 = 2026, month 06, day 02
+        const rocYear = parseInt(raw.slice(0, 3), 10);
+        const mm = raw.slice(3, 5);
+        const dd = raw.slice(5, 7);
+        asOf = `${rocYear + 1911}-${mm}-${dd}T13:30:00+08:00`;
       }
     }
   }
