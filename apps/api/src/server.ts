@@ -16989,7 +16989,7 @@ app.post("/api/v1/auth/change-password", async (c) => {
 // GET  /api/v1/recommendations/:id     → StockRecommendation | 404
 // POST /api/v1/recommendations/:id/feedback → 204
 //
-// Auth: Owner-only v1. Paid-tier expansion comes later.
+// Auth: signed-in account with ai_recommendations entitlement.
 // Data: mock layer v1 — real cont_liq_v36 + MAIN wiring comes Day 3+.
 // Lane: strategy backend (Jason). Only touches recommendation-store.ts.
 // =============================================================================
@@ -17036,12 +17036,31 @@ function deriveInternalBaseUrl(reqUrl: string): string {
   }
 }
 
+function recommendationEntitlementResponse(c: Context) {
+  const session = c.get("session");
+  if (!session) {
+    return { ok: false as const, response: c.json({ error: "unauthenticated" }, 401) };
+  }
+
+  const entitlement = buildMyEntitlements(session.user).features.find((feature) => feature.id === "ai_recommendations");
+  if (!entitlement?.access) {
+    return {
+      ok: false as const,
+      response: c.json({
+        error: "feature_not_included",
+        feature: "ai_recommendations",
+        message: "AI recommendations are not enabled for this subscription tier."
+      }, 403)
+    };
+  }
+
+  return { ok: true as const, session };
+}
+
 // GET /api/v1/recommendations/today
 app.get("/api/v1/recommendations/today", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
 
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
@@ -17061,10 +17080,8 @@ app.get("/api/v1/recommendations/today", async (c) => {
 
 // GET /api/v1/recommendations/:id
 app.get("/api/v1/recommendations/:id", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
 
   const { id } = c.req.param();
 
@@ -17086,10 +17103,9 @@ app.get("/api/v1/recommendations/:id", async (c) => {
 
 // POST /api/v1/recommendations/:id/feedback
 app.post("/api/v1/recommendations/:id/feedback", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const { id } = c.req.param();
 

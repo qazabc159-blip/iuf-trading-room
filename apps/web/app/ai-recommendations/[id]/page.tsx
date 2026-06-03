@@ -62,7 +62,7 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
 function safeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("404") || message.includes("not_found")) return "找不到這筆推薦，可能已被新的 Orchestrator 版本替換。";
-  if (message.includes("403") || message.includes("forbidden_role")) return "Owner session 才能讀取 AI 推薦詳情。";
+  if (message.includes("403") || message.includes("forbidden_role")) return "此帳號方案尚未開啟 AI 推薦詳情，請到訂閱/權限頁確認。";
   if (message.includes("401") || message.includes("unauthenticated")) return "登入狀態已失效，請重新整理後再試。";
   return "Recommendation Orchestrator 暫時無法回傳這筆詳情。";
 }
