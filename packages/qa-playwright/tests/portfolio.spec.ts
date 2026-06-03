@@ -208,6 +208,26 @@ test("/portfolio supports 5-symbol handoff, visible ticket update, indicator tog
     const klineFrame = frame.frameLocator("#real-kline-frame");
     await expect(frame.locator("#real-kline-frame"), "real K-line frame must be mounted").toBeVisible({ timeout: 30_000 });
 
+    const viewportTools = klineFrame.getByTestId("kline-viewport-tools");
+    await expect(viewportTools, "real K-line viewport controls must be visible in the trading room").toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      viewportTools.locator(".count"),
+      "real K-line viewport controls must expose visible/total bar count",
+    ).toContainText(/顯示\s+[\d,]+\s*\/\s*[\d,]+\s+根/);
+
+    if (symbol === SYMBOLS[0]) {
+      const frameSrcBefore = await frame.locator("#real-kline-frame").getAttribute("src");
+      for (const label of ["放大", "縮小", "回最新", "全覽"]) {
+        await viewportTools.getByRole("button", { name: label }).click();
+      }
+      await expect(
+        frame.locator("#real-kline-frame"),
+        "K-line viewport controls must not remount or navigate the embedded real chart",
+      ).toHaveAttribute("src", frameSrcBefore ?? "");
+    }
+
     for (const selector of ["button._ind-toggle-btn._ma20", "button._ind-toggle-btn._vwap"]) {
       const toggle = klineFrame.locator(selector).first();
       await expect(toggle, `${selector} must be a visible real chart toggle`).toBeVisible({ timeout: 30_000 });
