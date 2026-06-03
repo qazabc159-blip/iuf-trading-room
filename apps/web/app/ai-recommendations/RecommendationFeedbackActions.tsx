@@ -52,7 +52,7 @@ async function feedbackFailureText(response: Response) {
   }
 
   const normalizedCode = upstreamCode.toLowerCase();
-  if (response.status === 401 || response.status === 403) return "Owner session 已過期，重新登入後再送出。";
+  if (response.status === 401 || response.status === 403) return "登入狀態或方案權限不足，重新登入或確認訂閱方案後再送出。";
   if (response.status === 404 || normalizedCode.includes("not_found")) return "這筆推薦已不存在，無法回饋。";
   if (normalizedCode.includes("api_base")) return "資料服務尚未設定，無法回饋。";
   if (response.status === 400) return "回饋格式不完整，請稍後再試。";

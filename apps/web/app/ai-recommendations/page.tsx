@@ -189,7 +189,7 @@ function groupByBucket(items: StockRecommendation[]) {
 function safeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("403") || message.includes("forbidden_role")) {
-    return "需要 Owner 權限才能讀取正式推薦。";
+    return "此帳號方案尚未開啟 AI 推薦，請到訂閱/權限頁確認。";
   }
   if (message.includes("401") || message.includes("unauthenticated")) {
     return "請先登入 IUF 帳號，再查看 AI 推薦。";
