@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("homepage P0 visual product copy", () => {
-  it("keeps the homepage OpenAlice admin section visible", () => {
-    expect(source).toContain("const adminNav: Array<");
+  it("keeps internal OpenAlice admin links out of the customer homepage", () => {
+    expect(source).not.toContain("const adminNav: Array<");
+    expect(source).not.toContain("const internalNav: Array<");
     for (const href of [
       "/admin/brain/llm",
       "/admin/events",
@@ -14,7 +15,7 @@ describe("homepage P0 visual product copy", () => {
       "/admin/uta/accounts",
       "/admin/strategies",
     ]) {
-      expect(source).toContain(href);
+      expect(source).not.toContain(href);
     }
   });
 
