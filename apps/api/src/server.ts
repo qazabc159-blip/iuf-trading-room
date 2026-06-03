@@ -15522,15 +15522,21 @@ function startSchedulers(workspaceSlug: string): void {
           persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
         };
 
-        // Use HEATMAP_CORE_SYMBOLS as the fetch universe (40 tickers, all TWSE).
+        // Use HEATMAP_CORE_SYMBOLS as the fetch universe (40 tickers).
         // Previously used DB companies LIMIT 200, but DB has 1900+ companies (full TWSE
         // bulk-seed). The LIMIT 200 missed most of the 40 heatmap core symbols.
         // MIS cron purpose is to feed _misTileCache for kgi-core heatmap Tier 1.5 —
         // so fetching exactly the 40 heatmap symbols is correct and efficient.
+        //
+        // Market mapping: most HEATMAP_CORE_SYMBOLS are TWSE-listed (TSE), but a small
+        // number are TPEX-listed (OTC). Using the wrong exchange prefix causes MIS to
+        // return an empty c:"" record which is then silently skipped. Verified 2026-06-03:
+        // 3707 (漢磊) is TPEX/OTC — confirmed via MIS otc_3707.tw returning valid data.
+        const OTC_HEATMAP_SYMBOLS = new Set(["3707"]);
         const { HEATMAP_CORE_SYMBOLS } = await import("./kgi-subscription-manager.js");
         const companyRows: Array<{ ticker: string; market: string }> = Array.from(HEATMAP_CORE_SYMBOLS).map((ticker) => ({
           ticker,
-          market: "TWSE", // All HEATMAP_CORE_SYMBOLS are TWSE-listed
+          market: OTC_HEATMAP_SYMBOLS.has(ticker) ? "TPEX" : "TWSE",
         }));
 
         if (!companyRows.length) return;
