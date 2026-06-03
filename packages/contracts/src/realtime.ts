@@ -89,7 +89,14 @@ export const quoteEventSchema = z.object({
   /** Ask sizes matching ask[]. null when unavailable. */
   ask_size: z.array(z.number().nonnegative().nullable()).length(5).nullable().default(null),
   /** Trade session flags */
-  flags: quoteFlagsSchema.default({}),
+  flags: quoteFlagsSchema.default({
+    isTrial: false,
+    isContinuous: false,
+    isOpen: false,
+    isClose: false,
+    isAfterHours: false,
+    isHalt: false
+  }),
   /** Freshness classification computed at response time */
   freshness_mode: freshnessModeSchema,
   /**
