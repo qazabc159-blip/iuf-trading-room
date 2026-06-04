@@ -13098,6 +13098,18 @@ app.get("/api/v1/diagnostics/kbar", async (c) => {
 const OWNED_DAILY_KLINE_REQUIRED_BARS = 720;
 const OWNED_DAILY_KLINE_STALE_DAYS = 4;
 const OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS = 3650;
+const OWNED_DAILY_KLINE_PRIORITY_TICKERS = [
+  "2330", "6202", "2317", "2454", "2308", "2412",
+  "3711", "2303", "3034", "2379", "3443", "3661", "6488", "6770", "6415", "5274",
+  "2382", "3231", "6669", "2356", "4938", "3017", "3324", "6230", "8210",
+  "2881", "2882", "2884", "2885", "2886", "2891", "2892", "5880", "5876", "2801",
+  "2603", "2609", "2615", "2636", "2605", "2606", "2610", "2618", "2646", "6757",
+  "2002", "2014", "2009", "2031", "2015", "2023", "2027", "2029", "2010", "2022", "2013", "2007", "2008",
+  "3045", "2395", "5608", "2637", "2607"
+] as const;
+const OWNED_DAILY_KLINE_PRIORITY: Map<string, number> = new Map(
+  OWNED_DAILY_KLINE_PRIORITY_TICKERS.map((ticker, index) => [ticker, index])
+);
 
 type OwnedKlineDepthState = "READY" | "SHALLOW" | "STALE" | "EMPTY" | "MISSING_COMPANY";
 
@@ -13672,12 +13684,19 @@ async function resolveOhlcvDeepBackfillCandidates(
   const rows = ((result as { rows?: Record<string, unknown>[] }).rows
     ?? (Array.isArray(result) ? result : [])) as Record<string, unknown>[];
   return rows
-    .map((row) => ({
+    .map((row, index) => ({
       companyId: String(row.company_id ?? ""),
       ticker: String(row.ticker ?? ""),
-      workspaceId: String(row.workspace_id ?? workspaceId)
+      workspaceId: String(row.workspace_id ?? workspaceId),
+      originalIndex: index
     }))
-    .filter((row) => row.companyId && /^\d{4}$/.test(row.ticker));
+    .filter((row) => row.companyId && /^\d{4}$/.test(row.ticker))
+    .sort((a, b) => {
+      const aPriority = OWNED_DAILY_KLINE_PRIORITY.get(a.ticker) ?? Number.MAX_SAFE_INTEGER;
+      const bPriority = OWNED_DAILY_KLINE_PRIORITY.get(b.ticker) ?? Number.MAX_SAFE_INTEGER;
+      return aPriority - bPriority || a.originalIndex - b.originalIndex;
+    })
+    .map(({ originalIndex: _originalIndex, ...row }) => row);
 }
 
 function daysAgoUtcDate(days: number): string {
@@ -13720,7 +13739,7 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     const deepTickers = takeFinMindSchedulerBatch(
       "ohlcv-deep-backfill",
       deepCandidates,
-      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 12)
+      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48)
     );
     if (deepTickers.length > 0) {
       console.log(
