@@ -15702,6 +15702,62 @@ test("REALTIME-SNAPSHOT-5: GET /api/v1/realtime/snapshot route is defined in ser
   );
 });
 
+// ── OVERVIEW-MIS-INDEX: overview handler intraday MIS overlay tests ──────────
+test("OVERVIEW-MIS-1: _overviewMisIndexCache is declared as module-level in server.ts", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.ok(
+    source.includes("let _overviewMisIndexCache"),
+    "OVERVIEW-MIS-1: _overviewMisIndexCache must be declared as module-level let"
+  );
+  assert.ok(
+    source.includes("OVERVIEW_MIS_INDEX_TTL_MS"),
+    "OVERVIEW-MIS-1: OVERVIEW_MIS_INDEX_TTL_MS TTL constant must exist"
+  );
+});
+
+test("OVERVIEW-MIS-2: overview handler reads _overviewMisIndexCache and enriches index with MIS data", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // Find the overview route handler
+  const overviewIdx = source.indexOf('"/api/v1/market-data/overview"');
+  assert.ok(overviewIdx !== -1, "OVERVIEW-MIS-2: overview route must exist");
+  const handlerSlice = source.slice(overviewIdx, overviewIdx + 5000);
+  assert.ok(
+    handlerSlice.includes("_overviewMisIndexCache"),
+    "OVERVIEW-MIS-2: overview handler must read _overviewMisIndexCache"
+  );
+  assert.ok(
+    handlerSlice.includes("twse_mis_intraday"),
+    "OVERVIEW-MIS-2: overview handler must set source to twse_mis_intraday when MIS data available"
+  );
+  assert.ok(
+    handlerSlice.includes("freshnessStatus: \"fresh\"") || handlerSlice.includes('freshnessStatus: "fresh"'),
+    "OVERVIEW-MIS-2: overview handler must set freshnessStatus fresh for MIS intraday index"
+  );
+});
+
+test("OVERVIEW-MIS-3: overview handler enriches heatmap tiles from _misTileCache with sourceState and asOf", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const overviewIdx = source.indexOf('"/api/v1/market-data/overview"');
+  assert.ok(overviewIdx !== -1, "OVERVIEW-MIS-3: overview route must exist");
+  const handlerSlice = source.slice(overviewIdx, overviewIdx + 5000);
+  assert.ok(
+    handlerSlice.includes("_misTileCache.get(sym)"),
+    "OVERVIEW-MIS-3: overview handler must read from _misTileCache for heatmap enrichment"
+  );
+  assert.ok(
+    handlerSlice.includes("sourceState: \"twse_mis_intraday\"") || handlerSlice.includes('sourceState: "twse_mis_intraday"'),
+    "OVERVIEW-MIS-3: overview handler must set sourceState=twse_mis_intraday on enriched heatmap tiles"
+  );
+  assert.ok(
+    handlerSlice.includes("tradeDateYmd !== todayYmd") || handlerSlice.includes("tradeDateYmd === todayYmd"),
+    "OVERVIEW-MIS-3: overview handler must guard MIS heatmap enrichment with today's date check"
+  );
+  assert.ok(
+    handlerSlice.includes("asOf: misEntry.ts"),
+    "OVERVIEW-MIS-3: overview handler must set asOf from MIS entry timestamp"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
