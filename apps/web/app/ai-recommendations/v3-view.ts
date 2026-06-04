@@ -69,15 +69,15 @@ export function isActionableV3Item(item: AiRecommendationV3Item): boolean {
 function localizeV3Narrative(value: string): string {
   return value
     .trim()
-    .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "後端以 verified lastPrice 建立程式化 fallback 進場區間：$1。")
-    .replace(/Verified technical data was available from get_company_technical\./i, "get_company_technical 已回傳可驗證技術資料。")
+    .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "系統依最新可用成交價推估觀察區間：$1。")
+    .replace(/Verified technical data was available from get_company_technical\./i, "量價技術資料已完成核對。")
     .replace(/Price is above MA20\./i, "價格站上 MA20。")
     .replace(/Price is above MA60\./i, "價格站上 MA60。")
     .replace(/Price is not above MA20; keep sizing conservative\./i, "價格未站上 MA20，部位需保守。")
     .replace(/Price is not above MA60; keep sizing conservative\./i, "價格未站上 MA60，部位需保守。")
-    .replace(/Deterministic fallback from verified get_company_technical data\./i, "以 get_company_technical 驗證資料產生固定規則補值。")
-    .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。")
-    .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "完整 AI 敘事恢復健康前，只能視為研究候選。");
+    .replace(/Deterministic fallback from verified get_company_technical data\./i, "系統依已核對的量價資料產生保守觀察值。")
+    .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "完整 AI 敘事仍在補強，先以量價驗證訊號保守觀察。")
+    .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "僅作研究候選，需搭配交易室風控與部位上限。");
 }
 
 function joinLines(...values: Array<string[] | string | null | undefined>): string | null {
