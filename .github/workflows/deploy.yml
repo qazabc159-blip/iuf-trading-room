@@ -93,6 +93,13 @@ jobs:
             }
           }
 
+      - name: Preflight production Postgres (api only)
+        if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          ./scripts/verify/railway-pg-preflight.ps1 -MinVolumeSizeMB 5000 -MaxUsagePercent 85
+
       - name: Deploy ${{ matrix.service }}
         if: steps.gate.outputs.skip != 'true'
         env:
