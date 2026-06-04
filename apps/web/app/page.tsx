@@ -1647,11 +1647,11 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     Icon: LucideIcon;
     active?: boolean;
   }> = [
-    { href: "/", title: "戰情台", sub: "盤勢與任務", Icon: Target, active: true },
-    { href: "/market-intel", title: "市場情報", sub: "重大訊息", Icon: Newspaper },
-    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦引擎", Icon: Sparkles },
-    { href: "/portfolio", title: "交易室", sub: "委託與部位", Icon: LineChart },
-    { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
+    { href: "/", title: "戰情台", sub: "今日總覽", Icon: Target, active: true },
+    { href: "/market-intel", title: "市場情報", sub: "AI 精選", Icon: Newspaper },
+    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦股票", Icon: Sparkles },
+    { href: "/portfolio", title: "交易室", sub: "Paper / SIM", Icon: LineChart },
+    { href: "/companies", title: "公司 / 主題", sub: "公司雷達", Icon: Building2 },
     { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
   ];
   return (
@@ -1666,7 +1666,7 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         </div>
         <strong>台股 AI 交易戰情室</strong>
         <small>操作員 · IUF-01</small>
-        <div className="tac-mode"><span />觀察模式 / 風控守門</div>
+        <div className="tac-mode"><span />Paper / SIM 模式 · Real Order 停用</div>
       </div>
       <nav className="tac-nav">
         {nav.map((item) => {
@@ -1689,7 +1689,7 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         <span className="tac-mini-radar" />
         <div>
           <small>MARKET · INTEL</small>
-          <b>{liveCount} 項可用 / {alertCount} 件提醒</b>
+          <b>{liveCount} 項資料健康 / {alertCount} 件提醒</b>
         </div>
       </div>
       <div className="tac-sidebar-clock">

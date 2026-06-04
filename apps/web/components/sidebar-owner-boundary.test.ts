@@ -18,6 +18,8 @@ describe("product navigation owner boundary", () => {
     expect(sidebarSource).toContain("apiGetMe");
     expect(sidebarSource).toContain('const isOwner = userRole === "Owner"');
     expect(sidebarSource).toContain("{isOwner && (");
+    expect(sidebarSource).toContain("內部後台");
+    expect(sidebarSource).toContain("Paper / SIM 模式 · Real Order 停用");
   });
 
   it("does not expose internal admin links from the standalone homepage sidebar", () => {
@@ -25,6 +27,8 @@ describe("product navigation owner boundary", () => {
     expect(homepageSource).not.toContain('href: "/admin/brain/llm"');
     expect(homepageSource).not.toContain('href: "/admin/tools"');
     expect(homepageSource).not.toContain('href: "/admin/uta/accounts"');
+    expect(homepageSource).toContain("Paper / SIM 模式 · Real Order 停用");
+    expect(homepageSource).toContain('title: "AI 推薦", sub: "推薦股票"');
   });
 
   it("does not label every signed-in account as Owner in the header account menu", () => {
@@ -35,6 +39,10 @@ describe("product navigation owner boundary", () => {
     expect(headerDockSource).toContain('href="/settings/subscription"');
     expect(headerDockSource).toContain('{isOwner ? (');
     expect(headerDockSource).toContain('href="/settings/broker"');
+    expect(headerDockSource).toContain("方案與權限");
+    expect(headerDockSource).toContain("AI 每日簡報");
+    expect(headerDockSource).toContain("Paper / KGI SIM 模式");
+    expect(headerDockSource).not.toContain("notifications lane");
   });
 
   it("keeps owner internal controls outside customer subscription tiers", () => {
