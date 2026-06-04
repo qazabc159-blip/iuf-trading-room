@@ -19800,6 +19800,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
+function getSchedulerStartupDelayMs(): number {
+  const raw = Number.parseInt(process.env.SCHEDULER_STARTUP_DELAY_MS ?? "", 10);
+  if (Number.isFinite(raw)) {
+    return Math.max(0, Math.min(raw, 10 * 60_000));
+  }
+  return isDatabaseMode() && process.env.NODE_ENV === "production" ? 180_000 : 0;
+}
+
 if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
   serve(
     {
@@ -19808,85 +19816,95 @@ if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT ==
       hostname: host
     },
     async (info) => {
-    console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
-    const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
-    await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
-    const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
-    await initRiskStore(schedulerWorkspace);
-    console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
-    // F2 + F3: Start ETL schedulers after server is ready
-    console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
-    startSchedulers(schedulerWorkspace);
-    // B-EL-4: Start outbox poller (transactional event delivery, 500ms interval)
-    const { startOutboxPoller } = await import("./events/event-log-outbox.js");
-    startOutboxPoller();
-    // Job #3: Seed real operational events so GET /api/v1/event-streams always has data.
-    // BUG FIX (PR #739): previous version ran immediately at boot → DB pool not yet ready
-    // → isDatabaseMode()=false at call time → seedEventLog() hit in-memory fallback
-    // → events written to _memStreams, not el_event_streams → lost on process restart → streams=[].
-    // Fix: defer 30s to ensure DB pool + migrations are warm before seeding.
-    setTimeout(async () => {
-      try {
-        if (!isDatabaseMode()) {
-          console.warn("[event-seed] skipping — isDatabaseMode()=false at 30s seed time");
-          return;
-        }
-        const db = getDb();
-        if (!db) {
-          console.warn("[event-seed] skipping — getDb() returned null at 30s seed time");
-          return;
-        }
-        const wsRows = await db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(eq(workspaces.slug, schedulerWorkspace))
-          .limit(1);
-        const wsId = wsRows[0]?.id ?? null;
-        if (!wsId) {
-          console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
-          return;
-        }
-        console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
-        const { seedEventLog } = await import("./events/event-seed.js");
-        const seedResult = await seedEventLog(wsId);
-        console.log(
-          `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
-        );
-      } catch (e) {
-        console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
-      }
-    }, 30_000); // 30s: DB pool + migration apply must be complete before first write
+      console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
+      const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+      await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
+      const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
+      await initRiskStore(schedulerWorkspace);
+      console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
+      console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
 
-    // Job #2b fix: Boot+10s dryRun seed for never-run tools (b — 8 tools lastRunAt=null).
-    // Runs after schedulers start so real calls may have already populated some keys.
-    setTimeout(() => {
-      import("./tools/tool-boot-seed.js")
-        .then(({ seedNeverRunTools }) => {
-          // Resolve workspace UUID for tool_calls.workspace_id (nullable — pass null if unavailable)
-          const db2 = getDb();
-          if (!db2) {
-            seedNeverRunTools(null).catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+      const launchBackgroundSchedulers = async () => {
+        startSchedulers(schedulerWorkspace);
+        const { startOutboxPoller } = await import("./events/event-log-outbox.js");
+        startOutboxPoller();
+
+        // Seed real operational events after the app has proven DB connectivity.
+        const eventSeedHandle = setTimeout(async () => {
+          try {
+            if (!isDatabaseMode()) {
+              console.warn("[event-seed] skipping — isDatabaseMode()=false at seed time");
+              return;
+            }
+            const db = getDb();
+            if (!db) {
+              console.warn("[event-seed] skipping — getDb() returned null at seed time");
+              return;
+            }
+            const wsRows = await db
+              .select({ id: workspaces.id })
+              .from(workspaces)
+              .where(eq(workspaces.slug, schedulerWorkspace))
+              .limit(1);
+            const wsId = wsRows[0]?.id ?? null;
+            if (!wsId) {
+              console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
+              return;
+            }
+            console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
+            const { seedEventLog } = await import("./events/event-seed.js");
+            const seedResult = await seedEventLog(wsId);
+            console.log(
+              `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
             );
-            return;
+          } catch (e) {
+            console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
           }
-          db2
-            .select({ id: workspaces.id })
-            .from(workspaces)
-            .where(eq(workspaces.slug, schedulerWorkspace))
-            .limit(1)
-            .then((wsRows2) => {
-              const wsId2 = wsRows2[0]?.id ?? null;
-              return seedNeverRunTools(wsId2);
+        }, 30_000);
+        eventSeedHandle.unref?.();
+
+        const toolSeedHandle = setTimeout(() => {
+          import("./tools/tool-boot-seed.js")
+            .then(({ seedNeverRunTools }) => {
+              const db2 = getDb();
+              if (!db2) {
+                seedNeverRunTools(null).catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
+                return;
+              }
+              db2
+                .select({ id: workspaces.id })
+                .from(workspaces)
+                .where(eq(workspaces.slug, schedulerWorkspace))
+                .limit(1)
+                .then((wsRows2) => {
+                  const wsId2 = wsRows2[0]?.id ?? null;
+                  return seedNeverRunTools(wsId2);
+                })
+                .catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
             })
             .catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+              console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
             );
-        })
-        .catch((e) =>
-          console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
-        );
-    }, 10_000);
+        }, 10_000);
+        toolSeedHandle.unref?.();
+      };
+
+      const schedulerStartupDelayMs = getSchedulerStartupDelayMs();
+      if (schedulerStartupDelayMs > 0) {
+        console.log(`[schedulers] Delaying DB-heavy schedulers for ${schedulerStartupDelayMs}ms so auth/company/K-line reads warm first.`);
+        const schedulerDelayHandle = setTimeout(() => {
+          void launchBackgroundSchedulers().catch((e) =>
+            console.warn("[schedulers] delayed launch failed:", e instanceof Error ? e.message : e)
+          );
+        }, schedulerStartupDelayMs);
+        schedulerDelayHandle.unref?.();
+      } else {
+        await launchBackgroundSchedulers();
+      }
     }
   );
 }

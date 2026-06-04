@@ -28,7 +28,7 @@ export function getDatabasePoolMax() {
 
 export function getDatabaseConnectTimeoutSeconds() {
   const raw = Number.parseInt(process.env.DATABASE_CONNECT_TIMEOUT_SECONDS ?? "", 10);
-  if (!Number.isFinite(raw)) return 5;
+  if (!Number.isFinite(raw)) return 15;
   return Math.max(3, Math.min(raw, 15));
 }
 

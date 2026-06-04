@@ -238,8 +238,58 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
   );
   assert.match(
     src,
+    /if\s*\(!Number\.isFinite\(raw\)\)\s*return\s+15/,
+    "DB-POOL-1: default connect timeout must be long enough for Railway private-network cold starts"
+  );
+  assert.match(
+    src,
     /connect_timeout:\s*getDatabaseConnectTimeoutSeconds\(\)/,
     "DB-POOL-1: postgres client must use the bounded connect timeout"
+  );
+});
+
+test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {
+  const src = readFileSync("scripts/start-api-railway.mjs", "utf8");
+  assert.ok(
+    src.includes("isProductionDatabaseMode") && src.includes("PERSISTENCE_MODE"),
+    "RAILWAY-BOOT-1: Railway startup must detect production database mode"
+  );
+  assert.match(
+    src,
+    /process\.env\.RAILWAY_MIGRATION_REQUIRED\s*!==\s*"0"/,
+    "RAILWAY-BOOT-1: degraded API boot must require an explicit RAILWAY_MIGRATION_REQUIRED=0 opt-out"
+  );
+  assert.doesNotMatch(
+    src,
+    /const migrationRequired\s*=\s*process\.env\.RAILWAY_MIGRATION_REQUIRED\s*===\s*"1"\s*;/,
+    "RAILWAY-BOOT-1: production DB startup must not depend only on an opt-in env var"
+  );
+  assert.ok(
+    src.includes("refusing to start because production database mode requires migrations"),
+    "RAILWAY-BOOT-1: failure reason must make the product-data safety gate explicit"
+  );
+});
+
+test("SCHEDULER-BOOT-1: DB-heavy schedulers must not starve auth and K-line reads at production boot", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("function getSchedulerStartupDelayMs") && src.includes("SCHEDULER_STARTUP_DELAY_MS"),
+    "SCHEDULER-BOOT-1: scheduler boot delay must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes('process.env.NODE_ENV === "production" ? 180_000 : 0'),
+    "SCHEDULER-BOOT-1: production database mode must default to a 180s scheduler warm-up delay"
+  );
+  assert.ok(
+    src.includes("const launchBackgroundSchedulers = async () =>") &&
+      src.includes("startSchedulers(schedulerWorkspace)") &&
+      src.includes("startOutboxPoller()"),
+    "SCHEDULER-BOOT-1: scheduler/outbox launch must be grouped behind the warm-up gate"
+  );
+  assert.match(
+    src,
+    /setTimeout\(\(\)\s*=>\s*\{\s*void launchBackgroundSchedulers\(\)\.catch/s,
+    "SCHEDULER-BOOT-1: production boot must schedule background launch instead of starting it inline"
   );
 });
 
