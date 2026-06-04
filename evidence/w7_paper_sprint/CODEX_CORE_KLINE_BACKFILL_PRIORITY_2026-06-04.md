@@ -112,9 +112,24 @@ Production deploy status:
   - API refuses to start after migration timeout.
 - This is now a platform/DB connectivity blocker, not a K-line feature-code blocker.
 
+Updated production blocker at `2026-06-04 17:38Z`:
+
+- Railway `pg (Postgres)` service is `Crashed`.
+- `pg-volume` is only `500MB`; Railway metrics show current usage around `508.7MB`.
+- Postgres restart fails during automatic recovery:
+  - `Could not write to file "pg_xact/0012" ... No space left on device`
+  - API logs then show `write CONNECT_TIMEOUT pg.railway.internal:5432`
+- PR #983 Playwright P0 Smoke fails at owner login with `HTTP 502`, consistent with DB being unavailable.
+- This means company-page blanks and K-line read failures are currently blocked by production Postgres capacity/recovery, not by a frontend decision to hide/delete panels.
+
+Product boundary re-confirmed:
+
+- Fixed 10-15 stock pools are only for the heatmap visual product.
+- Trading-room and company pages must support all legal Taiwan tickers via official TWSE/TPEx company master read-through and OHLCV backfill.
+
 Required platform action before merge/deploy:
 
-- Restart/check Railway Postgres service/private network attachment for the API service.
+- Expand/recover Railway `pg-volume` for the production Postgres service. The current `500MB` volume is full and cannot complete crash recovery.
 - After DB connectivity is restored, rerun PR #983 API deploy and verify:
   - arbitrary legal ticker company read-through works (examples: `2002`, `2412`, `2603`, `9958`, `0050`)
   - `1d` K-line returns hundreds/thousands of bars where FinMind has history
