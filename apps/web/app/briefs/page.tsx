@@ -670,15 +670,42 @@ function DraftSourceTrailPanel({ drafts }: { drafts: ContentDraftEntry[] }) {
 
 export default async function BriefsPage() {
   const today = todayTaipeiDate();
-  const [briefData, drafts, jobs, openAlice, dispatcher, entitlements] = await Promise.all([
+  const [briefData, drafts, entitlements] = await Promise.all([
     loadBriefsData(),
     loadDrafts(),
-    loadJobs(),
-    loadOpenAlice(),
-    loadDispatcherDebug(),
     getMyEntitlements().catch(() => null),
   ]);
   const ownerMode = entitlements?.data?.ownerInternal.visible === true;
+  const hiddenInternalUpdatedAt = nowIso();
+  let jobs: LoadState<OpenAliceJobEntry[]> = {
+    state: "EMPTY",
+    data: [],
+    updatedAt: hiddenInternalUpdatedAt,
+    source: "Owner-only internal workflow",
+    reason: "內部任務佇列只供 Owner 檢查。",
+  };
+  let openAlice: LoadState<OpenAliceObservability | null> = {
+    state: "EMPTY",
+    data: null,
+    updatedAt: hiddenInternalUpdatedAt,
+    source: "Owner-only internal workflow",
+    reason: "內部 AI 工作流只供 Owner 檢查。",
+  };
+  let dispatcher: LoadState<OpenAliceDispatcherDebug | null> = {
+    state: "EMPTY",
+    data: null,
+    updatedAt: hiddenInternalUpdatedAt,
+    source: "Owner-only internal workflow",
+    reason: "內部排程診斷只供 Owner 檢查。",
+  };
+
+  if (ownerMode) {
+    [jobs, openAlice, dispatcher] = await Promise.all([
+      loadJobs(),
+      loadOpenAlice(),
+      loadDispatcherDebug(),
+    ]);
+  }
 
   const surface = buildSurface({
     today,
