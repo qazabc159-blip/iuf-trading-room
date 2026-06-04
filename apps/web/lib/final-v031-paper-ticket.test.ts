@@ -177,6 +177,23 @@ describe("final-v031 paper ticket price gate", () => {
     expect(companyPageSource).toContain("from.setFullYear(from.getFullYear() - 10)");
   });
 
+  it("keeps owner OHLCV backfill able to target product-visible symbols", () => {
+    const finmindFullIngestSource = readFileSync(
+      new URL("../../api/src/jobs/finmind-full-ingest.ts", import.meta.url),
+      "utf8"
+    ).replace(/\r\n/g, "\n");
+
+    expect(apiServerSource).toContain('symbols?: ["2330", "6202"]');
+    expect(apiServerSource).toContain("symbols: z.array(z.string().regex(/^\\d{4}$/)).min(1).max(80).optional()");
+    expect(apiServerSource).toContain("invalid_symbols_dataset");
+    expect(apiServerSource).toContain("symbols: body.symbols");
+    expect(finmindFullIngestSource).toContain("symbols?: string[]");
+    expect(finmindFullIngestSource).toContain("const requestedSymbols = Array.from");
+    expect(finmindFullIngestSource).toContain('symbols=${requestedSymbols.length > 0 ? requestedSymbols.join(",") : "auto"}');
+    expect(finmindFullIngestSource).toContain("requestedSymbols");
+    expect(finmindFullIngestSource).toContain("allOhlcvTickers.find((row) => row.ticker === symbol)");
+  });
+
   it("loads the company registry from the lightweight real company pool instead of the broad full list", () => {
     expect(apiServerSource).toContain('app.get("/api/v1/companies/lite"');
     expect(apiServerSource).toContain("getCompaniesLiteCached(c.get(\"repo\"), workspaceSlug)");
