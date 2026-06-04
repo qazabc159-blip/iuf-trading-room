@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   getMarketDataOverview,
+  resolveMarketDataChangePct,
   resetMarketDataWorkspaceState,
   upsertManualQuotes,
 } from "./market-data.js";
@@ -89,4 +90,15 @@ test("market-data overview recomputes changePct from last and prevClose when cac
     else process.env.FINMIND_KILL_SWITCH = originalFinMindKill;
     await rm(storeDir, { recursive: true, force: true });
   }
+});
+
+test("market-data changePct resolver prefers last and prevClose over stale cached pct", () => {
+  assert.equal(
+    resolveMarketDataChangePct({
+      last: 2405,
+      prevClose: 2380,
+      changePct: -0.8247422680412372,
+    }),
+    1.05
+  );
 });
