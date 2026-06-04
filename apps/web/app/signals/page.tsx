@@ -452,8 +452,8 @@ export default async function SignalsPage() {
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">訊號總數</span>
-          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.signals.length : "--"}</span>
-          <span className="parity-kpi-sub">本輪訊號</span>
+          <span className="parity-kpi-value">{countsAvailable ? displaySignals.length : "--"}</span>
+          <span className="parity-kpi-sub">正式訊號</span>
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">主題連結</span>
