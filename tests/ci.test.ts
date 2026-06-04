@@ -12056,6 +12056,29 @@ test("EL-OUTBOX-4: getOutboxDiag returns zero counts in non-DB mode", async () =
   assert.equal(diag.isPollerRunning, false, "EL-OUTBOX-4: poller must not be running after stop");
 });
 
+test("EL-OUTBOX-4b: outbox poller must be low-priority and boot-safe", () => {
+  const source = readFileSync("apps/api/src/events/event-log-outbox.ts", "utf8");
+  assert.match(
+    source,
+    /const POLLER_INITIAL_DELAY_MS = 120_000/,
+    "EL-OUTBOX-4b: outbox poller must not compete with auth/login during API boot"
+  );
+  assert.match(
+    source,
+    /const POLLER_INTERVAL_MS = 5_000/,
+    "EL-OUTBOX-4b: outbox poller must not hammer the DB at sub-second cadence"
+  );
+  assert.ok(
+    source.includes("_pollBackoffUntil") && source.includes("_pollInFlight"),
+    "EL-OUTBOX-4b: outbox poller needs in-flight and failure-backoff guards"
+  );
+  assert.doesNotMatch(
+    source,
+    /FOR UPDATE SKIP LOCKED/,
+    "EL-OUTBOX-4b: outbox poller must not use the lock query that repeatedly failed in Railway"
+  );
+});
+
 test("EL-OUTBOX-5: sequential appendEventWithOutbox produces strictly increasing seq numbers", async () => {
   const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
   const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");

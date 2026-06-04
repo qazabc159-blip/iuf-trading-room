@@ -9,8 +9,8 @@
  *
  * Solution (Outbox pattern):
  *   appendEventWithOutbox() writes BOTH el_events AND el_outbox in ONE DB transaction.
- *   A background poller (setInterval 500ms) drains pending el_outbox rows:
- *     1. SELECT ... WHERE delivered_at IS NULL ... FOR UPDATE SKIP LOCKED
+ *   A background poller drains pending el_outbox rows:
+ *     1. SELECT ... WHERE delivered_at IS NULL with bounded backoff
  *     2. Broadcast to registered SSE broadcasters
  *     3. UPDATE el_outbox SET delivered_at = NOW()
  *     4. On failure: error_count++; >= 5 marks as fatally failed
@@ -48,7 +48,13 @@ export type OutboxBroadcaster = (event: {
 
 const _broadcasters: OutboxBroadcaster[] = [];
 let _pollerHandle: ReturnType<typeof setInterval> | null = null;
-const POLLER_INTERVAL_MS = 500;
+let _initialPollerHandle: ReturnType<typeof setTimeout> | null = null;
+let _pollInFlight = false;
+let _pollFailureCount = 0;
+let _pollBackoffUntil = 0;
+const POLLER_INTERVAL_MS = 5_000;
+const POLLER_INITIAL_DELAY_MS = 120_000;
+const POLLER_MAX_BACKOFF_MS = 60_000;
 const MAX_ERROR_COUNT = 5;
 const POLLER_BATCH_SIZE = 50;
 
@@ -166,7 +172,8 @@ export async function appendEventWithOutbox(
  * Start the outbox poller. Idempotent — calling multiple times is a no-op.
  * Call once at server startup.
  *
- * Uses FOR UPDATE SKIP LOCKED for multi-instance Railway safety.
+ * The poller intentionally starts after the API boot gate. EventLog delivery is
+ * important, but it must not starve auth/login or market data during deploy.
  *
  * @param extraBroadcaster  Optional one-off broadcaster added to registry.
  */
@@ -175,7 +182,7 @@ export function startOutboxPoller(extraBroadcaster?: OutboxBroadcaster): void {
     registerOutboxBroadcaster(extraBroadcaster);
   }
 
-  if (_pollerHandle !== null) {
+  if (_pollerHandle !== null || _initialPollerHandle !== null) {
     return; // already running
   }
 
@@ -184,21 +191,38 @@ export function startOutboxPoller(extraBroadcaster?: OutboxBroadcaster): void {
     return;
   }
 
-  console.info("[outbox-poller] Starting (interval=500ms batch=50)");
+  console.info(
+    `[outbox-poller] Starting (initialDelay=${POLLER_INITIAL_DELAY_MS}ms interval=${POLLER_INTERVAL_MS}ms batch=${POLLER_BATCH_SIZE})`
+  );
 
-  _pollerHandle = setInterval(() => {
+  const startInterval = () => {
+    _initialPollerHandle = null;
+    _pollerHandle = setInterval(() => {
+      void _pollAndDeliver();
+    }, POLLER_INTERVAL_MS);
+    _pollerHandle.unref?.();
     void _pollAndDeliver();
-  }, POLLER_INTERVAL_MS);
+  };
+
+  _initialPollerHandle = setTimeout(startInterval, POLLER_INITIAL_DELAY_MS);
+  _initialPollerHandle.unref?.();
 }
 
 /**
  * Stop the outbox poller. Used in tests / graceful shutdown.
  */
 export function stopOutboxPoller(): void {
+  if (_initialPollerHandle !== null) {
+    clearTimeout(_initialPollerHandle);
+    _initialPollerHandle = null;
+  }
   if (_pollerHandle !== null) {
     clearInterval(_pollerHandle);
     _pollerHandle = null;
   }
+  _pollInFlight = false;
+  _pollFailureCount = 0;
+  _pollBackoffUntil = 0;
 }
 
 /**
@@ -208,8 +232,11 @@ export function stopOutboxPoller(): void {
 export async function _pollAndDeliver(): Promise<number> {
   const db = getDb();
   if (!db) return 0;
+  if (_pollInFlight) return 0;
+  if (_pollBackoffUntil > Date.now()) return 0;
 
   let delivered = 0;
+  _pollInFlight = true;
 
   try {
     const pending = await db.execute(
@@ -219,7 +246,6 @@ export async function _pollAndDeliver(): Promise<number> {
         WHERE delivered_at IS NULL
         ORDER BY created_at ASC
         LIMIT ${POLLER_BATCH_SIZE}
-        FOR UPDATE SKIP LOCKED
       `
     ) as unknown;
 
@@ -286,8 +312,18 @@ export async function _pollAndDeliver(): Promise<number> {
         }
       }
     }
+    _pollFailureCount = 0;
+    _pollBackoffUntil = 0;
   } catch (e) {
-    console.warn("[outbox-poller] Poll cycle failed:", e instanceof Error ? e.message : String(e));
+    _pollFailureCount++;
+    const backoffMs = Math.min(POLLER_MAX_BACKOFF_MS, POLLER_INTERVAL_MS * 2 ** Math.min(_pollFailureCount, 4));
+    _pollBackoffUntil = Date.now() + backoffMs;
+    console.warn(
+      `[outbox-poller] Poll cycle failed (failure=${_pollFailureCount}, backoffMs=${backoffMs}):`,
+      e instanceof Error ? e.message : String(e)
+    );
+  } finally {
+    _pollInFlight = false;
   }
 
   return delivered;
@@ -308,7 +344,12 @@ export async function getOutboxDiag(): Promise<{
 
   const db = getDb();
   if (!db) {
-    return { pendingCount: 0, fatalCount: 0, oldestPendingAt: null, isPollerRunning: _pollerHandle !== null };
+    return {
+      pendingCount: 0,
+      fatalCount: 0,
+      oldestPendingAt: null,
+      isPollerRunning: _pollerHandle !== null || _initialPollerHandle !== null
+    };
   }
 
   try {
@@ -333,10 +374,15 @@ export async function getOutboxDiag(): Promise<{
       pendingCount: Number.isFinite(pendingCount) && pendingCount >= 0 ? pendingCount : -1,
       fatalCount: Number.isFinite(fatalCount) && fatalCount >= 0 ? fatalCount : -1,
       oldestPendingAt,
-      isPollerRunning: _pollerHandle !== null
+      isPollerRunning: _pollerHandle !== null || _initialPollerHandle !== null
     };
   } catch (e) {
     console.warn("[outbox-diag] query failed:", e instanceof Error ? e.message : String(e));
-    return { pendingCount: -1, fatalCount: -1, oldestPendingAt: null, isPollerRunning: _pollerHandle !== null };
+    return {
+      pendingCount: -1,
+      fatalCount: -1,
+      oldestPendingAt: null,
+      isPollerRunning: _pollerHandle !== null || _initialPollerHandle !== null
+    };
   }
 }
