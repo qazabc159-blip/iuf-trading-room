@@ -154,8 +154,6 @@ export default function RegisterPage() {
 
             <div className="tg soft login-foot">
               已有帳號？ <Link href="/login" style={{ color: "var(--gold-bright)" }}>前往登入</Link>
-              <br />
-              管理員可前往 <Link href="/admin/invites" style={{ color: "var(--gold-bright)" }}>邀請碼管理</Link>
             </div>
           </form>
         </div>

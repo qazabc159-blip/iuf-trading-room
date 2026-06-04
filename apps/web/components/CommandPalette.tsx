@@ -40,7 +40,6 @@ const ROUTES: Item[] = [
   { code: "09", label: "交易計畫", sub: "交易室子頁：交易計畫與審核佇列", href: "/plans", group: "頁面" },
   { code: "10", label: "AI 每日簡報", sub: "右上角 dock：OpenAlice 簡報列表", href: "/briefs", group: "頁面" },
   { code: "11", label: "警示", sub: "右上角 bell：風控提醒與警示紀錄", href: "/alerts", group: "頁面" },
-  { code: "12", label: "營運監控", sub: "系統狀態、稽核與工作流", href: "/ops", group: "頁面" },
 ];
 
 function clip(value: string | null | undefined, max = 72) {

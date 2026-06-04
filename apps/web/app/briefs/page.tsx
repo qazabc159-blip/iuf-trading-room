@@ -7,6 +7,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import {
   getBriefs,
   getContentDrafts,
+  getMyEntitlements,
   getOpenAliceDispatcherDebug,
   getOpenAliceJobs,
   getOpenAliceObservability,
@@ -431,7 +432,7 @@ function DispatcherDebugPanel({
   );
 }
 
-function BriefStatePanel({ surface }: { surface: DailyBriefSurface }) {
+function BriefStatePanel({ surface, ownerMode }: { surface: DailyBriefSurface; ownerMode: boolean }) {
   const latestCopy = surface.latest ? `${surface.latest.date} / ${briefAgeCopy(briefAgeDays(surface.latest.date))}` : "尚無正式簡報";
   return (
     <Panel code="BRF-STATE" title="每日簡報狀態" sub="今日發布與待審狀態" right={surfaceLabel(surface.state)}>
@@ -452,9 +453,13 @@ function BriefStatePanel({ surface }: { surface: DailyBriefSurface }) {
             <p className="state-reason">今日草稿已產生，等待審核與發布確認。</p>
             <div className="brief-today-drafts">
               {surface.drafts.map((draft) => (
-                <Link href={`/admin/content-drafts/${draft.id}`} key={draft.id}>
-                  {contentDraftTitle(draft)}
-                </Link>
+                ownerMode ? (
+                  <Link href={`/admin/content-drafts/${draft.id}`} key={draft.id}>
+                    {contentDraftTitle(draft)}
+                  </Link>
+                ) : (
+                  <span key={draft.id}>{contentDraftTitle(draft)} / 等待發布</span>
+                )
               ))}
             </div>
           </>
@@ -496,7 +501,7 @@ function JobsPanel({ jobs }: { jobs: LoadState<OpenAliceJobEntry[]> }) {
   );
 }
 
-function DraftQueuePanel({ drafts }: { drafts: LoadState<ContentDraftEntry[]> }) {
+function DraftQueuePanel({ drafts, ownerMode }: { drafts: LoadState<ContentDraftEntry[]>; ownerMode: boolean }) {
   return (
     <Panel code="BRF-DRAFT" title="今日待審草稿" sub="今日每日簡報草稿與來源檢查" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "需處理"}>
       <div className="brief-draft-gate">
@@ -509,8 +514,14 @@ function DraftQueuePanel({ drafts }: { drafts: LoadState<ContentDraftEntry[]> })
                 <strong>{contentDraftTitle(draft)}</strong>
                 <span>目標日期：{draftTargetDate(draft) ?? "--"}</span>
                 <span>更新：{formatDateTime(draftTime(draft))}</span>
-                <Link href={`/admin/content-drafts/${draft.id}`}>打開審核</Link>
-                <ContentDraftOverrideActions draftId={draft.id} />
+                {ownerMode ? (
+                  <>
+                    <Link href={`/admin/content-drafts/${draft.id}`}>打開審核</Link>
+                    <ContentDraftOverrideActions draftId={draft.id} />
+                  </>
+                ) : (
+                  <span className="tg soft">等待 Owner 審核後發布</span>
+                )}
               </div>
             ))}
           </div>
@@ -609,13 +620,15 @@ function DraftSourceTrailPanel({ drafts }: { drafts: ContentDraftEntry[] }) {
 
 export default async function BriefsPage() {
   const today = todayTaipeiDate();
-  const [briefData, drafts, jobs, openAlice, dispatcher] = await Promise.all([
+  const [briefData, drafts, jobs, openAlice, dispatcher, entitlements] = await Promise.all([
     loadBriefsData(),
     loadDrafts(),
     loadJobs(),
     loadOpenAlice(),
     loadDispatcherDebug(),
+    getMyEntitlements().catch(() => null),
   ]);
+  const ownerMode = entitlements?.data?.ownerInternal.visible === true;
 
   const surface = buildSurface({
     today,
@@ -689,12 +702,16 @@ export default async function BriefsPage() {
         </div>
       </div>
       <div className="brief-command-strip">
-        <Link className="terminal-button primary" href="/admin/content-drafts">
-          打開草稿審核
-        </Link>
-        <Link className="terminal-button" href="/ops">
-          查看營運監控
-        </Link>
+        {ownerMode && (
+          <>
+            <Link className="terminal-button primary" href="/admin/content-drafts">
+              打開草稿審核
+            </Link>
+            <Link className="terminal-button" href="/ops">
+              查看營運監控
+            </Link>
+          </>
+        )}
         <Link className="terminal-button" href="/market-intel">
           檢查重大訊息
         </Link>
@@ -704,7 +721,7 @@ export default async function BriefsPage() {
       <BriefSearchPanel />
 
       <section className="brief-overview-grid">
-        <BriefStatePanel surface={surface} />
+        <BriefStatePanel surface={surface} ownerMode={ownerMode} />
         <OpenAlicePanel openAlice={openAlice} />
         <DispatcherDebugPanel dispatcher={dispatcher} surfaceState={surface.state} />
       </section>
@@ -718,7 +735,7 @@ export default async function BriefsPage() {
       </section>
 
       <JobsPanel jobs={jobs} />
-      <DraftQueuePanel drafts={drafts} />
+      <DraftQueuePanel drafts={drafts} ownerMode={ownerMode} />
       <PublishedBriefPanel brief={displayedBrief} />
       {!displayedBrief && <DraftSourceTrailPanel drafts={drafts.data} />}
     </PageFrame>
