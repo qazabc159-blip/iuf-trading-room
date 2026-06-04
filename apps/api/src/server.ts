@@ -158,6 +158,7 @@ import {
   marketDataQuotesQuerySchema,
   marketDataSymbolsQuerySchema,
   marketDataEffectiveQuotesQuerySchema,
+  resolveMarketDataChangePct,
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes,
@@ -1205,9 +1206,11 @@ app.get("/api/v1/market-data/overview", async (c) => {
         const change = prevClose !== null
           ? parseFloat((misEntry.last - prevClose).toFixed(2))
           : null;
-        const changePct = misEntry.changePct ?? (prevClose && prevClose > 0
-          ? parseFloat(((misEntry.last - prevClose) / prevClose * 100).toFixed(2))
-          : null);
+        const changePct = resolveMarketDataChangePct({
+          last: misEntry.last,
+          prevClose,
+          changePct: misEntry.changePct
+        });
         return {
           ...tile,
           last: misEntry.last,
