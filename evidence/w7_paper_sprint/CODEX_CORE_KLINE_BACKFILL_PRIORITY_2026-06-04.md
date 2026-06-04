@@ -70,3 +70,53 @@ Fix:
 - Add optional `symbols` to `POST /api/v1/internal/finmind/backfill` for `dataset=companies_ohlcv`.
 - Preserve the requested symbol order and write only real FinMind OHLCV rows.
 - Reject `symbols` for non-OHLCV datasets so the endpoint remains narrow.
+
+## PR #983: All-TW-Ticker K-line Read-Through + DB Boot Gate
+
+Yang clarified the product requirement: trading-room/company pages must support all legal Taiwan tickers, not only the fixed 10-15 stock heatmap representative pools.
+
+Fixes in branch `fix/derive-week-month-kline-from-daily-20260604`:
+
+- `apps/api/src/companies-ohlcv.ts`
+  - Rejects shallow 3-bar weekly/monthly caches.
+  - Derives weekly/monthly K-lines from real official daily OHLCV, so chart period changes do not collapse to 3 candles.
+- `apps/api/src/server.ts`
+  - `resolveCompany()` now read-throughs missing legal 4-6 digit tickers from official TWSE + TPEx company master lists.
+  - Missing official companies are inserted as minimal official rows, then regular OHLCV/quote paths can backfill them.
+  - This is the product boundary: heatmap representative pools stay fixed for aesthetics; trading-room/company pages are not limited to those pools.
+- `packages/db/src/client.ts`
+  - Production DB pool/connect timeout increased to reduce auth/company/K-line starvation during data backfill.
+- `scripts/start-api-railway.mjs`
+  - Railway API migration gate is now unconditional fail-closed.
+  - If Postgres/migrations cannot complete, API refuses to start instead of serving `/health` while company/K-line panels are broken.
+- `apps/api/src/server.ts`
+  - DB-heavy schedulers/outbox/seeds delay 180s in production database mode so owner login, company lookup, and K-line reads warm first.
+
+Local verification:
+
+- `node --import ./tests/setup-test-env.mjs --import tsx --test ./apps/api/src/companies-ohlcv.test.ts` PASS, 10/10
+- `pnpm.cmd --filter @iuf-trading-room/db build` PASS
+- `pnpm.cmd --filter @iuf-trading-room/api typecheck` PASS
+- `pnpm.cmd --filter @iuf-trading-room/web typecheck` PASS
+- `node --import ./tests/setup-test-env.mjs --import tsx --test ./tests/ci.test.ts` PASS, 512/512
+- Targeted `RAILWAY-BOOT-1` guard PASS after unconditional fail-closed patch.
+
+Production deploy status:
+
+- API-only deploy attempts on PR #983 reached Railway but failed because Railway API container still cannot connect to Postgres private host:
+  - `write CONNECT_TIMEOUT pg.railway.internal:5432`
+  - `migrate` advisory lock attempts time out before any product DB read can succeed.
+- Latest tested deploy `26967841324` correctly shows:
+  - `migrationRequired=true`
+  - `migrationTimeoutMs=120000`
+  - API refuses to start after migration timeout.
+- This is now a platform/DB connectivity blocker, not a K-line feature-code blocker.
+
+Required platform action before merge/deploy:
+
+- Restart/check Railway Postgres service/private network attachment for the API service.
+- After DB connectivity is restored, rerun PR #983 API deploy and verify:
+  - arbitrary legal ticker company read-through works (examples: `2002`, `2412`, `2603`, `9958`, `0050`)
+  - `1d` K-line returns hundreds/thousands of bars where FinMind has history
+  - `1w`/`1mo` derive from daily bars, not shallow 3-bar caches
+  - company page panels stop showing DB-backed blanks caused by `CONNECT_TIMEOUT`.
