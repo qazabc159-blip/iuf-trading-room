@@ -1143,14 +1143,33 @@ function quoteChangeValue(quote: Quote) {
   return null;
 }
 
-function quoteChangePctValue(quote: Quote) {
-  if (quote.last !== null && quote.prevClose !== null && quote.prevClose > 0) {
-    return round(((quote.last - quote.prevClose) / quote.prevClose) * 100);
+export function resolveMarketDataChangePct(input: {
+  last: number | null;
+  prevClose: number | null;
+  changePct: number | null;
+}) {
+  if (input.last !== null && input.prevClose !== null && input.prevClose > 0) {
+    return round(((input.last - input.prevClose) / input.prevClose) * 100);
   }
-  if (quote.changePct !== null && quote.changePct !== -100) {
-    return round(quote.changePct);
+  if (input.changePct !== null && input.changePct !== -100) {
+    return round(input.changePct);
   }
   return null;
+}
+
+function quoteChangePctValue(quote: Quote) {
+  return resolveMarketDataChangePct(quote);
+}
+
+function dailyRowChangeValue(row: DailyBarContextRow) {
+  if (row.prevClose !== null && row.prevClose > 0) {
+    return round(row.last - row.prevClose);
+  }
+  return row.change;
+}
+
+function dailyRowChangePctValue(row: DailyBarContextRow) {
+  return resolveMarketDataChangePct(row);
 }
 
 function stateFromEffectiveQuote(item: EffectiveMarketQuote): MarketContextState {
@@ -1688,11 +1707,11 @@ async function maybeSelfHealDailyBarRows(input: {
 }
 
 function selectDailyHeatmapRows(rows: DailyBarContextRow[]): DailyBarContextRow[] {
-  const usableRows = rows.filter((row) => row.last !== null || row.changePct !== null || row.volume !== null);
+  const usableRows = rows.filter((row) => row.last !== null || dailyRowChangePctValue(row) !== null || row.volume !== null);
   const volumeSorted = [...usableRows].sort((left, right) => {
     const volumeDelta = (right.volume ?? -Infinity) - (left.volume ?? -Infinity);
     if (volumeDelta !== 0) return volumeDelta;
-    return Math.abs(right.changePct ?? 0) - Math.abs(left.changePct ?? 0);
+    return Math.abs(dailyRowChangePctValue(right) ?? 0) - Math.abs(dailyRowChangePctValue(left) ?? 0);
   });
   const requiredRows = usableRows
     .filter((row) => heatmapRequiredRank(row.symbol) !== null)
@@ -1727,9 +1746,9 @@ async function buildDailyBarMarketContext(input: {
     indexRow
   });
 
-  const breadthRows = stockRows.filter((row) => row.changePct !== null);
-  const up = breadthRows.filter((row) => (row.changePct ?? 0) > 0).length;
-  const down = breadthRows.filter((row) => (row.changePct ?? 0) < 0).length;
+  const breadthRows = stockRows.filter((row) => dailyRowChangePctValue(row) !== null);
+  const up = breadthRows.filter((row) => (dailyRowChangePctValue(row) ?? 0) > 0).length;
+  const down = breadthRows.filter((row) => (dailyRowChangePctValue(row) ?? 0) < 0).length;
   const flat = breadthRows.length - up - down;
   const freshestBreadthTimestamp = breadthRows
     .map((row) => row.timestamp)
@@ -1748,8 +1767,8 @@ async function buildDailyBarMarketContext(input: {
       close: row.close,
       last: row.last,
       prevClose: row.prevClose,
-      change: row.change,
-      changePct: row.changePct,
+      change: dailyRowChangeValue(row),
+      changePct: dailyRowChangePctValue(row),
       volume: row.volume,
       timestamp: row.timestamp,
       weight: row.weight,
@@ -1769,8 +1788,8 @@ async function buildDailyBarMarketContext(input: {
       name: indexRow.name,
       source: indexRow.source,
       last: indexRow.last,
-      change: indexRow.change,
-      changePct: indexRow.changePct,
+      change: dailyRowChangeValue(indexRow),
+      changePct: dailyRowChangePctValue(indexRow),
       timestamp: indexRow.timestamp,
       freshnessStatus: "stale" as const,
       reason: "official_daily_index",
@@ -3171,14 +3190,14 @@ export async function getMarketDataOverview(input: {
   const resolveName = buildSymbolNameLookup(companies);
   const effectiveQuoteRows = effectiveRows(effectiveItems)
     .filter((row) => !isMarketIndexSymbol(row.quote.symbol, row.quote.market, resolveName(row.quote.symbol, row.quote.market)));
-  const quotesWithChange = effectiveQuoteRows.filter((row) => row.quote.changePct !== null);
+  const quotesWithChange = effectiveQuoteRows.filter((row) => quoteChangePctValue(row.quote) !== null);
   let topGainers: OverviewLeader[] = [...quotesWithChange]
-    .sort((left, right) => (right.quote.changePct ?? -Infinity) - (left.quote.changePct ?? -Infinity))
+    .sort((left, right) => (quoteChangePctValue(right.quote) ?? -Infinity) - (quoteChangePctValue(left.quote) ?? -Infinity))
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
   let topLosers: OverviewLeader[] = [...quotesWithChange]
-    .sort((left, right) => (left.quote.changePct ?? Infinity) - (right.quote.changePct ?? Infinity))
+    .sort((left, right) => (quoteChangePctValue(left.quote) ?? Infinity) - (quoteChangePctValue(right.quote) ?? Infinity))
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
