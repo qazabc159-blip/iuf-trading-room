@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * /settings/account — 帳號設定
+ * /settings/account account settings
  *
  * Currently exposes: change password form.
  * POST /api/v1/auth/change-password (PR #476)
  *   Body: { currentPassword, newPassword }
  *   Errors: INVALID_CURRENT_PASSWORD | WEAK_NEW_PASSWORD
  *
- * On success: countdown 3s → auto-logout → redirect /login
+ * On success: countdown 3s, auto-logout, redirect /login.
  */
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -25,12 +25,12 @@ function changePasswordErrorMessage(error: string): string {
       return "目前密碼不正確，請重新輸入。";
     case "WEAK_NEW_PASSWORD":
     case "weak_new_password":
-      return `新密碼強度不足，請使用至少 ${MIN_PW_LENGTH} 個字元，包含大小寫字母與數字。`;
+      return `新密碼強度不足，請至少使用 ${MIN_PW_LENGTH} 個字元，並避免太容易猜到的內容。`;
     case "network_error":
-      return "連線失敗，請稍後再試。";
+      return "網路連線失敗，請稍後再試。";
     default:
-      if (error.startsWith("server_error_")) return "伺服器暫時無法完成請求，請稍後再試。";
-      return "操作失敗，請稍後再試。";
+      if (error.startsWith("server_error_")) return "伺服器暫時無法處理換密碼，請稍後再試。";
+      return "換密碼失敗，請稍後再試。";
   }
 }
 
@@ -135,7 +135,6 @@ export default function AccountSettingsPage() {
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [countdown, setCountdown] = useState(3);
 
-  // Countdown + auto-logout after success
   useEffect(() => {
     if (submitState.status !== "success") return;
     if (countdown <= 0) {
@@ -153,7 +152,6 @@ export default function AccountSettingsPage() {
       e.preventDefault();
       setSubmitState({ status: "idle" });
 
-      // Client-side validation
       if (!current.trim()) {
         setSubmitState({ status: "error", message: "請輸入目前密碼。" });
         return;
@@ -166,7 +164,7 @@ export default function AccountSettingsPage() {
         return;
       }
       if (next !== confirm) {
-        setSubmitState({ status: "error", message: "新密碼與確認密碼不相符。" });
+        setSubmitState({ status: "error", message: "兩次輸入的新密碼不一致。" });
         return;
       }
 
@@ -205,7 +203,6 @@ export default function AccountSettingsPage() {
           maxWidth: 440,
         }}
       >
-        {/* Page header */}
         <div style={{ marginBottom: 32 }}>
           <div
             style={{
@@ -235,11 +232,10 @@ export default function AccountSettingsPage() {
               marginLeft: 28,
             }}
           >
-            管理密碼與帳號安全
+            更新登入密碼。成功後會自動登出，請用新密碼重新登入。
           </p>
         </div>
 
-        {/* Panel */}
         <div className="panel hud-frame" style={{ padding: "24px 26px" }}>
           <div
             style={{
@@ -256,7 +252,6 @@ export default function AccountSettingsPage() {
             變更密碼
           </div>
 
-          {/* Success state */}
           {submitState.status === "success" && (
             <div
               style={{
@@ -284,18 +279,17 @@ export default function AccountSettingsPage() {
                     marginBottom: 4,
                   }}
                 >
-                  密碼已更新，請重新登入
+                  密碼已更新，正在登出。
                 </div>
                 <div style={{ fontSize: 12, color: "var(--fg-3, #888)" }}>
                   {countdown > 0
-                    ? `${countdown} 秒後自動登出…`
-                    : "正在登出…"}
+                    ? `${countdown} 秒後回到登入頁`
+                    : "正在登出..."}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Error state */}
           {submitState.status === "error" && (
             <div
               style={{
@@ -340,7 +334,7 @@ export default function AccountSettingsPage() {
             />
             <PasswordInput
               id="confirm-password"
-              label="確認新密碼"
+              label="再次輸入新密碼"
               value={confirm}
               onChange={setConfirm}
               disabled={busy}
@@ -370,7 +364,7 @@ export default function AccountSettingsPage() {
               }}
             >
               {submitState.status === "submitting"
-                ? "送出中…"
+                ? "更新中..."
                 : submitState.status === "success"
                 ? "已更新"
                 : "更新密碼"}
