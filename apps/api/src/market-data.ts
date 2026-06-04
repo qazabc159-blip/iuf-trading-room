@@ -1143,6 +1143,16 @@ function quoteChangeValue(quote: Quote) {
   return null;
 }
 
+function quoteChangePctValue(quote: Quote) {
+  if (quote.last !== null && quote.prevClose !== null && quote.prevClose > 0) {
+    return round(((quote.last - quote.prevClose) / quote.prevClose) * 100);
+  }
+  if (quote.changePct !== null && quote.changePct !== -100) {
+    return round(quote.changePct);
+  }
+  return null;
+}
+
 function stateFromEffectiveQuote(item: EffectiveMarketQuote): MarketContextState {
   if (!item.selectedQuote) return "EMPTY";
   if (item.freshnessStatus === "fresh") return "LIVE";
@@ -1163,7 +1173,7 @@ function toOverviewLeader(row: EffectiveQuoteRow, resolveName: (symbol: string, 
     name: resolveName(row.quote.symbol, row.quote.market),
     source: row.item.selectedSource ?? row.quote.source,
     last: row.quote.last,
-    changePct: row.quote.changePct !== null ? round(row.quote.changePct) : null,
+    changePct: quoteChangePctValue(row.quote),
     volume: row.quote.volume,
     timestamp: row.quote.timestamp,
     readiness: row.item.readiness,
@@ -1183,9 +1193,9 @@ function buildMarketContext(input: {
   }));
   const indexRow = rowWithNames.find((row) => isMarketIndexSymbol(row.quote.symbol, row.quote.market, row.name)) ?? null;
   const stockRows = rowWithNames.filter((row) => !isMarketIndexSymbol(row.quote.symbol, row.quote.market, row.name));
-  const breadthRows = stockRows.filter((row) => row.quote.changePct !== null);
-  const up = breadthRows.filter((row) => (row.quote.changePct ?? 0) > 0).length;
-  const down = breadthRows.filter((row) => (row.quote.changePct ?? 0) < 0).length;
+  const breadthRows = stockRows.filter((row) => quoteChangePctValue(row.quote) !== null);
+  const up = breadthRows.filter((row) => (quoteChangePctValue(row.quote) ?? 0) > 0).length;
+  const down = breadthRows.filter((row) => (quoteChangePctValue(row.quote) ?? 0) < 0).length;
   const flat = breadthRows.length - up - down;
   const freshestBreadthTimestamp = breadthRows
     .map((row) => row.quote.timestamp)
@@ -1196,7 +1206,7 @@ function buildMarketContext(input: {
     .sort((left, right) => {
       const volumeDelta = (right.quote.volume ?? -Infinity) - (left.quote.volume ?? -Infinity);
       if (volumeDelta !== 0) return volumeDelta;
-      return Math.abs(right.quote.changePct ?? 0) - Math.abs(left.quote.changePct ?? 0);
+      return Math.abs(quoteChangePctValue(right.quote) ?? 0) - Math.abs(quoteChangePctValue(left.quote) ?? 0);
     })
     .slice(0, 24)
     .map((row, index) => ({
@@ -1208,7 +1218,7 @@ function buildMarketContext(input: {
       last: row.quote.last,
       prevClose: row.quote.prevClose,
       change: quoteChangeValue(row.quote),
-      changePct: row.quote.changePct !== null ? round(row.quote.changePct) : null,
+      changePct: quoteChangePctValue(row.quote),
       volume: row.quote.volume,
       timestamp: row.quote.timestamp,
       weight: row.quote.volume !== null && row.quote.volume > 0
@@ -1233,7 +1243,7 @@ function buildMarketContext(input: {
       source: indexRow.item.selectedSource ?? indexRow.quote.source,
       last: indexRow.quote.last,
       change: quoteChangeValue(indexRow.quote),
-      changePct: indexRow.quote.changePct !== null ? round(indexRow.quote.changePct) : null,
+      changePct: quoteChangePctValue(indexRow.quote),
       timestamp: indexRow.quote.timestamp,
       freshnessStatus: indexRow.item.freshnessStatus,
       reason: indexRow.item.reasons.join(", "),

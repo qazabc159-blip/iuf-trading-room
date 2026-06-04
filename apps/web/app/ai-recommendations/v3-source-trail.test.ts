@@ -7,6 +7,8 @@ describe("AI recommendations v3 source trail", () => {
     const card = mapV3ItemToStockRecCard({
       ticker: "2886",
       source: "brain_react_v2",
+      bucket: "B",
+      totalScore: 68,
     }, {
       status: "complete",
       sourceState: {
