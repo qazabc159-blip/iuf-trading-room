@@ -5,15 +5,10 @@ const rawMigrationTimeoutMs = Number.parseInt(process.env.RAILWAY_MIGRATION_TIME
 const migrationTimeoutMs = Number.isFinite(rawMigrationTimeoutMs)
   ? Math.max(120_000, Math.min(rawMigrationTimeoutMs, 10 * 60_000))
   : 120_000;
-const isProductionDatabaseMode =
-  process.env.PERSISTENCE_MODE === "database" &&
-  Boolean(process.env.DATABASE_URL) &&
-  (process.env.NODE_ENV === "production" ||
-    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
-    Boolean(process.env.RAILWAY_SERVICE_ID));
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 const migrationRequired =
   process.env.RAILWAY_MIGRATION_REQUIRED === "1" ||
-  (isProductionDatabaseMode && process.env.RAILWAY_MIGRATION_REQUIRED !== "0");
+  (hasDatabaseUrl && process.env.RAILWAY_MIGRATION_REQUIRED !== "0");
 
 function run(command, args, options = {}) {
   const timeoutMs = options.timeoutMs ?? 0;

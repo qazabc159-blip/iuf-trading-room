@@ -251,11 +251,9 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
 test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {
   const src = readFileSync("scripts/start-api-railway.mjs", "utf8");
   assert.ok(
-    src.includes("isProductionDatabaseMode") &&
-      src.includes("PERSISTENCE_MODE") &&
-      src.includes("DATABASE_URL") &&
-      src.includes("RAILWAY_SERVICE_ID"),
-    "RAILWAY-BOOT-1: Railway startup must detect production database mode even when NODE_ENV/RAILWAY_ENVIRONMENT are absent"
+    src.includes("const hasDatabaseUrl = Boolean(process.env.DATABASE_URL)") &&
+      src.includes("hasDatabaseUrl && process.env.RAILWAY_MIGRATION_REQUIRED !== \"0\""),
+    "RAILWAY-BOOT-1: Railway startup must fail closed whenever product DB URL is present, even if Railway/NODE_ENV vars are absent"
   );
   assert.match(
     src,
