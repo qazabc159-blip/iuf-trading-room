@@ -391,10 +391,10 @@ body[data-screen-label="Trading Room v1"] .tnote{
 
 <!-- ============ SAFETY BAR ============ -->
 <div class="psafe">
-  <span class="badge"><i></i>PAPER MODE ACTIVE</span>
-  <span class="badge locked"><i></i>REAL ORDER DISABLED</span>
-  <span class="badge read"><i></i>KGI READ-ONLY</span>
-  <span class="badge iso"><i></i>SAFE · PAPER ISOLATED</span>
+  <span class="badge"><i></i>紙上單模式啟用</span>
+  <span class="badge locked"><i></i>正式下單停用</span>
+  <span class="badge read"><i></i>KGI 唯讀</span>
+  <span class="badge iso"><i></i>模擬帳本隔離</span>
   <span class="sep">·</span>
   <span>本頁所有委託皆走模擬通道，<b>不會送出實單</b>；KGI 連線僅供讀取庫存對照。</span>
 </div>
@@ -657,7 +657,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
       <div>
         <div class="h">部位 / 資金摘要</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)">
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">AUTH REQUIRED</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">待授權</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">—</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">持倉市值</div><div id="summary-mktval" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
           <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">總損益</div><div id="summary-pnl" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
@@ -712,7 +712,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
       <!-- KGI 讀取 -->
       <div class="ltab" data-lt="kgi">
         <div class="kginote">
-          <span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI READ-ONLY</span>
+          <span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI 唯讀</span>
           下表為 <b>實盤帳戶讀取資料</b>，僅供比對與報表用途；本頁所有下單仍走模擬通道。
           連線狀態　<b>正常</b>　·　最後同步　<b>13:24</b>
         </div>
@@ -835,7 +835,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
         </button>
         <div class="liveex">
           <i></i><b>實盤通道</b>　目前停用 · 解鎖須另行授權
-          <span class="lockico">🔒 LOCKED</span>
+          <span class="lockico">🔒 已鎖定</span>
         </div>
       </div>
 
