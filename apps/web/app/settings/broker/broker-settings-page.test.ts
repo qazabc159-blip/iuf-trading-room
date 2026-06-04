@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const brokerPageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const headerDockSource = readFileSync(new URL("../../../components/header-dock.tsx", import.meta.url), "utf8");
 const subscriptionPageSource = readFileSync(new URL("../subscription/page.tsx", import.meta.url), "utf8");
+const apiClientSource = readFileSync(new URL("../../../lib/api.ts", import.meta.url), "utf8");
 
 describe("broker settings boundary page", () => {
   it("surfaces broker connection from the customer account menu", () => {
@@ -18,6 +19,15 @@ describe("broker settings boundary page", () => {
     expect(brokerPageSource).not.toContain('type="password"');
     expect(brokerPageSource).not.toContain("localStorage.setItem");
     expect(brokerPageSource).not.toContain("localStorage.getItem");
+  });
+
+  it("reads current account entitlements before showing broker readiness", () => {
+    expect(apiClientSource).toContain("getMyEntitlements");
+    expect(brokerPageSource).toContain("await getMyEntitlements()");
+    expect(brokerPageSource).toContain("目前帳號券商功能狀態");
+    expect(brokerPageSource).toContain("brokerFeatureIds");
+    expect(brokerPageSource).toContain("kgi_read_only");
+    expect(brokerPageSource).toContain("kgi_sim");
   });
 
   it("keeps real orders explicitly disabled", () => {
