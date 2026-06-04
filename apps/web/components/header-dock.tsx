@@ -115,7 +115,7 @@ function notificationSummary(notification: NotificationEntry) {
     if (typeof value === "number" && Number.isFinite(value)) parts.push(value.toLocaleString("zh-TW"));
     if (parts.length >= 2) break;
   }
-  return parts.length > 0 ? parts.join(" / ") : "通知資料已同步，請至警示頁確認細節。";
+  return parts.length > 0 ? parts.join(" / ") : "事件已同步，請開啟通知中心查看細節。";
 }
 
 function notificationReadState(notification: NotificationEntry) {
@@ -136,11 +136,11 @@ function notificationLinkLabel(notification: NotificationEntry) {
 }
 
 function notificationBellLabel(unreadCount: number, status: NotificationDrawerState["status"]) {
-  if (status === "idle") return "警示通知，尚未同步";
-  if (status === "loading") return "警示通知，資料同步中";
-  if (status === "error") return "警示通知，資料同步失敗";
-  if (unreadCount > 0) return `警示通知，${unreadCount.toLocaleString("zh-TW")} 則未讀`;
-  return "警示通知，無未讀";
+  if (status === "idle") return "通知中心尚未同步";
+  if (status === "loading") return "通知中心同步中";
+  if (status === "error") return "通知中心同步失敗";
+  if (unreadCount > 0) return `通知中心有 ${unreadCount.toLocaleString("zh-TW")} 則未讀`;
+  return "通知中心沒有未讀";
 }
 
 function recentNotifications(notifications: NotificationEntry[]) {
@@ -207,7 +207,7 @@ export function HeaderDock() {
         error: null,
       });
     } catch {
-      setNotificationDrawer({ status: "error", notifications: [], unreadCount: 0, error: "通知資料同步中。" });
+      setNotificationDrawer({ status: "error", notifications: [], unreadCount: 0, error: "通知中心暫時無法同步，稍後會重新整理。" });
     }
   }, []);
 
@@ -236,7 +236,7 @@ export function HeaderDock() {
       await markHeaderDockNotificationRead(notification.id);
       setNotificationLiveStatus(`${title} 已標記為已讀`);
     } catch {
-      setNotificationLiveStatus("通知已讀狀態同步失敗，正在重新整理");
+      setNotificationLiveStatus("已讀狀態同步失敗，正在重新整理");
       void loadNotificationDrawer();
     } finally {
       setMarkingNotificationIds((current) => {
@@ -390,7 +390,7 @@ export function HeaderDock() {
   }
 
   const isOwner = accountUser?.role === "Owner";
-  const drawerTitle = drawer === "notifications" ? "警示" : "系統狀態";
+  const drawerTitle = drawer === "notifications" ? "通知中心" : "系統狀態";
   const accountName = accountUser?.name?.trim() || accountUser?.email || "IUF 使用者";
   const accountRoleLabel = isOwner
     ? "Owner 管理者"
@@ -415,7 +415,7 @@ export function HeaderDock() {
       <div
         ref={dockRef}
         className="header-dock"
-        aria-label="右上快捷列"
+        aria-label="右上快捷操作列"
         style={dockStyle}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -426,8 +426,8 @@ export function HeaderDock() {
           <span
             data-drag-handle="true"
             className="header-dock-grip"
-            aria-label="拖拉移動"
-            title="拖拉移動"
+            aria-label="拖曳快捷操作列"
+            title="拖曳快捷操作列"
             style={{ cursor: isDragging ? "grabbing" : "grab" }}
           >
             <GripHorizontal size={14} strokeWidth={1.8} />
@@ -438,12 +438,12 @@ export function HeaderDock() {
           ref={notificationButtonRef}
           type="button"
           className="header-dock-button"
-          aria-label="警示"
+          aria-label="通知中心"
           aria-expanded={drawer === "notifications"}
           aria-controls={drawer === "notifications" ? "header-dock-drawer" : undefined}
           aria-describedby="header-dock-bell-status"
           aria-busy={notificationDrawer.status === "loading" ? "true" : undefined}
-          title="警示"
+          title="通知中心"
           onClick={() => {
             setAccountOpen(false);
             setDrawer((current) => (current === "notifications" ? null : "notifications"));
@@ -463,7 +463,7 @@ export function HeaderDock() {
           )}
         </button>
 
-        <Link className="header-dock-button" aria-label="今日簡報" title="今日簡報" href="/briefs">
+        <Link className="header-dock-button" aria-label="AI 每日簡報" title="AI 每日簡報" href="/briefs">
           <FileText size={18} strokeWidth={1.8} />
         </Link>
 
@@ -486,9 +486,9 @@ export function HeaderDock() {
         <button
           type="button"
           className="header-dock-button"
-          aria-label="帳戶"
+          aria-label="帳號"
           aria-expanded={accountOpen}
-          title="帳戶"
+          title="帳號"
           onClick={() => {
             setDrawer(null);
             setAccountOpen((current) => !current);
@@ -498,7 +498,7 @@ export function HeaderDock() {
         </button>
 
         {accountOpen && (
-          <div className="header-account-menu" role="menu" aria-label="帳戶選單">
+          <div className="header-account-menu" role="menu" aria-label="帳號選單">
             <div className="header-account-card">
               <span>{accountRoleLabel}</span>
               <b>{accountName}</b>
@@ -510,7 +510,7 @@ export function HeaderDock() {
               onClick={() => setAccountOpen(false)}
             >
               <CreditCard size={15} strokeWidth={1.9} />
-              <span>訂閱與權限</span>
+              <span>方案與權限</span>
             </Link>
             <Link
               className="header-account-menu-link"
@@ -533,7 +533,7 @@ export function HeaderDock() {
             {position !== null && (
               <button type="button" role="menuitem" onClick={handleResetPosition}>
                 <RotateCcw size={15} strokeWidth={1.9} />
-                <span>重置位置</span>
+                <span>重設位置</span>
               </button>
             )}
             <button type="button" role="menuitem" onClick={handleLogout}>
@@ -561,17 +561,17 @@ export function HeaderDock() {
           {drawer === "notifications" ? (
             <div className="header-dock-drawer-body">
               <div className="header-dock-state">
-                <span>今日警示</span>
-                <b>警示中心</b>
-                <p>最近 7 天風控、委託、推薦與系統事件；來源為 notifications lane。</p>
+                <span>最近 7 天</span>
+                <b>通知中心</b>
+                <p>集中顯示風控、委託、AI 推薦、簡報與系統事件。</p>
               </div>
               {notificationDrawer.status === "loading" && <p className="header-dock-empty">資料同步中</p>}
               {notificationDrawer.status === "error" && <p className="header-dock-empty">{notificationDrawer.error}</p>}
               {notificationDrawer.status === "ready" && visibleNotifications.length === 0 && (
                 <p className="header-dock-empty">
                   {unreadCount > 0
-                    ? `尚有 ${unreadCount.toLocaleString("zh-TW")} 則未讀警示，請開啟警示頁確認完整紀錄。`
-                    : "最近 7 天沒有未處理警示。"}
+                    ? `尚有 ${unreadCount.toLocaleString("zh-TW")} 則未讀通知，請開啟通知頁確認完整紀錄。`
+                    : "最近 7 天沒有未處理通知。"}
                 </p>
               )}
               {visibleNotifications.length > 0 && (
@@ -615,19 +615,19 @@ export function HeaderDock() {
                 </div>
               )}
               <Link className="header-dock-drawer-link" href="/alerts" onClick={() => setDrawer(null)}>
-                開啟警示頁
+                查看全部通知
               </Link>
             </div>
           ) : (
             <div className="header-dock-drawer-body">
               <div className="header-dock-state">
-                <span>STATUS</span>
-                <b>SIM-only v1</b>
-                <p>模擬交易與券商 SIM 會清楚分線；正式交易維持關閉。</p>
+                <span>交易安全</span>
+                <b>Paper / KGI SIM 模式</b>
+                <p>目前只開放平台模擬帳本與券商 SIM；正式下單維持關閉。</p>
               </div>
               {isOwner ? (
                 <Link className="header-dock-drawer-link" href="/ops" onClick={() => setDrawer(null)}>
-                  開啟營運監控
+                  開啟 Owner 營運監控
                 </Link>
               ) : (
                 <>
@@ -635,7 +635,7 @@ export function HeaderDock() {
                     券商連線與 SIM 設定
                   </Link>
                   <Link className="header-dock-drawer-link" href="/settings/subscription" onClick={() => setDrawer(null)}>
-                    訂閱方案與功能權限
+                    方案與功能權限
                   </Link>
                 </>
               )}
