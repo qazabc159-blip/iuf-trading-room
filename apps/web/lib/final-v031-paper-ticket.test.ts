@@ -26,6 +26,25 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("window.__IUF_TICKET_LOCK_REASON__");
   });
 
+  it("uses customer-facing safety copy in the trading-room shell", () => {
+    expect(ticketHtml).toContain("紙上單模式啟用");
+    expect(ticketHtml).toContain("正式下單停用");
+    expect(ticketHtml).toContain("KGI 唯讀");
+    expect(ticketHtml).toContain("模擬帳本隔離");
+    expect(ticketHtml).toContain("待授權");
+    expect(ticketHtml).toContain("已鎖定");
+    expect(liveHydration).toContain("需要 Owner 登入才能預覽 / 送出紙上單");
+    expect(liveHydration).toContain("需要 Owner 登入");
+    expect(ticketHtml).not.toContain("PAPER MODE ACTIVE");
+    expect(ticketHtml).not.toContain("REAL ORDER DISABLED");
+    expect(ticketHtml).not.toContain("KGI READ-ONLY");
+    expect(ticketHtml).not.toContain("AUTH REQUIRED");
+    expect(ticketHtml).not.toContain("LOCKED");
+    expect(liveHydration).not.toContain("KGI READ-ONLY");
+    expect(liveHydration).not.toContain("AUTH REQUIRED");
+    expect(liveHydration).not.toContain("owner session");
+  });
+
   it("does not fall back to selected quote for an invalid limit-price submit", () => {
     expect(liveHydration).toContain("const rawPx = Number");
     expect(liveHydration).toContain('const px = orderType === "market" ? selectedPx : rawPx');

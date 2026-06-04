@@ -1944,7 +1944,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       auth ? "行情：" + (auth.available ? "可訂閱" : esc(auth.errorCode || auth.state || "不可用")) : null,
       "庫存：" + positions.length + " 筆",
     ].filter(Boolean);
-    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI READ-ONLY</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
+    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI 唯讀</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
   }
 
   function applyPaperPrefill(selected) {
@@ -2192,14 +2192,14 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
     const capitalTWD = live.baseCapitalTWD;
     const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
-    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "AUTH REQUIRED";
+    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "待授權";
     const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
     // expose to updPreview() in vendor HTML
     window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
     if (capitalReady) {
       delete window.__IUF_TICKET_LOCK_REASON__;
     } else {
-      window.__IUF_TICKET_LOCK_REASON__ = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+      window.__IUF_TICKET_LOCK_REASON__ = "需要 Owner 登入才能預覽 / 送出紙上單";
     }
     const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
     try {
@@ -2213,7 +2213,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
-      if (blockedLabel) blockedLabel.textContent = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+      if (blockedLabel) blockedLabel.textContent = "需要 Owner 登入才能預覽 / 送出紙上單";
       const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
     }
     if (kgiSubmit && !capitalReady) {
@@ -2222,7 +2222,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       kgiSubmit.setAttribute("aria-disabled", "true");
       kgiSubmit.dataset.blocked = "owner_session_required";
       const kgiBlockedLabel = getKgiSubmitLabel();
-      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "\u9700\u8981 owner session";
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "需要 Owner 登入";
     }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
