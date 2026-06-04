@@ -434,6 +434,9 @@ describe("final-v031 paper ticket price gate", () => {
     );
     expect(apiServerSource).toContain("ohlcv-deep-backfill");
     expect(apiServerSource).toContain("COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')");
+    expect(apiOhlcvSource).toContain("aggregateDailyOhlcvBars");
+    expect(apiOhlcvSource).toContain("deriveOfficialBarsFromDaily");
+    expect(apiOhlcvSource).toContain("Weekly/monthly are derived from official daily bars instead of mock.");
   });
 
   it("keeps the full-market heatmap visible from verified representative tiles when TWSE industry rows are cold", () => {
