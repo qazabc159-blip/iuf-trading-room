@@ -251,9 +251,8 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
 test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {
   const src = readFileSync("scripts/start-api-railway.mjs", "utf8");
   assert.ok(
-    src.includes("const hasDatabaseUrl = Boolean(process.env.DATABASE_URL)") &&
-      src.includes("hasDatabaseUrl && process.env.RAILWAY_MIGRATION_REQUIRED !== \"0\""),
-    "RAILWAY-BOOT-1: Railway startup must fail closed whenever product DB URL is present, even if Railway/NODE_ENV vars are absent"
+    src.includes("const migrationRequired = true"),
+    "RAILWAY-BOOT-1: Railway API startup must always fail closed when migrations fail"
   );
   assert.match(
     src,
@@ -262,8 +261,8 @@ test("RAILWAY-BOOT-1: production database boot must fail closed when migrations 
   );
   assert.match(
     src,
-    /process\.env\.RAILWAY_MIGRATION_REQUIRED\s*!==\s*"0"/,
-    "RAILWAY-BOOT-1: degraded API boot must require an explicit RAILWAY_MIGRATION_REQUIRED=0 opt-out"
+    /refusing to start because production database mode requires migrations/,
+    "RAILWAY-BOOT-1: degraded API boot must refuse to serve product data when migration fails"
   );
   assert.doesNotMatch(
     src,

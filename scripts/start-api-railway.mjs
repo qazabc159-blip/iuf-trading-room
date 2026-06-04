@@ -5,10 +5,7 @@ const rawMigrationTimeoutMs = Number.parseInt(process.env.RAILWAY_MIGRATION_TIME
 const migrationTimeoutMs = Number.isFinite(rawMigrationTimeoutMs)
   ? Math.max(120_000, Math.min(rawMigrationTimeoutMs, 10 * 60_000))
   : 120_000;
-const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
-const migrationRequired =
-  process.env.RAILWAY_MIGRATION_REQUIRED === "1" ||
-  (hasDatabaseUrl && process.env.RAILWAY_MIGRATION_REQUIRED !== "0");
+const migrationRequired = true;
 
 function run(command, args, options = {}) {
   const timeoutMs = options.timeoutMs ?? 0;
