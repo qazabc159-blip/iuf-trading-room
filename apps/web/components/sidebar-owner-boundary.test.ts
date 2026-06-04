@@ -54,5 +54,8 @@ describe("product navigation owner boundary", () => {
     expect(briefsSource).toContain("{ownerMode ? (");
     expect(briefsSource).toContain("{ownerMode && <JobsPanel");
     expect(briefsSource).toContain("{ownerMode && !displayedBrief && <DraftSourceTrailPanel");
+    expect(briefsSource).toContain("if (ownerMode) {");
+    expect(briefsSource).toContain("loadJobs()");
+    expect(briefsSource).toContain("Owner-only internal workflow");
   });
 });
