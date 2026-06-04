@@ -2028,6 +2028,24 @@ app.get("/api/v1/companies", async (c) => {
   return c.json({ data });
 });
 
+app.get("/api/v1/companies/lite", async (c) => {
+  const workspaceSlug = c.get("session").workspace.slug;
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 2500), 1), 4000);
+  const data = await getCompaniesLiteCached(c.get("repo"), workspaceSlug);
+
+  return c.json({
+    data: data.slice(0, limit).map((company) => ({
+      id: company.id,
+      ticker: company.ticker,
+      name: company.name,
+      market: company.market,
+      chainPosition: company.chainPosition,
+      beneficiaryTier: company.beneficiaryTier,
+      updatedAt: company.updatedAt,
+    })),
+  });
+});
+
 app.post("/api/v1/companies", async (c) => {
   const payload = companyCreateInputSchema.parse(await c.req.json());
   return c.json(

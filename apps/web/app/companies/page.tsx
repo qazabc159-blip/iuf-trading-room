@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { getCompanies } from "@/lib/api";
+import { getCompaniesLite, type CompanyRegistryRow } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { industryLabel } from "@/lib/industry-i18n";
 import { ThemesRadarTab } from "./ThemesRadarTab";
@@ -102,7 +102,7 @@ export default function CompaniesPage() {
     router.push(`/companies?${params.toString()}`);
   };
 
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<CompanyRegistryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -115,7 +115,7 @@ export default function CompaniesPage() {
   const [rawTotal, setRawTotal] = useState(0);
 
   useEffect(() => {
-    getCompanies()
+    getCompaniesLite({ limit: 2500 })
       .then((response) => {
         setFetchedAt(new Date().toISOString());
         const raw = response.data;
@@ -424,7 +424,7 @@ export default function CompaniesPage() {
           sub="依產業鏈分類瀏覽公司"
           right={state === "LIVE" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
         >
-          <SectorTab companies={companies} loading={loading} />
+          <SectorTab companies={companies as unknown as Company[]} loading={loading} />
         </Panel>
       )}
 
