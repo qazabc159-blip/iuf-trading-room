@@ -232,18 +232,27 @@ export interface AiRecommendationV3SourceState {
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
 let _latestV3CacheExpiresAt = 0;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
-// Yang PR-A product gate: v3 must surface at least 5 backed cards or remain
-// non-complete. C bucket / high-risk-exclusion cards count as backed cards
-// when verified tool data is weak; do not silently pass a thin 2-item run.
+// Yang PR-A product gate: v3 must surface at least 5 actionable backed cards
+// or remain non-complete. C bucket / high-risk-exclusion cards are useful as
+// an exclusion list, but they are not recommendations and must not turn the
+// product surface green.
 const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // Max items the deterministic fallback will produce (independent of MIN threshold).
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
 
-/** Count only complete items (isIncomplete !== true) against the minimum threshold */
+function isActionableRecommendationItem(item: AiStockRecommendationV2): boolean {
+  if (item.isIncomplete) return false;
+  if (item.bucket === "C") return false;
+  if (item.action === "高風險排除") return false;
+  if ((item.totalScore ?? 0) < 65) return false;
+  return true;
+}
+
+/** Count only actionable, complete recommendation items against the minimum threshold */
 function completeItemCount(items: AiStockRecommendationV2[]): number {
-  return items.filter(i => !i.isIncomplete).length;
+  return items.filter(isActionableRecommendationItem).length;
 }
 const V3_SYNTHESIS_TIMEOUT_MS = 75_000;
 const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 90_000;
@@ -495,7 +504,7 @@ function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number):
 系統已計算 programmatic risk_off_score = ${programmaticRiskOffScore}/6（基於可用市場資料）。
 ${programmaticRiskOffScore >= 3
   ? `risk_off_score >= 3 → 你必須回傳 RISK_OFF_SKIP，不推薦任何新倉。`
-  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦（A+/A/B/C bucket）。
+  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔可行動推薦（A+/A/B bucket）。
 你不可自行判斷 risk-off 並 skip STEP 2-5。即使大盤單日跌 0.5%-1%，也必須繼續分析。
 若輸出推薦數 < ${MIN_V3_RECOMMENDATION_ITEMS}，系統會自動 reject 並標記 insufficient_tools / synthesis_format_error。`}
 === END SYSTEM CONTEXT ===
@@ -563,8 +572,9 @@ ${riskOffContext}
   65–74 → B 等回檔（0.4% NAV）
   < 65 → C 高風險排除（不開新倉）
 
-[STEP 5] 每檔輸出（C bucket 也必須輸出，但標示高風險排除）
-  ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B/C 卡片（否則系統拒絕此次分析）。
+[STEP 5] 每檔輸出（A+/A/B 才算推薦；C bucket 是排除名單）
+  ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B 推薦卡片（否則系統拒絕此次分析）。
+  ★★ C bucket 可以輸出，但只能標示高風險排除 / 不開新倉，不可拿來湊推薦數。
   ★★ PARSER 格式規則（必須遵守，否則解析失敗）：
      - 每檔 heading 必須是「## XXXX 公司名」（兩個#，空格，4位數ticker，空格，中文名）
      - 不得用 ###、#### 或 **ticker** bold heading
@@ -600,14 +610,14 @@ function buildV3SynthesisPrompt(traceText: string, dateStr: string, programmatic
 system_programmatic_risk_off_score = ${programmaticRiskOffScore}/6
 ${programmaticRiskOffScore >= 3
   ? "只有在這個分數 >= 3 時，才可以輸出 RISK_OFF_FINAL_SKIP 並不推薦新倉。"
-  : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B/C 卡片；資料弱的標 C「高風險排除」，不要整份報告跳過。`}
+  : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動卡片；C「高風險排除」只能放在排除名單，不可拿來湊推薦數。`}
 === END HARD GATE ===
 
 ## 分析過程
 ${traceText}
 
 ---
-請為每支股票卡（A+/A/B/C 都可以，C 代表高風險排除、不開新倉）輸出以下嚴格格式：
+請為每支股票卡（A+/A/B 才算推薦；C 代表高風險排除、不開新倉）輸出以下嚴格格式：
 
 ## [ticker] [公司名稱]
 - 分類: [A+今日首選 | A可觀察布局 | B等回檔 | C高風險排除]
@@ -636,9 +646,9 @@ ${traceText}
 - NAV比重: [0.8% | 0.6% | 0.4% | 0%]
 - 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
 
-推薦 A+/A/B/C 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，但仍算一張真實資料卡。
+推薦 A+/A/B 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，且只可作為排除名單，不算推薦卡。
 只有 system_programmatic_risk_off_score >= 3 時，才可只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
-當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；請用 C bucket 表達風險，而不是整份跳過。
+當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；若找不到足夠 A+/A/B，請明確說明資料不足與排除原因，不要用 C bucket 偽裝成推薦完成。
 使用真實市場資料（來自 ReAct trace），不要捏造數字。
 
 === 分數填寫規則（CRITICAL）===
@@ -1526,13 +1536,13 @@ Do not reuse that skip answer. Ignore the rejected skip text and write stock sec
 FORMAT_REPAIR_REQUIRED:
 The previous synthesis output did not parse into at least ${MIN_V3_RECOMMENDATION_ITEMS} recommendation items.
 Rewrite the recommendation sections only, preserving the same factual basis from the trace.
-If the previous output was RISK_OFF_FINAL_SKIP, that answer is rejected for this repair pass unless system_programmatic_risk_off_score >= 3. RISK_OFF_FINAL_SKIP and RISK_OFF_SKIP are forbidden here when the score is < 3; use C bucket when the verified data is weak.
+If the previous output was RISK_OFF_FINAL_SKIP, that answer is rejected for this repair pass unless system_programmatic_risk_off_score >= 3. RISK_OFF_FINAL_SKIP and RISK_OFF_SKIP are forbidden here when the score is < 3; use C bucket only for an exclusion list when the verified data is weak, not to satisfy the recommendation count.
 CRITICAL PARSER RULES:
 1. Every stock section MUST start with exactly "## XXXX 公司名" (two hashes, space, 4-digit ticker, space, Chinese name).
 2. Do NOT use ### or #### headings for stocks. Do NOT use bold-only (**2330**) headings for stocks.
 3. Do NOT output any heading containing "risk-off" or "市場" — only stock ticker headings are parsed.
 4. Do NOT use markdown tables — use bullet list format (- 欄位: 值) exclusively.
-5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
+5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 actionable A+/A/B stocks. C bucket is allowed only as a clearly labeled exclusion list and does not count toward the minimum.
 
 Previous markdown:
 ${previousMarkdownForRepair}`
@@ -1702,7 +1712,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
     {
       role: "user",
       content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。
-系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦。
+系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動推薦。
 先執行 STEP 1: callTool(get_market_overview)。`,
     },
   ];
@@ -1882,7 +1892,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
           dateStr,
           detectedMarketState ?? "trend"
         );
-        if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
+        if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
           console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
           items = fallbackItems;
           synthesisFallbackUsed = true;
@@ -1908,8 +1918,8 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：完整評分推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}，不計缺 sub-score 的卡），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
-請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，確保每張卡 7 個 sub-score 都填寫，並補充更多 A/A+/B/C bucket 卡片。`,
+          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}，不計缺 sub-score 或 C 高風險排除卡），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，確保每張推薦卡 7 個 sub-score 都填寫，並補充更多 A+/A/B bucket 卡片。C bucket 只能作為排除名單。`,
         });
         continue; // continue loop
       }
@@ -2005,7 +2015,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       dateStr,
       detectedMarketState ?? "trend"
     );
-    if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
+    if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
       console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with completeItems=${completeItemCount(items)}/${items.length} after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
       items = fallbackItems;
       synthesisFallbackUsed = true;

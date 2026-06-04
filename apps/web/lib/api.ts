@@ -239,6 +239,7 @@ export type AiRecommendationV3Item = {
   } | null;
   totalScore?: number | null;
   bucket?: "A+" | "A" | "B" | "C" | null;
+  action?: string | null;
   entryZone?: {
     low?: number | null;
     high?: number | null;

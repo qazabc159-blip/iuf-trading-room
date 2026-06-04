@@ -40,6 +40,32 @@ function normalizeBucket(value: unknown, totalScore: number | null): BucketLabel
     : scoreToBucket(totalScore);
 }
 
+export function isActionableV3Item(item: AiRecommendationV3Item): boolean {
+  const camelScores = item.subScores;
+  const snakeScores = item.sub_scores;
+  const totalScore = asNumber(
+    item.totalScore
+      ?? snakeScores?.total
+      ?? (
+        camelScores
+          ? (camelScores.theme ?? 0) +
+            (camelScores.revenue ?? 0) +
+            (camelScores.institutional ?? 0) +
+            (camelScores.margin ?? 0) +
+            (camelScores.rs ?? 0) +
+            (camelScores.technical ?? 0) +
+            (camelScores.valuation ?? 0)
+          : null
+      )
+  );
+  const bucket = normalizeBucket(item.bucket, totalScore);
+  const actionText = String(item.action ?? "").trim();
+  if (bucket === "C") return false;
+  if (actionText.includes("高風險排除")) return false;
+  if (totalScore != null && totalScore < 65) return false;
+  return true;
+}
+
 function localizeV3Narrative(value: string): string {
   return value
     .trim()
@@ -230,6 +256,7 @@ export function mapV3ItemToStockRecCard(
   data?: AiRecommendationV3Response | null,
 ): StockRecCardData | null {
   if (!item.ticker) return null;
+  if (!isActionableV3Item(item)) return null;
 
   const camelScores = item.subScores;
   const snakeScores = item.sub_scores;
@@ -369,9 +396,23 @@ export function buildV3PanelState(input: {
 
   const status = input.data?.status ?? "pending";
   const backendItemCount = input.data?.itemCount ?? input.data?.items?.length ?? input.visibleCount;
-  const hasEnoughItems = backendItemCount >= 5 && input.visibleCount >= Math.min(5, backendItemCount);
+  const rawItems = input.data?.items ?? [];
+  const actionableBackendCount = rawItems.filter(isActionableV3Item).length;
+  const exclusionCount = Math.max(0, rawItems.length - actionableBackendCount);
+  const hasEnoughItems = actionableBackendCount >= 5 && input.visibleCount >= Math.min(5, actionableBackendCount);
   const isComplete = status === "complete";
   const usedFallback = input.data?.usedFallback === true || input.data?.synthesisFallbackUsed === true || input.data?.fullAiReportParsed === false;
+  if (isComplete && backendItemCount > 0 && actionableBackendCount === 0) {
+    return {
+      tone: "degraded",
+      label: "未達推薦門檻",
+      title: "今日沒有可行動 AI 推薦",
+      detail: `後端回傳 ${backendItemCount} 張卡，其中 ${exclusionCount} 張是 C / 高風險排除；系統不會把排除名單包裝成推薦。`,
+      endpoint: ENDPOINT,
+      owner: source?.owner ?? OWNER,
+      nextAction: nextFromSource ?? "請後端重跑候選池與評分來源，直到產出 A+/A/B 可行動標的；若市場真的沒有機會，維持此誠實狀態。",
+    };
+  }
   if (input.visibleCount > 0) {
     const live = isComplete && hasEnoughItems && !usedFallback;
     return {
