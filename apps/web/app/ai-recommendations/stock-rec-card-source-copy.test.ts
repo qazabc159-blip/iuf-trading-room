@@ -15,4 +15,13 @@ describe("StockRecCard source copy", () => {
     expect(source).toContain("<b>資料依據</b>");
     expect(source).not.toContain("<b>資料路徑</b>");
   });
+
+  it("does not expose backend/debug wording in the customer recommendation card", () => {
+    expect(source).toContain("資料完整度提醒");
+    expect(source).toContain("部分 AI 敘事仍在補強");
+    expect(source).toContain("搭配部位上限使用");
+    expect(source).not.toContain("本卡仍顯示後端回傳內容");
+    expect(source).not.toContain("未用前端假資料補齊");
+    expect(source).not.toMatch(/<small>[^<]*(fallback|get_company_technical|LLM|rank=|lastPrice)/i);
+  });
 });

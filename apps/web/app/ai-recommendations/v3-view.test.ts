@@ -89,10 +89,11 @@ describe("AI recommendations v3 view mapping", () => {
       ],
     });
 
-    expect(card?.entry?.label).toContain("fallback 進場區間");
-    expect(card?.why_buy).toContain("get_company_technical 已回傳可驗證技術資料");
+    expect(card?.entry?.label).toContain("最新可用成交價推估觀察區間");
+    expect(card?.why_buy).toContain("量價技術資料已完成核對");
     expect(card?.why_buy).toContain("價格站上 MA20");
-    expect(card?.risk).toContain("完整 AI 敘事恢復健康前");
+    expect(card?.risk).toContain("僅作研究候選");
+    expect(`${card?.entry?.label}\n${card?.why_buy}\n${card?.risk}`).not.toMatch(/fallback|get_company_technical|LLM/i);
   });
 
   it("marks non-complete five-card fallback responses as degraded instead of live", () => {

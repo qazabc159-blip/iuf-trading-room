@@ -475,13 +475,13 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           </div>
           {flags.usedFallback || flags.synthesisFallbackUsed || flags.fullAiReportParsed === false ? (
             <div className="_src-source-state">
-              <span data-tone="warn">資料完整度需留意</span>
-              <small>本卡仍顯示後端回傳內容，未用前端假資料補齊。</small>
+              <span data-tone="warn">資料完整度提醒</span>
+              <small>部分 AI 敘事仍在補強；此卡先以已核對的量價、風控與來源資料呈現，請搭配部位上限使用。</small>
             </div>
           ) : (
             <div className="_src-source-state">
               <span data-tone="ok">正式資料</span>
-              <small>本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。</small>
+              <small>推薦流程與可驗證資料已併入；仍需搭配交易室風控與自身部位限制。</small>
             </div>
           )}
         </div>
