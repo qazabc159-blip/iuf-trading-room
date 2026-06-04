@@ -5606,14 +5606,39 @@ const authRegisterSchema = z.object({
   inviteCode: z.string().min(1).max(128)
 });
 
+function sanitizeOperationalErrorMessage(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value
+    .replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, "postgres://[REDACTED]@")
+    .replace(/(password|passwd|pwd|token|secret)=([^&\s]+)/gi, "$1=[REDACTED]")
+    .slice(0, 1200);
+}
+
+function serializeOperationalError(error: unknown) {
+  const record = error && typeof error === "object"
+    ? (error as Record<string, unknown>)
+    : {};
+  const cause = record.cause && typeof record.cause === "object"
+    ? (record.cause as Record<string, unknown>)
+    : {};
+
+  return {
+    name: typeof record.name === "string" ? record.name : undefined,
+    code: typeof record.code === "string" ? record.code : undefined,
+    message: sanitizeOperationalErrorMessage(record.message),
+    causeName: typeof cause.name === "string" ? cause.name : undefined,
+    causeCode: typeof cause.code === "string" ? cause.code : undefined,
+    causeMessage: sanitizeOperationalErrorMessage(cause.message)
+  };
+}
+
 app.post("/auth/login", async (c) => {
   const body = authLoginSchema.parse(await c.req.json());
   let result;
   try {
     result = await loginWithPassword(body.email, body.password);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("[auth/login] database login failed", { message });
+    console.warn("[auth/login] database login failed", serializeOperationalError(error));
     return c.json({ error: "auth_login_unavailable", code: "AUTH_LOGIN_DB_ERROR" }, 503);
   }
   if (!result.ok) {

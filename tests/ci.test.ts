@@ -276,6 +276,10 @@ test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB fa
     serverSrc.includes("AUTH_LOGIN_DB_ERROR") && serverSrc.includes("[auth/login] database login failed"),
     "AUTH-LOGIN-1: login route must expose sanitized deploy diagnostics for DB login failures"
   );
+  assert.ok(
+    serverSrc.includes("serializeOperationalError") && serverSrc.includes("sanitizeOperationalErrorMessage"),
+    "AUTH-LOGIN-1: auth DB failure logs must include sanitized cause/code details for Railway diagnosis"
+  );
 });
 
 test("signal schema applies expected defaults", () => {
