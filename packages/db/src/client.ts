@@ -20,6 +20,12 @@ export function getDatabaseUrl() {
   return process.env.DATABASE_URL ?? null;
 }
 
+export function getDatabasePoolMax() {
+  const raw = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
+  if (!Number.isFinite(raw)) return 5;
+  return Math.max(1, Math.min(raw, 10));
+}
+
 export function getDb() {
   if (!isDatabaseMode()) {
     return null;
@@ -32,7 +38,7 @@ export function getDb() {
 
   if (!sqlClient) {
     sqlClient = postgres(databaseUrl, {
-      max: 1
+      max: getDatabasePoolMax()
     });
     drizzleClient = drizzle(sqlClient, { schema });
   }

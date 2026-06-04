@@ -212,6 +212,23 @@ import {
   type ThemeManualUpdateResult,
 } from "../apps/api/src/admin-themes-manual-update.ts";
 
+test("DB-POOL-1: production DB client must not serialize the whole app through one connection", () => {
+  const src = readFileSync("packages/db/src/client.ts", "utf8");
+  assert.ok(
+    src.includes("getDatabasePoolMax"),
+    "DB-POOL-1: DB pool size must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes("process.env.DATABASE_POOL_MAX"),
+    "DB-POOL-1: production must allow DATABASE_POOL_MAX override"
+  );
+  assert.doesNotMatch(
+    src,
+    /max:\s*1\b/,
+    "DB-POOL-1: postgres pool max must not be hard-coded to 1 because ingest/backfill can starve auth/login"
+  );
+});
+
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
     category: "industry",
