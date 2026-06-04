@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const migrationTimeoutMs = Number(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? 120_000);
+const rawMigrationTimeoutMs = Number.parseInt(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? "", 10);
+const migrationTimeoutMs = Number.isFinite(rawMigrationTimeoutMs)
+  ? Math.max(120_000, Math.min(rawMigrationTimeoutMs, 10 * 60_000))
+  : 120_000;
 const isProductionDatabaseMode =
   process.env.PERSISTENCE_MODE === "database" &&
-  (process.env.NODE_ENV === "production" || Boolean(process.env.RAILWAY_ENVIRONMENT));
+  Boolean(process.env.DATABASE_URL) &&
+  (process.env.NODE_ENV === "production" ||
+    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
+    Boolean(process.env.RAILWAY_SERVICE_ID));
 const migrationRequired =
   process.env.RAILWAY_MIGRATION_REQUIRED === "1" ||
   (isProductionDatabaseMode && process.env.RAILWAY_MIGRATION_REQUIRED !== "0");
