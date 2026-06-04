@@ -8241,7 +8241,8 @@ app.post("/api/v1/internal/finmind/sync-now", async (c) => {
 //     companies_ohlcv, tw_institutional_buysell, tw_margin_short, tw_dividend
 //
 //   Body: { dataset: "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short" | "tw_dividend",
-//            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number }
+//            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number,
+//            symbols?: ["2330", "6202"] }
 //
 //   Hard lines:
 //     - Owner role required (403 otherwise)
@@ -8256,7 +8257,8 @@ const finmindBackfillBodySchema = z.object({
   dataset: z.enum(["companies_ohlcv", "tw_institutional_buysell", "tw_margin_short", "tw_dividend"]),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD"),
-  batch_size: z.number().int().min(1).max(200).optional()
+  batch_size: z.number().int().min(1).max(200).optional(),
+  symbols: z.array(z.string().regex(/^\d{4}$/)).min(1).max(80).optional()
 });
 
 app.post("/api/v1/internal/finmind/backfill", async (c) => {
@@ -8272,7 +8274,7 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     }, 422);
   }
 
-  let body: { dataset: BackfillDataset; from: string; to: string; batch_size?: number };
+  let body: { dataset: BackfillDataset; from: string; to: string; batch_size?: number; symbols?: string[] };
   try {
     const raw = await c.req.json().catch(() => ({}));
     const parsed = finmindBackfillBodySchema.safeParse(raw);
@@ -8289,6 +8291,13 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     return c.json({ error: "invalid_range", message: "from must be <= to" }, 400);
   }
 
+  if (body.symbols?.length && body.dataset !== "companies_ohlcv") {
+    return c.json({
+      error: "invalid_symbols_dataset",
+      message: "symbols can only be used with dataset=companies_ohlcv"
+    }, 400);
+  }
+
   const workspaceSlug = session.workspace.slug ?? "default";
 
   console.log(
@@ -8301,7 +8310,8 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     from: body.from,
     to: body.to,
     workspaceSlug,
-    batchSize: body.batch_size
+    batchSize: body.batch_size,
+    symbols: body.symbols
   });
 
   // Write audit log (non-fatal)
@@ -8322,7 +8332,8 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
           rows_quarantined: result.rowsQuarantined,
           state: result.state,
           duration_ms: result.durationMs,
-          tickers_attempted: result.tickersAttempted
+          tickers_attempted: result.tickersAttempted,
+          symbols: body.symbols ?? null
         }
       }).catch((err: unknown) => {
         console.warn("[finmind-backfill-endpoint] audit log write failed:", err instanceof Error ? err.message : String(err));

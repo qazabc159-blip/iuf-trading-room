@@ -55,3 +55,18 @@ Fix:
 - Add `preserveOrder=false` to `takeFinMindSchedulerBatch()`.
 - Call deep OHLCV backfill with `preserveOrder=true`.
 - Leave other FinMind schedulers unchanged.
+
+## Follow-Up Fix: Owner Targeted OHLCV Backfill
+
+After PR #976 deployed, production confirmed the priority path works (`6202`, `2317`, `2454`, `2308` moved to READY), but recovery still depended on the scheduler working through the remaining core tickers one by one.
+
+Third root cause:
+
+- Existing Owner backfill endpoint could only backfill `companies_ohlcv` by workspace batch.
+- It did not accept target symbols, so a product-visible ticker such as `2412` or `2603` could not be backfilled directly.
+
+Fix:
+
+- Add optional `symbols` to `POST /api/v1/internal/finmind/backfill` for `dataset=companies_ohlcv`.
+- Preserve the requested symbol order and write only real FinMind OHLCV rows.
+- Reject `symbols` for non-OHLCV datasets so the endpoint remains narrow.
