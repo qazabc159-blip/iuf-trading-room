@@ -1088,6 +1088,13 @@ export function OhlcvCandlestickChart({
     ].join("|");
   }, [interval, intradayRange, isIntraday, range, symbol]);
   const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
+  useEffect(() => {
+    if (isIntraday && chartBars.length === 0 && bars.length >= MIN_TREND_BARS) {
+      setInterval("1d");
+      setRange("all");
+      setHoverBar(null);
+    }
+  }, [bars.length, chartBars.length, isIntraday]);
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {
     if (!isIntraday) return null;
@@ -1202,7 +1209,7 @@ export function OhlcvCandlestickChart({
 
   // ── Lightweight-charts effect (candlestick + MA overlays) ──────────────────
   useEffect(() => {
-    if (!containerRef.current || !chartBars.length || insufficientTrend) return;
+    if (!containerRef.current || !chartBars.length) return;
 
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
@@ -1455,7 +1462,7 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
@@ -1494,7 +1501,8 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
-  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+  const renderInsufficientAsCard = Boolean(false);
+  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS;
   const compactIndicatorSignals = indicatorSignals.filter((signal) => {
     if (signal.key === "ma20" || signal.key === "ma60") return indicators.ma;
     if (signal.key === "vwap") return indicators.vwap;
@@ -1731,7 +1739,7 @@ export function OhlcvCandlestickChart({
         )}
       </div>
 
-      {chartBars.length > 0 && !insufficientTrend && (
+      {chartBars.length > 0 && (
         <div className="kline-viewport-tools" data-testid="kline-viewport-tools" aria-label="K 線視窗控制">
           <span className="label">視窗</span>
           <button type="button" onClick={() => zoomLogicalRange(0.72)} title="放大目前視窗，顯示更少 K 棒">
@@ -1821,7 +1829,7 @@ export function OhlcvCandlestickChart({
           <span className={stateToneClass(activeState)}>{stateLabel(activeState)}</span>{" "}
           {emptyReason}
         </div>
-      ) : insufficientTrend ? (
+      ) : renderInsufficientAsCard && insufficientTrend ? (
         <KlineInsufficientState
           bars={chartBars}
           intervalLabel={activeMeta?.label ?? "K 線"}
@@ -1829,6 +1837,21 @@ export function OhlcvCandlestickChart({
         />
       ) : (
         <div className="kline-chart-shell">
+          {insufficientTrend && (
+            <div className="kline-density-strip is-sparse" data-testid="kline-backfill-warning">
+              <div>
+                <span>資料樣本</span>
+                <b>{chartBars.length.toLocaleString("zh-TW")}<small> / 最低 {MIN_TREND_BARS}</small></b>
+              </div>
+              <div>
+                <span>回補策略</span>
+                <b>已啟動<small>10 年日線 / 20 日分 K</small></b>
+              </div>
+              <p>
+                目前仍畫出已取得的真實 K 線；後端會略過過短快取並向 FinMind 補足歷史樣本，不用假資料補線。
+              </p>
+            </div>
+          )}
           <div className="kline-price-ribbon kline-readout-ribbon" aria-live="polite">
             <span>{hoverBar ? (isIntraday ? "游標分 K" : "游標 K") : (isIntraday ? "分 K 最新" : "最新收盤")}</span>
             <b className={`num ${toneClass(readoutChange)}`}>

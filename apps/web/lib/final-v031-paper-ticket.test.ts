@@ -9,6 +9,7 @@ const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "u
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -143,6 +144,24 @@ describe("final-v031 paper ticket price gate", () => {
     expect(tradingRoomKlineFrameSource).toContain("order: 4;");
   });
 
+  it("fetches enough real K-line history instead of accepting a tiny partial cache", () => {
+    expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720");
+    expect(apiOhlcvSource).toContain("const MAX_DAILY_BARS_QUERY_LIMIT = 2500");
+    expect(apiOhlcvSource).toContain("cachedNeedsFinMindBackfill");
+    expect(apiOhlcvSource).toContain("!cachedNeedsFinMindBackfill");
+    expect(apiOhlcvSource).toContain(".limit(MAX_DAILY_BARS_QUERY_LIMIT)");
+    expect(tradingRoomKlineFrameSource).toContain("from.setFullYear(from.getFullYear() - 10)");
+    expect(tradingRoomKlineFrameSource).toContain("getCompanyKBar(company.id, requestedKbarDate, { days: 20 })");
+  });
+
+  it("does not replace the trading-room chart with a sparse-data card while backfill runs", () => {
+    expect(klineChartSource).not.toContain("|| insufficientTrend) return");
+    expect(klineChartSource).toContain("data-testid=\"kline-backfill-warning\"");
+    expect(klineChartSource).toContain("renderInsufficientAsCard && insufficientTrend");
+    expect(klineChartSource).toContain('setInterval("1d")');
+    expect(klineChartSource).toContain('setRange("all")');
+  });
+
   it("does not reload the real K-line frame twice when selecting a watchlist row", () => {
     expect(ticketHtml).not.toContain("document.querySelectorAll('.wrow').forEach(r=>r.addEventListener('click',()=>pickRow(r.dataset.sym)))");
     expect(ticketHtml).toContain("frame.closest('.real-kline-frame-shell')?.classList.remove('is-loaded')");
@@ -221,8 +240,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(frameSource).toContain('data-final-screen={isTradingRoom ? "paper-trading-room" : "final-v031"}');
     expect(frameSource).toContain('position: fixed;');
     expect(frameSource).toContain('z-index: 2147483000;');
+    expect(frameSource).toContain('left: 252px;');
+    expect(frameSource).toContain('width: calc(100vw - 252px);');
+    expect(frameSource).toContain('max-width: calc(100vw - 252px);');
     expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock');
-    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar');
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar {');
+    expect(frameSource).toContain('z-index: 2147483001 !important;');
+    expect(frameSource).not.toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar,\n        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .source-badge');
     expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .command-palette');
     expect(ticketHtml).toContain("scrollbar-width:none;");
     expect(ticketHtml).toContain("contain:size layout paint;");

@@ -85,7 +85,7 @@ export default async function TradingRoomKlineFramePage({
   }
 
   const from = new Date();
-  from.setFullYear(from.getFullYear() - 3);
+  from.setFullYear(from.getFullYear() - 10);
   let ohlcvError: string | null = null;
   let kbarError: string | null = null;
   const requestedKbarDate = taipeiDateString();
@@ -94,7 +94,7 @@ export default async function TradingRoomKlineFramePage({
       interval: "1d",
       from: from.toISOString().slice(0, 10),
     }),
-    getCompanyKBar(company.id, requestedKbarDate, { days: 5 }),
+    getCompanyKBar(company.id, requestedKbarDate, { days: 20 }),
   ]);
 
   const bars: OhlcvBar[] = ohlcvResult.status === "fulfilled" ? ohlcvResult.value : [];
