@@ -41,7 +41,7 @@ const modes = [
 
 const secureRules = [
   "不要把券商密碼貼在聊天、PR、截圖、瀏覽器 localStorage 或一般環境變數。",
-  "現階段 Owner 測試憑證走 AWS SSM 或受控部署環境，例如 /iuf/kgi/sim_person_id 與 /iuf/kgi/sim_person_pwd。",
+  "現階段 Owner 測試憑證只走受控安全環境；頁面不揭露參數名稱、儲存路徑或任何憑證值。",
   "未來客戶憑證必須走後端加密 vault、一次性 onboarding、權限稽核與可撤銷連線。",
   "所有券商連線失敗都要顯示原因；不能用假綠燈或假行情替代。",
 ];

@@ -14,8 +14,10 @@ describe("broker settings boundary page", () => {
 
   it("does not collect broker credentials in the browser page", () => {
     expect(brokerPageSource).toContain("不要把券商密碼貼在聊天");
-    expect(brokerPageSource).toContain("/iuf/kgi/sim_person_id");
-    expect(brokerPageSource).toContain("/iuf/kgi/sim_person_pwd");
+    expect(brokerPageSource).toContain("不揭露參數名稱、儲存路徑或任何憑證值");
+    expect(brokerPageSource).not.toContain("/iuf/kgi/sim_person_id");
+    expect(brokerPageSource).not.toContain("/iuf/kgi/sim_person_pwd");
+    expect(brokerPageSource).not.toContain("AWS SSM");
     expect(brokerPageSource).not.toContain('type="password"');
     expect(brokerPageSource).not.toContain("localStorage.setItem");
     expect(brokerPageSource).not.toContain("localStorage.getItem");
