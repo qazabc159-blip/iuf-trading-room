@@ -1142,6 +1142,54 @@ function buildTwseIndustryRows(feed: LoadState<RealtimeMarketDashboard | null>):
     .sort((left, right) => right.stockCount - left.stockCount);
 }
 
+function buildMarketWideRowsFromHeatmap(heatmap: HeatTile[]): TwseIndustryHeatmapTile[] {
+  const byIndustry = new Map<string, {
+    industry: string;
+    weightedPct: number;
+    weight: number;
+    gainerCount: number;
+    loserCount: number;
+    flatCount: number;
+    stockCount: number;
+  }>();
+
+  for (const tile of heatmap) {
+    if (tile.placeholder) continue;
+    if (typeof tile.pct !== "number" || !Number.isFinite(tile.pct)) continue;
+    const industry = heatmapSectorLabel(heatmapSectorName(tile));
+    const weight = Math.max(1, Number.isFinite(tile.weight) ? tile.weight : 1);
+    const current = byIndustry.get(industry) ?? {
+      industry,
+      weightedPct: 0,
+      weight: 0,
+      gainerCount: 0,
+      loserCount: 0,
+      flatCount: 0,
+      stockCount: 0,
+    };
+    current.weight += weight;
+    current.weightedPct += tile.pct * weight;
+    current.stockCount += 1;
+    if (tile.pct > 0.05) current.gainerCount += 1;
+    else if (tile.pct < -0.05) current.loserCount += 1;
+    else current.flatCount += 1;
+    byIndustry.set(industry, current);
+  }
+
+  return [...byIndustry.values()]
+    .map((row) => ({
+      industry: row.industry,
+      avgChangePct: row.weight > 0 ? Math.round((row.weightedPct / row.weight) * 100) / 100 : 0,
+      gainerCount: row.gainerCount,
+      loserCount: row.loserCount,
+      flatCount: row.flatCount,
+      stockCount: row.stockCount,
+      source: "owned_representative_aggregate",
+    }))
+    .filter((row) => row.stockCount > 0)
+    .sort((left, right) => right.stockCount - left.stockCount || Math.abs(right.avgChangePct) - Math.abs(left.avgChangePct));
+}
+
 function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): MarketIndexDisplay {
   const data = loadStateData(feed);
   const kgi = data?.kgiOverview?.taiex ?? null;
@@ -2112,6 +2160,10 @@ function RealtimeHeatmapPanel({
   // If KGI is off-hours or the representative feed is still cold, never render a partial core heatmap.
   const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
   const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
+  const derivedFullMarketRows = fullMarketRows.length > 0
+    ? fullMarketRows
+    : buildMarketWideRowsFromHeatmap(displayHeatmap.length > 0 ? displayHeatmap : heatmap);
+  const wideRowsUseRepresentativeAggregate = fullMarketRows.length === 0 && derivedFullMarketRows.length > 0;
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
     : activeMode === "core"
@@ -2122,6 +2174,7 @@ function RealtimeHeatmapPanel({
     : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
 
   const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
+  const wideSourceLabel = wideRowsUseRepresentativeAggregate ? "自有代表股聚合" : displaySourceLabel;
 
   // When KGI is off-hours or the representative feed is cold, force-show the full market view.
   const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
@@ -2150,10 +2203,10 @@ function RealtimeHeatmapPanel({
       </div>
       {effectiveMode === "all" ? (
         <MarketWideHeatmap
-          rows={fullMarketRows}
+          rows={derivedFullMarketRows}
           updatedAt={updatedAt}
-          sourceLabel={displaySourceLabel}
-          marketState={fullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
+          sourceLabel={wideSourceLabel}
+          marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
           reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
         />
       ) : (

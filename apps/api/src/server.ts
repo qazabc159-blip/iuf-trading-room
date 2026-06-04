@@ -354,6 +354,7 @@ function isPublicDiagRoute(path: string): boolean {
   if (path === "/api/v1/paper/health") return true;
   if (path === "/api/v1/paper/health/detail") return true;
   if (path === "/api/v1/diagnostics/kbar") return true;
+  if (path === "/api/v1/diagnostics/kline-depth") return true;
   return false;
 }
 
@@ -1175,6 +1176,13 @@ app.get("/api/v1/market-data/overview", async (c) => {
         const asOfTs = t.time
           ? new Date(`${taipeiDateStr}T${t.time}+08:00`).toISOString()
           : nowIso;
+        const intradayHistory = updateOverviewMisIndexHistory({
+          key: "TAIEX",
+          tradeDateYmd: todayYmd,
+          time: t.time,
+          last: t.last,
+          volume: t.volume
+        });
         enrichedIndex = {
           ...enrichedIndex,
           state: "LIVE",
@@ -1191,7 +1199,7 @@ app.get("/api/v1/market-data/overview", async (c) => {
           updatedAt: nowIso,
           freshnessStatus: "fresh",
           reason: "mis_intraday",
-          history: (enrichedIndex["history"] as unknown[]) ?? []
+          history: mergeOverviewIndexHistory(enrichedIndex["history"], intradayHistory)
         };
       }
 
@@ -13087,6 +13095,149 @@ app.get("/api/v1/diagnostics/kbar", async (c) => {
 //   - source must be "athena" or reject 400
 // =============================================================================
 
+const OWNED_DAILY_KLINE_REQUIRED_BARS = 720;
+const OWNED_DAILY_KLINE_STALE_DAYS = 4;
+const OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS = 3650;
+
+type OwnedKlineDepthState = "READY" | "SHALLOW" | "STALE" | "EMPTY" | "MISSING_COMPANY";
+
+function normalizeKlineDepthSymbols(raw: string | undefined): string[] {
+  const values = (raw ?? "2330,6202")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => /^\d{4}$/.test(value));
+  return [...new Set(values)].slice(0, 100);
+}
+
+function resolveOwnedKlineDepthState(realRows: number, latestDate: string | null): OwnedKlineDepthState {
+  if (realRows <= 0) return "EMPTY";
+  if (realRows < OWNED_DAILY_KLINE_REQUIRED_BARS) return "SHALLOW";
+  if (!latestDate) return "STALE";
+  const latestMs = Date.parse(`${latestDate}T00:00:00+08:00`);
+  if (!Number.isFinite(latestMs)) return "STALE";
+  return Date.now() - latestMs > OWNED_DAILY_KLINE_STALE_DAYS * 24 * 60 * 60 * 1000
+    ? "STALE"
+    : "READY";
+}
+
+app.get("/api/v1/diagnostics/kline-depth", async (c) => {
+  const symbols = normalizeKlineDepthSymbols(c.req.query("symbols"));
+  const workspaceSlug = c.req.query("workspace") ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
+  const base = {
+    owned: true,
+    workspaceSlug,
+    requiredBars: OWNED_DAILY_KLINE_REQUIRED_BARS,
+    staleAfterDays: OWNED_DAILY_KLINE_STALE_DAYS,
+    backfillDays: OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS,
+    symbols,
+    asOf: new Date().toISOString()
+  };
+
+  if (!isDatabaseMode()) {
+    return c.json({ data: { ...base, state: "NO_DB", owned: false, items: [] } });
+  }
+
+  const db = getDb();
+  if (!db) {
+    return c.json({ data: { ...base, state: "ERROR", owned: false, items: [], error: "getDb() returned null" } }, 503);
+  }
+
+  try {
+    const result = await db.execute(drizzleSql`
+      WITH target_workspace AS (
+        SELECT id
+        FROM workspaces
+        WHERE slug = ${workspaceSlug}
+        ORDER BY created_at ASC
+        LIMIT 1
+      ),
+      owned_daily AS (
+        SELECT
+          company_id,
+          COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')::int AS real_rows,
+          MIN(dt) FILTER (WHERE source != 'mock' AND interval = '1d')::text AS first_date,
+          MAX(dt) FILTER (WHERE source != 'mock' AND interval = '1d')::text AS latest_date,
+          COUNT(*) FILTER (WHERE source = 'mock' AND interval = '1d')::int AS mock_rows,
+          (ARRAY_AGG(source ORDER BY dt DESC) FILTER (WHERE interval = '1d'))[1] AS latest_source
+        FROM companies_ohlcv
+        GROUP BY company_id
+      )
+      SELECT
+        c.ticker,
+        c.name,
+        COALESCE(o.real_rows, 0)::int AS real_rows,
+        COALESCE(o.mock_rows, 0)::int AS mock_rows,
+        o.first_date,
+        o.latest_date,
+        o.latest_source
+      FROM companies c
+      JOIN target_workspace tw ON tw.id = c.workspace_id
+      LEFT JOIN owned_daily o ON o.company_id = c.id
+      WHERE c.ticker ~ '^[0-9]{4}$'
+      ORDER BY c.ticker ASC
+    `);
+
+    const rows = ((result as { rows?: Record<string, unknown>[] }).rows
+      ?? (Array.isArray(result) ? result : [])) as Record<string, unknown>[];
+    const byTicker = new Map(rows.map((row) => [String(row.ticker ?? ""), row]));
+    const items = symbols.map((symbol) => {
+      const row = byTicker.get(symbol);
+      if (!row) {
+        return {
+          symbol,
+          name: null,
+          state: "MISSING_COMPANY" as OwnedKlineDepthState,
+          realRows: 0,
+          mockRows: 0,
+          firstDate: null,
+          latestDate: null,
+          latestSource: null,
+          owned: true
+        };
+      }
+      const realRows = Number(row.real_rows ?? 0);
+      const latestDate = typeof row.latest_date === "string" ? row.latest_date : null;
+      return {
+        symbol,
+        name: String(row.name ?? symbol),
+        state: resolveOwnedKlineDepthState(realRows, latestDate),
+        realRows,
+        mockRows: Number(row.mock_rows ?? 0),
+        firstDate: typeof row.first_date === "string" ? row.first_date : null,
+        latestDate,
+        latestSource: typeof row.latest_source === "string" ? row.latest_source : null,
+        owned: true
+      };
+    });
+    const ready = items.filter((item) => item.state === "READY").length;
+
+    return c.json({
+      data: {
+        ...base,
+        state: ready === items.length ? "READY" : ready > 0 ? "PARTIAL" : "NEEDS_BACKFILL",
+        summary: {
+          total: items.length,
+          ready,
+          shallow: items.filter((item) => item.state === "SHALLOW").length,
+          stale: items.filter((item) => item.state === "STALE").length,
+          empty: items.filter((item) => item.state === "EMPTY").length,
+          missingCompany: items.filter((item) => item.state === "MISSING_COMPANY").length
+        },
+        items
+      }
+    });
+  } catch (err) {
+    return c.json({
+      data: {
+        ...base,
+        state: "ERROR",
+        items: [],
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }, 500);
+  }
+});
+
 interface LabBundle {
   id: string;
   bundleId: string;
@@ -13487,6 +13638,54 @@ app.get("/api/v1/companies/:symbol/dividend", async (c) => {
  * always tries finmind when token is present — OHLCV_SOURCE only guards the
  * manual one-shot sync endpoint). No-op when DB unavailable.
  */
+async function resolveOhlcvDeepBackfillCandidates(
+  workspaceId: string
+): Promise<Array<{ companyId: string; ticker: string; workspaceId: string }>> {
+  const db = getDb();
+  if (!db) return [];
+
+  const result = await db.execute(drizzleSql`
+    WITH owned_daily AS (
+      SELECT
+        company_id,
+        COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')::int AS real_rows,
+        MAX(dt) FILTER (WHERE source != 'mock' AND interval = '1d') AS latest_date
+      FROM companies_ohlcv
+      GROUP BY company_id
+    )
+    SELECT
+      c.id::text AS company_id,
+      c.ticker,
+      c.workspace_id::text AS workspace_id
+    FROM companies c
+    LEFT JOIN owned_daily o ON o.company_id = c.id
+    WHERE c.workspace_id = ${workspaceId}
+      AND c.ticker ~ '^[0-9]{4}$'
+      AND (
+        COALESCE(o.real_rows, 0) < ${OWNED_DAILY_KLINE_REQUIRED_BARS}
+        OR o.latest_date IS NULL
+        OR o.latest_date < (CURRENT_DATE - (${OWNED_DAILY_KLINE_STALE_DAYS}::int * INTERVAL '1 day'))
+      )
+    ORDER BY COALESCE(o.real_rows, 0) ASC, o.latest_date ASC NULLS FIRST, c.ticker ASC
+  `);
+
+  const rows = ((result as { rows?: Record<string, unknown>[] }).rows
+    ?? (Array.isArray(result) ? result : [])) as Record<string, unknown>[];
+  return rows
+    .map((row) => ({
+      companyId: String(row.company_id ?? ""),
+      ticker: String(row.ticker ?? ""),
+      workspaceId: String(row.workspace_id ?? workspaceId)
+    }))
+    .filter((row) => row.companyId && /^\d{4}$/.test(row.ticker));
+}
+
+function daysAgoUtcDate(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
   if (process.env.FINMIND_KILL_SWITCH === "true") {
     console.log("[ohlcv-scheduler] FINMIND_KILL_SWITCH=true, skipping tick");
@@ -13517,6 +13716,26 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     const allTickers = rows
       .filter((r) => /^\d{4}$/.test(r.ticker)) // Taiwan 4-digit only
       .map((r) => ({ companyId: r.id, ticker: r.ticker, workspaceId: r.workspaceId }));
+    const deepCandidates = await resolveOhlcvDeepBackfillCandidates(workspaceId);
+    const deepTickers = takeFinMindSchedulerBatch(
+      "ohlcv-deep-backfill",
+      deepCandidates,
+      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 12)
+    );
+    if (deepTickers.length > 0) {
+      console.log(
+        `[ohlcv-scheduler] Starting deep owned-store backfill for ${deepTickers.length}/${deepCandidates.length} ` +
+        `underfilled tickers (requiredBars=${OWNED_DAILY_KLINE_REQUIRED_BARS})`
+      );
+      const deepResult = await runOhlcvFinmindSync(deepTickers, {
+        startDate: daysAgoUtcDate(OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS),
+        forceFinmind: true
+      });
+      console.log(
+        `[ohlcv-scheduler] Deep backfill done: success=${deepResult.tickersSuccess} ` +
+        `failed=${deepResult.tickersFailed} durationMs=${deepResult.durationMs}`
+      );
+    }
     const tickers = takeFinMindSchedulerBatch(
       "ohlcv",
       allTickers,
@@ -15212,12 +15431,88 @@ const _misTileCache = new Map<string, { last: number; changePct: number | null; 
 // Caches TAIEX (tse_t00.tw) + OTC (otc_o00.tw) live index data.
 // TTL: 30s — overview handler reads this, MIS cron writes on each tick.
 let _overviewMisIndexCache: {
-  taiex: { last: number; prevClose: number; change: number; changePct: number; time: string } | null;
-  otc: { last: number; prevClose: number; change: number; changePct: number; time: string } | null;
+  taiex: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
+  otc: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
   cachedAt: number;
   tradeDateYmd: string;
 } | null = null;
 const OVERVIEW_MIS_INDEX_TTL_MS = 30 * 1000; // 30s
+
+type OverviewMisIndexBar = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  source: "twse_mis_intraday";
+};
+
+const _overviewMisIndexHistory = new Map<string, { tradeDateYmd: string; rows: OverviewMisIndexBar[] }>();
+
+function parseMisNumericField(value: string | undefined): number | null {
+  if (!value || value === "-") return null;
+  const parsed = Number(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function updateOverviewMisIndexHistory(input: {
+  key: string;
+  tradeDateYmd: string;
+  time: string;
+  last: number;
+  volume: number | null;
+}): OverviewMisIndexBar[] {
+  const yyyy = input.tradeDateYmd.slice(0, 4);
+  const mm = input.tradeDateYmd.slice(4, 6);
+  const dd = input.tradeDateYmd.slice(6, 8);
+  const rawTime = /^\d{2}:\d{2}/.test(input.time)
+    ? input.time.slice(0, 5)
+    : getTaipeiHHMM().toString().padStart(4, "0").replace(/^(\d{2})(\d{2})$/, "$1:$2");
+  const minuteKey = `${yyyy}-${mm}-${dd} ${rawTime}`;
+  const current = _overviewMisIndexHistory.get(input.key);
+  const bucket = current && current.tradeDateYmd === input.tradeDateYmd
+    ? current
+    : { tradeDateYmd: input.tradeDateYmd, rows: [] };
+  const lastRow = bucket.rows[bucket.rows.length - 1];
+
+  if (lastRow?.date === minuteKey) {
+    lastRow.high = Math.max(lastRow.high ?? input.last, input.last);
+    lastRow.low = Math.min(lastRow.low ?? input.last, input.last);
+    lastRow.close = input.last;
+    lastRow.volume = input.volume ?? lastRow.volume;
+  } else {
+    bucket.rows.push({
+      date: minuteKey,
+      open: input.last,
+      high: input.last,
+      low: input.last,
+      close: input.last,
+      volume: input.volume,
+      source: "twse_mis_intraday"
+    });
+  }
+
+  bucket.rows = bucket.rows.slice(-240);
+  _overviewMisIndexHistory.set(input.key, bucket);
+  return bucket.rows;
+}
+
+function mergeOverviewIndexHistory(
+  baseHistory: unknown,
+  intradayHistory: OverviewMisIndexBar[]
+): OverviewMisIndexBar[] {
+  const baseRows = Array.isArray(baseHistory)
+    ? baseHistory.filter((row): row is OverviewMisIndexBar => {
+        const value = row as Partial<OverviewMisIndexBar>;
+        return typeof value.date === "string" && typeof value.close === "number" && Number.isFinite(value.close);
+      })
+    : [];
+  const byDate = new Map<string, OverviewMisIndexBar>();
+  for (const row of baseRows.slice(-96)) byDate.set(row.date, row);
+  for (const row of intradayHistory) byDate.set(row.date, row);
+  return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date)).slice(-160);
+}
 
 // Module-level: MIS full-universe sweep state (Tier B — ~1978 stocks, rolling slice every 10s).
 // Universe is loaded from DB companies once per 30min, then iterated slice-by-slice during
@@ -16042,26 +16337,26 @@ function startSchedulers(workspaceSlug: string): void {
             const idxArr = idxData.msgArray ?? [];
             const parseIdxRow = (row: Record<string, string> | undefined) => {
               if (!row) return null;
-              const zRaw = row["z"] ?? "-";
-              const yRaw = row["y"] ?? "0";
               const tRaw = row["t"] ?? "";
-              const last = zRaw === "-" ? null : parseFloat(zRaw);
-              const prevClose = parseFloat(yRaw);
-              if (!last || isNaN(last) || isNaN(prevClose) || prevClose === 0) return null;
+              const last = parseMisNumericField(row["z"]);
+              const prevClose = parseMisNumericField(row["y"]);
+              const volume = parseMisNumericField(row["v"] ?? row["tv"]);
+              if (last === null || prevClose === null || !Number.isFinite(last) || !Number.isFinite(prevClose) || prevClose === 0) return null;
               const change = parseFloat((last - prevClose).toFixed(2));
               const changePct = parseFloat(((change / prevClose) * 100).toFixed(2));
-              return { last, prevClose, change, changePct, time: tRaw };
+              return { last, prevClose, change, changePct, time: tRaw, volume };
             };
             const taiexRow = idxArr.find((r) => r["ex"] === "tse" && (r["ch"] === "t00.tw" || r["c"] === "t00"));
             const otcRow = idxArr.find((r) => r["ex"] === "otc" && (r["ch"] === "o00.tw" || r["c"] === "o00"));
-            _overviewMisIndexCache = {
+            const nextIndexCache = {
               taiex: parseIdxRow(taiexRow),
               otc: parseIdxRow(otcRow),
               cachedAt: Date.now(),
               tradeDateYmd: todayYmd
             };
-            if (_overviewMisIndexCache.taiex) {
-              console.log(`[twse-mis-cron] index cached: TAIEX=${_overviewMisIndexCache.taiex.last} changePct=${_overviewMisIndexCache.taiex.changePct}%`);
+            _overviewMisIndexCache = nextIndexCache;
+            if (nextIndexCache.taiex) {
+              console.log(`[twse-mis-cron] index cached: TAIEX=${nextIndexCache.taiex.last} changePct=${nextIndexCache.taiex.changePct}%`);
             }
           }
         } catch {
