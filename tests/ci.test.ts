@@ -227,6 +227,11 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
     /max:\s*1\b/,
     "DB-POOL-1: postgres pool max must not be hard-coded to 1 because ingest/backfill can starve auth/login"
   );
+  assert.match(
+    src,
+    /Math\.max\(\s*5\s*,\s*Math\.min\(raw,\s*10\)\s*\)/,
+    "DB-POOL-1: production must clamp DATABASE_POOL_MAX to at least 5 so stale env cannot starve auth/login"
+  );
 });
 
 test("signal schema applies expected defaults", () => {

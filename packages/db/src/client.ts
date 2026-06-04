@@ -23,7 +23,7 @@ export function getDatabaseUrl() {
 export function getDatabasePoolMax() {
   const raw = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
   if (!Number.isFinite(raw)) return 5;
-  return Math.max(1, Math.min(raw, 10));
+  return Math.max(5, Math.min(raw, 10));
 }
 
 export function getDb() {
