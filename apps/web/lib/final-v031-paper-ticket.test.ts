@@ -152,6 +152,7 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720");
     expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_FOR_LONG_WINDOW = 180");
     expect(apiOhlcvSource).toContain("const FINMIND_DAILY_CHUNK_DAYS = 730");
+    expect(apiOhlcvSource).toContain("const FINMIND_DAILY_PERSIST_CHUNK_SIZE = 500");
     expect(apiOhlcvSource).toContain("const MAX_DAILY_BARS_QUERY_LIMIT = 2500");
     expect(apiOhlcvSource).toContain("const DEFAULT_DAILY_BACKFILL_DAYS = 3650");
     expect(apiOhlcvSource).toContain("function isLongDailyWindow");
@@ -161,6 +162,10 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiOhlcvSource).toContain("if (shouldTryFinMind) return []");
     expect(apiOhlcvSource).toContain("cachedNeedsFinMindBackfill");
     expect(apiOhlcvSource).toContain("!cachedNeedsFinMindBackfill");
+    expect(apiOhlcvSource).toContain("function persistFinMindDailyBarsSoon");
+    expect(apiOhlcvSource).toContain("persistFinMindDailyBarsSoon(companyId, session.workspace.id, finmindBars)");
+    expect(apiOhlcvSource).toContain(".onConflictDoUpdate");
+    expect(apiOhlcvSource).toContain("source: \"tej\" as const");
     expect(apiOhlcvSource).toContain(".limit(MAX_DAILY_BARS_QUERY_LIMIT)");
     expect(apiOhlcvSource).toContain("nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS)");
     expect(liveHydration).toContain("TRADING_ROOM_OHLCV_LOOKBACK_YEARS = 10");
