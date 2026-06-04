@@ -1,6 +1,17 @@
 import Link from "next/link";
 import { LockKeyhole, Radio, ShieldCheck, WalletCards } from "lucide-react";
 
+import { getMyEntitlements } from "@/lib/api";
+import { featureStatusLabel, type MyEntitlements, type SubscriptionFeatureId } from "@/lib/subscription-entitlements";
+
+type BrokerFeatureId = Extract<SubscriptionFeatureId, "trading_room_paper" | "kgi_read_only" | "kgi_sim">;
+
+const brokerFeatureIds: Array<{ id: BrokerFeatureId; label: string; note: string }> = [
+  { id: "trading_room_paper", label: "Paper 模擬交易室", note: "平台內模擬，不碰券商。" },
+  { id: "kgi_read_only", label: "KGI Read-only", note: "只讀券商狀態/庫存/資金，不寫入。" },
+  { id: "kgi_sim", label: "KGI SIM", note: "券商模擬環境，仍非正式實單。" },
+];
+
 const modes = [
   {
     label: "Paper 模擬",
@@ -35,7 +46,14 @@ const secureRules = [
   "所有券商連線失敗都要顯示原因；不能用假綠燈或假行情替代。",
 ];
 
-export default function BrokerSettingsPage() {
+function brokerFeatureStatus(entitlements: MyEntitlements | null, id: BrokerFeatureId) {
+  return entitlements?.features.find((feature) => feature.id === id) ?? null;
+}
+
+export default async function BrokerSettingsPage() {
+  const entitlementEnvelope = await getMyEntitlements().catch(() => null);
+  const entitlements = entitlementEnvelope?.data ?? null;
+
   return (
     <main
       style={{
@@ -64,6 +82,55 @@ export default function BrokerSettingsPage() {
             券商憑證必須走安全儲存與後端連線，不在此頁輸入、不在前端保存。
           </p>
         </header>
+
+        <section
+          style={{
+            border: "1px solid rgba(52,211,153,0.20)",
+            background: "rgba(52,211,153,0.045)",
+            padding: 20,
+            marginBottom: 22,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399" }} />
+            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號券商功能狀態</h2>
+          </div>
+          {entitlements ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
+              {brokerFeatureIds.map((feature) => {
+                const status = brokerFeatureStatus(entitlements, feature.id);
+                const access = status?.access === true;
+                return (
+                  <div
+                    key={feature.id}
+                    style={{
+                      border: `1px solid ${access ? "rgba(52,211,153,0.28)" : "rgba(251,191,36,0.28)"}`,
+                      background: access ? "rgba(52,211,153,0.055)" : "rgba(251,191,36,0.055)",
+                      padding: "12px 14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <b>{feature.label}</b>
+                      <span style={{ color: access ? "#34d399" : "#fbbf24", fontSize: 12, fontWeight: 900 }}>
+                        {status ? featureStatusLabel(status.status) : "未回報"}
+                      </span>
+                    </div>
+                    <p style={{ margin: "8px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 12, lineHeight: 1.55 }}>
+                      {feature.note} {status?.reason ?? "後端尚未回報此功能。"}
+                    </p>
+                  </div>
+                );
+              })}
+              <p style={{ gridColumn: "1 / -1", margin: "4px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
+                目前方案：{entitlements.subscription.tierName}。訂閱權限只決定功能是否可用；KGI read-only / SIM 還需要安全憑證與後端連線檢查通過。
+              </p>
+            </div>
+          ) : (
+            <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
+              目前無法讀取帳號權限 API。本頁不會因此假裝 KGI read-only 或 SIM 已開通。
+            </p>
+          )}
+        </section>
 
         <section
           style={{
