@@ -40,3 +40,18 @@ After this PR deploys, trigger/restart API once more and verify:
 - `2317` >= 720 real 1d bars
 - `2454` >= 720 real 1d bars
 - Trading-room chart renders hundreds/thousands of owned candles instead of 3-28 candles.
+
+## Follow-Up Fix: Preserve Priority Order
+
+After PR #974 deployed, Railway logs still showed the first deep-backfill tickers as low-code symbols (`1295`, `1313`) instead of `6202` / `2317` / `2454`.
+
+Second root cause:
+
+- `resolveOhlcvDeepBackfillCandidates()` correctly sorted customer-visible priority tickers first.
+- `takeFinMindSchedulerBatch()` then re-sorted every job alphabetically by ticker, wiping out the priority order.
+
+Fix:
+
+- Add `preserveOrder=false` to `takeFinMindSchedulerBatch()`.
+- Call deep OHLCV backfill with `preserveOrder=true`.
+- Leave other FinMind schedulers unchanged.
