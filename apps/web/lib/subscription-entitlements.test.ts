@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   billingCycles,
+  buildMyEntitlements,
+  featureStatusLabel,
   isOwnerRole,
+  subscriptionFeatures,
   subscriptionTiers,
   tierCanAccess,
   tierFeatureStatus,
@@ -22,8 +25,8 @@ describe("subscription entitlements", () => {
     expect(billingCycles).toEqual(["monthly", "yearly"]);
 
     for (const tier of subscriptionTiers) {
-      expect(tierPriceLabel(tier, "monthly")).toBe("價格待定");
-      expect(tierPriceLabel(tier, "yearly")).toBe("價格待定");
+      expect(tierPriceLabel(tier, "monthly")).toBe("價格待設定");
+      expect(tierPriceLabel(tier, "yearly")).toBe("價格待設定");
       expect(tier.usageLimits.length).toBeGreaterThanOrEqual(3);
       expect(tier.onboardingNote.length).toBeGreaterThan(0);
     }
@@ -41,5 +44,21 @@ describe("subscription entitlements", () => {
     expect(isOwnerRole("Admin")).toBe(false);
     expect(isOwnerRole("Viewer")).toBe(false);
     expect(isOwnerRole(null)).toBe(false);
+  });
+
+  it("builds owner internal visibility without granting it to customer tiers", () => {
+    const owner = buildMyEntitlements({ id: "u1", email: "owner@example.com", role: "Owner" });
+    const viewer = buildMyEntitlements({ id: "u2", email: "viewer@example.com", role: "Viewer" });
+
+    expect(owner.ownerInternal.visible).toBe(true);
+    expect(owner.features.find((feature) => feature.id === "owner_internal")?.access).toBe(true);
+    expect(viewer.ownerInternal.visible).toBe(false);
+    expect(viewer.features.find((feature) => feature.id === "owner_internal")?.access).toBe(false);
+  });
+
+  it("uses clean product labels instead of mojibake", () => {
+    expect(featureStatusLabel("included")).toBe("已包含");
+    expect(subscriptionFeatures.map((feature) => feature.label)).toContain("AI 推薦股票");
+    expect(subscriptionFeatures.map((feature) => feature.label)).toContain("Owner 後台");
   });
 });

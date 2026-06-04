@@ -51,55 +51,55 @@ export type SubscriptionTier = {
 export const subscriptionFeatures: SubscriptionFeature[] = [
   {
     id: "market_intel",
-    label: "市場情報與熱力圖",
-    customerCopy: "重大訊息、AI 精選新聞、產業熱力圖與資料來源狀態。",
+    label: "市場情報與重大新聞",
+    customerCopy: "AI 精選市場重點、官方公告、產業事件與可追蹤來源。",
   },
   {
     id: "ai_recommendations",
     label: "AI 推薦股票",
-    customerCopy: "今日推薦、進場區、停損、TP1/TP2、理由與風險。",
+    customerCopy: "今日推薦、進場區、停損、TP1/TP2、理由、風險與資料依據。",
   },
   {
     id: "trading_room_paper",
     label: "交易室 Paper 模擬",
-    customerCopy: "搜尋台股、查看行情/K 線、紙上單預覽、委託與成交紀錄。",
+    customerCopy: "搜尋台股、查看行情/K 線/資金，並送出平台內紙上委託。",
   },
   {
     id: "company_ai_report",
-    label: "公司 AI 分析師",
-    customerCopy: "公司概況、近期事件、技術、籌碼、題材、風險與資料來源。",
+    label: "公司 AI 分析師報告",
+    customerCopy: "公司概況、近期事件、技術結構、籌碼、題材、風險與 AI 結論。",
   },
   {
     id: "daily_brief",
     label: "AI 每日簡報",
-    customerCopy: "每日盤勢、題材、公司觀察與風險提醒。",
+    customerCopy: "依照當日市場、價格、新聞、推薦與持倉狀態生成每日決策摘要。",
   },
   {
     id: "strategy_observation",
     label: "策略觀察",
-    customerCopy: "量化策略狀態、SIM-only 標示、forward observation 與風險 caveat。",
+    customerCopy: "查看策略狀態、SIM-only、forward observation、績效摘要與風險 caveat。",
   },
   {
     id: "kgi_read_only",
     label: "KGI Read-only",
-    customerCopy: "讀取券商連線狀態、庫存或資金摘要，不送正式委託。",
+    customerCopy: "讀取券商模擬/唯讀資訊，顯示連線、庫存、資金與資料狀態。",
     requiresBroker: true,
   },
   {
     id: "kgi_sim",
     label: "KGI SIM",
-    customerCopy: "券商模擬環境委託、回報與風控紀錄。",
+    customerCopy: "送出券商模擬委託並追蹤委託、成交、錯誤與風控事件。",
     requiresBroker: true,
   },
   {
     id: "automation",
-    label: "自動化與進階監控",
-    customerCopy: "盤中監控、自動簡報重產、策略/券商狀態告警。",
+    label: "自動化監控與排程",
+    customerCopy: "排程刷新、每日 smoke、資料狀態監控與必要的告警提示。",
   },
   {
     id: "owner_internal",
     label: "Owner 後台",
-    customerCopy: "Brain、EventLog、ToolCenter、UTA、內部治理與系統操作。",
+    customerCopy: "Brain、EventLog、ToolCenter、UTA、內部治理與營運頁，只限 Owner 帳號。",
   },
 ];
 
@@ -108,16 +108,16 @@ export const subscriptionTiers: SubscriptionTier[] = [
     id: "starter",
     name: "入門",
     levelLabel: "Starter",
-    targetUser: "需要每天看盤、讀市場情報、保存觀察清單的使用者。",
+    targetUser: "適合先看市場、公司與 AI 摘要，還不接券商模擬委託的使用者。",
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
-    entitlementSummary: "看懂市場與公司，不開券商模擬委託。",
+    entitlementSummary: "看懂市場與公司，使用有限 AI 摘要，不開券商模擬。",
     usageLimits: [
-      "市場情報、熱力圖與每日簡報以閱讀為主。",
-      "AI 推薦與公司 AI 報告只開摘要，不提供完整交易室帶入流程。",
-      "交易室限 Paper 預覽與觀察，不開 KGI read-only / SIM。",
+      "可看市場情報、重大新聞、熱力圖與基本公司頁。",
+      "AI 推薦與每日簡報以有限摘要呈現，不保證完整推薦卡與深度報告。",
+      "交易室僅提供有限 Paper 預覽，不含 KGI read-only / SIM。",
     ],
-    onboardingNote: "適合先試用市場情報與觀察清單；不需要券商憑證。",
+    onboardingNote: "適合試用與觀察產品價值；要完整研究到下單流程請升級中級。",
     features: {
       market_intel: "included",
       ai_recommendations: "limited",
@@ -135,16 +135,16 @@ export const subscriptionTiers: SubscriptionTier[] = [
     id: "pro",
     name: "中級",
     levelLabel: "Pro",
-    targetUser: "需要 AI 推薦、公司分析與 Paper 交易演練的主力使用者。",
+    targetUser: "適合每天使用 AI 推薦、公司分析與 Paper 交易室做決策演練的使用者。",
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
     entitlementSummary: "把 AI 判斷帶進交易室，完成研究到紙上單的流程。",
     usageLimits: [
-      "AI 推薦、每日簡報、公司 AI 報告完整開放。",
-      "交易室可搜尋台股、看行情/K 線、建立 Paper 委託與成交紀錄。",
+      "完整 AI 推薦、AI 每日簡報與公司 AI 分析師報告。",
+      "交易室可搜尋台股、查看行情/K 線/資金，並送出 Paper 委託。",
       "不讀取券商庫存，也不送 KGI SIM；券商功能需升級高級方案。",
     ],
-    onboardingNote: "適合主要使用者；完成帳號設定後即可使用 Paper 交易室，不需要券商憑證。",
+    onboardingNote: "適合主要付費方案；正式交易前先用 Paper 熟悉流程與風控。",
     features: {
       market_intel: "included",
       ai_recommendations: "included",
@@ -162,16 +162,16 @@ export const subscriptionTiers: SubscriptionTier[] = [
     id: "premium",
     name: "高級",
     levelLabel: "Premium",
-    targetUser: "需要券商 SIM、策略觀察與進階監控的進階使用者。",
+    targetUser: "適合需要券商 SIM/read-only、進階監控與策略觀察的重度使用者。",
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
-    entitlementSummary: "連接券商 SIM/read-only 與進階監控，但正式下單仍需另行開通。",
+    entitlementSummary: "連接券商 SIM/read-only 與進階監控，但正式實單仍需另行開通。",
     usageLimits: [
       "包含中級方案全部功能。",
-      "開放 KGI read-only / SIM 前，必須完成安全憑證、連線檢查與風控狀態。",
+      "可開通 KGI read-only / SIM；憑證由安全環境管理，頁面不顯示任何秘密值。",
       "正式實單預設禁用，不因訂閱高級方案自動開啟。",
     ],
-    onboardingNote: "適合進階使用者；需要完成券商連線流程，憑證只從安全環境讀取。",
+    onboardingNote: "適合已完成券商連線設定、需要模擬委託與監控紀錄的使用者。",
     features: {
       market_intel: "included",
       ai_recommendations: "included",
@@ -206,10 +206,10 @@ export function isOwnerRole(role: string | null | undefined) {
 
 export function featureStatusLabel(status: EntitlementStatus) {
   const labels: Record<EntitlementStatus, string> = {
-    included: "完整開放",
-    limited: "部分開放",
+    included: "已包含",
+    limited: "有限使用",
     not_included: "未包含",
-    owner_only: "Owner-only",
+    owner_only: "Owner 專用",
   };
   return labels[status];
 }
@@ -220,7 +220,7 @@ export function billingCycleLabel(cycle: BillingCycle) {
 
 export function tierPriceLabel(tier: SubscriptionTier, cycle: BillingCycle) {
   const value = cycle === "monthly" ? tier.monthlyPriceTwd : tier.yearlyPriceTwd;
-  if (typeof value !== "number") return "價格待定";
+  if (typeof value !== "number") return "價格待設定";
   return `NT$ ${value.toLocaleString("zh-TW")}`;
 }
 
@@ -280,7 +280,7 @@ export function buildMyEntitlements(user: EntitlementUser, now = new Date()): My
       return {
         id: feature.id,
         label: feature.label,
-        status: owner ? "owner_only" as const : "not_included" as const,
+        status: owner ? ("owner_only" as const) : ("not_included" as const),
         access: owner,
         reason: owner ? "此帳號角色為 Owner，可進入內部治理與後台頁。" : "內部治理頁不屬於客戶訂閱功能。",
       };
@@ -292,9 +292,10 @@ export function buildMyEntitlements(user: EntitlementUser, now = new Date()): My
       label: feature.label,
       status,
       access: owner || status === "included" || status === "limited",
-      reason: feature.requiresBroker && status === "included"
-        ? "此功能需要完成券商連線設定，憑證只從安全環境讀取。"
-        : featureStatusLabel(status),
+      reason:
+        feature.requiresBroker && status === "included"
+          ? "此功能需要完成券商連線與憑證設定，並受風控限制。"
+          : featureStatusLabel(status),
     };
   });
 
@@ -311,7 +312,7 @@ export function buildMyEntitlements(user: EntitlementUser, now = new Date()): My
       billingCycle: null,
       status: owner ? "owner_internal" : "trial",
       source: owner ? "owner_override" : "role_default",
-      priceLabel: "價格待定",
+      priceLabel: "價格待設定",
       nextBillingAt: null,
     },
     features,

@@ -17,16 +17,28 @@ describe("subscription entitlement wiring", () => {
 
   it("keeps customer tiers separate from owner-only admin visibility", () => {
     expect(contractSource).toContain('owner_internal: "not_included"');
-    expect(contractSource).toContain("source: owner ? \"owner_override\" : \"role_default\"");
-    expect(pageSource).toContain("不顯示給一般客戶");
+    expect(contractSource).toContain('source: owner ? "owner_override" : "role_default"');
+    expect(contractSource).toContain("內部治理頁不屬於客戶訂閱功能。");
+    expect(pageSource).toContain("Owner 後台不是客戶訂閱方案");
+    expect(pageSource).toContain("一般客戶不會因為升級方案看到這些後台");
   });
 
   it("shows concrete tier boundaries before payment wiring exists", () => {
     expect(contractSource).toContain("usageLimits");
     expect(contractSource).toContain("onboardingNote");
-    expect(contractSource).toContain("正式實單預設禁用");
+    expect(contractSource).toContain("價格待設定");
     expect(pageSource).toContain("方案邊界");
     expect(pageSource).toContain("tier.usageLimits.map");
     expect(pageSource).toContain("tier.onboardingNote");
+    expect(pageSource).toContain("月費 / 年費付款尚未正式接線");
+  });
+
+  it("uses clean customer-facing Chinese copy with no known mojibake markers", () => {
+    expect(contractSource).toContain("入門");
+    expect(contractSource).toContain("中級");
+    expect(contractSource).toContain("高級");
+    expect(pageSource).toContain("方案與權限");
+    expect(pageSource).toContain("目前帳號狀態");
+    expect(pageSource).not.toMatch(/[�]/);
   });
 });
