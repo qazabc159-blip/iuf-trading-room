@@ -1660,8 +1660,8 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         <div className="tac-brand-row">
           <div className="tac-logo">I<span /></div>
           <div>
-            <div className="tac-brand-kicker">IUF · 戰情台</div>
-            <div className="tac-brand-version">v3.0 · TACTICAL</div>
+            <div className="tac-brand-kicker">IUF Trading Room</div>
+            <div className="tac-brand-version">v3.0 · Tactical</div>
           </div>
         </div>
         <strong>台股 AI 交易戰情室</strong>
