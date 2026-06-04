@@ -122,6 +122,47 @@ function formatPrice(value: number | null) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
+function hasProductText(value: string | null | undefined) {
+  const raw = value?.trim();
+  return Boolean(raw && raw !== "-" && raw.toLowerCase() !== "n/a" && raw.toLowerCase() !== "null");
+}
+
+function cleanRecommendationText(value: string | null | undefined, fallback = "資料待確認") {
+  const raw = value?.trim();
+  if (!raw || raw === "-" || raw.toLowerCase() === "n/a" || raw.toLowerCase() === "null") return fallback;
+  return raw
+    .replace(/\bWATCH\b/g, "觀察中")
+    .replace(/\bPASS\b/g, "通過")
+    .replace(/\bFAIL\b/g, "未通過")
+    .replace(/\bforward observation\b/gi, "前瞻觀察")
+    .replace(/\bcont[_-]?liq\b/gi, "流動性策略")
+    .replace(/\bno allocation\b/gi, "暫不配置部位")
+    .replace(/\bmax\s*([0-9.]+)%\b/gi, "部位上限 $1%")
+    .replace(/\blastPrice\b/g, "最新可用價")
+    .replace(/\bQuant\b/g, "量化")
+    .replace(/_/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function formatTradePlanValue(value: string | number | null | undefined, fallback = "待資料確認") {
+  if (typeof value === "number") return formatPrice(value);
+  return cleanRecommendationText(value, fallback);
+}
+
+function formatGateStatus(value: StockRecommendation["quant"]["gateStatus"]) {
+  if (value === "PASS") return "通過";
+  if (value === "WATCH") return "觀察中";
+  if (value === "FAIL") return "未通過";
+  return cleanRecommendationText(String(value), "待確認");
+}
+
+function formatStrategySource(value: string | null | undefined) {
+  const text = cleanRecommendationText(value, "策略來源待確認");
+  if (/S1/i.test(text)) return text.replace(/\bS1\b/g, "S1 策略");
+  return text;
+}
+
 function formatDirection(value: StockRecommendation["direction"]) {
   return DIRECTION_LABELS.get(value) ?? "中性";
 }
@@ -294,23 +335,23 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
       </div>
 
       <div className="_rec-quant">
-        <span data-tone={gateTone(rec.quant.gateStatus)}>{rec.quant.gateStatus}</span>
-        <b>Quant {rec.quant.score}</b>
-        <small>{rec.quant.strategySource}</small>
+        <span data-tone={gateTone(rec.quant.gateStatus)}>{formatGateStatus(rec.quant.gateStatus)}</span>
+        <b>量化分數 {rec.quant.score}</b>
+        <small>{formatStrategySource(rec.quant.strategySource)}</small>
       </div>
 
       <p className="_rec-research-note">AI 推薦只做研究與 SIM 演練，不代表實單建議。</p>
       <div className="_rec-trade-grid">
         <div>
           <span>進場區間</span>
-          <b>{rec.entryZone.primary || "資料尚未提供"}</b>
-          {rec.entryZone.secondary && <small>{rec.entryZone.secondary}</small>}
-          <p>{rec.entryZone.reason || "尚無進場理由"}</p>
+          <b>{formatTradePlanValue(rec.entryZone.primary, "等待策略提供進場區間")}</b>
+          {hasProductText(rec.entryZone.secondary) && <small>{cleanRecommendationText(rec.entryZone.secondary)}</small>}
+          <p>{cleanRecommendationText(rec.entryZone.reason, "尚無足夠進場理由；先列入觀察。")}</p>
         </div>
         <div>
           <span>失效條件 / 停損</span>
-          <b>{formatPrice(rec.invalidation.price)}</b>
-          <p>{rec.invalidation.rule || "尚無失效條件"}</p>
+          <b>{formatTradePlanValue(rec.invalidation.price, "等待策略提供停損")}</b>
+          <p>{cleanRecommendationText(rec.invalidation.rule, "尚無完整失效條件；下單前必須補齊。")}</p>
         </div>
         <div>
           <span>部位建議</span>
@@ -325,8 +366,8 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         {rec.targets.map((target) => (
           <span key={`${rec.recommendationId}-${target.label}`}>
             <b>{targetLabel(target.label)}</b>
-            {formatPrice(target.price)}
-            <small>{target.reason}</small>
+            {formatTradePlanValue(target.price, "待資料確認")}
+            <small>{cleanRecommendationText(target.reason, "尚無目標價理由")}</small>
           </span>
         ))}
       </div>
@@ -342,7 +383,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
                 {reasons.length > 0 ? (
                   <ul>
                     {reasons.map((reason) => (
-                      <li key={reason}>{reason}</li>
+                      <li key={reason}>{cleanRecommendationText(reason)}</li>
                     ))}
                   </ul>
                 ) : (
@@ -362,7 +403,7 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
         {rec.risks.length > 0 ? (
           <ul className="_rec-risks">
             {rec.risks.map((risk) => (
-              <li key={risk}>{risk}</li>
+              <li key={risk}>{cleanRecommendationText(risk)}</li>
             ))}
           </ul>
         ) : (
@@ -381,8 +422,8 @@ function RecommendationCard({ rec }: { rec: StockRecommendation }) {
           {rec.sourceTrail.length > 0 ? (
             rec.sourceTrail.map((source) => (
               <span key={`${source.type}-${source.source}-${source.timestamp}`}>
-                <b>{source.type}</b>
-                {source.source}
+                <b>{cleanRecommendationText(source.type, "資料來源")}</b>
+                {cleanRecommendationText(source.source, "來源待確認")}
                 <small title={source.timestamp} aria-label={`資料來源時間 ${source.timestamp}`}>
                   {formatSourceTimestamp(source.timestamp)}
                 </small>
