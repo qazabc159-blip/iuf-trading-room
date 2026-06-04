@@ -357,6 +357,17 @@ export async function getCompanies() {
   return request<Company[]>("/api/v1/companies");
 }
 
+export type CompanyRegistryRow = Pick<Company, "id" | "ticker" | "name" | "market" | "chainPosition" | "beneficiaryTier" | "updatedAt"> & {
+  notes?: string | null;
+};
+
+export async function getCompaniesLite(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<CompanyRegistryRow[]>(`/api/v1/companies/lite${qs ? `?${qs}` : ""}`);
+}
+
 export async function createCompany(input: CompanyCreateInput) {
   return request<Company>("/api/v1/companies", {
     method: "POST",

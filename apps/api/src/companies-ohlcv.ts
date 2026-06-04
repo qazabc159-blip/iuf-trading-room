@@ -48,6 +48,8 @@ export interface OhlcvQueryParams {
 // FinMind only covers daily bars; weekly/monthly use DB or mock paths.
 const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
 const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720;
+const MIN_DAILY_BARS_FOR_LONG_WINDOW = 180;
+const FINMIND_DAILY_CHUNK_DAYS = 730;
 const MAX_DAILY_BARS_QUERY_LIMIT = 2500;
 const DEFAULT_DAILY_BACKFILL_DAYS = 3650;
 
@@ -68,6 +70,76 @@ function canTryFinMindDaily(params: OhlcvQueryParams, interval: string): boolean
 
 function allBarsAreMock(bars: OhlcvBar[]): boolean {
   return bars.length > 0 && bars.every((bar) => bar.source === "mock");
+}
+
+function isoDayMs(value: string): number {
+  return Date.parse(`${value}T00:00:00Z`);
+}
+
+function addDaysIso(value: string, days: number): string {
+  const d = new Date(isoDayMs(value));
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function isLongDailyWindow(params: OhlcvQueryParams): boolean {
+  if (params.interval && params.interval !== "1d") return false;
+  if (!params.from) return true;
+  const fromTs = isoDayMs(params.from);
+  if (!Number.isFinite(fromTs)) return true;
+  const toTs = params.to ? isoDayMs(params.to) : Date.now();
+  if (!Number.isFinite(toTs)) return true;
+  return (toTs - fromTs) / 86_400_000 >= 300;
+}
+
+function hasEnoughDailyDepthForRequest(bars: OhlcvBar[], params: OhlcvQueryParams): boolean {
+  if (!isLongDailyWindow(params)) return bars.length > 0;
+  return bars.length >= MIN_DAILY_BARS_FOR_LONG_WINDOW;
+}
+
+function uniqueSortedBars(bars: OhlcvBar[]): OhlcvBar[] {
+  const byDate = new Map<string, OhlcvBar>();
+  for (const bar of bars) {
+    if (!bar.dt) continue;
+    byDate.set(bar.dt, bar);
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.dt.localeCompare(b.dt));
+}
+
+function finMindDailyChunks(startDate: string, endDate: string | null): Array<{ start: string; end: string | null }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const effectiveEnd = endDate ?? today;
+  if (startDate > effectiveEnd) return [{ start: startDate, end: endDate }];
+
+  const chunks: Array<{ start: string; end: string | null }> = [];
+  let cursor = startDate;
+  while (cursor <= effectiveEnd) {
+    const chunkEnd = addDaysIso(cursor, FINMIND_DAILY_CHUNK_DAYS - 1);
+    if (chunkEnd >= effectiveEnd) {
+      chunks.push({ start: cursor, end: endDate ? effectiveEnd : null });
+      break;
+    }
+    chunks.push({ start: cursor, end: chunkEnd });
+    cursor = addDaysIso(chunkEnd, 1);
+  }
+  return chunks;
+}
+
+async function getFinMindDailyBarsForRequest(params: OhlcvQueryParams): Promise<OhlcvBar[]> {
+  if (!params.ticker) return [];
+  const startDate = params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS);
+  const endDate = params.to ?? null;
+  if (!isLongDailyWindow(params)) {
+    return getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
+  }
+
+  const chunks = finMindDailyChunks(startDate, endDate);
+  const bars: OhlcvBar[] = [];
+  for (const chunk of chunks) {
+    const chunkBars = await getFinMindClient().getStockPriceAdj(params.ticker, chunk.start, chunk.end);
+    bars.push(...chunkBars);
+  }
+  return uniqueSortedBars(bars);
 }
 
 // ── Mock PRNG (mulberry32 seeded by companyId) ────────────────────────────────
@@ -275,12 +347,8 @@ export async function getCompanyOhlcv(
           (allMock || bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL)
         ) {
           try {
-            const startDate = params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS);
-            // When the app clock is ahead of FinMind's latest trading date, sending
-            // end_date=today produces HTTP 400. Omit end_date for "latest" queries.
-            const endDate = params.to ?? null;
-            const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
-            if (finmindBars.length > 0) {
+            const finmindBars = await getFinMindDailyBarsForRequest(params);
+            if (hasEnoughDailyDepthForRequest(finmindBars, params)) {
               await setCachedOhlcv(cacheKey, finmindBars);
               return finmindBars;
             }
@@ -298,8 +366,10 @@ export async function getCompanyOhlcv(
           // Only cache real data rows; mock rows should not block future FinMind attempts.
           if (!incompleteRealDaily) {
             await setCachedOhlcv(cacheKey, bars);
+            return bars;
           }
-          return bars;
+          if (hasEnoughDailyDepthForRequest(bars, params)) return bars;
+          return [];
         }
         // allMock=true AND FinMind returned 0 — fall through to mock generator below.
       }
@@ -317,11 +387,8 @@ export async function getCompanyOhlcv(
     shouldTryFinMind
   ) {
     try {
-      const startDate = params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS);
-      // Omit end_date for latest queries to avoid future-date HTTP 400 responses.
-      const endDate   = params.to ?? null;
-      const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);
-      if (finmindBars.length > 0) {
+      const finmindBars = await getFinMindDailyBarsForRequest(params);
+      if (hasEnoughDailyDepthForRequest(finmindBars, params)) {
         await setCachedOhlcv(cacheKey, finmindBars);
         return finmindBars;
       }
@@ -329,6 +396,10 @@ export async function getCompanyOhlcv(
       console.warn("[companies-ohlcv] FinMind fallback failed, using mock", e instanceof Error ? e.message : String(e));
     }
   }
+
+  // If this is an official Taiwan daily request, do not draw a fake or 3-bar
+  // product chart when FinMind/DB cannot provide enough history.
+  if (shouldTryFinMind) return [];
 
   // Mock fallback: generate and filter by date range
   let mockBars = generateMockOhlcv(companyId);

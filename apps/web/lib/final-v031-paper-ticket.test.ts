@@ -9,8 +9,11 @@ const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "u
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
 const companyPageSource = readFileSync(new URL("../app/companies/[symbol]/page.tsx", import.meta.url), "utf8");
+const companiesRegistryPageSource = readFileSync(new URL("../app/companies/page.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const apiClientSource = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
+const apiServerSource = readFileSync(new URL("../../api/src/server.ts", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -147,8 +150,15 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("fetches enough real K-line history instead of accepting a tiny partial cache", () => {
     expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720");
+    expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_FOR_LONG_WINDOW = 180");
+    expect(apiOhlcvSource).toContain("const FINMIND_DAILY_CHUNK_DAYS = 730");
     expect(apiOhlcvSource).toContain("const MAX_DAILY_BARS_QUERY_LIMIT = 2500");
     expect(apiOhlcvSource).toContain("const DEFAULT_DAILY_BACKFILL_DAYS = 3650");
+    expect(apiOhlcvSource).toContain("function isLongDailyWindow");
+    expect(apiOhlcvSource).toContain("function getFinMindDailyBarsForRequest");
+    expect(apiOhlcvSource).toContain("finMindDailyChunks(startDate, endDate)");
+    expect(apiOhlcvSource).toContain("hasEnoughDailyDepthForRequest(finmindBars, params)");
+    expect(apiOhlcvSource).toContain("if (shouldTryFinMind) return []");
     expect(apiOhlcvSource).toContain("cachedNeedsFinMindBackfill");
     expect(apiOhlcvSource).toContain("!cachedNeedsFinMindBackfill");
     expect(apiOhlcvSource).toContain(".limit(MAX_DAILY_BARS_QUERY_LIMIT)");
@@ -159,6 +169,15 @@ describe("final-v031 paper ticket price gate", () => {
     expect(tradingRoomKlineFrameSource).toContain("from.setFullYear(from.getFullYear() - 10)");
     expect(tradingRoomKlineFrameSource).toContain("getCompanyKBar(company.id, requestedKbarDate, { days: 20 })");
     expect(companyPageSource).toContain("from.setFullYear(from.getFullYear() - 10)");
+  });
+
+  it("loads the company registry from the lightweight real company pool instead of the broad full list", () => {
+    expect(apiServerSource).toContain('app.get("/api/v1/companies/lite"');
+    expect(apiServerSource).toContain("getCompaniesLiteCached(c.get(\"repo\"), workspaceSlug)");
+    expect(apiClientSource).toContain("export async function getCompaniesLite");
+    expect(apiClientSource).toContain("/api/v1/companies/lite");
+    expect(companiesRegistryPageSource).toContain("getCompaniesLite({ limit: 2500 })");
+    expect(companiesRegistryPageSource).not.toContain("getCompanies()");
   });
 
   it("does not replace the trading-room chart with a sparse-data card while backfill runs", () => {
