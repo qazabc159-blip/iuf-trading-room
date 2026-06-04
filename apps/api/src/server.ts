@@ -1139,24 +1139,125 @@ app.get("/api/v1/market-data/overview", async (c) => {
     includeStale: query.includeStale,
     topLimit: query.topLimit
   });
+
+  // ── MIS intraday overlay (盤中即時強化) ─────────────────────────────────
+  // During trading hours (08:55-14:35 TST weekdays):
+  //   1. marketContext.index — override with cached MIS TAIEX (tse_t00.tw) data
+  //   2. marketContext.heatmap — overlay _misTileCache today-only entries
+  // Outside trading hours: pass through base result (EOD / null kept as-is).
+  // Cache: _overviewMisIndexCache written by MIS cron (45s) — TTL 60s here.
+  // If cache expired/missing, we fall through (盤後 or cron not fired yet).
+
+  let finalOverviewData = overviewData;
+
+  if (overviewData?.marketContext) {
+    // Check MIS cron window: 08:55-14:35 TST weekdays
+    const _hhmm = getTaipeiHHMM();
+    const _taipeiDay = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
+    const isMisWindow = _hhmm >= 855 && _hhmm <= 1435 && _taipeiDay >= 1 && _taipeiDay <= 5;
+
+    if (isMisWindow) {
+      const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10).replace(/-/g, "");
+      const nowIso = new Date().toISOString();
+      const taipeiDateStr = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      // 1. Enrich index from _overviewMisIndexCache (written by MIS cron every 45s)
+      const idxCache = _overviewMisIndexCache;
+      const idxFresh = idxCache &&
+        idxCache.tradeDateYmd === todayYmd &&
+        (Date.now() - idxCache.cachedAt) < 60_000; // 60s TTL
+
+      let enrichedIndex = overviewData.marketContext.index as Record<string, unknown>;
+      if (idxFresh && idxCache!.taiex) {
+        const t = idxCache!.taiex;
+        const asOfTs = t.time
+          ? new Date(`${taipeiDateStr}T${t.time}+08:00`).toISOString()
+          : nowIso;
+        enrichedIndex = {
+          ...enrichedIndex,
+          state: "LIVE",
+          symbol: "t00",
+          market: "TW_INDEX",
+          name: "加權指數",
+          source: "twse_mis_intraday",
+          last: t.last,
+          prevClose: t.prevClose,
+          change: t.change,
+          changePct: t.changePct,
+          timestamp: asOfTs,
+          asOf: asOfTs,
+          updatedAt: nowIso,
+          freshnessStatus: "fresh",
+          reason: "mis_intraday",
+          history: (enrichedIndex["history"] as unknown[]) ?? []
+        };
+      }
+
+      // 2. Enrich heatmap tiles from _misTileCache (today-only guard)
+      const baseHeatmap = (overviewData.marketContext.heatmap ?? []) as Array<Record<string, unknown>>;
+      const enrichedHeatmap = baseHeatmap.map((tile) => {
+        const sym = String(tile["symbol"] ?? "");
+        const misEntry = _misTileCache.get(sym);
+        if (!misEntry || misEntry.tradeDateYmd !== todayYmd) return tile;
+        // MIS entry is today's — overlay price data + intraday source metadata
+        const prevClose = typeof tile["prevClose"] === "number" ? tile["prevClose"] : null;
+        const change = prevClose !== null
+          ? parseFloat((misEntry.last - prevClose).toFixed(2))
+          : null;
+        const changePct = misEntry.changePct ?? (prevClose && prevClose > 0
+          ? parseFloat(((misEntry.last - prevClose) / prevClose * 100).toFixed(2))
+          : null);
+        return {
+          ...tile,
+          last: misEntry.last,
+          change,
+          changePct,
+          source: "twse_mis_intraday",
+          sourceState: "twse_mis_intraday",
+          sourceLabel: "盤中即時 (MIS)",
+          updatedAt: misEntry.ts,
+          asOf: misEntry.ts,
+          freshnessStatus: "fresh",
+          readiness: "ready"
+        };
+      });
+
+      const misHeatmapCount = enrichedHeatmap.filter((t) => t["sourceState"] === "twse_mis_intraday").length;
+      const contextState = (idxFresh && idxCache!.taiex) || misHeatmapCount > 0 ? "LIVE" : overviewData.marketContext.state;
+
+      finalOverviewData = {
+        ...overviewData,
+        marketContext: {
+          ...overviewData.marketContext,
+          state: contextState as typeof overviewData.marketContext.state,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          index: enrichedIndex as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          heatmap: enrichedHeatmap as any
+        }
+      };
+    }
+  }
+
   // Normalize heatmap sector labels to zh-TW before sending response.
   // companies.chain_position (Yahoo Finance English) leaks as fallback in officialHeatmapSectorForSymbol
   // for symbols not in MARKET_HEATMAP_SYMBOL_SECTOR_LABELS. Normalize here so Bruce verify
   // sees zh-TW in raw API JSON regardless of source path.
-  const normalizedHeatmap = overviewData?.marketContext?.heatmap
-    ? overviewData.marketContext.heatmap.map((row) => ({
+  const normalizedHeatmap = finalOverviewData?.marketContext?.heatmap
+    ? (finalOverviewData.marketContext.heatmap as Array<Record<string, unknown>>).map((row) => ({
         ...row,
-        sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
+        sector: row["sector"] ? normalizeTwseIndustryZhTw(String(row["sector"])) : row["sector"]
       }))
-    : overviewData?.marketContext?.heatmap;
+    : finalOverviewData?.marketContext?.heatmap;
   return c.json({
-    data: overviewData && normalizedHeatmap !== undefined ? {
-      ...overviewData,
+    data: finalOverviewData && normalizedHeatmap !== undefined ? {
+      ...finalOverviewData,
       marketContext: {
-        ...overviewData.marketContext,
+        ...finalOverviewData.marketContext,
         heatmap: normalizedHeatmap
       }
-    } : overviewData
+    } : finalOverviewData
   });
 });
 
@@ -15086,6 +15187,17 @@ let _tsweMisQuoteCronLastCount = 0;
 // Cleared implicitly when MIS z="-" (盤後) — next MIS cron tick simply won't update.
 const _misTileCache = new Map<string, { last: number; changePct: number | null; ts: string; tradeDateYmd: string }>();
 
+// Module-level: MIS intraday market index cache for overview endpoint.
+// Caches TAIEX (tse_t00.tw) + OTC (otc_o00.tw) live index data.
+// TTL: 30s — overview handler reads this, MIS cron writes on each tick.
+let _overviewMisIndexCache: {
+  taiex: { last: number; prevClose: number; change: number; changePct: number; time: string } | null;
+  otc: { last: number; prevClose: number; change: number; changePct: number; time: string } | null;
+  cachedAt: number;
+  tradeDateYmd: string;
+} | null = null;
+const OVERVIEW_MIS_INDEX_TTL_MS = 30 * 1000; // 30s
+
 // Module-level: MIS full-universe sweep state (Tier B — ~1978 stocks, rolling slice every 10s).
 // Universe is loaded from DB companies once per 30min, then iterated slice-by-slice during
 // trading hours so all ~1978 stocks get intraday MIS quotes injected into the manual cache.
@@ -15895,6 +16007,45 @@ function startSchedulers(workspaceSlug: string): void {
         _tsweMisQuoteCronLastCount = allQuotes.length;
         _tsweMisQuoteCronLastError = null;
         console.log(`[twse-mis-cron] injected ${allQuotes.length} intraday quotes into manual cache + _misTileCache (${_misTileCache.size} symbols)`);
+
+        // Also fetch TAIEX (tse_t00.tw) + OTC (otc_o00.tw) market index for overview endpoint.
+        // These are not in HEATMAP_CORE_SYMBOLS so we fetch separately and cache in _overviewMisIndexCache.
+        try {
+          const indexUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw%7Cotc_o00.tw&json=1&delay=0";
+          const idxResp = await fetch(indexUrl, {
+            signal: AbortSignal.timeout(5000),
+            headers: { "Accept": "application/json" }
+          });
+          if (idxResp.ok) {
+            const idxData = await idxResp.json() as { msgArray?: Array<Record<string, string>> };
+            const idxArr = idxData.msgArray ?? [];
+            const parseIdxRow = (row: Record<string, string> | undefined) => {
+              if (!row) return null;
+              const zRaw = row["z"] ?? "-";
+              const yRaw = row["y"] ?? "0";
+              const tRaw = row["t"] ?? "";
+              const last = zRaw === "-" ? null : parseFloat(zRaw);
+              const prevClose = parseFloat(yRaw);
+              if (!last || isNaN(last) || isNaN(prevClose) || prevClose === 0) return null;
+              const change = parseFloat((last - prevClose).toFixed(2));
+              const changePct = parseFloat(((change / prevClose) * 100).toFixed(2));
+              return { last, prevClose, change, changePct, time: tRaw };
+            };
+            const taiexRow = idxArr.find((r) => r["ex"] === "tse" && (r["ch"] === "t00.tw" || r["c"] === "t00"));
+            const otcRow = idxArr.find((r) => r["ex"] === "otc" && (r["ch"] === "o00.tw" || r["c"] === "o00"));
+            _overviewMisIndexCache = {
+              taiex: parseIdxRow(taiexRow),
+              otc: parseIdxRow(otcRow),
+              cachedAt: Date.now(),
+              tradeDateYmd: todayYmd
+            };
+            if (_overviewMisIndexCache.taiex) {
+              console.log(`[twse-mis-cron] index cached: TAIEX=${_overviewMisIndexCache.taiex.last} changePct=${_overviewMisIndexCache.taiex.changePct}%`);
+            }
+          }
+        } catch {
+          // index fetch failure is non-fatal — overview will use fallback
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         _tsweMisQuoteCronLastError = msg;
