@@ -148,46 +148,123 @@ export async function getMarketOverview(): Promise<MarketOverviewResult> {
 
 /**
  * Returns sector relative strength from TWSE OHLCV heatmap data.
- * Wraps getStockDayAllRows() — same source as /api/v1/market/heatmap/twse.
- * Groups by industry from TWSE response, computes avg changePct + gainer/loser counts.
- * Fail-open: returns empty sectors array on error.
+ * Primary: getStockDayAllRows() (real-time TWSE, available during trading hours).
+ * Fallback: companies_ohlcv + companies.industry from DB (post-market / off-hours).
+ *
+ * When StockDayAll returns empty (after close or weekend), the fallback computes
+ * the most-recent trading day's per-sector avg changePct from the DB so the LLM
+ * always gets meaningful sector rotation context instead of a single "其他" bucket.
+ *
+ * Fail-open: returns empty sectors array only when both sources fail.
  */
 export async function getSectorRotation(limit = 20): Promise<SectorRotationResult> {
   const asOf = new Date().toISOString();
   try {
     const { getStockDayAllRows } = await import("../data-sources/twse-openapi-client.js");
     const rows = await getStockDayAllRows().catch(() => []);
-    if (rows.length === 0) {
+
+    if (rows.length > 0) {
+      // ── Primary path: live TWSE StockDayAll ──────────────────────────────────
+      const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
+      for (const row of rows as Array<{ industry?: string | null; changePct?: number | null }>) {
+        const sector = row.industry ?? "其他";
+        const cp = row.changePct ?? 0;
+        const entry = sectorMap.get(sector) ?? { changePcts: [], gainers: 0, losers: 0 };
+        entry.changePcts.push(cp);
+        if (cp > 0) entry.gainers++;
+        else if (cp < 0) entry.losers++;
+        sectorMap.set(sector, entry);
+      }
+      const sectors: SectorStrengthRow[] = [];
+      for (const [sector, data] of sectorMap.entries()) {
+        const avg = data.changePcts.reduce((a, b) => a + b, 0) / data.changePcts.length;
+        sectors.push({
+          sector,
+          avgChangePct: Math.round(avg * 100) / 100,
+          gainerCount: data.gainers,
+          loserCount: data.losers,
+          stockCount: data.changePcts.length,
+        });
+      }
+      sectors.sort((a, b) => b.avgChangePct - a.avgChangePct);
+      return { sectors: sectors.slice(0, limit), asOf, source: "twse_stock_day_all" };
+    }
+
+    // ── Fallback path: DB companies_ohlcv + companies.industry ───────────────────
+    // Fires post-market / weekends when StockDayAll returns no rows.
+    // Computes per-sector avg changePct from the most-recent trading day in DB.
+    console.info("[get_sector_rotation] StockDayAll empty — falling back to DB OHLCV sector aggregation");
+    try {
+      const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+      if (!isDatabaseMode()) return { sectors: [], asOf, source: "twse_stock_day_all" };
+      const db = getDb();
+      if (!db) return { sectors: [], asOf, source: "twse_stock_day_all" };
+
+      const { sql } = await import("drizzle-orm");
+      // Find the most recent date in OHLCV
+      const latestDateRows = (await db.execute(sql`
+        SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval IN ('1d', 'day')
+      `)) as unknown as { rows: Array<{ max_dt: string | null }> };
+      const latestDate = latestDateRows.rows?.[0]?.max_dt;
+      if (!latestDate) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
+
+      // Fetch all stocks for that date with their previous-day close for changePct
+      const sectorRows = (await db.execute(sql`
+        SELECT
+          c.industry AS industry,
+          o.close AS close,
+          o_prev.close AS prev_close
+        FROM companies_ohlcv o
+        INNER JOIN companies c ON c.id = o.company_id
+        LEFT JOIN companies_ohlcv o_prev
+          ON o_prev.company_id = o.company_id
+          AND o_prev.interval IN ('1d', 'day')
+          AND o_prev.dt = (
+            SELECT MAX(dt2.dt) FROM companies_ohlcv dt2
+            WHERE dt2.company_id = o.company_id
+              AND dt2.interval IN ('1d', 'day')
+              AND dt2.dt < ${latestDate}
+          )
+        WHERE o.dt = ${latestDate}
+          AND o.interval IN ('1d', 'day')
+          AND c.industry IS NOT NULL
+          AND c.industry <> ''
+        LIMIT 2000
+      `)) as unknown as { rows: Array<{ industry: string; close: string; prev_close: string | null }> };
+
+      const dbRows = sectorRows.rows ?? [];
+      if (dbRows.length === 0) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
+
+      const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
+      for (const row of dbRows) {
+        const sector = row.industry ?? "其他";
+        const close = parseFloat(row.close);
+        const prevClose = row.prev_close ? parseFloat(row.prev_close) : null;
+        const cp = (prevClose && prevClose > 0) ? Math.round(((close - prevClose) / prevClose) * 10000) / 100 : 0;
+        const entry = sectorMap.get(sector) ?? { changePcts: [], gainers: 0, losers: 0 };
+        entry.changePcts.push(cp);
+        if (cp > 0) entry.gainers++;
+        else if (cp < 0) entry.losers++;
+        sectorMap.set(sector, entry);
+      }
+
+      const sectors: SectorStrengthRow[] = [];
+      for (const [sector, data] of sectorMap.entries()) {
+        const avg = data.changePcts.reduce((a, b) => a + b, 0) / data.changePcts.length;
+        sectors.push({
+          sector,
+          avgChangePct: Math.round(avg * 100) / 100,
+          gainerCount: data.gainers,
+          loserCount: data.losers,
+          stockCount: data.changePcts.length,
+        });
+      }
+      sectors.sort((a, b) => b.avgChangePct - a.avgChangePct);
+      return { sectors: sectors.slice(0, limit), asOf: latestDate, source: "db_ohlcv_fallback" };
+    } catch (dbErr) {
+      console.warn("[get_sector_rotation] DB fallback error:", dbErr instanceof Error ? dbErr.message : dbErr);
       return { sectors: [], asOf, source: "twse_stock_day_all" };
     }
-
-    // Group by industry
-    const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
-    for (const row of rows as Array<{ industry?: string | null; changePct?: number | null }>) {
-      const sector = row.industry ?? "其他";
-      const cp = row.changePct ?? 0;
-      const entry = sectorMap.get(sector) ?? { changePcts: [], gainers: 0, losers: 0 };
-      entry.changePcts.push(cp);
-      if (cp > 0) entry.gainers++;
-      else if (cp < 0) entry.losers++;
-      sectorMap.set(sector, entry);
-    }
-
-    const sectors: SectorStrengthRow[] = [];
-    for (const [sector, data] of sectorMap.entries()) {
-      const avg = data.changePcts.reduce((a, b) => a + b, 0) / data.changePcts.length;
-      sectors.push({
-        sector,
-        avgChangePct: Math.round(avg * 100) / 100,
-        gainerCount: data.gainers,
-        loserCount: data.losers,
-        stockCount: data.changePcts.length,
-      });
-    }
-
-    // Sort by avgChangePct desc, limit
-    sectors.sort((a, b) => b.avgChangePct - a.avgChangePct);
-    return { sectors: sectors.slice(0, limit), asOf, source: "twse_stock_day_all" };
   } catch (err) {
     console.warn("[get_sector_rotation] error:", err instanceof Error ? err.message : err);
     return { sectors: [], asOf, source: "twse_stock_day_all" };
@@ -399,18 +476,49 @@ export async function getInstitutionalFlow(ticker: string): Promise<Institutiona
 // ── get_news_top10 ────────────────────────────────────────────────────────────
 
 /**
- * Returns today's AI-curated top-10 news from news-ai-selector in-process state.
- * Same data as /api/v1/market-intel/news-top10 — uses getNewsTop10WithStaleness().
+ * Returns today's AI-curated top-10 news from news-ai-selector.
+ *
+ * Freshness strategy: always prefer the NEWER of DB vs in-memory.
+ * When v3 is loaded from a persisted DB run, the in-process news cache may
+ * already be hours ahead of the trace. Checking DB directly ensures the LLM
+ * sees the latest AI-curated selection (not a stale trace snapshot).
+ *
+ * Extra fields (why_matters, impact_tier, tags, rank) are forwarded so the
+ * LLM can use them to calibrate theme strength instead of relying solely on
+ * raw headline text.
+ *
  * Fail-open: returns empty items when no data available.
  */
 export async function getNewsTop10(): Promise<NewsTop10Result> {
   try {
-    const { getNewsTop10ForRead } = await import("../news-ai-selector.js");
-    const cached = await getNewsTop10ForRead();
-    if (!cached) {
+    const { getNewsTop10ForRead, loadLatestSelectionFromDb } = await import("../news-ai-selector.js");
+
+    // Pick the fresher of DB vs in-memory. DB is authoritative for timestamp.
+    let best: Awaited<ReturnType<typeof getNewsTop10ForRead>> = null;
+
+    try {
+      const dbResult = await loadLatestSelectionFromDb();
+      if (dbResult) best = dbResult;
+    } catch {
+      // DB unavailable — fall through to in-memory
+    }
+
+    try {
+      const inMem = await getNewsTop10ForRead();
+      if (inMem) {
+        const dbTs = best ? new Date((best as { as_of: string }).as_of).getTime() : 0;
+        const memTs = new Date((inMem as { as_of: string }).as_of).getTime();
+        if (memTs > dbTs) best = inMem;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!best) {
       return { items: [], asOf: null, runId: null, itemCount: 0 };
     }
-    const items = (cached.items ?? []) as Array<{
+
+    const items = (best.items ?? []) as Array<{
       id?: string;
       title?: string;
       headline?: string;
@@ -419,19 +527,30 @@ export async function getNewsTop10(): Promise<NewsTop10Result> {
       sentiment?: string | null;
       source?: string | null;
       publishedAt?: string | null;
+      why_matters?: string | null;
+      impact_tier?: string | null;
+      tags?: string[];
+      rank?: number;
     }>;
+
     return {
       items: items.map(item => ({
         id: item.id ?? "",
         title: item.title ?? item.headline ?? "",
         ticker: item.ticker ?? null,
         companyName: item.companyName ?? null,
-        sentiment: item.sentiment ?? null,
+        // Surface impact_tier as sentiment so LLM can gauge importance
+        sentiment: item.sentiment ?? item.impact_tier ?? null,
         source: item.source ?? null,
         publishedAt: item.publishedAt ?? null,
+        // Forward AI-curated context fields so LLM can use theme strength signals
+        ...(item.why_matters ? { why_matters: item.why_matters } : {}),
+        ...(item.impact_tier ? { impact_tier: item.impact_tier } : {}),
+        ...(item.tags?.length ? { tags: item.tags } : {}),
+        ...(item.rank !== undefined ? { rank: item.rank } : {}),
       })),
-      asOf: (cached as { as_of?: string | null }).as_of ?? null,
-      runId: (cached as { run_id?: string | null }).run_id ?? null,
+      asOf: (best as { as_of?: string | null }).as_of ?? null,
+      runId: (best as { run_id?: string | null }).run_id ?? null,
       itemCount: items.length,
     };
   } catch (err) {

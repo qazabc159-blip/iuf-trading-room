@@ -521,7 +521,11 @@ ${riskOffContext}
 
 [STEP 2] 主題穿透（risk_off_score < 3 時強制執行）
   callTool(get_news_top10) 識別當前強勢主題
+    → 新聞中每個 item 帶有 ticker、impact_tier（HIGH/MID/LOW）、why_matters、tags
+    → 優先關注 impact_tier=HIGH 或 MID 的 ticker
+    → 排除 impact_tier=LOW 且 tags 只含「市場新聞」的非主題性新聞
   callTool(get_sector_rotation) 找資金流入板塊
+    → sectors 按 avgChangePct 排序，取前 5 名板塊作為題材優先過濾
   根據楊董 4 層產業鏈框架定位標的：
     第一層龍頭（8分）| 第二層系統/模組（14分）| 第三層關鍵零件（16分）| 材料/設備（20分）
   排除「已 price in」：法人連5日大量買超且股價20日漲>30% 的公司直接跳過
@@ -529,16 +533,29 @@ ${riskOffContext}
 [STEP 3] 個股 7 sub-score（每候選股 0-100 合計）
   ★★ 必須至少呼叫 get_company_technical ${MIN_V3_TECHNICAL_CALLS} 次（不同 ticker）。
   每個推薦標的都需要 get_company_technical 工具支撐，否則視為未驗證無效。
-  若 STEP 2 的新聞或板塊資料沒有可用候選，禁止亂猜冷門代碼；請依序檢查這組核心候選：
-  2330、2454、2317、2308、2412、3711、3707、2882、2881、6505。
-  - 主題位置 /20（依 STEP 2 產業鏈層位判定）
-  - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0）
-  - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0）
-  - 融資/借券/擁擠 /15（融資5日降溫 → 滿；持平 → 8；5日增>12%且股價漲>15% → 扣分至0）
-  - 相對強弱量能 /10（RS20>0且突破量>1.3均量 → 滿；RS正但量不足 → 5；RS負 → 0）
-  - 技術結構 /20（BOS+OB/FVG+OTE重疊3項以上 → 滿；2項 → 12；1項 → 6；無 → 0）
-  - 估值/事件 /5（法說/除息/注意股等加減分）
+
+  ★★★ 技術資料空值處理（極重要，嚴格遵守）：
+  當 get_company_technical 回傳 lastPrice=null（代表 DB 中無此股的 OHLCV 資料），
+  該 ticker 視為「無法評分」，不得用 0 填寫評分，也不得列入推薦卡片。
+  連續 2 次 get_company_technical 回傳 null → 立即停止嘗試新聞中的候選，
+  改為依序呼叫下方核心候選清單，直到累積 ${MIN_V3_TECHNICAL_CALLS} 個有效 lastPrice > 0 的回傳。
+
+  核心候選清單（有 OHLCV 歷史資料，優先使用）：
+  2330（台積電）、2454（聯發科）、2317（鴻海）、2308（台達電）、3711（日月光投控）、
+  3289（宜特）、3265（台星科）、3312（弘憶股）、2412（中華電）、3324（雙鴻）
+
+  若 STEP 2 新聞有 ticker 且 impact_tier ≠ LOW → 先嘗試那些 ticker
+  若 2 次 null → 切換到核心候選清單，不要繼續浪費輪次在無資料的冷門股上
+
+  - 主題位置 /20（依 STEP 2 產業鏈層位判定；無法確認產業鏈位置 → 8 分，不要猜）
+  - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0；無資料 → 8）
+  - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0；無資料 → 8）
+  - 融資/借券/擁擠 /15（融資5日降溫 → 滿；持平 → 8；5日增>12%且股價漲>15% → 扣分至0；無資料 → 8）
+  - 相對強弱量能 /10（RS20>0且突破量>1.3均量 → 滿；RS正但量不足 → 5；RS負 → 0；用 volumeRatio20d 與 changePct 判斷）
+  - 技術結構 /20（aboveMa20+aboveMa60 同時 true + rsi14 45-75 → 14分以上；部分符合 → 按比例）
+  - 估值/事件 /5（法說/除息/注意股等加減分；無事件 → 3）
   totalScore = 7個分數相加，最大100
+  ★★★ 嚴禁在任何 sub-score 填寫 0 除非有明確負面訊號；「無資料」應填預設值而非 0
 
 [STEP 4] Bucket assign（依 totalScore）
   totalScore >= 85 → A+ 今日首選（0.8% NAV）
@@ -622,7 +639,16 @@ ${traceText}
 推薦 A+/A/B/C 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，但仍算一張真實資料卡。
 只有 system_programmatic_risk_off_score >= 3 時，才可只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
 當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；請用 C bucket 表達風險，而不是整份跳過。
-使用真實市場資料（來自 ReAct trace），不要捏造數字。`;
+使用真實市場資料（來自 ReAct trace），不要捏造數字。
+
+=== 分數填寫規則（CRITICAL）===
+1. 只為 get_company_technical 回傳 lastPrice > 0 的標的輸出股票卡。lastPrice=null 的代表 DB 無資料，不得輸出該 ticker。
+2. 各 sub-score 「無資料」預設值：主題位置 10、營收財報 8、法人ETF 8、融資借券 8、相對強弱量能 5、技術結構 10、估值事件 3。
+   → 絕對不可因為「工具查不到」就把所有欄位填 0 — 0 代表有明確負面訊號（如融資大增、RS 轉負），不代表資料缺失。
+3. 信心值：有 lastPrice 資料 → 不得低於 0.4；無任何技術資料 → 不得輸出該 ticker。
+4. 進場區/TP1/TP2/停損：必須根據 lastPrice 計算實際數值，例如進場區 = lastPrice*0.98 - lastPrice*1.01。不得填寫 [具體價格] 佔位符。
+5. 一句話理由：必須具體說明「為什麼現在、為什麼這支股票」，不得用「風險高但值得觀察」這類套話。要說明技術面訊號或題材催化劑。
+=== END 分數填寫規則 ===`;
 }
 
 // ── Markdown parser v3 ────────────────────────────────────────────────────────
