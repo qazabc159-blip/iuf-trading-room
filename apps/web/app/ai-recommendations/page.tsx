@@ -235,7 +235,7 @@ function safeMessage(error: unknown) {
   if (message.includes("401") || message.includes("unauthenticated")) {
     return "請先登入 IUF 帳號，再查看 AI 推薦。";
   }
-  return "Recommendation Orchestrator 暫時無法讀取資料。";
+  return "AI 推薦服務暫時無法讀取資料。";
 }
 
 async function loadRecommendations(): Promise<{
@@ -615,7 +615,7 @@ export default async function AiRecommendationsPage() {
     <PageFrame
       code="AI"
       title="AI 推薦"
-      sub="Recommendation Orchestrator"
+      sub="今日投研助理"
       note="推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。"
     >
       <MarketStateBanner />
