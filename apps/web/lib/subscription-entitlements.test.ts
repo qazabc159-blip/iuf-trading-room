@@ -24,6 +24,8 @@ describe("subscription entitlements", () => {
     for (const tier of subscriptionTiers) {
       expect(tierPriceLabel(tier, "monthly")).toBe("價格待定");
       expect(tierPriceLabel(tier, "yearly")).toBe("價格待定");
+      expect(tier.usageLimits.length).toBeGreaterThanOrEqual(3);
+      expect(tier.onboardingNote.length).toBeGreaterThan(0);
     }
   });
 

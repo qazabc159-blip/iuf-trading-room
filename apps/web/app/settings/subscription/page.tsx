@@ -202,6 +202,25 @@ export default async function SubscriptionSettingsPage() {
               <p style={{ color: "var(--fg-3, #7f8792)", fontSize: 12, lineHeight: 1.6, minHeight: 38 }}>
                 {tier.targetUser}
               </p>
+              <div
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "rgba(255,255,255,0.025)",
+                  padding: "10px 12px",
+                  marginTop: 12,
+                  minHeight: 154,
+                }}
+              >
+                <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 900, marginBottom: 8 }}>方案邊界</div>
+                <ul style={{ margin: 0, paddingLeft: 16, color: "var(--fg-2, #b9c0cc)", fontSize: 12, lineHeight: 1.65 }}>
+                  {tier.usageLimits.map((limit) => (
+                    <li key={limit}>{limit}</li>
+                  ))}
+                </ul>
+                <p style={{ margin: "9px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 12, lineHeight: 1.55 }}>
+                  {tier.onboardingNote}
+                </p>
+              </div>
               <div style={{ display: "grid", gap: 8, marginTop: 18 }}>
                 {billingCycles.map((cycle) => (
                   <div
