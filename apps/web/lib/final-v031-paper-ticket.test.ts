@@ -379,8 +379,12 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiServerSource).toContain("/api/v1/diagnostics/kline-depth");
     expect(apiServerSource).toContain("OWNED_DAILY_KLINE_REQUIRED_BARS = 720");
     expect(apiServerSource).toContain("OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS = 3650");
+    expect(apiServerSource).toContain("OWNED_DAILY_KLINE_PRIORITY_TICKERS");
+    expect(apiServerSource).toContain('"2330", "6202", "2317", "2454"');
     expect(apiServerSource).toContain("resolveOhlcvDeepBackfillCandidates");
     expect(apiServerSource).toContain("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE");
+    expect(apiServerSource).toContain('schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48)');
+    expect(apiServerSource).toContain("OWNED_DAILY_KLINE_PRIORITY.get(a.ticker)");
     expect(apiServerSource).toContain("ohlcv-deep-backfill");
     expect(apiServerSource).toContain("COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')");
   });
