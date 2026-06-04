@@ -47,7 +47,8 @@ export interface OhlcvQueryParams {
 
 // FinMind only covers daily bars; weekly/monthly use DB or mock paths.
 const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
-const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 220;
+const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720;
+const MAX_DAILY_BARS_QUERY_LIMIT = 2500;
 
 function nDaysAgoIso(days: number): string {
   const d = new Date();
@@ -220,7 +221,12 @@ export async function getCompanyOhlcv(
   // Try cache first
   const cached = await getCachedOhlcv(cacheKey);
   const shouldTryFinMind = canTryFinMindDaily(params, interval);
-  if (cached && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
+  const cachedNeedsFinMindBackfill =
+    Boolean(cached) &&
+    shouldTryFinMind &&
+    interval === "1d" &&
+    cached!.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL;
+  if (cached && !cachedNeedsFinMindBackfill && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
     return cached;
   }
 
@@ -242,7 +248,7 @@ export async function getCompanyOhlcv(
         .from(companiesOhlcv)
         .where(and(...conditions))
         .orderBy(desc(companiesOhlcv.dt))
-        .limit(500);
+        .limit(MAX_DAILY_BARS_QUERY_LIMIT);
 
       if (rows.length > 0) {
         bars = rows.map((r) => ({
@@ -282,9 +288,16 @@ export async function getCompanyOhlcv(
           }
         }
 
+        const incompleteRealDaily =
+          interval === "1d" &&
+          shouldTryFinMind &&
+          bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL;
+
         if (!allMock) {
           // Only cache real data rows; mock rows should not block future FinMind attempts.
-          await setCachedOhlcv(cacheKey, bars);
+          if (!incompleteRealDaily) {
+            await setCachedOhlcv(cacheKey, bars);
+          }
           return bars;
         }
         // allMock=true AND FinMind returned 0 — fall through to mock generator below.
