@@ -5608,7 +5608,14 @@ const authRegisterSchema = z.object({
 
 app.post("/auth/login", async (c) => {
   const body = authLoginSchema.parse(await c.req.json());
-  const result = await loginWithPassword(body.email, body.password);
+  let result;
+  try {
+    result = await loginWithPassword(body.email, body.password);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[auth/login] database login failed", { message });
+    return c.json({ error: "auth_login_unavailable", code: "AUTH_LOGIN_DB_ERROR" }, 503);
+  }
   if (!result.ok) {
     return c.json({ error: result.error }, 401);
   }

@@ -136,6 +136,29 @@ export type AuthResult =
   | { ok: true; user: AuthUser; workspace: WorkspaceRow }
   | { ok: false; error: string };
 
+const authUserColumns = {
+  id: users.id,
+  email: users.email,
+  name: users.name,
+  passwordHash: users.passwordHash,
+  role: users.role,
+  workspaceId: users.workspaceId
+};
+
+const authWorkspaceColumns = {
+  id: workspaces.id,
+  name: workspaces.name,
+  slug: workspaces.slug
+};
+
+async function selectAuthWorkspace(workspaceId: string | null): Promise<WorkspaceRow | null> {
+  const db = requireDb();
+  const query = db.select(authWorkspaceColumns).from(workspaces);
+  return workspaceId
+    ? query.where(eq(workspaces.id, workspaceId)).limit(1).then((r) => r[0] ?? null)
+    : query.limit(1).then((r) => r[0] ?? null);
+}
+
 // ── login ─────────────────────────────────────────────────────────────────────
 export async function loginWithPassword(
   email: string,
@@ -143,7 +166,7 @@ export async function loginWithPassword(
 ): Promise<AuthResult> {
   const db = requireDb();
   const [row] = await db
-    .select()
+    .select(authUserColumns)
     .from(users)
     .where(eq(users.email, email.toLowerCase().trim()))
     .limit(1);
@@ -165,9 +188,7 @@ export async function loginWithPassword(
     }
   }
 
-  const workspace = row.workspaceId
-    ? await db.select().from(workspaces).where(eq(workspaces.id, row.workspaceId)).limit(1).then((r) => r[0] ?? null)
-    : await db.select().from(workspaces).limit(1).then((r) => r[0] ?? null);
+  const workspace = await selectAuthWorkspace(row.workspaceId ?? null);
 
   if (!workspace) {
     return { ok: false, error: "no_workspace" };
@@ -272,12 +293,10 @@ export async function registerWithInvite(
 // ── get user by id (for session hydration) ───────────────────────────────────
 export async function getUserById(userId: string): Promise<(AuthUser & { workspace: WorkspaceRow }) | null> {
   const db = requireDb();
-  const [row] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const [row] = await db.select(authUserColumns).from(users).where(eq(users.id, userId)).limit(1);
   if (!row) return null;
 
-  const workspace = row.workspaceId
-    ? await db.select().from(workspaces).where(eq(workspaces.id, row.workspaceId)).limit(1).then((r) => r[0] ?? null)
-    : await db.select().from(workspaces).limit(1).then((r) => r[0] ?? null);
+  const workspace = await selectAuthWorkspace(row.workspaceId ?? null);
 
   if (!workspace) return null;
 

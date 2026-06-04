@@ -243,6 +243,41 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
   );
 });
 
+test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB failures", () => {
+  const authStoreSrc = readFileSync("apps/api/src/auth-store.ts", "utf8");
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  const loginBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function loginWithPassword"),
+    authStoreSrc.indexOf("// ── register with invite")
+  );
+  const getUserBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function getUserById"),
+    authStoreSrc.indexOf("// ── issue an invite code")
+  );
+
+  assert.ok(
+    authStoreSrc.includes("const authUserColumns") && authStoreSrc.includes("const authWorkspaceColumns"),
+    "AUTH-LOGIN-1: auth must use explicit user/workspace column allow-lists, not full schema selects"
+  );
+  assert.ok(
+    loginBlock.includes("select(authUserColumns)") && getUserBlock.includes("select(authUserColumns)"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(users) full-row reads"
+  );
+  assert.ok(
+    loginBlock.includes("selectAuthWorkspace") && getUserBlock.includes("selectAuthWorkspace"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(workspaces) full-row reads"
+  );
+  assert.doesNotMatch(
+    loginBlock + getUserBlock,
+    /select\(\)\.from\((users|workspaces)\)/,
+    "AUTH-LOGIN-1: auth login path must not be vulnerable to non-essential prod schema drift"
+  );
+  assert.ok(
+    serverSrc.includes("AUTH_LOGIN_DB_ERROR") && serverSrc.includes("[auth/login] database login failed"),
+    "AUTH-LOGIN-1: login route must expose sanitized deploy diagnostics for DB login failures"
+  );
+});
+
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
     category: "industry",
