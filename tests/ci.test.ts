@@ -229,8 +229,17 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
   );
   assert.match(
     src,
-    /Math\.max\(\s*5\s*,\s*Math\.min\(raw,\s*10\)\s*\)/,
-    "DB-POOL-1: production must clamp DATABASE_POOL_MAX to at least 5 so stale env cannot starve auth/login"
+    /Math\.max\(\s*10\s*,\s*Math\.min\(raw,\s*20\)\s*\)/,
+    "DB-POOL-1: production must clamp DATABASE_POOL_MAX to at least 10 so stale env cannot starve auth/login"
+  );
+  assert.ok(
+    src.includes("DATABASE_CONNECT_TIMEOUT_SECONDS"),
+    "DB-POOL-1: production DB connections need a bounded timeout so auth/login does not hang indefinitely"
+  );
+  assert.match(
+    src,
+    /connect_timeout:\s*getDatabaseConnectTimeoutSeconds\(\)/,
+    "DB-POOL-1: postgres client must use the bounded connect timeout"
   );
 });
 

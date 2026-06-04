@@ -22,8 +22,14 @@ export function getDatabaseUrl() {
 
 export function getDatabasePoolMax() {
   const raw = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
+  if (!Number.isFinite(raw)) return 10;
+  return Math.max(10, Math.min(raw, 20));
+}
+
+export function getDatabaseConnectTimeoutSeconds() {
+  const raw = Number.parseInt(process.env.DATABASE_CONNECT_TIMEOUT_SECONDS ?? "", 10);
   if (!Number.isFinite(raw)) return 5;
-  return Math.max(5, Math.min(raw, 10));
+  return Math.max(3, Math.min(raw, 15));
 }
 
 export function getDb() {
@@ -38,7 +44,9 @@ export function getDb() {
 
   if (!sqlClient) {
     sqlClient = postgres(databaseUrl, {
-      max: getDatabasePoolMax()
+      max: getDatabasePoolMax(),
+      connect_timeout: getDatabaseConnectTimeoutSeconds(),
+      idle_timeout: 20
     });
     drizzleClient = drizzle(sqlClient, { schema });
   }
