@@ -56,6 +56,14 @@ type FinalV031PayloadOptions = {
 
 type Settled<T> = PromiseSettledResult<T>;
 
+const TRADING_ROOM_OHLCV_LOOKBACK_YEARS = 10;
+
+function tradingRoomOhlcvFromDate(date = new Date()) {
+  const from = new Date(date);
+  from.setFullYear(from.getFullYear() - TRADING_ROOM_OHLCV_LOOKBACK_YEARS);
+  return from.toISOString().slice(0, 10);
+}
+
 function okValue<T>(result: Settled<T>, fallback: T): T {
   return result.status === "fulfilled" ? result.value : fallback;
 }
@@ -553,7 +561,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const bidAsk = okValue(bidAskResult, null);
   const ticks = okValue(ticksResult, null);
   const ohlcv = company
-    ? await getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => [] as OhlcvBar[])
+    ? await getCompanyOhlcv(company.id, { interval: "1d", from: tradingRoomOhlcvFromDate() }).catch(() => [] as OhlcvBar[])
     : [];
   const lastBar = latestOhlcv(ohlcv);
   const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
@@ -1032,9 +1040,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const selectedIdea = ideas.find((idea) => sameSym(idea.symbol, selectedSymbol)) || ideas[0] || null;
     const companiesResult = await soft(apiGet("/api/v1/companies?ticker=" + encodeURIComponent(selectedSymbol)));
     const company = companiesResult.ok ? (companiesResult.data || [])[0] || null : null;
+    const ohlcvFrom = new Date();
+    ohlcvFrom.setFullYear(ohlcvFrom.getFullYear() - 10);
+    const ohlcvFromParam = ohlcvFrom.toISOString().slice(0, 10);
     const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/quote/realtime")) : soft(Promise.resolve(null)),
-      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d")) : soft(Promise.resolve([])),
+      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d&from=" + encodeURIComponent(ohlcvFromParam))) : soft(Promise.resolve([])),
       soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(selectedSymbol))),
       soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(selectedSymbol) + "&limit=16"))
     ]);

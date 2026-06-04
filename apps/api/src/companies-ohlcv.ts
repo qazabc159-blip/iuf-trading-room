@@ -49,6 +49,7 @@ export interface OhlcvQueryParams {
 const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
 const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720;
 const MAX_DAILY_BARS_QUERY_LIMIT = 2500;
+const DEFAULT_DAILY_BACKFILL_DAYS = 3650;
 
 function nDaysAgoIso(days: number): string {
   const d = new Date();
@@ -274,7 +275,7 @@ export async function getCompanyOhlcv(
           (allMock || bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL)
         ) {
           try {
-            const startDate = params.from ?? nDaysAgoIso(1095);
+            const startDate = params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS);
             // When the app clock is ahead of FinMind's latest trading date, sending
             // end_date=today produces HTTP 400. Omit end_date for "latest" queries.
             const endDate = params.to ?? null;
@@ -316,7 +317,7 @@ export async function getCompanyOhlcv(
     shouldTryFinMind
   ) {
     try {
-      const startDate = params.from ?? nDaysAgoIso(280);
+      const startDate = params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS);
       // Omit end_date for latest queries to avoid future-date HTTP 400 responses.
       const endDate   = params.to ?? null;
       const finmindBars = await getFinMindClient().getStockPriceAdj(params.ticker, startDate, endDate);

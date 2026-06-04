@@ -8,6 +8,7 @@ const fautoSimApi = readFileSync(new URL("./fauto-sim-api.ts", import.meta.url),
 const middleware = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
 const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCandlestickChart.tsx", import.meta.url), "utf8");
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
+const companyPageSource = readFileSync(new URL("../app/companies/[symbol]/page.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
 
@@ -147,11 +148,17 @@ describe("final-v031 paper ticket price gate", () => {
   it("fetches enough real K-line history instead of accepting a tiny partial cache", () => {
     expect(apiOhlcvSource).toContain("const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720");
     expect(apiOhlcvSource).toContain("const MAX_DAILY_BARS_QUERY_LIMIT = 2500");
+    expect(apiOhlcvSource).toContain("const DEFAULT_DAILY_BACKFILL_DAYS = 3650");
     expect(apiOhlcvSource).toContain("cachedNeedsFinMindBackfill");
     expect(apiOhlcvSource).toContain("!cachedNeedsFinMindBackfill");
     expect(apiOhlcvSource).toContain(".limit(MAX_DAILY_BARS_QUERY_LIMIT)");
+    expect(apiOhlcvSource).toContain("nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS)");
+    expect(liveHydration).toContain("TRADING_ROOM_OHLCV_LOOKBACK_YEARS = 10");
+    expect(liveHydration).toContain('from: tradingRoomOhlcvFromDate()');
+    expect(liveHydration).toContain('"/ohlcv?interval=1d&from=" + encodeURIComponent(ohlcvFromParam)');
     expect(tradingRoomKlineFrameSource).toContain("from.setFullYear(from.getFullYear() - 10)");
     expect(tradingRoomKlineFrameSource).toContain("getCompanyKBar(company.id, requestedKbarDate, { days: 20 })");
+    expect(companyPageSource).toContain("from.setFullYear(from.getFullYear() - 10)");
   });
 
   it("does not replace the trading-room chart with a sparse-data card while backfill runs", () => {
