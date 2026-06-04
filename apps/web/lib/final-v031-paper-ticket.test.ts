@@ -385,6 +385,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiServerSource).toContain("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE");
     expect(apiServerSource).toContain('schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48)');
     expect(apiServerSource).toContain("OWNED_DAILY_KLINE_PRIORITY.get(a.ticker)");
+    expect(apiServerSource).toContain("preserveOrder = false");
+    expect(apiServerSource).toContain("preserveOrder=${preserveOrder}");
+    expect(apiServerSource).toContain("schedulerPositiveInt(\"FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE\", 48),\n      true");
     expect(apiServerSource).toContain("ohlcv-deep-backfill");
     expect(apiServerSource).toContain("COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')");
   });

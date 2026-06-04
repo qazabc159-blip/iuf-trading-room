@@ -13739,7 +13739,8 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     const deepTickers = takeFinMindSchedulerBatch(
       "ohlcv-deep-backfill",
       deepCandidates,
-      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48)
+      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48),
+      true
     );
     if (deepTickers.length > 0) {
       console.log(
@@ -15080,10 +15081,13 @@ function finMindSchedulerCircuitOpen(job: string): boolean {
 function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
   job: string,
   tickers: T[],
-  maxBatchSize: number
+  maxBatchSize: number,
+  preserveOrder = false
 ): T[] {
   if (tickers.length === 0) return [];
-  const ordered = [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  const ordered = preserveOrder
+    ? [...tickers]
+    : [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
   const batchSize = Math.min(Math.max(1, maxBatchSize), ordered.length);
   const start = (_finMindSchedulerCursors.get(job) ?? 0) % ordered.length;
   const first = ordered.slice(start, start + batchSize);
@@ -15092,7 +15096,8 @@ function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
   const next = (start + batch.length) % ordered.length;
   _finMindSchedulerCursors.set(job, next);
   console.log(
-    `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next}`
+    `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next} ` +
+    `preserveOrder=${preserveOrder}`
   );
   return batch;
 }
