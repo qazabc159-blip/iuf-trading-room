@@ -1335,23 +1335,35 @@ const DAILY_BRIEF_SECTION_LABELS: Record<(typeof DAILY_BRIEF_REQUIRED_SECTION_ID
 };
 
 export function buildDailyBriefContractInstructions(): string {
-  return `Daily brief contract:
+  return `Daily brief contract（盤前簡報格式）:
 - templateVersion must be "${DAILY_BRIEF_TEMPLATE_VERSION}".
 - sections must include exactly these sectionId values: ${DAILY_BRIEF_REQUIRED_SECTION_IDS.join(", ")}.
-- Required headings: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
-- AI 精選重點不可 raw dump 新聞；每則重點要說 why matters、相關公司/主題、來源與時間。
-- 資料不足時要寫「資料不足：原因」與來源狀態，不可補故事。
+- Required headings（固定，不可更改）: 市場總覽, AI 精選重點, 產業與主題, 風險觀察, 資料來源狀態.
+- 這是台股交易員開盤前要讀的盤前簡報，語氣是敘事型、有觀點、可操作的分析框架。
+
+各 section 寫作指引：
+- 市場總覽：先寫「美股隔夜」（注意：本系統尚未接入美股資料，此部分需明確標注「美股資料尚未接入」，然後說明目前能取得的台股資料），再寫台股前日收盤情況（引用 TAIEX 點位/漲跌），再寫今日開盤觀察重點。用數字說話，不要空泛描述。
+- AI 精選重點：今日盤前應關注的議題、新聞、催化劑。若有台股新聞資料，逐一說明 why matters + 可能影響的族群/個股。不可 raw dump 新聞標題。若無新聞資料，明確寫「今日新聞資料暫缺，建議盤前自行確認財經媒體。」
+- 產業與主題：綜合隔夜訊號（若有）+ 台股當日可能展望：哪些族群需要關注、哪些類股有催化劑、哪些可能受壓。用「可能」「值得觀察」等中性措辭，不預測漲跌幅。
+- 風險觀察：法人籌碼動向（引用外資/投信/自營淨買賣數字）+ 融資餘額變化 + 需要留意的下行風險（若有具體數據支撐）。若數據暫缺，說明缺口。
+- 資料來源狀態：一段簡短說明今日可用資料源的狀態（LIVE/STALE/EMPTY），讓讀者知道簡報品質。
+
+禁止行為：
+- 禁止出現 Active Themes / Theme Summaries / Company Notes / [Discovery/...] / Priority N / Lifecycle / Linked Companies 等內部資料庫欄位格式。
+- 禁止 raw dump 任何資料庫內容（主題列表、公司清單、bullet-point 資料結構直接貼上）。
+- 資料不足時要寫「資料不足：原因」，不可補故事或幻覺數字。
+- AI 精選重點不可 raw dump 新聞；每則要說 why matters。
 
 輸出 schema：
 {
   "templateVersion": "${DAILY_BRIEF_TEMPLATE_VERSION}",
   "marketState": "Risk-On" | "Balanced" | "Risk-Off",
   "sections": [
-    { "sectionId": "market_overview", "heading": "市場總覽", "body": "至少 50 字，最多 1200 字" },
-    { "sectionId": "ai_selected_news", "heading": "AI 精選重點", "body": "至少 50 字，最多 1200 字" },
-    { "sectionId": "sector_themes", "heading": "產業與主題", "body": "至少 50 字，最多 1200 字" },
-    { "sectionId": "risk_watch", "heading": "風險觀察", "body": "至少 50 字，最多 1200 字" },
-    { "sectionId": "data_source_status", "heading": "資料來源狀態", "body": "至少 50 字，最多 1200 字" }
+    { "sectionId": "market_overview", "heading": "市場總覽", "body": "至少 100 字，最多 1200 字" },
+    { "sectionId": "ai_selected_news", "heading": "AI 精選重點", "body": "至少 100 字，最多 1200 字" },
+    { "sectionId": "sector_themes", "heading": "產業與主題", "body": "至少 100 字，最多 1200 字" },
+    { "sectionId": "risk_watch", "heading": "風險觀察", "body": "至少 80 字，最多 1200 字" },
+    { "sectionId": "data_source_status", "heading": "資料來源狀態", "body": "至少 50 字，最多 400 字" }
   ]
 }`;
 }
@@ -1361,7 +1373,7 @@ const DAILY_BRIEF_MIN_BODY_CHARS = 50;
 const DAILY_BRIEF_LEGACY_HEADING_PATTERN =
   /Market Overview|Theme Summaries|Company Notes|Technical Analysis|Risk Alert|Strategy Observation|Summary/i;
 const DAILY_BRIEF_RAW_DUMP_PATTERN =
-  /Theme:\s|Lifecycle:\s|Market State:\s|Linked Companies|Observation\]|Priority:\s/i;
+  /Theme:\s|Lifecycle:\s|Market State:\s|Linked Companies|Observation\]|Priority:\s|Active Themes|Theme Summaries|\[Discovery\/|\[Observation\]|Linked Companies \(|• .+\[.+\] — Priority/i;
 
 export function validateDailyBriefSectionsContract(
   sections: Array<{ sectionId?: unknown; heading?: unknown; body?: unknown }>
@@ -1529,33 +1541,50 @@ async function generateDirectDailyBriefDraft(input: {
     }
   }
 
-  // F4: Hard rule against directional language without concrete numbers
-  const f4Rule = `- 若「即時市場數據」區塊中某欄位沒有出現具體數字（點位、百分比、張數），則禁止在對應段落使用以下方向性描述詞：「增加」「減少」「上漲」「下跌」「平靜」「活躍」「相對謹慎」「未突破」「有所減少」「有所增加」「偏向」「傾向」「不大」「小幅」。
-- 每個 section body 若要描述法人、融資、成交量的方向，必須直接引用「即時市場數據」區塊中的具體數字（例如「外資淨賣超 X 張」「融資餘額變化 +X 張」）。若無具體數字，該段省略方向性描述，改以「資料品質提醒」說明數據不足。
-- 每個 section body 至少包含 1 個具體數字（指數點位、百分比、張數、或明確的 ticker 代號），否則該 section 改寫為資料品質說明段。`;
+  // Premarket narrative brief prompt — produces professional trading-room quality output.
+  // Key design decisions:
+  //   1. Clearly states US overnight data is NOT ingested (no hallucination of Dow/Nasdaq numbers).
+  //   2. Uses live TWSE data for Taiwan market section with actual numbers.
+  //   3. Narrative framing: overnight context -> today's focus -> Taiwan market outlook -> risk.
+  //   4. Hard ban on raw DB dump patterns (Active Themes / Company Notes etc).
+  const prompt = `你是台股 AI 交易戰情室的每日盤前簡報撰寫器。今日交易日：${input.sourcePack.tradingDate}。
 
-  const prompt = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列真實資料狀態與即時市場數據產生繁體中文 JSON。
+你的任務是生成一份給台股交易員開盤前閱讀的「敘事型盤前簡報」——有觀點、有數字、可操作，不是資料庫 dump。
 
-硬規則（任何違反 → 退件）：
-- 只能輸出 JSON，不要 markdown。
-- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
-- 不提供買賣建議、不寫目標價、不保證報酬、不提勝率或績效承諾。
-- 不臆測資料來源沒有提供的新聞或事件。
-- 若資料不足，直接寫成資料品質提醒（中文）。
-- date 必須等於 ${input.sourcePack.tradingDate}。
-${f4Rule}
+=== 重要資料邊界聲明（必須在簡報中誠實揭示）===
+- 美股隔夜行情（道瓊/S&P 500/Nasdaq/費半）：本系統尚未接入美股資料源，無法提供真實數字。在「市場總覽」中必須明確寫「【美股資料尚未接入】本系統目前僅涵蓋台股資料，美股隔夜行情請自行確認 Bloomberg/財經媒體。」然後繼續寫台股部分。
+- 不可幻覺美股指數數字。若無資料，就如實說「資料未接入」。
 
-${buildDailyBriefContractInstructions()}
+=== 可用真實資料 ===
+交易日：${input.sourcePack.tradingDate}
+資料來源狀態：
+${sourceContext}${liveSnapshotBlock}
 
-資料狀態：
-${sourceContext}${liveSnapshotBlock}`;
+=== 硬規則（任何違反 → 退件）===
+- 只能輸出 JSON，不要 markdown、code fence 或說明文字。
+- 禁止使用英文標題（Market Overview / Summary / Risk Alert 等）。
+- 禁止出現 Active Themes / Theme Summaries / Company Notes / [Discovery/...] / Priority N / Lifecycle / Linked Companies / Observation] 等內部資料庫格式。
+- 禁止 raw dump 主題清單、公司清單、bullet-point 資料結構。
+- 禁止買賣建議、目標價、報酬承諾、勝率數字。
+- 禁止幻覺任何資料來源未提供的數字（美股指數、個股漲跌幅等）。
+- 若資料不足，誠實說明「資料暫缺，原因：...」，不補故事。
+- 每個 section body 必須是完整的敘事段落（不是逐項列表 dump）。
+- 若有台股 TAIEX 點位或法人籌碼數字，必須直接引用，不可說「數據顯示有所變化」之類空泛描述。
+
+${buildDailyBriefContractInstructions()}`;
 
   const raw = input.reason === "historical_backfill"
     ? null
     : (await callLlm(
         [{ role: "user", content: prompt }],
-        { callerModule: "brief_writer", taskType: "generation", maxTokens: 1_400, temperature: 0.2, timeoutMs: 25_000 }
+        {
+          callerModule: "brief_writer",
+          taskType: "generation",
+          modelKey: "gpt-4o",
+          maxTokens: 2_500,
+          temperature: 0.25,
+          timeoutMs: 45_000
+        }
       ))?.content ?? null;
 
   const payload = parseDirectBriefPayload(raw, input.sourcePack) ?? buildSourceOnlyBriefPayload(input.sourcePack);
@@ -1633,30 +1662,32 @@ async function generateDailyBrief(
     // non-fatal
   }
 
-  // F4: Directional-language guard for enqueued path
-  const f4Rule = `- 若「即時市場數據」區塊中某欄位沒有出現具體數字，禁止在對應段落使用以下方向性描述詞：「增加」「減少」「上漲」「下跌」「平靜」「活躍」「相對謹慎」「未突破」「有所減少」「有所增加」「偏向」「不大」「小幅」。
-- 每個 section body 若描述法人、融資、成交量的方向，必須直接引用即時市場數據中的具體數字。若無具體數字，該段改以資料品質說明替代。
-- 每個 section body 至少包含 1 個具體數字（指數點位、百分比、張數）或明確 ticker 代號。`;
+  // Premarket narrative brief instructions — same as direct path for consistency.
+  // Key: US overnight data clearly declared as NOT available.
+  const instructions = `你是台股 AI 交易戰情室的每日盤前簡報撰寫器。今日交易日：${sourcePack.tradingDate}。Tick: ${sourcePack.tick}。
 
-  const instructions = `你是台股 AI 交易戰情室的每日簡報撰寫器。請根據下列資料狀態與即時市場數據，產生台灣股市 ${sourcePack.tradingDate} 的每日簡報（繁體中文 JSON）。
-交易日：${sourcePack.tradingDate}。Tick context: ${sourcePack.tick}。Source pack ID: ${sourcePack.packId}。Trail complete: ${sourcePack.trailComplete}.
+你的任務是生成一份給台股交易員開盤前閱讀的「敘事型盤前簡報」——有觀點、有數字、可操作，不是資料庫 dump。
 
-可用資料來源：
+=== 重要資料邊界聲明（必須在簡報中誠實揭示）===
+- 美股隔夜行情（道瓊/S&P 500/Nasdaq/費半）：本系統尚未接入美股資料源，無法提供真實數字。在「市場總覽」中必須明確寫「【美股資料尚未接入】本系統目前僅涵蓋台股資料，美股隔夜行情請自行確認 Bloomberg/財經媒體。」然後繼續寫台股部分。
+- 不可幻覺美股指數數字。若無資料，就如實說「資料未接入」。
+
+=== 可用真實資料 ===
+交易日：${sourcePack.tradingDate}
+Trail complete: ${sourcePack.trailComplete}
+資料來源狀態：
 ${sourcesSummary}${liveSnapshotBlock}
 
-硬規則（任何違反 → 退件）：
-- 只輸出 JSON，不要 markdown。
-- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 只能使用五個固定中文標題：「市場總覽」/「AI 精選重點」/「產業與主題」/「風險觀察」/「資料來源狀態」。
-- 禁止買賣建議、禁止進場/賣出/買進/出脫。
-- 禁止目標價（目標價）或報酬承諾（必賺/保證）。
-- 禁止臆測資料來源未提供的新聞或事件，禁止無來源 URL 的新聞。
-- 若資料不足，直接寫成資料品質提醒（中文）。
-- date 欄位必須等於 "${sourcePack.tradingDate}"。
-- 每個 section body 至少 50 字。
-- 只引用上方資料包或即時市場數據中存在的資料。
-- 禁止在任何輸出欄位中出現 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
-${f4Rule}
+=== 硬規則（任何違反 → 退件）===
+- 只能輸出 JSON，不要 markdown、code fence 或說明文字。
+- 禁止使用英文標題（Market Overview / Summary / Risk Alert 等）。
+- 禁止出現 Active Themes / Theme Summaries / Company Notes / [Discovery/...] / Priority N / Lifecycle / Linked Companies / Observation] 等內部資料庫格式。
+- 禁止 raw dump 主題清單、公司清單、bullet-point 資料結構。
+- 禁止買賣建議、目標價、報酬承諾、勝率數字。
+- 禁止幻覺任何資料來源未提供的數字（美股指數、個股漲跌幅等）。
+- 禁止 [BROKEN-N]、[DEPRECATED]、[ORPHAN]、[placeholder] 等內部 DB 維護標記。
+- 若資料不足，誠實說明「資料暫缺，原因：...」，不補故事。
+- 每個 section body 必須是完整的敘事段落（不是逐項列表 dump）。
 
 ${buildDailyBriefContractInstructions()}`;
 
