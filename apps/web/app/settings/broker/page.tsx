@@ -7,43 +7,43 @@ import { featureStatusLabel, type MyEntitlements, type SubscriptionFeatureId } f
 type BrokerFeatureId = Extract<SubscriptionFeatureId, "trading_room_paper" | "kgi_read_only" | "kgi_sim">;
 
 const brokerFeatureIds: Array<{ id: BrokerFeatureId; label: string; note: string }> = [
-  { id: "trading_room_paper", label: "Paper 模擬交易室", note: "平台內模擬，不碰券商。" },
-  { id: "kgi_read_only", label: "KGI Read-only", note: "只讀券商狀態/庫存/資金，不寫入。" },
-  { id: "kgi_sim", label: "KGI SIM", note: "券商模擬環境，仍非正式實單。" },
+  { id: "trading_room_paper", label: "Paper 模擬交易室", note: "平台內紙上委託，不會送到券商。" },
+  { id: "kgi_read_only", label: "KGI Read-only", note: "讀取券商模擬/唯讀資訊，例如連線、庫存與資金狀態。" },
+  { id: "kgi_sim", label: "KGI SIM", note: "送出券商模擬委託，仍受平台風控與 SIM 模式限制。" },
 ];
 
 const modes = [
   {
     label: "Paper 模擬",
-    state: "客戶可用",
+    state: "正式可用",
     tone: "#34d399",
-    body: "平台內模擬帳本、委託、成交與資金紀錄；不碰券商，不會產生正式委託。",
+    body: "平台內模擬帳本，可預覽與送出紙上委託。這不會讀取券商，也不會送任何委託到外部券商。",
   },
   {
     label: "KGI Read-only",
-    state: "高級方案 + 安全憑證",
+    state: "高級方案 + 憑證設定",
     tone: "#fbbf24",
-    body: "讀取券商狀態、庫存或資金摘要；只讀不寫入，憑證不得進聊天或前端表單。",
+    body: "用來讀取券商模擬或唯讀資料，例如連線狀態、庫存、資金與回報。它不提供下單能力。",
   },
   {
     label: "KGI SIM",
     state: "高級方案 + SIM 憑證",
     tone: "#fbbf24",
-    body: "送到券商模擬環境，仍不是正式實單；目前以 Owner 安全環境驗證，客戶 onboarding 需後端 vault。",
+    body: "用來送出券商模擬委託。憑證只從安全環境讀取，頁面不顯示帳號、密碼或任何參數路徑。",
   },
   {
     label: "Real Order",
     state: "正式封鎖",
     tone: "#f87171",
-    body: "真實券商寫入不屬於目前客戶方案；必須另外完成法遵、風控、合約與人工開通。",
+    body: "正式實單目前停用。高級方案不會自動開啟實單，必須另有合規、風控與 Owner 核准流程。",
   },
 ];
 
 const secureRules = [
-  "不要把券商密碼貼在聊天、PR、截圖、瀏覽器 localStorage 或一般環境變數。",
-  "現階段 Owner 測試憑證只走受控安全環境；頁面不揭露參數名稱、儲存路徑或任何憑證值。",
-  "未來客戶憑證必須走後端加密 vault、一次性 onboarding、權限稽核與可撤銷連線。",
-  "所有券商連線失敗都要顯示原因；不能用假綠燈或假行情替代。",
+  "本頁不收券商帳號、密碼、憑證路徑，也不把秘密值寫進瀏覽器、localStorage 或畫面文字。",
+  "KGI SIM 目前應使用安全環境中的模擬憑證；不要在聊天、截圖、PR 或前端表單貼出密碼。",
+  "券商憑證更新後，由後端 gateway / 安全環境讀取；前端只顯示連線與權限狀態。",
+  "Real Order 維持停用；任何正式下單能力都不能因訂閱方案或 UI 按鈕被誤開。",
 ];
 
 function brokerFeatureStatus(entitlements: MyEntitlements | null, id: BrokerFeatureId) {
@@ -74,12 +74,11 @@ export default async function BrokerSettingsPage() {
               <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 800 }}>
                 BROKER CONNECTION
               </div>
-              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>券商連線與交易模式</h1>
+              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>券商連線與安全模式</h1>
             </div>
           </div>
           <p style={{ maxWidth: 820, color: "var(--fg-3, #8a93a3)", lineHeight: 1.7, fontSize: 14 }}>
-            這裡整理客戶能看懂的交易模式邊界：網站帳號不是券商帳號，訂閱方案只決定功能可用性；
-            券商憑證必須走安全儲存與後端連線，不在此頁輸入、不在前端保存。
+            這裡只顯示券商功能的權限與安全狀態。憑證應放在受控安全環境，由後端讀取；前端不收、不存、不顯示任何密碼或參數路徑。
           </p>
         </header>
 
@@ -93,7 +92,7 @@ export default async function BrokerSettingsPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399" }} />
-            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號券商功能狀態</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號的券商權限</h2>
           </div>
           {entitlements ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
@@ -112,22 +111,22 @@ export default async function BrokerSettingsPage() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                       <b>{feature.label}</b>
                       <span style={{ color: access ? "#34d399" : "#fbbf24", fontSize: 12, fontWeight: 900 }}>
-                        {status ? featureStatusLabel(status.status) : "未回報"}
+                        {status ? featureStatusLabel(status.status) : "未包含"}
                       </span>
                     </div>
                     <p style={{ margin: "8px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 12, lineHeight: 1.55 }}>
-                      {feature.note} {status?.reason ?? "後端尚未回報此功能。"}
+                      {feature.note} {status?.reason ?? "權限資料尚未回傳。"}
                     </p>
                   </div>
                 );
               })}
               <p style={{ gridColumn: "1 / -1", margin: "4px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                目前方案：{entitlements.subscription.tierName}。訂閱權限只決定功能是否可用；KGI read-only / SIM 還需要安全憑證與後端連線檢查通過。
+                目前方案：{entitlements.subscription.tierName}。KGI read-only / SIM 即使在高級方案，也仍需要憑證設定與後端 gateway 正常連線。
               </p>
             </div>
           ) : (
             <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
-              目前無法讀取帳號權限 API。本頁不會因此假裝 KGI read-only 或 SIM 已開通。
+              目前無法讀取帳號權限 API；為安全起見，KGI read-only 與 SIM 會視為尚未開通。
             </p>
           )}
         </section>
@@ -205,18 +204,18 @@ export default async function BrokerSettingsPage() {
           <div style={{ display: "flex", gap: 10 }}>
             <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>客戶方案與券商模式分開控管</b>
+              <b>方案決定能不能看到券商功能</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                入門/中級/高級決定資料與功能權限；券商連線還需要安全憑證、風控與連線狀態通過。
+                入門與中級不開 KGI SIM；高級才會顯示券商 SIM/read-only 能力，但仍要完成安全設定。
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <WalletCards size={18} strokeWidth={1.8} style={{ color: "var(--accent, #c8943f)", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>下一步：接後端 entitlement 與 vault</b>
+              <b>連線狀態由後端與安全環境決定</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                這頁先建立產品邊界；後續才把方案、付款、試用期、券商 vault 與每個 endpoint 的權限檢查接起來。
+                這頁只讀取權限與安全模式；實際 gateway、quote、trade 連線狀態由後端 API 回報，不由前端假裝成功。
               </p>
             </div>
           </div>

@@ -13,8 +13,8 @@ describe("broker settings boundary page", () => {
   });
 
   it("does not collect broker credentials in the browser page", () => {
-    expect(brokerPageSource).toContain("不要把券商密碼貼在聊天");
-    expect(brokerPageSource).toContain("不揭露參數名稱、儲存路徑或任何憑證值");
+    expect(brokerPageSource).toContain("本頁不收券商帳號、密碼、憑證路徑");
+    expect(brokerPageSource).toContain("頁面不顯示帳號、密碼或任何參數路徑");
     expect(brokerPageSource).not.toContain("/iuf/kgi/sim_person_id");
     expect(brokerPageSource).not.toContain("/iuf/kgi/sim_person_pwd");
     expect(brokerPageSource).not.toContain("AWS SSM");
@@ -26,7 +26,7 @@ describe("broker settings boundary page", () => {
   it("reads current account entitlements before showing broker readiness", () => {
     expect(apiClientSource).toContain("getMyEntitlements");
     expect(brokerPageSource).toContain("await getMyEntitlements()");
-    expect(brokerPageSource).toContain("目前帳號券商功能狀態");
+    expect(brokerPageSource).toContain("目前帳號的券商權限");
     expect(brokerPageSource).toContain("brokerFeatureIds");
     expect(brokerPageSource).toContain("kgi_read_only");
     expect(brokerPageSource).toContain("kgi_sim");
@@ -35,11 +35,18 @@ describe("broker settings boundary page", () => {
   it("keeps real orders explicitly disabled", () => {
     expect(brokerPageSource).toContain("Real Order");
     expect(brokerPageSource).toContain("正式封鎖");
-    expect(brokerPageSource).toContain("真實券商寫入不屬於目前客戶方案");
+    expect(brokerPageSource).toContain("正式實單目前停用");
   });
 
   it("links subscription entitlements to broker connection readiness", () => {
     expect(subscriptionPageSource).toContain('href="/settings/broker"');
-    expect(subscriptionPageSource).toContain("KGI read-only / SIM 即使在高級方案");
+    expect(subscriptionPageSource).toContain("KGI read-only / SIM 只在高級方案開放");
+    expect(brokerPageSource).toContain("KGI read-only / SIM 即使在高級方案");
+  });
+
+  it("uses clean customer-facing Chinese copy with no known mojibake markers", () => {
+    expect(brokerPageSource).toContain("券商連線與安全模式");
+    expect(brokerPageSource).toContain("憑證安全規則");
+    expect(brokerPageSource).not.toMatch(/[�]/);
   });
 });

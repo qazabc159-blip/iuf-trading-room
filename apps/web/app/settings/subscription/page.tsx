@@ -63,13 +63,13 @@ function StatusBadge({ status }: { status: EntitlementStatus }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        minWidth: 72,
+        minWidth: 78,
         border: `1px solid ${tone.border}`,
         background: tone.background,
         color: tone.color,
         padding: "4px 8px",
         fontSize: 11,
-        fontWeight: 700,
+        fontWeight: 800,
       }}
     >
       {featureStatusLabel(status)}
@@ -80,8 +80,8 @@ function StatusBadge({ status }: { status: EntitlementStatus }) {
 function SourceLabel({ source }: { source: string }) {
   const labels: Record<string, string> = {
     role_default: "依帳號角色預設",
-    billing_pending: "等待正式金流",
-    owner_override: "Owner 內部權限",
+    billing_pending: "付款系統待接",
+    owner_override: "Owner 權限覆寫",
   };
   return <>{labels[source] ?? source}</>;
 }
@@ -113,19 +113,19 @@ export default async function SubscriptionSettingsPage() {
               <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 800 }}>
                 SUBSCRIPTION / ENTITLEMENTS
               </div>
-              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>訂閱與功能權限</h1>
+              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>方案與權限</h1>
             </div>
           </div>
           <p style={{ maxWidth: 820, color: "var(--fg-3, #8a93a3)", lineHeight: 1.7, fontSize: 14 }}>
-            一般使用者會看到完整客戶產品頁，功能依入門、中級、高級方案開啟。Owner 後台是系統治理入口，
-            不屬於任何客戶訂閱方案；正式付款、折扣與試用天數尚未串接，不在此頁假裝已收費。
+            IUF 會把一般客戶功能、券商連線功能、Owner 後台分開管理。一般註冊使用者只會看到所屬方案能用的正式產品頁；
+            Brain、EventLog、ToolCenter、UTA 與內部治理頁只會顯示給 Owner 帳號。
           </p>
         </header>
 
         <section style={{ ...panelStyle, padding: 20, marginBottom: 22 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
             <ShieldCheck size={18} strokeWidth={1.7} style={{ color: "var(--accent, #c8943f)" }} />
-            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號權限</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號狀態</h2>
           </div>
           {entitlements ? (
             <div
@@ -146,7 +146,7 @@ export default async function SubscriptionSettingsPage() {
                 </strong>
               </div>
               <div>
-                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>判定來源</div>
+                <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>權限來源</div>
                 <strong style={{ color: "var(--fg-1, #ddd)" }}>
                   <SourceLabel source={entitlements.subscription.source} />
                 </strong>
@@ -158,16 +158,16 @@ export default async function SubscriptionSettingsPage() {
               <div>
                 <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 11, fontWeight: 800 }}>Owner 後台</div>
                 <strong style={{ color: entitlements.ownerInternal.visible ? "#34d399" : "#94a3b8" }}>
-                  {entitlements.ownerInternal.visible ? "可見" : "不顯示給一般客戶"}
+                  {entitlements.ownerInternal.visible ? "可見" : "一般客戶不可見"}
                 </strong>
               </div>
               <p style={{ gridColumn: "1 / -1", margin: 0, color: "var(--fg-3, #8a93a3)" }}>
-                後端 API 已負責回傳此帳號可用功能；正式付款、試用期與年/月費金流接上前，價格仍標示待定，不假裝已收費。
+                這份資料由正式 API 回傳。付款系統尚未接上前，價格與帳單日期會誠實顯示為待設定，不會假裝已完成收費。
               </p>
             </div>
           ) : (
             <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
-              目前無法讀取後端權限 API。下方只顯示方案模型，不假裝此帳號已正式開通任何方案。
+              目前無法讀取帳號權限 API；頁面仍顯示方案規劃，但不假裝你的帳號已完成訂閱或付款。
             </p>
           )}
         </section>
@@ -211,7 +211,9 @@ export default async function SubscriptionSettingsPage() {
                   minHeight: 154,
                 }}
               >
-                <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 900, marginBottom: 8 }}>方案邊界</div>
+                <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 900, marginBottom: 8 }}>
+                  方案邊界
+                </div>
                 <ul style={{ margin: 0, paddingLeft: 16, color: "var(--fg-2, #b9c0cc)", fontSize: 12, lineHeight: 1.65 }}>
                   {tier.usageLimits.map((limit) => (
                     <li key={limit}>{limit}</li>
@@ -250,7 +252,7 @@ export default async function SubscriptionSettingsPage() {
         <section style={{ ...panelStyle, padding: 22, marginBottom: 22 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
             <ShieldCheck size={18} strokeWidth={1.7} style={{ color: "var(--accent, #c8943f)" }} />
-            <h2 style={{ margin: 0, fontSize: 16 }}>功能權限矩陣</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>功能權限對照</h2>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 13 }}>
@@ -271,7 +273,7 @@ export default async function SubscriptionSettingsPage() {
                       <div style={{ color: "var(--fg-1, #ddd)", fontWeight: 800 }}>{feature.label}</div>
                       <div style={{ color: "var(--fg-3, #8a93a3)", marginTop: 4, lineHeight: 1.5 }}>
                         {feature.customerCopy}
-                        {feature.requiresBroker ? " 需完成券商連線設定。" : ""}
+                        {feature.requiresBroker ? " 需要完成券商連線設定。" : ""}
                       </div>
                     </td>
                     {subscriptionTiers.map((tier) => (
@@ -298,27 +300,27 @@ export default async function SubscriptionSettingsPage() {
           <div style={{ display: "flex", gap: 10 }}>
             <LockKeyhole size={18} strokeWidth={1.8} style={{ color: "#f87171", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>Owner 後台不跟訂閱混在一起</b>
+              <b>Owner 後台不是客戶訂閱方案</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                Brain、EventLog、ToolCenter、UTA、內部策略治理只給 Owner 帳號看；客戶方案不會開這些入口。
+                Brain、EventLog、ToolCenter、UTA 與內部治理頁只給 Owner 帳號使用。一般客戶不會因為升級方案看到這些後台。
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <CreditCard size={18} strokeWidth={1.8} style={{ color: "var(--accent, #c8943f)", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>付款與正式定價尚未接線</b>
+              <b>月費 / 年費付款尚未正式接線</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                這頁先建立產品權限邊界。之後接 Stripe、綠界或其他金流時，再把真價格、試用、折扣與發票資料接上。
+                目前先把方案與權限邊界整理清楚；等付款系統接上後，才會顯示實際價格、帳單日與升降級入口。
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>券商連線另有安全邊界</b>
+              <b>券商功能需要額外安全設定</b>
               <p style={{ margin: "6px 0 10px", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                KGI read-only / SIM 即使在高級方案，也需要安全憑證、後端 vault、風控與連線狀態通過。
+                KGI read-only / SIM 只在高級方案開放，憑證由安全環境管理；頁面不顯示參數路徑、帳號或密碼。
               </p>
               <Link href="/settings/broker" style={{ color: "var(--accent, #c8943f)", fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
                 查看券商連線設定
