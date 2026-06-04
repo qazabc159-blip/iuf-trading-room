@@ -50,6 +50,7 @@ const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
 const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720;
 const MIN_DAILY_BARS_FOR_LONG_WINDOW = 180;
 const FINMIND_DAILY_CHUNK_DAYS = 730;
+const FINMIND_DAILY_PERSIST_CHUNK_SIZE = 500;
 const MAX_DAILY_BARS_QUERY_LIMIT = 2500;
 const DEFAULT_DAILY_BACKFILL_DAYS = 3650;
 
@@ -283,9 +284,68 @@ async function setCachedOhlcv(key: string, bars: OhlcvBar[]): Promise<void> {
 
 // ── Query: single company ─────────────────────────────────────────────────────
 
+function persistableFinMindDailyBars(bars: OhlcvBar[]): OhlcvBar[] {
+  return bars.filter((bar) => bar.source === "tej" && Boolean(bar.dt));
+}
+
+async function persistFinMindDailyBars(
+  companyId: string,
+  workspaceId: string,
+  bars: OhlcvBar[]
+): Promise<void> {
+  const db = getDb();
+  const realBars = persistableFinMindDailyBars(bars);
+  if (!db || realBars.length === 0) return;
+
+  for (let i = 0; i < realBars.length; i += FINMIND_DAILY_PERSIST_CHUNK_SIZE) {
+    const chunk = realBars.slice(i, i + FINMIND_DAILY_PERSIST_CHUNK_SIZE);
+    for (const bar of chunk) {
+      await db
+        .insert(companiesOhlcv)
+        .values({
+          companyId,
+          workspaceId,
+          dt: bar.dt,
+          interval: "1d" as const,
+          open: String(bar.open),
+          high: String(bar.high),
+          low: String(bar.low),
+          close: String(bar.close),
+          volume: bar.volume,
+          source: "tej" as const
+        })
+        .onConflictDoUpdate({
+          target: [companiesOhlcv.companyId, companiesOhlcv.dt, companiesOhlcv.interval],
+          set: {
+            open: String(bar.open),
+            high: String(bar.high),
+            low: String(bar.low),
+            close: String(bar.close),
+            volume: bar.volume,
+            source: "tej" as const
+          }
+        });
+    }
+  }
+}
+
+function persistFinMindDailyBarsSoon(
+  companyId: string,
+  workspaceId: string,
+  bars: OhlcvBar[]
+): void {
+  if (bars.length === 0) return;
+  void persistFinMindDailyBars(companyId, workspaceId, bars).catch((e) => {
+    console.warn(
+      "[companies-ohlcv] FinMind daily persist failed",
+      e instanceof Error ? e.message : String(e)
+    );
+  });
+}
+
 export async function getCompanyOhlcv(
   companyId: string,
-  _session: AppSession,
+  session: AppSession,
   params: OhlcvQueryParams = {}
 ): Promise<OhlcvBar[]> {
   const interval = params.interval ?? "1d";
@@ -350,6 +410,7 @@ export async function getCompanyOhlcv(
             const finmindBars = await getFinMindDailyBarsForRequest(params);
             if (hasEnoughDailyDepthForRequest(finmindBars, params)) {
               await setCachedOhlcv(cacheKey, finmindBars);
+              persistFinMindDailyBarsSoon(companyId, session.workspace.id, finmindBars);
               return finmindBars;
             }
           } catch (e) {
@@ -390,6 +451,7 @@ export async function getCompanyOhlcv(
       const finmindBars = await getFinMindDailyBarsForRequest(params);
       if (hasEnoughDailyDepthForRequest(finmindBars, params)) {
         await setCachedOhlcv(cacheKey, finmindBars);
+        persistFinMindDailyBarsSoon(companyId, session.workspace.id, finmindBars);
         return finmindBars;
       }
     } catch (e) {
