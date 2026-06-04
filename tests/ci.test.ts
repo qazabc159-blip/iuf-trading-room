@@ -13489,7 +13489,11 @@ test("AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt contains programmatic risk_off_s
   assert.ok(src.includes("DO NOT OVERRIDE"), "AI-REC-V3-RISK-OFF-2: prompt must say DO NOT OVERRIDE");
   // F3: minimum tool call rules
   assert.ok(src.includes("MIN_V3_TECHNICAL_CALLS = 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls through the shared minimum constant");
-  assert.ok(src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=5 recommendations through the shared minimum constant");
+  assert.ok(
+    src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B 推薦卡片") ||
+      src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動推薦"),
+    "AI-REC-V3-RISK-OFF-2: prompt must require >=5 A+/A/B actionable recommendations through the shared minimum constant"
+  );
   // Orchestrator must intercept LLM RISK_OFF_SKIP when progScore < 3
   assert.ok(src.includes("LLM_RISK_OFF_REJECTED"), "AI-REC-V3-RISK-OFF-2: orchestrator must intercept LLM risk-off when progScore < 3");
   assert.ok(src.includes("companyTechnicalCallCount"), "AI-REC-V3-RISK-OFF-2: orchestrator must track get_company_technical call count");
@@ -14431,8 +14435,10 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when p
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: prompt must forbid skip sentinels when score < 3"
   );
   assert.ok(
-    src.includes("推薦 A+/A/B/C 的股票"),
-    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must allow C bucket high-risk exclusion cards to satisfy the five-card gate without fake buy signals"
+    src.includes("推薦 A+/A/B 的股票") &&
+      src.includes("C 分類必須標示高風險排除") &&
+      src.includes("不算推薦卡"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must forbid C bucket high-risk exclusions from satisfying the five-card gate"
   );
 });
 
@@ -14919,6 +14925,49 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   assert.ok(
     src.includes("tpex.org.tw"),
     "BULK-SEED-5: must include TPEx OpenAPI URL"
+  );
+});
+
+test("BULK-SEED-6: ticker resolution read-throughs missing official companies", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const resolveBlock = src.slice(
+    src.indexOf("async function resolveCompany"),
+    src.indexOf("async function requireOpenAliceDevice")
+  );
+
+  assert.ok(
+    resolveBlock.includes("ensureCompanyFromOfficialUniverse"),
+    "BULK-SEED-6: resolveCompany must discover missing TW tickers from official company universe"
+  );
+  assert.ok(
+    src.includes("Official company master read-through"),
+    "BULK-SEED-6: auto-created company rows must be attributed to official TWSE/TPEx source"
+  );
+  assert.ok(
+    src.includes("OFFICIAL_COMPANY_TICKER_PATTERN"),
+    "BULK-SEED-6: read-through must be restricted to valid Taiwan ticker-like symbols"
+  );
+});
+
+test("BULK-SEED-7: official read-through re-reads after duplicate insert races", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const helperBlock = src.slice(
+    src.indexOf("async function ensureCompanyFromOfficialUniverse"),
+    src.indexOf('app.post("/api/v1/admin/companies/bulk-seed"')
+  );
+
+  assert.ok(
+    helperBlock.includes("repo.createCompany"),
+    "BULK-SEED-7: read-through must create the missing official company master row"
+  );
+  assert.ok(
+    helperBlock.includes("repo.listCompanies"),
+    "BULK-SEED-7: read-through must re-read after create conflicts so concurrent searches do not false-404"
+  );
+  assert.doesNotMatch(
+    helperBlock,
+    /mock|fake|demo/i,
+    "BULK-SEED-7: official read-through must not create fake/demo company rows"
   );
 });
 
@@ -15452,8 +15501,10 @@ test("TWSE-MIS-7: cron z='-' fallback — server.ts uses bid as proxy when z is 
 test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
   // Handles "1150602" compact format: first 3 chars = ROC year, next 2 = month, next 2 = day
-  assert.match(source, /\/\^\d\{7\}\$\/.test\(raw\)/);
-  assert.match(source, /const rocYear = parseInt\(raw\.slice\(0, 3\)/);
+  assert.ok(source.includes("/^\\d{7}$/.test(raw)"));
+  assert.ok(source.includes("const rocYear = parseInt(raw.slice(0, 3), 10)"));
+  assert.ok(source.includes("const mm = raw.slice(3, 5)"));
+  assert.ok(source.includes("const dd = raw.slice(5, 7)"));
 });
 
 test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB companies LIMIT 200", () => {
@@ -15484,7 +15535,7 @@ test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB compani
 
 test("MIS-UNIVERSE-1: universe ticker filter accepts valid 4-6 digit codes, rejects others", () => {
   // Inline the filter used in _refreshMisUniverseCache
-  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t.trim());
+  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t);
   const valid = ["2330", "0050", "00878", "3008", "6669", "910861"];
   const invalid = ["TSMC", "2330A", "99", "ABC", "", "  ", "2330 ", "00"];
   for (const t of valid) {

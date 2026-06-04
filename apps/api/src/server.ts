@@ -506,6 +506,7 @@ function getBearerToken(c: Context) {
 
 // UUID v4 pattern — used to decide whether `:id` needs ticker fallback.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OFFICIAL_COMPANY_TICKER_PATTERN = /^\d{4,6}$/;
 
 /**
  * Resolve a company by UUID or ticker within a workspace.
@@ -522,7 +523,14 @@ async function resolveCompany(
   }
   // Ticker fallback: scan list within workspace. listCompanies is workspace-scoped.
   const companies = await repo.listCompanies(undefined, options);
-  return companies.find((c) => c.ticker === idOrTicker) ?? null;
+  const existing = companies.find((c) => c.ticker === idOrTicker);
+  if (existing) return existing;
+
+  // Product rule: K-line/company pages must not be limited to the curated
+  // representative pools. If a valid TW ticker is missing from our company
+  // master, discover it from official TWSE/TPEx company lists and create a
+  // minimal official master row before the caller fetches FinMind data.
+  return ensureCompanyFromOfficialUniverse(repo, idOrTicker, options);
 }
 
 async function requireOpenAliceDevice(c: Context, deviceId: string) {
@@ -14559,6 +14567,96 @@ async function _fetchTpexListedCompanies(): Promise<Array<{ ticker: string; name
   }
 }
 
+type OfficialCompanyMasterRow = {
+  ticker: string;
+  name: string;
+  industry: string;
+  market: "TWSE" | "TPEX";
+};
+
+let _officialCompanyUniverseCache:
+  | { loadedAtMs: number; rows: OfficialCompanyMasterRow[] }
+  | null = null;
+const OFFICIAL_COMPANY_UNIVERSE_CACHE_MS = 6 * 60 * 60 * 1000;
+
+async function getOfficialCompanyUniverse(): Promise<OfficialCompanyMasterRow[]> {
+  const now = Date.now();
+  if (
+    _officialCompanyUniverseCache &&
+    now - _officialCompanyUniverseCache.loadedAtMs < OFFICIAL_COMPANY_UNIVERSE_CACHE_MS
+  ) {
+    return _officialCompanyUniverseCache.rows;
+  }
+
+  const [twseCompanies, tpexCompanies] = await Promise.all([
+    _fetchTwseListedCompanies(),
+    _fetchTpexListedCompanies(),
+  ]);
+
+  const byTicker = new Map<string, OfficialCompanyMasterRow>();
+  for (const company of tpexCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上櫃",
+      market: "TPEX",
+    });
+  }
+  for (const company of twseCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上市",
+      market: "TWSE",
+    });
+  }
+
+  const rows = Array.from(byTicker.values());
+  _officialCompanyUniverseCache = { loadedAtMs: now, rows };
+  return rows;
+}
+
+async function ensureCompanyFromOfficialUniverse(
+  repo: TradingRoomRepository,
+  ticker: string,
+  options: { workspaceSlug: string }
+) {
+  const normalizedTicker = ticker;
+  if (!OFFICIAL_COMPANY_TICKER_PATTERN.test(normalizedTicker)) return null;
+
+  const official = (await getOfficialCompanyUniverse()).find((row) => row.ticker === normalizedTicker);
+  if (!official) return null;
+
+  try {
+    return await repo.createCompany(
+      {
+        ticker: official.ticker,
+        name: official.name,
+        market: official.industry || official.market,
+        country: "Taiwan",
+        chainPosition: official.industry || official.market,
+        beneficiaryTier: "Observation" as const,
+        exposure: _BULK_SEED_EXPOSURE,
+        validation: _BULK_SEED_VALIDATION,
+        notes: `Official company master read-through from ${official.market} OpenAPI ${new Date().toISOString().slice(0, 10)}`,
+        themeIds: [],
+      },
+      options
+    );
+  } catch (err) {
+    // Another request may have created the same ticker between our list and insert.
+    // Re-read once so concurrent customer searches do not surface a false 404.
+    const companies = await repo.listCompanies(undefined, options).catch(() => []);
+    const existing = companies.find((company) => company.ticker === normalizedTicker);
+    if (existing) return existing;
+    console.warn(
+      `[companies/read-through] failed ticker=${normalizedTicker}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
 app.post("/api/v1/admin/companies/bulk-seed", async (c) => {
   const session = c.get("session");
   if (session.user.role !== "Owner") {
@@ -16459,7 +16557,7 @@ function startSchedulers(workspaceSlug: string): void {
 
         // Filter to valid ticker format and known exchange prefixes
         const valid = rows.filter(
-          (r) => r.ticker && /^\d{4,6}$/.test(r.ticker.trim())
+          (r) => r.ticker && OFFICIAL_COMPANY_TICKER_PATTERN.test(r.ticker)
         );
         _misUniverseCache = valid;
         _misUniverseCacheUpdatedAt = now;
