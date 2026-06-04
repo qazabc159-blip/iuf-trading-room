@@ -389,9 +389,10 @@ export function HeaderDock() {
     router.push("/login");
   }
 
+  const isOwner = accountUser?.role === "Owner";
   const drawerTitle = drawer === "notifications" ? "警示" : "系統狀態";
   const accountName = accountUser?.name?.trim() || accountUser?.email || "IUF 使用者";
-  const accountRoleLabel = accountUser?.role === "Owner"
+  const accountRoleLabel = isOwner
     ? "Owner 管理者"
     : accountUser?.role
       ? `${accountUser.role} 帳號`
@@ -624,9 +625,20 @@ export function HeaderDock() {
                 <b>SIM-only v1</b>
                 <p>模擬交易與券商 SIM 會清楚分線；正式交易維持關閉。</p>
               </div>
-              <Link className="header-dock-drawer-link" href="/ops" onClick={() => setDrawer(null)}>
-                開啟營運監控
-              </Link>
+              {isOwner ? (
+                <Link className="header-dock-drawer-link" href="/ops" onClick={() => setDrawer(null)}>
+                  開啟營運監控
+                </Link>
+              ) : (
+                <>
+                  <Link className="header-dock-drawer-link" href="/settings/broker" onClick={() => setDrawer(null)}>
+                    券商連線與 SIM 設定
+                  </Link>
+                  <Link className="header-dock-drawer-link" href="/settings/subscription" onClick={() => setDrawer(null)}>
+                    訂閱方案與功能權限
+                  </Link>
+                </>
+              )}
             </div>
           )}
         </aside>

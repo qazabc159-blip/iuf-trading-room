@@ -29,9 +29,12 @@ describe("product navigation owner boundary", () => {
 
   it("does not label every signed-in account as Owner in the header account menu", () => {
     expect(headerDockSource).toContain("apiGetMe");
+    expect(headerDockSource).toContain('const isOwner = accountUser?.role === "Owner"');
     expect(headerDockSource).toContain("accountRoleLabel");
     expect(headerDockSource).not.toContain("Owner Workspace");
     expect(headerDockSource).toContain('href="/settings/subscription"');
+    expect(headerDockSource).toContain('{isOwner ? (');
+    expect(headerDockSource).toContain('href="/settings/broker"');
   });
 
   it("keeps owner internal controls outside customer subscription tiers", () => {
