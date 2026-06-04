@@ -50,5 +50,9 @@ describe("product navigation owner boundary", () => {
     expect(briefsSource).toContain("const ownerMode = entitlements?.data?.ownerInternal.visible === true");
     expect(briefsSource).toContain("{ownerMode && (");
     expect(briefsSource).toContain("等待 Owner 審核後發布");
+    expect(briefsSource).toContain("CustomerBriefReadinessPanel");
+    expect(briefsSource).toContain("{ownerMode ? (");
+    expect(briefsSource).toContain("{ownerMode && <JobsPanel");
+    expect(briefsSource).toContain("{ownerMode && !displayedBrief && <DraftSourceTrailPanel");
   });
 });

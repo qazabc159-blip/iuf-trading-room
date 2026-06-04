@@ -432,6 +432,56 @@ function DispatcherDebugPanel({
   );
 }
 
+function customerBriefNextStep(surface: DailyBriefSurface, freshness: BriefFreshness) {
+  if (surface.state === "PUBLISHED" && freshness === "LIVE") {
+    return "今日正式簡報已發布，可直接閱讀；若要進一步下單或觀察，請回到 AI 推薦與交易室交叉確認。";
+  }
+  if (surface.state === "PUBLISHED" && freshness === "STALE") {
+    return "目前顯示的是上一份正式簡報；今日簡報尚未完成，不把過期內容包裝成今日建議。";
+  }
+  if (surface.state === "TEMPLATE_BLOCKED") {
+    return "今日資料已進入系統，但簡報格式未達產品標準，暫不當作正式投資參考。";
+  }
+  if (surface.state === "AWAITING_REVIEW") {
+    return "今日簡報正在審核中；完成前只顯示等待狀態，不把草稿當作正式內容。";
+  }
+  if (surface.state === "BLOCKED") {
+    return "今日簡報資料通道異常，請先看市場情報、AI 推薦與公司頁，不依賴這份簡報。";
+  }
+  return "今日簡報尚未產生；系統會顯示可用的最後正式版與資料狀態。";
+}
+
+function CustomerBriefReadinessPanel({
+  surface,
+  freshness,
+  latestAgeDays,
+}: {
+  surface: DailyBriefSurface;
+  freshness: BriefFreshness;
+  latestAgeDays: number | null;
+}) {
+  const sourceState = surface.state === "PUBLISHED" && freshness === "LIVE"
+    ? "今日可用"
+    : surface.state === "TEMPLATE_BLOCKED"
+      ? "待重產"
+      : surface.state === "AWAITING_REVIEW"
+        ? "審核中"
+        : surface.state === "BLOCKED"
+          ? "資料異常"
+          : "等待產生";
+
+  return (
+    <Panel code="BRF-READY" title="今日簡報可用性" sub="客戶版只顯示正式內容與可判斷狀態" right={sourceState}>
+      <div className="brief-source-trail">
+        <span>最後正式版：{surface.latest ? `${surface.latest.date} / ${briefAgeCopy(latestAgeDays)}` : "尚無正式簡報"}</span>
+        <span>今日狀態：{surfaceLabel(surface.state)}</span>
+        <span>資料原則：未達模板標準不當作正式簡報</span>
+      </div>
+      <p className="state-reason">{customerBriefNextStep(surface, freshness)}</p>
+    </Panel>
+  );
+}
+
 function BriefStatePanel({ surface, ownerMode }: { surface: DailyBriefSurface; ownerMode: boolean }) {
   const latestCopy = surface.latest ? `${surface.latest.date} / ${briefAgeCopy(briefAgeDays(surface.latest.date))}` : "尚無正式簡報";
   return (
@@ -655,32 +705,36 @@ export default async function BriefsPage() {
           <span className={`parity-kpi-value ${briefData.briefs.length ? "ok" : "dim"}`}>{formatCount(briefData.briefs.length)}</span>
           <span className="parity-kpi-sub">已發布</span>
         </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">今日待審草稿</span>
-          <span className={`parity-kpi-value ${drafts.data.length ? "warn" : "dim"}`}>{formatCount(drafts.data.length)}</span>
-          <span className="parity-kpi-sub">今天等待審核</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">OpenAlice</span>
-          <span className={`parity-kpi-value ${openAlice.state === "LIVE" ? "ok" : "bad"}`}>
-            {openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "需處理"}
-          </span>
-          <span className="parity-kpi-sub">AI 流程</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">排程</span>
-          <span className={`parity-kpi-value ${dispatcher.state === "LIVE" ? "ok" : "bad"}`}>
-            {dispatcher.state === "LIVE" ? dispatcherDisplayLabel(dispatcher.data?.lastTickResult ?? null, surface.state) : "需處理"}
-          </span>
-          <span className="parity-kpi-sub">每日排程</span>
-        </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">任務佇列</span>
-          <span className={`parity-kpi-value ${jobs.state === "LIVE" && jobs.data.length > 0 ? "ok" : "dim"}`}>
-            {jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? "0" : "--"}
-          </span>
-          <span className="parity-kpi-sub">工作紀錄</span>
-        </div>
+        {ownerMode && (
+          <>
+            <div className="parity-kpi-cell">
+              <span className="parity-kpi-label">今日待審草稿</span>
+              <span className={`parity-kpi-value ${drafts.data.length ? "warn" : "dim"}`}>{formatCount(drafts.data.length)}</span>
+              <span className="parity-kpi-sub">今天等待審核</span>
+            </div>
+            <div className="parity-kpi-cell">
+              <span className="parity-kpi-label">OpenAlice</span>
+              <span className={`parity-kpi-value ${openAlice.state === "LIVE" ? "ok" : "bad"}`}>
+                {openAlice.state === "LIVE" ? surfaceStateLabel(openAliceSurface(openAlice.data)) : "需處理"}
+              </span>
+              <span className="parity-kpi-sub">AI 流程</span>
+            </div>
+            <div className="parity-kpi-cell">
+              <span className="parity-kpi-label">排程</span>
+              <span className={`parity-kpi-value ${dispatcher.state === "LIVE" ? "ok" : "bad"}`}>
+                {dispatcher.state === "LIVE" ? dispatcherDisplayLabel(dispatcher.data?.lastTickResult ?? null, surface.state) : "需處理"}
+              </span>
+              <span className="parity-kpi-sub">每日排程</span>
+            </div>
+            <div className="parity-kpi-cell">
+              <span className="parity-kpi-label">任務佇列</span>
+              <span className={`parity-kpi-value ${jobs.state === "LIVE" && jobs.data.length > 0 ? "ok" : "dim"}`}>
+                {jobs.state === "LIVE" ? jobs.data.length : jobs.state === "EMPTY" ? "0" : "--"}
+              </span>
+              <span className="parity-kpi-sub">工作紀錄</span>
+            </div>
+          </>
+        )}
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">最後正式版</span>
           <span className={`parity-kpi-value ${freshness === "STALE" ? "warn" : freshness === "BLOCKED" ? "bad" : "ok"}`} style={{ fontSize: 13 }}>
@@ -722,22 +776,34 @@ export default async function BriefsPage() {
 
       <section className="brief-overview-grid">
         <BriefStatePanel surface={surface} ownerMode={ownerMode} />
-        <OpenAlicePanel openAlice={openAlice} />
-        <DispatcherDebugPanel dispatcher={dispatcher} surfaceState={surface.state} />
+        {ownerMode ? (
+          <>
+            <OpenAlicePanel openAlice={openAlice} />
+            <DispatcherDebugPanel dispatcher={dispatcher} surfaceState={surface.state} />
+          </>
+        ) : (
+          <CustomerBriefReadinessPanel surface={surface} freshness={freshness} latestAgeDays={latestAgeDays} />
+        )}
       </section>
 
       <section className="brief-workflow-note">
         <div className="brief-source-card">
           <span>下一步</span>
-          <strong>{surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "TEMPLATE_BLOCKED" ? "重產新版簡報" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追每日簡報流程"}</strong>
-          <p>目標是每日自動產生、AI 審核、來源紀錄可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。</p>
+          <strong>{ownerMode
+            ? (surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "TEMPLATE_BLOCKED" ? "重產新版簡報" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追每日簡報流程")
+            : (surface.state === "PUBLISHED" ? "閱讀今日正式簡報" : surface.state === "TEMPLATE_BLOCKED" ? "等待重產後再採用" : surface.state === "AWAITING_REVIEW" ? "等待正式發布" : "先查看市場情報與 AI 推薦")}
+          </strong>
+          <p>{ownerMode
+            ? "目標是每日自動產生、AI 審核、來源紀錄可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。"
+            : "每日簡報只呈現正式發布內容；若今日簡報尚未完成或模板不合格，頁面會明確顯示等待或待重產，不把內部草稿、排程或工作流當作產品內容。"}
+          </p>
         </div>
       </section>
 
-      <JobsPanel jobs={jobs} />
-      <DraftQueuePanel drafts={drafts} ownerMode={ownerMode} />
+      {ownerMode && <JobsPanel jobs={jobs} />}
+      {ownerMode && <DraftQueuePanel drafts={drafts} ownerMode={ownerMode} />}
       <PublishedBriefPanel brief={displayedBrief} />
-      {!displayedBrief && <DraftSourceTrailPanel drafts={drafts.data} />}
+      {ownerMode && !displayedBrief && <DraftSourceTrailPanel drafts={drafts.data} />}
     </PageFrame>
   );
 }
