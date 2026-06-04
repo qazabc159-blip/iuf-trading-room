@@ -33,6 +33,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).toContain("模擬帳本隔離");
     expect(ticketHtml).toContain("待授權");
     expect(ticketHtml).toContain("已鎖定");
+    expect(ticketHtml).toContain("買進<span class=\"tag\">買方</span>");
+    expect(ticketHtml).toContain("賣出<span class=\"tag\">賣方</span>");
+    expect(ticketHtml).toContain("<span class=\"sub\">平台模擬</span>");
     expect(liveHydration).toContain("需要 Owner 登入才能預覽 / 送出紙上單");
     expect(liveHydration).toContain("需要 Owner 登入");
     expect(ticketHtml).not.toContain("PAPER MODE ACTIVE");
@@ -40,6 +43,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(ticketHtml).not.toContain("KGI READ-ONLY");
     expect(ticketHtml).not.toContain("AUTH REQUIRED");
     expect(ticketHtml).not.toContain("LOCKED");
+    expect(ticketHtml).not.toContain(">LONG<");
+    expect(ticketHtml).not.toContain(">SHORT<");
+    expect(ticketHtml).not.toContain("<span class=\"sub\">PAPER</span>");
     expect(liveHydration).not.toContain("KGI READ-ONLY");
     expect(liveHydration).not.toContain("AUTH REQUIRED");
     expect(liveHydration).not.toContain("owner session");
@@ -423,7 +429,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiServerSource).toContain("OWNED_DAILY_KLINE_PRIORITY.get(a.ticker)");
     expect(apiServerSource).toContain("preserveOrder = false");
     expect(apiServerSource).toContain("preserveOrder=${preserveOrder}");
-    expect(apiServerSource).toContain("schedulerPositiveInt(\"FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE\", 48),\n      true");
+    expect(apiServerSource).toMatch(
+      /takeFinMindSchedulerBatch\([\s\S]*"ohlcv-deep-backfill"[\s\S]*schedulerPositiveInt\("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48\),\s*true\s*\)/
+    );
     expect(apiServerSource).toContain("ohlcv-deep-backfill");
     expect(apiServerSource).toContain("COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')");
   });
