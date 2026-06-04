@@ -27,6 +27,8 @@ describe("product navigation owner boundary", () => {
     expect(homepageSource).not.toContain('href: "/admin/brain/llm"');
     expect(homepageSource).not.toContain('href: "/admin/tools"');
     expect(homepageSource).not.toContain('href: "/admin/uta/accounts"');
+    expect(homepageSource).toContain("IUF Trading Room");
+    expect(homepageSource).toContain("v3.0 · Tactical");
     expect(homepageSource).toContain("Paper / SIM 模式 · Real Order 停用");
     expect(homepageSource).toContain('title: "AI 推薦", sub: "推薦股票"');
   });
