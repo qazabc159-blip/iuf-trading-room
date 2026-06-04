@@ -20,4 +20,13 @@ describe("subscription entitlement wiring", () => {
     expect(contractSource).toContain("source: owner ? \"owner_override\" : \"role_default\"");
     expect(pageSource).toContain("不顯示給一般客戶");
   });
+
+  it("shows concrete tier boundaries before payment wiring exists", () => {
+    expect(contractSource).toContain("usageLimits");
+    expect(contractSource).toContain("onboardingNote");
+    expect(contractSource).toContain("正式實單預設禁用");
+    expect(pageSource).toContain("方案邊界");
+    expect(pageSource).toContain("tier.usageLimits.map");
+    expect(pageSource).toContain("tier.onboardingNote");
+  });
 });

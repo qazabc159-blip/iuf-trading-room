@@ -43,6 +43,8 @@ export type SubscriptionTier = {
   monthlyPriceTwd: number | null;
   yearlyPriceTwd: number | null;
   entitlementSummary: string;
+  usageLimits: string[];
+  onboardingNote: string;
   features: Partial<Record<SubscriptionFeatureId, EntitlementStatus>>;
 };
 
@@ -110,6 +112,12 @@ export const subscriptionTiers: SubscriptionTier[] = [
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
     entitlementSummary: "看懂市場與公司，不開券商模擬委託。",
+    usageLimits: [
+      "市場情報、熱力圖與每日簡報以閱讀為主。",
+      "AI 推薦與公司 AI 報告只開摘要，不提供完整交易室帶入流程。",
+      "交易室限 Paper 預覽與觀察，不開 KGI read-only / SIM。",
+    ],
+    onboardingNote: "適合先試用市場情報與觀察清單；不需要券商憑證。",
     features: {
       market_intel: "included",
       ai_recommendations: "limited",
@@ -131,6 +139,12 @@ export const subscriptionTiers: SubscriptionTier[] = [
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
     entitlementSummary: "把 AI 判斷帶進交易室，完成研究到紙上單的流程。",
+    usageLimits: [
+      "AI 推薦、每日簡報、公司 AI 報告完整開放。",
+      "交易室可搜尋台股、看行情/K 線、建立 Paper 委託與成交紀錄。",
+      "不讀取券商庫存，也不送 KGI SIM；券商功能需升級高級方案。",
+    ],
+    onboardingNote: "適合主要使用者；完成帳號設定後即可使用 Paper 交易室，不需要券商憑證。",
     features: {
       market_intel: "included",
       ai_recommendations: "included",
@@ -152,6 +166,12 @@ export const subscriptionTiers: SubscriptionTier[] = [
     monthlyPriceTwd: null,
     yearlyPriceTwd: null,
     entitlementSummary: "連接券商 SIM/read-only 與進階監控，但正式下單仍需另行開通。",
+    usageLimits: [
+      "包含中級方案全部功能。",
+      "開放 KGI read-only / SIM 前，必須完成安全憑證、連線檢查與風控狀態。",
+      "正式實單預設禁用，不因訂閱高級方案自動開啟。",
+    ],
+    onboardingNote: "適合進階使用者；需要完成券商連線流程，憑證只從安全環境讀取。",
     features: {
       market_intel: "included",
       ai_recommendations: "included",
