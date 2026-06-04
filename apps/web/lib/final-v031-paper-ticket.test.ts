@@ -14,6 +14,7 @@ const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "
 const apiClientSource = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
 const apiServerSource = readFileSync(new URL("../../api/src/server.ts", import.meta.url), "utf8");
+const homePageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
@@ -372,6 +373,35 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain('? "rgba(46,204,113," + alpha + ")"');
     expect(marketIntelHtml).toContain(".htile .pct.up { color: var(--bad); }");
     expect(marketIntelHtml).toContain(".htile .pct.dn { color: var(--ok); }");
+  });
+
+  it("keeps product K-line quality owned by our database instead of discovering shallow charts in the browser", () => {
+    expect(apiServerSource).toContain("/api/v1/diagnostics/kline-depth");
+    expect(apiServerSource).toContain("OWNED_DAILY_KLINE_REQUIRED_BARS = 720");
+    expect(apiServerSource).toContain("OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS = 3650");
+    expect(apiServerSource).toContain("resolveOhlcvDeepBackfillCandidates");
+    expect(apiServerSource).toContain("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE");
+    expect(apiServerSource).toContain("ohlcv-deep-backfill");
+    expect(apiServerSource).toContain("COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')");
+  });
+
+  it("keeps the full-market heatmap visible from verified representative tiles when TWSE industry rows are cold", () => {
+    expect(homePageSource).toContain("function buildMarketWideRowsFromHeatmap");
+    expect(homePageSource).toContain("owned_representative_aggregate");
+    expect(homePageSource).toContain("const derivedFullMarketRows = fullMarketRows.length > 0");
+    expect(homePageSource).toContain("wideRowsUseRepresentativeAggregate");
+    expect(homePageSource).toContain("rows={derivedFullMarketRows}");
+    expect(homePageSource).toContain('marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}');
+  });
+
+  it("keeps the homepage TAIEX mini-chart backed by owned intraday index history instead of an empty line", () => {
+    expect(apiServerSource).toContain("type OverviewMisIndexBar");
+    expect(apiServerSource).toContain("_overviewMisIndexHistory");
+    expect(apiServerSource).toContain("function updateOverviewMisIndexHistory");
+    expect(apiServerSource).toContain("function mergeOverviewIndexHistory");
+    expect(apiServerSource).toContain('key: "TAIEX"');
+    expect(apiServerSource).toContain("history: mergeOverviewIndexHistory");
+    expect(apiServerSource).not.toContain('history: (enrichedIndex["history"] as unknown[]) ?? []');
   });
 
   it("shows a formal institutional-data degraded state instead of a blank syncing line", () => {
