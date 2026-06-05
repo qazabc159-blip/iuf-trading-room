@@ -6363,10 +6363,26 @@ const ohlcvQuerySchema = z.object({
   interval: z.enum(["1d", "1w", "1m", "5m", "15m", "60m"]).optional().default("1d")
 });
 
+function normalizeOhlcvInterval(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const value = raw.trim().toLowerCase();
+  if (value === "1mo" || value === "1mon" || value === "1month" || value === "month") return "1m";
+  if (value === "1wk" || value === "1week" || value === "week") return "1w";
+  return value;
+}
+
+function normalizeOhlcvQuery(raw: Record<string, string | undefined>): Record<string, string | undefined> {
+  const interval = normalizeOhlcvInterval(raw.interval ?? raw.timeframe ?? raw.freq);
+  return {
+    ...raw,
+    interval: interval ?? raw.interval
+  };
+}
+
 app.get("/api/v1/companies/:id/ohlcv", async (c) => {
   let query: ReturnType<typeof ohlcvQuerySchema.parse>;
   try {
-    query = ohlcvQuerySchema.parse(c.req.query());
+    query = ohlcvQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -6545,7 +6561,7 @@ const ohlcvBulkQuerySchema = z.object({
 app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
   let query: ReturnType<typeof ohlcvBulkQuerySchema.parse>;
   try {
-    query = ohlcvBulkQuerySchema.parse(c.req.query());
+    query = ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);

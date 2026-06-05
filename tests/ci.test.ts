@@ -14735,6 +14735,24 @@ test("TRADING-ROOM-4GAP-1: ohlcvQuerySchema in server.ts includes 5m/15m/60m + N
   );
 });
 
+test("TRADING-ROOM-KLINE-ALIAS-1: OHLCV route accepts product timeframe aliases", async () => {
+  const src = await import("fs").then((fs) =>
+    fs.readFileSync("apps/api/src/server.ts", "utf8")
+  );
+  assert.ok(
+    src.includes("function normalizeOhlcvQuery") && src.includes("raw.interval ?? raw.timeframe ?? raw.freq"),
+    "TRADING-ROOM-KLINE-ALIAS-1: OHLCV route must accept timeframe/freq aliases, not only interval"
+  );
+  assert.ok(
+    src.includes('value === "1mo"') && src.includes('return "1m"'),
+    "TRADING-ROOM-KLINE-ALIAS-1: product timeframe=1mo must normalize to stored monthly interval=1m"
+  );
+  assert.ok(
+    src.includes("ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery"),
+    "TRADING-ROOM-KLINE-ALIAS-1: bulk OHLCV route must share the same alias normalization"
+  );
+});
+
 // =============================================================================
 // TRADING-ROOM-4GAP-2: _aggregateFinMindKBars aggregates 1-min rows correctly
 // =============================================================================
