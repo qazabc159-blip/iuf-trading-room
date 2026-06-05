@@ -111,11 +111,52 @@ const ANN_CSS = `
   border-left: 2px solid rgba(226,184,92,0.32);
   background: rgba(226,184,92,0.04);
 }
+._co-ann-body p {
+  margin: 0 0 8px;
+}
+._co-ann-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+}
+._co-ann-detail-grid div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(220,228,240,0.09);
+  background: rgba(8,12,18,0.32);
+}
+._co-ann-detail-grid dt {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--night-soft, #566276);
+}
+._co-ann-detail-grid dd {
+  margin: 0;
+  color: var(--night-ink, #e7ecf3);
+  overflow-wrap: anywhere;
+}
+._co-ann-link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 9px;
+  padding: 6px 10px;
+  border: 1px solid rgba(100,170,255,0.42);
+  color: #8fc3ff;
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+}
 ._co-ann-expand {
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--night-soft, #566276);
   margin-top: 3px;
+}
+@media (max-width: 720px) {
+  ._co-ann-detail-grid { grid-template-columns: 1fr; }
 }
 `;
 
@@ -142,13 +183,22 @@ function annKindLabel(category: string): string {
   return category || "公告";
 }
 
+function annSourceLabel(source?: string | null): string {
+  const text = String(source || "").toLowerCase();
+  if (text.includes("twse_iih")) return "TWSE 公司資訊揭露";
+  if (text.includes("tw_announcements") || text.includes("twse_announcements")) return "TWSE 公告快取";
+  if (text.includes("finmind")) return "FinMind 新聞";
+  return source || "正式公告來源";
+}
+
 function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
   const [expanded, setExpanded] = useState(false);
-  const hasBody = Boolean(item.body?.trim());
+  const body = item.body?.trim() ?? "";
+  const hasDetail = Boolean(body || item.url || item.source);
   const kind = annKind(item.category ?? "");
 
   return (
-    <div className="_co-ann-row" onClick={() => hasBody && setExpanded(v => !v)}>
+    <div className="_co-ann-row" onClick={() => hasDetail && setExpanded(v => !v)}>
       <span className={`_co-ann-dot --${kind}`} />
       <div className="_co-ann-content">
         <div className="_co-ann-meta">
@@ -156,11 +206,32 @@ function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
           <span className={`_co-ann-badge --${kind}`}>{annKindLabel(item.category ?? "")}</span>
         </div>
         <div className="_co-ann-title">{item.title || "未命名公告"}</div>
-        {hasBody && (
+        {hasDetail && (
           <div className="_co-ann-expand">{expanded ? "▲ 收合" : "▼ 展開詳情"}</div>
         )}
-        {expanded && hasBody && (
-          <div className="_co-ann-body">{item.body}</div>
+        {expanded && hasDetail && (
+          <div className="_co-ann-body">
+            <p>{body || "官方來源未提供完整內文；請開啟正式公告頁查看全文。"}</p>
+            <dl className="_co-ann-detail-grid">
+              <div>
+                <dt>日期</dt>
+                <dd>{item.date || "--"}</dd>
+              </div>
+              <div>
+                <dt>來源</dt>
+                <dd>{annSourceLabel(item.source)}</dd>
+              </div>
+              <div>
+                <dt>公司</dt>
+                <dd>{item.ticker || ""} {item.companyName || ""}</dd>
+              </div>
+            </dl>
+            {item.url ? (
+              <a className="_co-ann-link" href={item.url} target="_blank" rel="noreferrer">
+                開啟正式公告
+              </a>
+            ) : null}
+          </div>
         )}
       </div>
     </div>

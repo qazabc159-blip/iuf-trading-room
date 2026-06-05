@@ -61,10 +61,45 @@ function firstPositiveNumber(...values: unknown[]) {
   return null;
 }
 
-function latestTick(ticks: unknown[]) {
+function finiteNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundNumber(value: number, digits = 2) {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function normalizeSymbolToken(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\.TW$/, "")
+    .replace(/[^0-9A-Z._-]/g, "");
+}
+
+function tickSymbolMatch(tick: Record<string, unknown>, symbol: string): boolean | null {
+  const expected = normalizeSymbolToken(symbol);
+  const keys = ["symbol", "stockNo", "stockId", "stock_id", "code", "ticker", "ch"];
+  let sawSymbolField = false;
+  for (const key of keys) {
+    const raw = tick[key];
+    if (raw === null || raw === undefined || raw === "") continue;
+    sawSymbolField = true;
+    if (normalizeSymbolToken(raw) === expected) return true;
+  }
+  return sawSymbolField ? false : null;
+}
+
+function latestTick(ticks: unknown[], symbol: string, allowUnlabeled: boolean) {
   if (!ticks.length) return null;
   const scored = ticks
     .filter((tick): tick is Record<string, unknown> => Boolean(tick) && typeof tick === "object")
+    .filter((tick) => {
+      const match = tickSymbolMatch(tick, symbol);
+      return match === true || (allowUnlabeled && match === null);
+    })
     .map((tick, index) => {
       const stamp = String(tick._received_at ?? tick.datetime ?? tick.timestamp ?? tick.ts ?? "");
       const parsed = Date.parse(stamp);
@@ -133,15 +168,33 @@ async function buildQuotePayload(symbol: string, companyId: string | null, reque
   const bidAsk = bidAskResult.ok ? bidAskResult.data : null;
   const ticksEnvelope = ticksResult.ok ? ticksResult.data : null;
   const ticks = nestedArray(ticksEnvelope, "ticks");
-  const tick = latestTick(ticks);
   const quoteObject = quote && typeof quote === "object" ? quote as Record<string, unknown> : {};
-  const tickPrice = tickLastPrice(tick);
-  const lastPrice = tickPrice ?? firstPositiveNumber(
+  const quotePrice = firstPositiveNumber(
     quoteObject.lastPrice,
     quoteObject.price,
     quoteObject.close,
     quoteObject.closePrice,
   );
+  const tick = latestTick(ticks, symbol, quotePrice === null);
+  const tickPrice = tickLastPrice(tick);
+  const lastPrice = tickPrice ?? quotePrice;
+  const prevClose = firstPositiveNumber(
+    quoteObject.prevClose,
+    quoteObject.previousClose,
+    quoteObject.referencePrice,
+    quoteObject.yesterdayClose,
+    quoteObject.lastClose,
+  );
+  const computedChange = lastPrice !== null && prevClose !== null
+    ? roundNumber(lastPrice - prevClose)
+    : null;
+  const computedChangePct = computedChange !== null && prevClose !== null && prevClose > 0
+    ? roundNumber((computedChange / prevClose) * 100)
+    : null;
+  const quoteChange = finiteNumber(quoteObject.change ?? quoteObject.changePrice);
+  const quoteChangePct = finiteNumber(quoteObject.changePct ?? quoteObject.changePercent);
+  const tickChange = tick ? finiteNumber(tick.price_chg ?? tick.change ?? tick.changePrice) : null;
+  const tickPct = tick ? finiteNumber(tick.pct_chg ?? tick.changePct ?? tick.changePercent) : null;
 
   return {
     symbol,
@@ -153,14 +206,15 @@ async function buildQuotePayload(symbol: string, companyId: string | null, reque
     bidAsk,
     ticks,
     lastPrice,
-    change: tick?.price_chg ?? quoteObject.change ?? quoteObject.changePrice ?? null,
-    changePct: tick?.pct_chg ?? quoteObject.changePct ?? quoteObject.changePercent ?? null,
+    prevClose,
+    change: computedChange ?? quoteChange ?? tickChange ?? null,
+    changePct: computedChangePct ?? quoteChangePct ?? tickPct ?? null,
     upstream: {
       quote: { ok: quoteResult.ok, status: quoteResult.status, error: quoteResult.error ?? null },
       bidAsk: { ok: bidAskResult.ok, status: bidAskResult.status, error: bidAskResult.error ?? null },
       ticks: { ok: ticksResult.ok, status: ticksResult.status, error: ticksResult.error ?? null },
     },
-    degraded: !quoteResult.ok || !bidAskResult.ok || !ticksResult.ok || lastPrice == null,
+    degraded: !quoteResult.ok || lastPrice == null,
   };
 }
 

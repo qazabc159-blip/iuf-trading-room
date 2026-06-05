@@ -655,6 +655,14 @@ function announcementBadge(category: string) {
   return "badge";
 }
 
+function announcementSourceLabel(source?: string | null) {
+  const text = String(source || "").toLowerCase();
+  if (text.includes("twse_iih")) return "TWSE 公司資訊揭露";
+  if (text.includes("tw_announcements") || text.includes("twse_announcements")) return "TWSE 公告快取";
+  if (text.includes("finmind")) return "FinMind 新聞";
+  return source || "正式公告來源";
+}
+
 function AnnouncementsSection({ companyId }: { companyId: string }) {
   const [state, setState] = useState<AnnouncementsState>({ status: "loading" });
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -729,10 +737,11 @@ function AnnouncementsSection({ companyId }: { companyId: string }) {
           </div>
           {state.items.slice(0, 12).map((item) => {
             const expanded = expandedId === item.id;
-            const hasBody = Boolean(item.body?.trim());
+            const body = item.body?.trim() ?? "";
+            const hasDetail = Boolean(body || item.url || item.source);
             return (
               <div className="market-intel-row" key={item.id}>
-                {hasBody ? (
+                {hasDetail ? (
                   <button
                     type="button"
                     className="market-intel-button"
@@ -752,7 +761,21 @@ function AnnouncementsSection({ companyId }: { companyId: string }) {
                     <span className="tg soft">公告</span>
                   </div>
                 )}
-                {expanded && hasBody ? <div className="market-intel-body">{item.body}</div> : null}
+                {expanded && hasDetail ? (
+                  <div className="market-intel-body company-announcement-detail">
+                    <p>{body || "官方來源未提供完整內文；請開啟正式公告頁查看原始揭露。"}</p>
+                    <div className="company-announcement-detail-grid">
+                      <span>日期 <b>{item.date || "--"}</b></span>
+                      <span>來源 <b>{announcementSourceLabel(item.source)}</b></span>
+                      <span>公司 <b>{item.ticker || companyId} {item.companyName || ""}</b></span>
+                    </div>
+                    {item.url ? (
+                      <a className="company-announcement-link" href={item.url} target="_blank" rel="noreferrer">
+                        開啟正式公告
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             );
           })}

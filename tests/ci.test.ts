@@ -14126,6 +14126,42 @@ test("COMPANY-ANN-P0-GATE-1: company announcements are cache-first before TWSE l
   assert.equal(routeBlock.includes("getMaterialAnnouncements(stockId"), false, "COMPANY-ANN-P0-GATE-1: product route must not directly call deprecated per-ticker TWSE fetch");
 });
 
+test("COMPANY-ANN-DETAIL-UI-1: company announcements expand official URL details even without body", async () => {
+  const fs = await import("node:fs/promises");
+  const timeline = await fs.readFile("apps/web/app/companies/[symbol]/AnnouncementsPanel.tsx", "utf8");
+  const fullProfile = await fs.readFile("apps/web/app/companies/[symbol]/FullProfilePanels.tsx", "utf8");
+
+  for (const [label, source] of [["timeline", timeline], ["full-profile", fullProfile]] as const) {
+    assert.ok(
+      source.includes("body || item.url || item.source"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must treat official URLs/source metadata as expandable detail`
+    );
+    assert.ok(
+      source.includes("開啟正式公告"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must expose a formal announcement CTA`
+    );
+    assert.ok(
+      source.includes("官方來源未提供完整內文"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must render a useful detail state when TWSE omits body text`
+    );
+  }
+});
+
+test("TRADING-ROOM-QUOTE-STREAM-1: quote stream is symbol-safe and computes change from prev close", async () => {
+  const fs = await import("node:fs/promises");
+  const stream = await fs.readFile("apps/web/app/api/ui-final-v031/quote-stream/route.ts", "utf8");
+  const live = await fs.readFile("apps/web/lib/final-v031-live.ts", "utf8");
+
+  assert.ok(stream.includes("function tickSymbolMatch"), "TRADING-ROOM-QUOTE-STREAM-1: SSE route must reject mismatched KGI ticks");
+  assert.ok(stream.includes("latestTick(ticks, symbol, quotePrice === null)"), "TRADING-ROOM-QUOTE-STREAM-1: SSE route must not let unlabeled ticks override company quote prices");
+  assert.ok(stream.includes("prevClose"), "TRADING-ROOM-QUOTE-STREAM-1: SSE payload must carry previous close for deterministic change math");
+  assert.ok(stream.includes("degraded: !quoteResult.ok || lastPrice == null"), "TRADING-ROOM-QUOTE-STREAM-1: quote must not be marked degraded only because bid/ask or ticks are temporarily unavailable");
+
+  assert.ok(live.includes("function tickSymbolMatch"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must reject mismatched KGI ticks");
+  assert.ok(live.includes("sameSelected ? (live.selected || {}) : {}"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must not inherit previous stock selected state after symbol switch");
+  assert.ok(live.includes("payload.prevClose"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must prefer payload/company prev close over stale selected previous");
+});
+
 // =============================================================================
 // TWSE-ANN-INGEST-1..4: t187ap11_L endpoint switch + 302/404 detection + fallback
 // (fix: twse-announcement-ingest.ts switched primary from t187ap46_L to t187ap11_L)
