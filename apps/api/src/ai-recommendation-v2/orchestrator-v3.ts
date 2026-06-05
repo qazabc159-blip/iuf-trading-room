@@ -38,6 +38,10 @@ import {
   getCompanyNews,
 } from "../tools/market-data-tools.js";
 
+type CompanyFundamentalsObservation = Awaited<ReturnType<typeof getCompanyFundamentals>>;
+type SupplyChainObservation = Awaited<ReturnType<typeof getSupplyChain>>;
+type CompanyNewsObservation = Awaited<ReturnType<typeof getCompanyNews>>;
+
 const DEFAULT_AI_REC_MODEL = "gpt-4o-mini";
 const DEFAULT_AI_REC_FALLBACK_MODEL = "gpt-4o";
 const AI_REC_FALLBACK_COMPLETION_TOKEN_CAPS: Array<[RegExp, number]> = [
@@ -327,6 +331,8 @@ const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
+const V3_MULTIDIM_PREFETCH_CANDIDATES = 8;
+const V3_COMPANY_NEWS_PREFETCH_CANDIDATES = 3;
 const V3_BUCKET_A_PLUS_MIN_SCORE = 85;
 const V3_BUCKET_A_MIN_SCORE = 75;
 const V3_BUCKET_B_MIN_SCORE = 65;
@@ -852,6 +858,13 @@ D. 跨股禁令：每支股票的理由必須互不相同。若 trace 顯示數�
    理由仍要區分各自的「本週新聞催化劑」或「具體技術位置」或「基本面差異」，不允許理由字字相同。
 
 E. 美股隔夜/VIX/DXY：【未接入，不得在分析中編造美股隔夜訊號。如有相關判斷，應明確標注「美股資料未接入，僅依台股內部訊號判斷」。】
+
+F. ORCHESTRATOR-PREFETCH 強制資料：trace 中若出現「[ORCHESTRATOR PREFETCH]」步驟，
+   那是後端已對候選股程式化補抓的基本面/產業鏈/個股新聞資料，可信度等同 tool observation。
+   每檔輸出的 reason/source/subScores 必須使用這些資料：
+   - dataAvailable=true 時，revenue/margin/theme 不得停留在無資料預設分（revenue=8、margin=8、theme=10/8）。
+   - dataAvailable=false 時，必須明寫「資料暫缺，維持預設分」，禁止補腦財務數字或產業鏈位置。
+   - sourceTrail 會保留 get_company_fundamentals / get_supply_chain / get_company_news，請在理由中對應引用。
 === END 深度分析要求 ===
 
 ## 分析過程（以下為 ReAct trace，包含真實市場工具回傳數據）
@@ -1480,6 +1493,385 @@ function technicalFallbackRank(obs: TechnicalObservationForFallback): number {
   return clampNumber(score, 0, 100);
 }
 
+interface V3MultiDimPrefetchStats {
+  candidateTickers: string[];
+  fundamentalsCalls: number;
+  supplyChainCalls: number;
+  companyNewsCalls: number;
+  appendedSteps: number;
+}
+
+function emptyV3MultiDimPrefetchStats(): V3MultiDimPrefetchStats {
+  return {
+    candidateTickers: [],
+    fundamentalsCalls: 0,
+    supplyChainCalls: 0,
+    companyNewsCalls: 0,
+    appendedSteps: 0,
+  };
+}
+
+function traceHasTickerToolObservation(
+  trace: V3ReActStep[],
+  toolName: string,
+  ticker: string
+): boolean {
+  return trace.some((step) => {
+    if (step.toolName !== toolName) return false;
+    const input = traceRecord(step.toolInput);
+    const obs = traceRecord(step.observation);
+    return input?.["ticker"] === ticker || obs?.["ticker"] === ticker;
+  });
+}
+
+function nextTraceRound(trace: V3ReActStep[]): number {
+  const maxRound = trace.reduce((max, step) => Math.max(max, step.round), 0);
+  return maxRound + 1;
+}
+
+export function extractV3MultiDimPrefetchCandidatesFromTrace(
+  trace: V3ReActStep[],
+  limit = V3_MULTIDIM_PREFETCH_CANDIDATES
+): TechnicalObservationForFallback[] {
+  const byTicker = new Map<string, TechnicalObservationForFallback>();
+  for (const step of trace) {
+    const obs = extractTechnicalObservationForFallback(step);
+    if (!obs) continue;
+    if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
+  }
+
+  return Array.from(byTicker.values())
+    .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
+    .sort((a, b) =>
+      b.rank - a.rank ||
+      (b.obs.changePct ?? -999) - (a.obs.changePct ?? -999) ||
+      a.obs.ticker.localeCompare(b.obs.ticker)
+    )
+    .slice(0, limit)
+    .map(({ obs }) => obs);
+}
+
+async function appendProgrammaticToolStep(
+  trace: V3ReActStep[],
+  toolName: "get_company_fundamentals" | "get_supply_chain" | "get_company_news",
+  ticker: string,
+  workspaceId?: string | null
+): Promise<void> {
+  let observation: unknown;
+  try {
+    observation = await dispatchMarketToolV3(toolName, { ticker }, workspaceId);
+  } catch (err) {
+    observation = { ticker, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  trace.push({
+    round: nextTraceRound(trace),
+    thought: `[ORCHESTRATOR PREFETCH] deterministic ${toolName} for ${ticker} before synthesis.`,
+    toolName,
+    toolInput: { ticker },
+    observation,
+    tokensUsed: 0,
+  });
+}
+
+async function ensureV3MultiDimPrefetchBeforeSynthesis(
+  trace: V3ReActStep[],
+  workspaceId?: string | null
+): Promise<V3MultiDimPrefetchStats> {
+  const candidates = extractV3MultiDimPrefetchCandidatesFromTrace(trace);
+  const stats = emptyV3MultiDimPrefetchStats();
+  stats.candidateTickers = candidates.map((candidate) => candidate.ticker);
+  if (candidates.length === 0) return stats;
+
+  for (const candidate of candidates) {
+    if (traceHasTickerToolObservation(trace, "get_company_fundamentals", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_company_fundamentals", candidate.ticker, workspaceId);
+    stats.fundamentalsCalls++;
+    stats.appendedSteps++;
+  }
+
+  for (const candidate of candidates) {
+    if (traceHasTickerToolObservation(trace, "get_supply_chain", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_supply_chain", candidate.ticker, workspaceId);
+    stats.supplyChainCalls++;
+    stats.appendedSteps++;
+  }
+
+  for (const candidate of candidates.slice(0, V3_COMPANY_NEWS_PREFETCH_CANDIDATES)) {
+    if (traceHasTickerToolObservation(trace, "get_company_news", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_company_news", candidate.ticker, workspaceId);
+    stats.companyNewsCalls++;
+    stats.appendedSteps++;
+  }
+
+  console.info(
+    `[v3-orchestrator] deterministic multidim prefetch: candidates=${stats.candidateTickers.join(",") || "(none)"}, ` +
+    `fundamentals=${stats.fundamentalsCalls}, supply_chain=${stats.supplyChainCalls}, company_news=${stats.companyNewsCalls}`
+  );
+  return stats;
+}
+
+function getFundamentalsTraceByTicker(trace: V3ReActStep[]): Map<string, CompanyFundamentalsObservation> {
+  const byTicker = new Map<string, CompanyFundamentalsObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_company_fundamentals") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as CompanyFundamentalsObservation);
+  }
+  return byTicker;
+}
+
+function getSupplyChainTraceByTicker(trace: V3ReActStep[]): Map<string, SupplyChainObservation> {
+  const byTicker = new Map<string, SupplyChainObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_supply_chain") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as SupplyChainObservation);
+  }
+  return byTicker;
+}
+
+function getCompanyNewsTraceByTicker(trace: V3ReActStep[]): Map<string, CompanyNewsObservation> {
+  const byTicker = new Map<string, CompanyNewsObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_company_news") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as CompanyNewsObservation);
+  }
+  return byTicker;
+}
+
+export function scoreV3RevenueFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number {
+  if (!fundamentals?.dataAvailable) return 8;
+  let score = 8;
+  switch (fundamentals.revenueYoyTrend) {
+    case "accelerating":
+      score += 4;
+      break;
+    case "positive":
+      score += 2;
+      break;
+    case "decelerating":
+      score -= 1;
+      break;
+    case "negative":
+      score -= 4;
+      break;
+  }
+
+  const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+  const latestYoy = monthlyRevenue
+    .map((month) => month.yoy)
+    .find((value): value is number => value !== null);
+  if (latestYoy !== undefined) {
+    if (latestYoy >= 20) score += 2;
+    else if (latestYoy > 0) score += 1;
+    else if (latestYoy < 0) score -= 3;
+  }
+
+  const eps = toFiniteNumber(fundamentals.epsLatestQuarter);
+  if (eps !== null) {
+    if (eps > 0) score += 2;
+    else if (eps < 0) score -= 2;
+  }
+
+  return Math.round(clampNumber(score, 0, 15));
+}
+
+export function scoreV3MarginFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number {
+  if (!fundamentals?.dataAvailable) return 8;
+  const gross = toFiniteNumber(fundamentals.grossMarginPct);
+  const operating = toFiniteNumber(fundamentals.operatingMarginPct);
+  const eps = toFiniteNumber(fundamentals.epsLatestQuarter);
+  const hasMarginData = gross !== null || operating !== null || eps !== null;
+  if (!hasMarginData) return 8;
+
+  let score = 8;
+  if (gross !== null) {
+    if (gross >= 50) score += 4;
+    else if (gross >= 35) score += 3;
+    else if (gross >= 20) score += 2;
+    else if (gross > 0) score += 1;
+    else score -= 2;
+  }
+
+  if (operating !== null) {
+    if (operating >= 25) score += 3;
+    else if (operating >= 15) score += 2;
+    else if (operating > 0) score += 1;
+    else score -= 3;
+  }
+
+  if (eps !== null) {
+    if (eps > 0) score += 1;
+    else if (eps < 0) score -= 2;
+  }
+
+  return Math.round(clampNumber(score, 0, 15));
+}
+
+function scoreV3ValuationFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number | null {
+  const per = toFiniteNumber(fundamentals?.per);
+  if (!fundamentals?.dataAvailable || per === null) return null;
+  if (per <= 0) return 3;
+  if (per < 15) return 5;
+  if (per <= 25) return 4;
+  if (per <= 35) return 3;
+  if (per <= 50) return 2;
+  return 1;
+}
+
+export function scoreV3ThemeFromSupplyChain(
+  supplyChain: SupplyChainObservation | null | undefined,
+  fallbackScore = 10
+): number {
+  if (!supplyChain?.dataAvailable) return Math.round(clampNumber(fallbackScore, 0, 20));
+
+  const tier = String(supplyChain.beneficiaryTier ?? "").toLowerCase();
+  let score = tier === "core" ? 18
+    : tier === "direct" ? 15
+    : tier === "indirect" ? 12
+    : tier === "observation" ? 9
+    : 10;
+
+  if (supplyChain.chainPosition) score += 1;
+
+  const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+  const lifecycles = themes.map((theme) => theme.lifecycle.toLowerCase());
+  if (lifecycles.some((lifecycle) => lifecycle.includes("expansion"))) score += 2;
+  if (lifecycles.some((lifecycle) => lifecycle.includes("growth"))) score += 1;
+  if (lifecycles.some((lifecycle) => lifecycle.includes("crowded"))) score -= 4;
+
+  return Math.round(clampNumber(score, 0, 20));
+}
+
+function buildV3MultiDimBullets(
+  fundamentals: CompanyFundamentalsObservation | null | undefined,
+  supplyChain: SupplyChainObservation | null | undefined,
+  companyNews: CompanyNewsObservation | null | undefined
+): { whyBuy: string[]; whyNotBuy: string[] } {
+  const whyBuy: string[] = [];
+  const whyNotBuy: string[] = [];
+
+  if (fundamentals) {
+    if (fundamentals.dataAvailable) {
+      const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+      const latestRevenue = monthlyRevenue[0];
+      const yoyText = latestRevenue && latestRevenue.yoy !== null && latestRevenue.yoy !== undefined
+        ? `${latestRevenue.month}月營收YoY ${latestRevenue.yoy}%`
+        : `月營收趨勢 ${fundamentals.revenueYoyTrend}`;
+      whyBuy.push(
+        `基本面已驗證：${yoyText}，EPS ${fundamentals.epsLatestQuarter ?? "n/a"}，毛利率 ${fundamentals.grossMarginPct ?? "n/a"}%，PER ${fundamentals.per ?? "n/a"}。`
+      );
+    } else {
+      whyNotBuy.push(`基本面資料暫缺：FinMind ${fundamentals.reason}，revenue/margin 維持預設分。`);
+    }
+  }
+
+  if (supplyChain) {
+    if (supplyChain.dataAvailable) {
+      const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+      const themeText = themes
+        .slice(0, 2)
+        .map((theme) => `${theme.name}/${theme.lifecycle}`)
+        .join(", ") || "未標主題";
+      whyBuy.push(
+        `產業鏈已驗證：定位 ${supplyChain.chainPosition ?? "未標"}，受益層級 ${supplyChain.beneficiaryTier ?? "未標"}，主題 ${themeText}。`
+      );
+    } else {
+      whyNotBuy.push("產業鏈資料暫缺：company_graph_db 尚無定位，theme 分數維持保守。");
+    }
+  }
+
+  if (companyNews) {
+    if (companyNews.state === "live" && companyNews.items[0]) {
+      whyBuy.push(`個股新聞催化：${companyNews.items[0].date}「${companyNews.items[0].title.slice(0, 60)}」。`);
+    } else if (companyNews.state === "empty") {
+      whyNotBuy.push("個股新聞：FinMind experimental 今日空陣列，未加入額外事件加分。");
+    } else if (companyNews.state === "unavailable") {
+      whyNotBuy.push("個股新聞：FinMind experimental 暫不可用，禁止補腦催化劑。");
+    }
+  }
+
+  return { whyBuy, whyNotBuy };
+}
+
+function mergeUniqueText(first: string[] | undefined, second: string[]): string[] {
+  const merged: string[] = [];
+  for (const value of [...(first ?? []), ...second]) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (merged.some((existing) => existing === trimmed)) continue;
+    merged.push(trimmed);
+  }
+  return merged;
+}
+
+export function applyDeterministicMultiDimScoresToItems(
+  items: AiStockRecommendationV2[],
+  trace: V3ReActStep[]
+): AiStockRecommendationV2[] {
+  const fundamentalsByTicker = getFundamentalsTraceByTicker(trace);
+  const supplyChainByTicker = getSupplyChainTraceByTicker(trace);
+  const companyNewsByTicker = getCompanyNewsTraceByTicker(trace);
+
+  return items.map((item) => {
+    const fundamentals = fundamentalsByTicker.get(item.ticker);
+    const supplyChain = supplyChainByTicker.get(item.ticker);
+    const companyNews = companyNewsByTicker.get(item.ticker);
+    const existing = item.subScores ?? {
+      theme: 10,
+      revenue: 8,
+      institutional: 8,
+      margin: 8,
+      rs: 5,
+      technical: 10,
+      valuation: 3,
+    };
+
+    const subScores = {
+      theme: supplyChain
+        ? scoreV3ThemeFromSupplyChain(supplyChain, existing.theme ?? 10)
+        : existing.theme ?? 10,
+      revenue: fundamentals
+        ? scoreV3RevenueFromFundamentals(fundamentals)
+        : existing.revenue ?? 8,
+      institutional: existing.institutional ?? 8,
+      margin: fundamentals
+        ? scoreV3MarginFromFundamentals(fundamentals)
+        : existing.margin ?? 8,
+      rs: existing.rs ?? 5,
+      technical: existing.technical ?? 10,
+      valuation: scoreV3ValuationFromFundamentals(fundamentals) ?? existing.valuation ?? 3,
+    };
+    const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
+      subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
+    const currentBucket = item.bucket ?? parseBucket(item.action ?? "").bucket;
+    const bucket = normalizeBucketByScoreV3(currentBucket, totalScore);
+    const action = bucket === currentBucket ? item.action : parseBucket(bucket).action;
+    const bullets = buildV3MultiDimBullets(fundamentals, supplyChain, companyNews);
+    const why_buy = mergeUniqueText(item.why_buy, bullets.whyBuy).slice(0, 6);
+    const why_not_buy = mergeUniqueText(item.why_not_buy, bullets.whyNotBuy).slice(0, 6);
+
+    return {
+      ...item,
+      action,
+      subScores,
+      totalScore,
+      bucket,
+      why_buy: why_buy.length > 0 ? why_buy : item.why_buy,
+      why_not_buy: why_not_buy.length > 0 ? why_not_buy : item.why_not_buy,
+      whyBuyBrief: item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy),
+    };
+  });
+}
+
 // ── V3 quality helpers ────────────────────────────────────────────────────────
 
 /**
@@ -1592,7 +1984,7 @@ export function buildDeterministicFallbackItemsFromTrace(
     if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
   }
 
-  return Array.from(byTicker.values())
+  const fallbackItems: AiStockRecommendationV2[] = Array.from(byTicker.values())
     .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
     .sort((a, b) =>
       b.rank - a.rank ||
@@ -1692,8 +2084,11 @@ export function buildDeterministicFallbackItemsFromTrace(
           "This is a deterministic fallback because the LLM did not return enough structured picks.",
           "Treat as research candidates until the full AI narrative is healthy.",
         ],
+        sourceTrail: buildSourceTrailForTicker(trace, obs.ticker),
       };
     });
+
+  return applyDeterministicMultiDimScoresToItems(fallbackItems, trace);
 }
 
 /**
@@ -1968,7 +2363,8 @@ export function enrichV3Items(
   items: AiStockRecommendationV2[],
   trace: V3ReActStep[]
 ): AiStockRecommendationV3Card[] {
-  const withFlag = applyIncompleteFlag(items);
+  const withDeterministicScores = applyDeterministicMultiDimScoresToItems(items, trace);
+  const withFlag = applyIncompleteFlag(withDeterministicScores);
   return withFlag.map(item => withV3ContractAliases({
     ...item,
     sourceTrail: buildSourceTrailForTicker(trace, item.ticker),
@@ -2030,6 +2426,83 @@ function parseMarketStepV3(raw: string): {
 
 // ── synthesize v3 report ──────────────────────────────────────────────────────
 
+function stringifyForTrace(value: unknown, limit: number): string {
+  try {
+    return JSON.stringify(value).slice(0, limit);
+  } catch {
+    return String(value).slice(0, limit);
+  }
+}
+
+function formatTraceObservationForSynthesis(step: {
+  toolName: string | null;
+  observation: unknown;
+}): string {
+  const obs = traceRecord(step.observation);
+  if (!obs) return stringifyForTrace(step.observation, 600);
+
+  if (step.toolName === "get_company_fundamentals") {
+    const fundamentals = obs as unknown as CompanyFundamentalsObservation;
+    const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+    return stringifyForTrace({
+      ticker: fundamentals.ticker,
+      source: fundamentals.source,
+      dataAvailable: fundamentals.dataAvailable,
+      reason: fundamentals.reason,
+      revenueYoyTrend: fundamentals.revenueYoyTrend,
+      monthlyRevenue: monthlyRevenue.slice(0, 3),
+      latestQuarterDate: fundamentals.latestQuarterDate,
+      epsLatestQuarter: fundamentals.epsLatestQuarter,
+      grossMarginPct: fundamentals.grossMarginPct,
+      operatingMarginPct: fundamentals.operatingMarginPct,
+      per: fundamentals.per,
+      pbr: fundamentals.pbr,
+      dividendYield: fundamentals.dividendYield,
+      deterministicScores: {
+        revenue: scoreV3RevenueFromFundamentals(fundamentals),
+        margin: scoreV3MarginFromFundamentals(fundamentals),
+        valuation: scoreV3ValuationFromFundamentals(fundamentals) ?? 3,
+      },
+    }, 1400);
+  }
+
+  if (step.toolName === "get_supply_chain") {
+    const supplyChain = obs as unknown as SupplyChainObservation;
+    const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+    const suppliers = Array.isArray(supplyChain.suppliers) ? supplyChain.suppliers : [];
+    const customers = Array.isArray(supplyChain.customers) ? supplyChain.customers : [];
+    const peers = Array.isArray(supplyChain.peers) ? supplyChain.peers : [];
+    return stringifyForTrace({
+      ticker: supplyChain.ticker,
+      source: supplyChain.source,
+      dataAvailable: supplyChain.dataAvailable,
+      chainPosition: supplyChain.chainPosition,
+      beneficiaryTier: supplyChain.beneficiaryTier,
+      themes: themes.slice(0, 4),
+      suppliers: suppliers.slice(0, 3),
+      customers: customers.slice(0, 3),
+      peers: peers.slice(0, 3),
+      deterministicThemeScore: scoreV3ThemeFromSupplyChain(supplyChain),
+    }, 1400);
+  }
+
+  if (step.toolName === "get_company_news") {
+    const companyNews = obs as unknown as CompanyNewsObservation;
+    const items = Array.isArray(companyNews.items) ? companyNews.items : [];
+    return stringifyForTrace({
+      ticker: companyNews.ticker,
+      source: companyNews.source,
+      state: companyNews.state,
+      itemCount: companyNews.itemCount,
+      asOf: companyNews.asOf,
+      note: companyNews.note,
+      items: items.slice(0, 3),
+    }, 1000);
+  }
+
+  return stringifyForTrace(step.observation, 600);
+}
+
 interface V3SynthesisAttempt {
   markdown: string;
   totalTokens: number;
@@ -2057,7 +2530,7 @@ async function synthesizeReportV3(
   repairMarkdown?: string
 ): Promise<V3SynthesisAttempt> {
   const traceText = trace
-    .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
+    .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${formatTraceObservationForSynthesis(s)}`)
     .join("\n\n");
   const rejectedRiskOffRepair = repairMarkdown?.includes("RISK_OFF_FINAL_SKIP") === true;
   const previousMarkdownForRepair = rejectedRiskOffRepair
@@ -2103,7 +2576,7 @@ ${previousMarkdownForRepair}`
       maxTokens: /^(gpt-5|o1|o3)/.test(model)
         ? (repairMarkdown ? 32000 : 28000)
         : (repairMarkdown ? 10000 : 8000),
-      temperature: repairMarkdown ? 0.1 : 0.2,
+      temperature: /^(gpt-5|o1|o3)/.test(model) ? undefined : (repairMarkdown ? 0.1 : 0.2),
       timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
       // ★ json_schema STRICT mode — OpenAI guarantees output matches V3_SYNTHESIS_JSON_SCHEMA.
       // This is the definitive fix for the markdown parser returning 0 items.
@@ -2311,12 +2784,6 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
 
   // Track get_company_technical call count for F3 validation
   let companyTechnicalCallCount = 0;
-  // Multi-dimension forcing: require fundamentals + supply-chain calls before synthesis
-  // so gpt-5.5 actually integrates 基本面/產業鏈, not just technical+flow.
-  let fundamentalsCallCount = 0;
-  let supplyChainCallCount = 0;
-  const MIN_FUNDAMENTALS_CALLS = 3;
-  const MIN_SUPPLY_CHAIN_CALLS = 2;
 
   for (let round = 1; round <= maxRounds; round++) {
     if (totalCostUsd >= costCap) {
@@ -2324,6 +2791,9 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items: AiStockRecommendationV2[] = [];
       let synthesisRetryUsed = false;
       if (trace.length > 0) {
+        if (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS) {
+          await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId);
+        }
         const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, false);
         totalTokens += synthesis.totalTokens;
         totalCostUsd += synthesis.costUsd;
@@ -2360,7 +2830,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       // no JSON answer emitted → loop fails. Give reasoning models a large per-step
       // budget; gpt-4o-mini (reasoning_tokens=0) keeps the small 2048.
       maxTokens: /^(gpt-5|o1|o3)/.test(model) ? 16000 : 2048,
-      temperature: 0.1,
+      temperature: /^(gpt-5|o1|o3)/.test(model) ? undefined : 0.1,
     });
 
     if (!llmResult) {
@@ -2476,11 +2946,23 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         observation: null,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      const multiDimSatisfied =
-        fundamentalsCallCount >= MIN_FUNDAMENTALS_CALLS &&
-        supplyChainCallCount >= MIN_SUPPLY_CHAIN_CALLS;
+
+      if (companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS && round < maxRounds - 1) {
+        console.warn(`[v3-orchestrator] round ${round}: final answer before enough technical calls (${companyTechnicalCallCount}/${MIN_V3_TECHNICAL_CALLS}) — forcing continuation`);
+        messages.push({ role: "assistant", content: raw });
+        messages.push({
+          role: "user",
+          content: `[SYSTEM REJECTION] 分析不足：get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+請先補齊 STEP 3 技術候選；系統會在 synthesis 前自動對候選股補抓 get_company_fundamentals / get_supply_chain / get_company_news，不需要你用 final answer 代替工具資料。`,
+        });
+        continue; // continue loop
+      }
+
+      const prefetchStats = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS
+        ? await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId)
+        : emptyV3MultiDimPrefetchStats();
       const allowSynthesisRetry =
-        (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS && multiDimSatisfied) ||
+        companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS ||
         round >= maxRounds - 1;
       const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, allowSynthesisRetry);
       totalTokens += synthesis.totalTokens;
@@ -2513,11 +2995,8 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       // F3: Validate minimum items and tool call count (only complete items count)
       const completeCount = completeItemCount(items);
       const insufficientItems = completeCount < MIN_V3_RECOMMENDATION_ITEMS;
-      const insufficientMultiDim =
-        fundamentalsCallCount < MIN_FUNDAMENTALS_CALLS ||
-        supplyChainCallCount < MIN_SUPPLY_CHAIN_CALLS;
       const insufficientTools =
-        companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS || insufficientMultiDim;
+        companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
       const unresolvedSynthesisFormatError =
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
@@ -2529,8 +3008,9 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}），get_company_fundamentals=${fundamentalsCallCount}（需 ≥${MIN_FUNDAMENTALS_CALLS}），get_supply_chain=${supplyChainCallCount}（需 ≥${MIN_SUPPLY_CHAIN_CALLS}）。
-★ 多維度強制：每檔準備推薦的標的，synthesis 前必須已對它呼叫過 get_company_fundamentals（取營收/EPS/估值）與 get_supply_chain（取產業鏈定位）。請立即 callTool(get_company_fundamentals) 與 callTool(get_supply_chain) 補齊主要候選的基本面與產業鏈資料，理由必須整合技術+基本面+產業鏈，不得只憑技術面。C bucket 只能作為排除名單。`,
+          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+系統已在 synthesis 前 deterministic prefetch 多維度資料：候選=${prefetchStats.candidateTickers.join(",") || "none"}，新增 fundamentals=${prefetchStats.fundamentalsCalls}、supply_chain=${prefetchStats.supplyChainCalls}、company_news=${prefetchStats.companyNewsCalls}。
+請基於已提供的 trace 重新輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B；C bucket 只能作為排除名單。`,
         });
         continue; // continue loop
       }
@@ -2575,15 +3055,6 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         companyTechnicalCallCount++;
         console.info(`[v3-orchestrator] round ${round}: get_company_technical call #${companyTechnicalCallCount}`);
       }
-      // Track multi-dimension tool calls — gate synthesis until these fire.
-      if (step.toolName === "get_company_fundamentals") {
-        fundamentalsCallCount++;
-        console.info(`[v3-orchestrator] round ${round}: get_company_fundamentals call #${fundamentalsCallCount}`);
-      }
-      if (step.toolName === "get_supply_chain") {
-        supplyChainCallCount++;
-        console.info(`[v3-orchestrator] round ${round}: get_supply_chain call #${supplyChainCallCount}`);
-      }
 
       // Try to extract risk_off_score from market overview result
       if (step.toolName === "get_market_overview" && typeof observation === "object" && observation !== null) {
@@ -2619,6 +3090,9 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
   }
 
   // Max rounds reached — synthesize with what we have
+  if (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS) {
+    await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId);
+  }
   const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, true);
   totalTokens += synthesis.totalTokens;
   totalCostUsd += synthesis.costUsd;

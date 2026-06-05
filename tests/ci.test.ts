@@ -13634,6 +13634,155 @@ test("AI-REC-V3-6: deterministic fallback builds 5 real-backed items from verifi
   assert.ok(items.every((item: any) => item.rationale.includes("Deterministic fallback")), "AI-REC-V3-6: rationale must disclose fallback path");
 });
 
+test("AI-REC-V3-MULTIDIM-PREFETCH-1: deterministic prefetch candidates come from valid technical observations", async () => {
+  const { extractV3MultiDimPrefetchCandidatesFromTrace } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const technicalStep = (round: number, ticker: string, lastPrice: number, changePct: number) => ({
+    round,
+    thought: `check ${ticker}`,
+    toolName: "get_company_technical",
+    toolInput: { ticker },
+    observation: {
+      ticker,
+      companyName: ticker,
+      lastPrice,
+      changePct,
+      rsi14: 55,
+      ma20: lastPrice * 0.98,
+      ma60: lastPrice * 0.92,
+      volumeRatio20d: 1,
+      aboveMa20: true,
+      aboveMa60: true,
+      source: "finmind_ohlcv",
+    },
+    tokensUsed: 10,
+  });
+
+  const candidates = extractV3MultiDimPrefetchCandidatesFromTrace([
+    technicalStep(1, "2330", 1000, 1),
+    technicalStep(2, "2454", 1200, 4),
+    technicalStep(3, "9999", 0, 20),
+  ], 2);
+
+  assert.deepEqual(
+    candidates.map((candidate: any) => candidate.ticker),
+    ["2454", "2330"],
+    "AI-REC-V3-MULTIDIM-PREFETCH-1: candidates must be ranked valid lastPrice>0 technical observations"
+  );
+});
+
+test("AI-REC-V3-MULTIDIM-PREFETCH-2: deterministic fundamentals and supply-chain scores override default 8s", async () => {
+  const { applyDeterministicMultiDimScoresToItems, enrichV3Items } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const baseItem = {
+    id: "rec-2330",
+    ticker: "2330",
+    companyName: "台積電",
+    action: "等回檔",
+    date: "2026-06-06",
+    confidence: 0.7,
+    rationale: "seed",
+    entryPriceRange: { low: 980, high: 1010 },
+    tp1: 1060,
+    tp2: 1120,
+    stopLoss: 940,
+    aiGenerated: true,
+    source: "brain_react_v2",
+    marketState: "trend",
+    subScores: {
+      theme: 10,
+      revenue: 8,
+      institutional: 8,
+      margin: 8,
+      rs: 6,
+      technical: 14,
+      valuation: 3,
+    },
+    totalScore: 57,
+    bucket: "C",
+    why_buy: ["技術面站上月線"],
+    why_not_buy: ["測試風險"],
+  };
+
+  const trace = [
+    {
+      round: 1,
+      thought: "technical",
+      toolName: "get_company_technical",
+      toolInput: { ticker: "2330" },
+      observation: { ticker: "2330", lastPrice: 1000, source: "finmind_ohlcv" },
+      tokensUsed: 10,
+    },
+    {
+      round: 2,
+      thought: "[ORCHESTRATOR PREFETCH] fundamentals",
+      toolName: "get_company_fundamentals",
+      toolInput: { ticker: "2330" },
+      observation: {
+        ticker: "2330",
+        monthlyRevenue: [
+          { month: "2026-05", revenue: 1000, yoy: 25, mom: 3 },
+          { month: "2026-04", revenue: 970, yoy: 18, mom: 1 },
+        ],
+        revenueYoyTrend: "accelerating",
+        latestQuarterDate: "2026-Q1",
+        epsLatestQuarter: 12.3,
+        grossMarginPct: 58,
+        operatingMarginPct: 42,
+        per: 28,
+        pbr: 6,
+        dividendYield: 1.2,
+        dataAvailable: true,
+        reason: "ok",
+        source: "finmind",
+      },
+      tokensUsed: 0,
+    },
+    {
+      round: 3,
+      thought: "[ORCHESTRATOR PREFETCH] supply chain",
+      toolName: "get_supply_chain",
+      toolInput: { ticker: "2330" },
+      observation: {
+        ticker: "2330",
+        chainPosition: "CoAP_Chip",
+        beneficiaryTier: "Core",
+        themes: [{ name: "AI Server", lifecycle: "Expansion" }],
+        suppliers: [],
+        customers: [],
+        peers: [],
+        dataAvailable: true,
+        source: "company_graph_db",
+      },
+      tokensUsed: 0,
+    },
+  ];
+
+  const [scored] = applyDeterministicMultiDimScoresToItems([baseItem], trace);
+  assert.notEqual(scored.subScores.revenue, 8, "AI-REC-V3-MULTIDIM-PREFETCH-2: revenue must not stay default when fundamentals are available");
+  assert.notEqual(scored.subScores.margin, 8, "AI-REC-V3-MULTIDIM-PREFETCH-2: margin must not stay default when fundamentals are available");
+  assert.ok(scored.subScores.theme > 10, "AI-REC-V3-MULTIDIM-PREFETCH-2: theme must reflect supply-chain tier/lifecycle");
+  assert.equal(
+    scored.totalScore,
+    Object.values(scored.subScores).reduce((sum: any, value: any) => sum + value, 0),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: totalScore must be recomputed from deterministic subScores"
+  );
+
+  const [enriched] = enrichV3Items([baseItem], trace);
+  assert.ok(
+    enriched.sourceTrail.some((entry: any) => entry.toolName === "get_company_fundamentals"),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: sourceTrail must include fundamentals"
+  );
+  assert.ok(
+    enriched.sourceTrail.some((entry: any) => entry.toolName === "get_supply_chain"),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: sourceTrail must include supply_chain"
+  );
+});
+
 // =============================================================================
 // AI-REC-V3-RISK-OFF: Deterministic risk_off_score + F3 enforcement (2026-05-18)
 // Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator-v3.ts
@@ -16228,6 +16377,34 @@ test("GPT55-UPGRADE-4: brief generator uses OPENAI_MODEL_BRIEF + synthesis promp
   assert.ok(
     src.includes("美股隔夜資料本日缺席") || src.includes("美股隔夜"),
     "GPT55-UPGRADE-4: brief prompt must handle missing overnight US market data honestly"
+  );
+});
+
+test("GPT55-UPGRADE-4b: direct daily brief uses OPENAI_MODEL_BRIEF and 240s timeout", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-pipeline.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_BRIEF"]'),
+    "GPT55-UPGRADE-4b: direct daily brief must read OPENAI_MODEL_BRIEF"
+  );
+  assert.ok(
+    src.includes("resolveDailyBriefLlmRuntimeOptions"),
+    "GPT55-UPGRADE-4b: direct daily brief must centralize model runtime options"
+  );
+  assert.ok(
+    src.includes("timeoutMs: 240_000"),
+    "GPT55-UPGRADE-4b: direct daily brief timeout must be 240s to avoid rule-template fallback"
+  );
+  assert.ok(
+    src.includes("maxTokens: 12_000"),
+    "GPT55-UPGRADE-4b: gpt-5.5 brief path must reserve enough completion budget for reasoning tokens"
+  );
+  assert.ok(
+    src.includes("temperature: briefRuntime.temperature"),
+    "GPT55-UPGRADE-4b: reasoning models must be able to omit temperature via undefined runtime option"
+  );
+  assert.ok(
+    !src.includes("timeoutMs: 45_000"),
+    "GPT55-UPGRADE-4b: old 45s timeout must not remain in direct daily brief generation"
   );
 });
 
