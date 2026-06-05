@@ -72,6 +72,13 @@ function settledState(result: Settled<unknown>) {
   return result.status === "fulfilled" ? "live" : "blocked";
 }
 
+function shouldFetchRawKgiQuoteSnapshot(quote: { source?: string | null; state?: string | null; freshness?: string | null } | null | undefined) {
+  const source = String(quote?.source ?? "").toLowerCase();
+  const state = String(quote?.state ?? "").toUpperCase();
+  const freshness = String(quote?.freshness ?? "").toLowerCase();
+  return source === "kgi-gateway" && (state === "LIVE" || freshness === "fresh");
+}
+
 function sourceLabel(source?: string | null) {
   if (!source) return "正式資料";
   if (source.includes("twse")) return "公開資訊";
@@ -550,16 +557,22 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const selectedPosition = portfolio.find((pos) => sameSymbol(pos.symbol, selectedSymbol)) ?? null;
   const selectedIdea = mappedIdeas.find((idea) => sameSymbol(idea.symbol, selectedSymbol)) ?? mappedIdeas[0] ?? null;
 
-  const [companyResult, quoteResult, bidAskResult, ticksResult] = await Promise.allSettled([
+  const [companyResult, quoteResult] = await Promise.allSettled([
     getCompanyByTicker(selectedSymbol),
     getCompanyQuoteRealtime(selectedSymbol),
-    getKgiBidAsk(selectedSymbol),
-    getKgiTicks(selectedSymbol, 16),
   ]);
   const company = okValue(companyResult, null);
   const quote = okValue(quoteResult, null);
-  const bidAsk = okValue(bidAskResult, null);
-  const ticks = okValue(ticksResult, null);
+  let bidAsk = null;
+  let ticks = null;
+  if (shouldFetchRawKgiQuoteSnapshot(quote)) {
+    const [bidAskResult, ticksResult] = await Promise.allSettled([
+      getKgiBidAsk(selectedSymbol),
+      getKgiTicks(selectedSymbol, 16),
+    ]);
+    bidAsk = okValue(bidAskResult, null);
+    ticks = okValue(ticksResult, null);
+  }
   const ohlcv = company
     ? await getCompanyOhlcv(company.id, { interval: "1d", from: tradingRoomOhlcvFromDate() }).catch(() => [] as OhlcvBar[])
     : [];
@@ -731,6 +744,26 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
   const softState = (result) => result && result.ok ? "live" : "blocked";
+  function shouldFetchRawKgiQuote(quote) {
+    const source = String(quote?.source || "").toLowerCase();
+    const state = String(quote?.state || "").toUpperCase();
+    const freshness = String(quote?.freshness || "").toLowerCase();
+    return source === "kgi-gateway" && (state === "LIVE" || freshness === "fresh");
+  }
+  async function fetchRawKgiQuoteExtras(symbol, quote) {
+    if (!shouldFetchRawKgiQuote(quote)) {
+      return {
+        skipped:true,
+        bidAskResult:{ ok:true, data:null, skipped:true },
+        ticksResult:{ ok:true, data:{ ticks:[] }, skipped:true }
+      };
+    }
+    const [bidAskResult, ticksResult] = await Promise.all([
+      soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(symbol))),
+      soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(symbol) + "&limit=16"))
+    ]);
+    return { skipped:false, bidAskResult, ticksResult };
+  }
   const queryText = (value, max=80) => {
     const text = String(value || "").trim().replace(/[<>]/g, "");
     return text ? text.slice(0, max) : null;
@@ -1047,16 +1080,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const ohlcvFrom = new Date();
     ohlcvFrom.setFullYear(ohlcvFrom.getFullYear() - 10);
     const ohlcvFromParam = ohlcvFrom.toISOString().slice(0, 10);
-    const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
+    const [quoteResult, ohlcvResult] = await Promise.all([
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/quote/realtime")) : soft(Promise.resolve(null)),
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d&from=" + encodeURIComponent(ohlcvFromParam))) : soft(Promise.resolve([])),
-      soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(selectedSymbol))),
-      soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(selectedSymbol) + "&limit=16"))
     ]);
     const ohlcv = ohlcvResult.ok ? ohlcvResult.data || [] : [];
     const lastBar = ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
     const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
     const quote = quoteResult.ok ? quoteResult.data : null;
+    const rawQuoteExtras = await fetchRawKgiQuoteExtras(selectedSymbol, quote);
+    const bidAskResult = rawQuoteExtras.bidAskResult;
+    const ticksResult = rawQuoteExtras.ticksResult;
     const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
     const previous = prevBar?.close ?? null;
     const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
@@ -1904,18 +1938,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     paperQuotePulseBusy = true;
     try {
       const companyId = live._companyId || null;
-      const [quoteResult, bidAskResult, ticksResult] = await Promise.all([
-        companyId ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime")) : soft(Promise.resolve(null)),
-        soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(symbol))),
-        soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(symbol) + "&limit=16"))
-      ]);
+      const quoteResult = companyId
+        ? await soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"))
+        : { ok:true, data:null };
       if (!sameSym(symbol, paperPulseSymbol())) return;
       const quote = quoteResult.ok ? quoteResult.data : null;
+      const rawQuoteExtras = await fetchRawKgiQuoteExtras(symbol, quote);
+      const bidAskResult = rawQuoteExtras.bidAskResult;
+      const ticksResult = rawQuoteExtras.ticksResult;
       const bidAsk = bidAskResult.ok ? bidAskResult.data : null;
       const ticksData = ticksResult.ok ? ticksResult.data : null;
       const ticks = ticksData?.ticks || [];
       const hasUsableResponse = Boolean(quote || bidAsk || ticksData);
-      const hasFailedResponse = !quoteResult.ok || !bidAskResult.ok || !ticksResult.ok;
+      const hasFailedResponse = !quoteResult.ok || (!rawQuoteExtras.skipped && (!bidAskResult.ok || !ticksResult.ok));
       if (!hasUsableResponse && hasFailedResponse) {
         paperQuotePulseBlockedUntil = Date.now() + 15000;
         updatePaperQuoteQualityBadge("blocked", { degraded: true });
