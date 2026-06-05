@@ -6791,7 +6791,10 @@ import {
   runDatasetBackfill,
   type BackfillDataset
 } from "./jobs/finmind-full-ingest.js";
-import { runTwseAnnouncementIngest } from "./jobs/twse-announcement-ingest.js";
+import {
+  fetchAllTwseMaterialAnnouncements,
+  runTwseAnnouncementIngest
+} from "./jobs/twse-announcement-ingest.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -7798,6 +7801,156 @@ app.get("/api/v1/companies/:id/market-value", async (c) => {
 // GET /api/v1/companies/:id/announcements?days=30
 // Returns: { data: { id, date, title, category, body? }[] } adapted from TWSE rows.
 app.get("/api/v1/companies/:id/announcements", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
+  const stockId = companyIdToTicker(company.ticker);
+  const companyName = company.name ?? stockId;
+  const session = c.get("session");
+
+  type CompanyAnnouncementRow = {
+    id: string | null;
+    date: string | null;
+    title: string | null;
+    category: string | null;
+    body: string | null;
+    ticker: string | null;
+    company_name: string | null;
+    url: string | null;
+    source: string | null;
+  };
+
+  function categoryFromTitle(title: string): string {
+    if (/股利|除權|除息|配息|配股/.test(title)) return "股利";
+    if (/財報|財務|營收|EPS|獲利|損益|業績/.test(title)) return "財報";
+    if (/董事會|股東會|法說|重大決議/.test(title)) return "治理";
+    if (/取得|處分|投資|併購|合併|契約|訴訟|背書|保證/.test(title)) return "事件";
+    return "重大訊息";
+  }
+
+  function toItem(row: CompanyAnnouncementRow, index: number) {
+    const date = String(row.date ?? "").slice(0, 10);
+    const title = row.title ?? "";
+    return {
+      id: row.id ?? `${stockId}-${date || "announcement"}-${index}`,
+      date,
+      title,
+      category: row.category ?? categoryFromTitle(title),
+      body: row.body ?? undefined,
+      ticker: row.ticker ?? stockId,
+      companyName: row.company_name ?? companyName,
+      url: row.url,
+      source: row.source ?? "tw_announcements_cache"
+    };
+  }
+
+  const db = getDb();
+  function readCompanyAnnouncementRows<T>(result: unknown): T[] {
+    const rows = (result as { rows?: T[] })?.rows;
+    if (Array.isArray(rows)) return rows;
+    if (Array.isArray(result)) return result as T[];
+    return [];
+  }
+
+  if (db) {
+    try {
+      const result = await db.execute(drizzleSql`
+        SELECT
+          CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title_hash) AS id,
+          a.announced_at::text AS date,
+          a.title AS title,
+          '重大訊息' AS category,
+          a.content AS body,
+          a.ticker_symbol AS ticker,
+          COALESCE(c.name, a.ticker_symbol) AS company_name,
+          COALESCE(
+            a.source_url,
+            CASE
+              WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+              THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+              ELSE NULL
+            END
+          ) AS url,
+          'tw_announcements_cache' AS source
+        FROM tw_announcements a
+        LEFT JOIN companies c
+          ON c.ticker = a.ticker_symbol
+         AND c.workspace_id = ${session.workspace.id}
+        WHERE a.ticker_symbol = ${stockId}
+          AND a.announced_at >= NOW() - (${days}::text || ' days')::interval
+          AND COALESCE(a.title, '') <> ''
+        ORDER BY a.announced_at DESC
+        LIMIT 30
+      `);
+      const rows = readCompanyAnnouncementRows<CompanyAnnouncementRow>(result);
+      if (rows.length > 0) {
+        return c.json({
+          data: rows.map(toItem),
+          state: "LIVE" as const,
+          source: "tw_announcements_cache"
+        });
+      }
+    } catch (err) {
+      console.warn("[company/announcements] tw_announcements cache unavailable:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const liveRows = (await fetchAllTwseMaterialAnnouncements())
+      .filter((row) => String(row.Code ?? "").trim() === stockId)
+      .filter((row) => {
+        const iso = String(row.Date ?? "").replace(/\//g, "-");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return true;
+        return new Date(`${iso}T23:59:59+08:00`).getTime() >= cutoff.getTime();
+      })
+      .slice(0, 30)
+      .map((row, index): CompanyAnnouncementRow => {
+        const date = String(row.Date ?? "").replace(/\//g, "-");
+        const title = row.Title ?? "";
+        return {
+          id: `${stockId}-${date}-${index}`,
+          date,
+          title,
+          category: categoryFromTitle(title),
+          body: row.Content ?? null,
+          ticker: stockId,
+          company_name: row.Name ?? companyName,
+          url: row.Link ?? null,
+          source: "twse_openapi_live"
+        };
+      });
+
+    if (liveRows.length > 0) {
+      return c.json({
+        data: liveRows.map(toItem),
+        state: "LIVE" as const,
+        source: "twse_openapi_live"
+      });
+    }
+  } catch (err) {
+    console.warn("[company/announcements] TWSE live fallback unavailable:", err instanceof Error ? err.message : String(err));
+    return c.json({
+      data: [],
+      state: "DEGRADED" as const,
+      degradedReason: "twse_live_and_cache_unavailable",
+      source: "tw_announcements_cache"
+    });
+  }
+
+  return c.json({
+    data: [],
+    state: "EMPTY" as const,
+    degradedReason: "no_official_company_announcements",
+    source: "tw_announcements_cache"
+  });
+});
+
+app.get("/api/v1/internal/legacy/companies/:id/announcements", async (c) => {
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });

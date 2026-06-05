@@ -14066,6 +14066,23 @@ test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () =
   assert.ok(source.includes("officialOnly"), "MARKET-INTEL-P0-GATE-1: market-scope official-only behavior must be visible to frontend");
 });
 
+test("COMPANY-ANN-P0-GATE-1: company announcements are cache-first before TWSE live fallback", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile("apps/api/src/server.ts", "utf8");
+
+  const companyRouteStart = source.indexOf('app.get("/api/v1/companies/:id/announcements"');
+  const legacyRouteStart = source.indexOf('app.get("/api/v1/internal/legacy/companies/:id/announcements"');
+
+  assert.ok(companyRouteStart >= 0, "COMPANY-ANN-P0-GATE-1: formal company announcements route must exist");
+  assert.ok(legacyRouteStart > companyRouteStart, "COMPANY-ANN-P0-GATE-1: old direct-TWSE route must only live behind internal legacy path");
+
+  const routeBlock = source.slice(companyRouteStart, legacyRouteStart);
+  assert.ok(routeBlock.includes("tw_announcements_cache"), "COMPANY-ANN-P0-GATE-1: route must read official tw_announcements cache first");
+  assert.ok(routeBlock.includes("FROM tw_announcements"), "COMPANY-ANN-P0-GATE-1: route must query persisted official announcement cache");
+  assert.ok(routeBlock.includes("fetchAllTwseMaterialAnnouncements"), "COMPANY-ANN-P0-GATE-1: route must use maintained TWSE t187ap11_L fallback chain");
+  assert.equal(routeBlock.includes("getMaterialAnnouncements(stockId"), false, "COMPANY-ANN-P0-GATE-1: product route must not directly call deprecated per-ticker TWSE fetch");
+});
+
 // =============================================================================
 // TWSE-ANN-INGEST-1..4: t187ap11_L endpoint switch + 302/404 detection + fallback
 // (fix: twse-announcement-ingest.ts switched primary from t187ap46_L to t187ap11_L)
