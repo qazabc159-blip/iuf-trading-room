@@ -266,6 +266,9 @@ describe("final-v031 paper ticket price gate", () => {
     expect(klineChartSource).not.toContain("|| insufficientTrend) return");
     expect(klineChartSource).toContain("data-testid=\"kline-backfill-warning\"");
     expect(klineChartSource).toContain("renderInsufficientAsCard && insufficientTrend");
+    expect(klineChartSource).toContain('compactTradingRoom &&');
+    expect(klineChartSource).toContain('interval !== "1d"');
+    expect(klineChartSource).toContain("chartBars.length < MIN_TREND_BARS");
     expect(klineChartSource).toContain('setInterval("1d")');
     expect(klineChartSource).toContain('setRange("all")');
   });
