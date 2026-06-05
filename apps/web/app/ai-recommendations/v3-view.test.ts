@@ -96,6 +96,38 @@ describe("AI recommendations v3 view mapping", () => {
     expect(`${card?.entry?.label}\n${card?.why_buy}\n${card?.risk}`).not.toMatch(/fallback|get_company_technical|LLM/i);
   });
 
+  it("scrubs parser diagnostics from customer-facing card narratives", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2330",
+      companyName: "台積電",
+      bucket: "A",
+      totalScore: 76,
+      entryZone: {
+        low: 2280,
+        high: 2320,
+        reason: "trace=entryZone RSI parsing error; 靠近支撐區，等待量能確認。",
+      },
+      tp1Structured: { price: 2400 },
+      tp2Structured: { price: 2480 },
+      stopLossStructured: { price: 2240 },
+      why_buy: [
+        "trace=2330 technical parser diagnostic; 價格站上 MA20。",
+        "institutional parsing error: missing rows; 產業鏈題材仍在主流觀察名單。",
+      ],
+      why_not_buy: [
+        "rawSynthesisPreview returned parser noise; 若跌破支撐需降部位。",
+      ],
+      source: "brain_react_v2",
+    });
+
+    const productText = `${card?.entry?.label}\n${card?.why_buy}\n${card?.risk}`;
+    expect(productText).toContain("靠近支撐區");
+    expect(productText).toContain("價格站上 MA20");
+    expect(productText).toContain("產業鏈題材");
+    expect(productText).toContain("跌破支撐");
+    expect(productText).not.toMatch(/trace=|parsing error|parser|diagnostic|rawSynthesisPreview|usedFallback/i);
+  });
+
   it("marks non-complete five-card fallback responses as degraded instead of live", () => {
     const state = buildV3PanelState({
       data: {
