@@ -16160,6 +16160,117 @@ test("GPT55-UPGRADE-5: ai rec v3 has a model fallback so one bad deep model cann
   );
 });
 
+// ── JSON-SYNTHESIS (structured output parser — PR feat/api-ai-rec-json-output) ─────────────────
+
+test("JSON-SYNTHESIS-1: parseV3JsonSynthesis is exported from orchestrator-v3", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("export function parseV3JsonSynthesis"),
+    "JSON-SYNTHESIS-1: parseV3JsonSynthesis must be exported from orchestrator-v3.ts"
+  );
+});
+
+test("JSON-SYNTHESIS-2: parseV3JsonSynthesis parses a valid JSON array into stock items", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const sampleJson = JSON.stringify([
+    {
+      ticker: "2330",
+      companyName: "台積電",
+      action: "A+今日首選",
+      totalScore: 88,
+      marketState: "trend",
+      subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 870, entryHigh: 890,
+      entryReason: "OTE 0.618 回踩月線",
+      tp1: 920, tp1Reason: "前波高 920",
+      tp2: 960, tp2Reason: "年線頂部",
+      stopLoss: 855, atrMultiple: 0.5, rRatio: 2.1,
+      confidence: 0.85, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["外資連 3 日買超共 1.2 萬張，月線多頭排列", "AI 伺服器族群帶動需求端，news trace 顯示訂單能見度強"],
+      whyNotBuy: ["股價已漲 20%，短線追高風險", "FOMC 會議 T-2 不確定性"],
+      oneLineReason: "外資連 3 日買超 + AI 族群強勢，技術面突破月線 880 確認多頭"
+    },
+    {
+      ticker: "2454",
+      companyName: "聯發科",
+      action: "A可觀察布局",
+      totalScore: 79,
+      marketState: "trend",
+      subScores: { theme: 16, revenue: 11, institutional: 10, margin: 9, rs: 7, technical: 15, valuation: 4 },
+      entryLow: 780, entryHigh: 800,
+      entryReason: "突破後回測不破 790",
+      tp1: 840, tp1Reason: "整數關 840",
+      tp2: 880, tp2Reason: "月線上緣",
+      stopLoss: 765, atrMultiple: 0.5, rRatio: 1.8,
+      confidence: 0.72, navPct: 0.006, marketMultiplier: 1.0,
+      whyBuy: ["法人 5 日淨買超，RSI 55 健康", "SoC 新案題材帶動，trace 顯示法人連 5 日偏多"],
+      whyNotBuy: ["庫存去化未完成，Q3 能見度不足", "外資持股比例已接近上限"],
+      oneLineReason: "SoC 新案題材 + 法人連 5 日淨買超，技術面 790 回測支撐確認"
+    }
+  ]);
+  const items = parseV3JsonSynthesis(sampleJson, "2026-06-05");
+  assert.ok(Array.isArray(items), "JSON-SYNTHESIS-2: parseV3JsonSynthesis must return an array");
+  assert.strictEqual(items.length, 2, `JSON-SYNTHESIS-2: must parse 2 items from JSON, got ${items.length}`);
+  assert.strictEqual(items[0].ticker, "2330", "JSON-SYNTHESIS-2: first item ticker must be 2330");
+  assert.strictEqual(items[0].bucket, "A+", "JSON-SYNTHESIS-2: A+今日首選 must map to bucket A+");
+  assert.strictEqual(items[0].totalScore, 88, "JSON-SYNTHESIS-2: totalScore must be 88");
+  assert.ok(items[0].subScores?.theme === 18, "JSON-SYNTHESIS-2: subScores.theme must be 18");
+  assert.ok(items[0].entryZone?.low === 870, "JSON-SYNTHESIS-2: entryZone.low must be 870");
+  assert.ok(items[0].tp1 === 920, "JSON-SYNTHESIS-2: tp1 must be 920");
+  assert.ok(items[0].confidence === 0.85, "JSON-SYNTHESIS-2: confidence must be 0.85");
+  assert.ok(Array.isArray(items[0].why_buy) && items[0].why_buy!.length === 2, "JSON-SYNTHESIS-2: why_buy must be array with 2 items");
+  assert.ok(items[0].whyBuyBrief?.length! <= 80, "JSON-SYNTHESIS-2: whyBuyBrief from oneLineReason must be <= 80 chars");
+  assert.strictEqual(items[1].ticker, "2454", "JSON-SYNTHESIS-2: second item ticker must be 2454");
+  assert.strictEqual(items[1].bucket, "A", "JSON-SYNTHESIS-2: A可觀察布局 must map to bucket A");
+});
+
+test("JSON-SYNTHESIS-3: parseV3JsonSynthesis returns [] for non-JSON input (falls back to markdown parser)", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const markdownInput = `## 2330 台積電\n- 分類: A+今日首選\n- 總分: 88`;
+  const items = parseV3JsonSynthesis(markdownInput, "2026-06-05");
+  assert.ok(Array.isArray(items), "JSON-SYNTHESIS-3: must return array even for non-JSON");
+  assert.strictEqual(items.length, 0, "JSON-SYNTHESIS-3: non-JSON input must return empty array (triggers markdown fallback)");
+});
+
+test("JSON-SYNTHESIS-4: parseV3JsonSynthesis filters year-like tickers (e.g. 2025, 2026)", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const badJson = JSON.stringify([
+    { ticker: "2026", companyName: "幻覺年份", action: "A+今日首選", totalScore: 88,
+      marketState: "trend", subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 100, entryHigh: 110, tp1: 120, tp2: 130, stopLoss: 90,
+      confidence: 0.8, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["test"], whyNotBuy: ["test"], oneLineReason: "test" },
+    { ticker: "2330", companyName: "台積電", action: "A+今日首選", totalScore: 88,
+      marketState: "trend", subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 870, entryHigh: 890, tp1: 920, tp2: 960, stopLoss: 855,
+      confidence: 0.85, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["法人買超"], whyNotBuy: ["短線追高"], oneLineReason: "外資買超 + AI 題材" }
+  ]);
+  const items = parseV3JsonSynthesis(badJson, "2026-06-05");
+  assert.ok(!items.some((i: any) => i.ticker === "2026"), "JSON-SYNTHESIS-4: year-like ticker 2026 must be filtered out");
+  assert.ok(items.some((i: any) => i.ticker === "2330"), "JSON-SYNTHESIS-4: valid ticker 2330 must be included");
+});
+
+test("JSON-SYNTHESIS-5: synthesizeReportV3 uses responseFormat:json_object for synthesis calls", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes('responseFormat: "json_object"'),
+    "JSON-SYNTHESIS-5: synthesizeReportV3 must use responseFormat json_object"
+  );
+  assert.ok(
+    src.includes("parseV3JsonSynthesis"),
+    "JSON-SYNTHESIS-5: synthesizeAndParseReportV3 must call parseV3JsonSynthesis as primary parser"
+  );
+  assert.ok(
+    src.includes("JSON parser succeeded"),
+    "JSON-SYNTHESIS-5: JSON parse success log must exist for observability"
+  );
+  assert.ok(
+    src.includes("falling back to markdown parser"),
+    "JSON-SYNTHESIS-5: fallback log to markdown parser must exist for observability"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

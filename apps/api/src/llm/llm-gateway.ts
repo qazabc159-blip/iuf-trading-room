@@ -55,8 +55,22 @@ export interface LlmCallOptions {
   /**
    * Ask Chat Completions to return a JSON object. Intended for strict
    * selector/parser callsites; other callers keep the default text behavior.
+   *
+   * - "json_object": instructs the model to return valid JSON (all models)
+   * - "json_schema": strict JSON schema mode (gpt-4o-2024-08-06+, gpt-5 family)
+   *   When using "json_schema", supply `responseSchema` with the schema definition.
+   *   Falls back to "json_object" if schema is not provided.
    */
-  responseFormat?: "json_object";
+  responseFormat?: "json_object" | "json_schema";
+  /**
+   * JSON Schema definition for strict structured output (used when responseFormat="json_schema").
+   * Shape: { name: string; strict: boolean; schema: Record<string, unknown> }
+   */
+  responseSchema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
 }
 
 export interface LlmCallResult {
@@ -420,7 +434,20 @@ export async function callLlm(
   if (!isReasoningModel) {
     requestBody["temperature"] = opts.temperature ?? DEFAULT_TEMPERATURE;
   }
-  if (opts.responseFormat === "json_object") {
+  if (opts.responseFormat === "json_schema" && opts.responseSchema) {
+    // Strict JSON schema mode — gpt-4o-2024-08-06+ and gpt-5 family support this.
+    // If the model rejects it, the outer catch will return null and the caller
+    // can retry with json_object fallback.
+    requestBody["response_format"] = {
+      type: "json_schema",
+      json_schema: {
+        name: opts.responseSchema.name,
+        strict: opts.responseSchema.strict ?? true,
+        schema: opts.responseSchema.schema,
+      },
+    };
+  } else if (opts.responseFormat === "json_object" || opts.responseFormat === "json_schema") {
+    // json_schema without schema definition → fall back to json_object
     requestBody["response_format"] = { type: "json_object" };
   }
 
