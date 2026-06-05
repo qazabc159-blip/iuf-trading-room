@@ -775,10 +775,82 @@ ${traceText}
 === END 分數填寫規則 ===`;
 }
 
+// ── JSON Schema v3 — strict structured output definition ─────────────────────────────────────
+//
+// Used with OpenAI json_schema mode (strict=true). OpenAI guarantees the response matches
+// this schema exactly — no markdown wrapping, no missing fields, no format surprises.
+//
+// OpenAI strict mode constraints:
+//   - Root must be type:"object" (cannot be a top-level array)
+//   - Every key must appear in `required`
+//   - `additionalProperties: false` at every level
+//
+// We wrap the stock array in { items: [...] } so the root is an object.
+// parseV3JsonSynthesis() already handles the {items:[...]} wrapper.
+
+const V3_SYNTHESIS_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  required: ["items"],
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        required: [
+          "ticker", "companyName", "action", "totalScore", "marketState",
+          "subScores", "entryLow", "entryHigh", "entryReason",
+          "tp1", "tp1Reason", "tp2", "tp2Reason", "stopLoss",
+          "atrMultiple", "rRatio", "confidence", "navPct", "marketMultiplier",
+          "whyBuy", "whyNotBuy", "oneLineReason"
+        ],
+        additionalProperties: false,
+        properties: {
+          ticker:           { type: "string" },
+          companyName:      { type: "string" },
+          action:           { type: "string", enum: ["A+今日首選", "A可觀察布局", "B等回檔", "C高風險排除"] },
+          totalScore:       { type: "number" },
+          marketState:      { type: "string", enum: ["risk_off", "event", "trend", "range"] },
+          subScores: {
+            type: "object",
+            required: ["theme", "revenue", "institutional", "margin", "rs", "technical", "valuation"],
+            additionalProperties: false,
+            properties: {
+              theme:         { type: "number" },
+              revenue:       { type: "number" },
+              institutional: { type: "number" },
+              margin:        { type: "number" },
+              rs:            { type: "number" },
+              technical:     { type: "number" },
+              valuation:     { type: "number" },
+            },
+          },
+          entryLow:         { type: "number" },
+          entryHigh:        { type: "number" },
+          entryReason:      { type: "string" },
+          tp1:              { type: "number" },
+          tp1Reason:        { type: "string" },
+          tp2:              { type: "number" },
+          tp2Reason:        { type: "string" },
+          stopLoss:         { type: "number" },
+          atrMultiple:      { type: "number" },
+          rRatio:           { type: "number" },
+          confidence:       { type: "number" },
+          navPct:           { type: "number" },
+          marketMultiplier: { type: "number" },
+          whyBuy:           { type: "array", items: { type: "string" } },
+          whyNotBuy:        { type: "array", items: { type: "string" } },
+          oneLineReason:    { type: "string" },
+        },
+      },
+    },
+  },
+};
+
 // ── JSON parser v3 (primary — replaces fragile markdown parser for structured output) ──────────
 //
-// When synthesis is called with responseFormat:"json_object", gpt-5.5 returns a JSON array.
-// This parser directly converts that array into AiStockRecommendationV2[].
+// When synthesis is called with responseFormat:"json_schema", gpt-5.5 returns a schema-guaranteed
+// JSON object with an "items" array. This parser converts that array into AiStockRecommendationV2[].
 // The markdown parser below is retained as fallback for non-JSON model responses.
 
 interface V3JsonStockItem {
@@ -1822,6 +1894,8 @@ interface V3SynthesisAttempt {
   markdown: string;
   totalTokens: number;
   costUsd: number;
+  /** Raw content from LLM (first 2000 chars) — for diagnostic even when parser fails. */
+  rawContentPreview: string;
 }
 
 interface V3ParsedSynthesis {
@@ -1831,6 +1905,8 @@ interface V3ParsedSynthesis {
   costUsd: number;
   retryUsed: boolean;
   initialItemCount: number;
+  /** First 2000 chars of the raw synthesis LLM content — for diagnostic even when parser fails. */
+  rawSynthesisPreview: string;
 }
 
 async function synthesizeReportV3(
@@ -1889,10 +1965,18 @@ ${previousMarkdownForRepair}`
         : (repairMarkdown ? 10000 : 8000),
       temperature: repairMarkdown ? 0.1 : 0.2,
       timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
-      // Request structured JSON output — this is the core fix for markdown parser returning 0 items.
-      // gpt-5.5 supports json_object mode; gpt-4o-mini also supports it.
-      // json_object mode forces the model to output valid JSON even for reasoning models.
-      responseFormat: "json_object",
+      // ★ json_schema STRICT mode — OpenAI guarantees output matches V3_SYNTHESIS_JSON_SCHEMA.
+      // This is the definitive fix for the markdown parser returning 0 items.
+      // json_object (previous) was "loose" mode — valid JSON but no structure guarantee.
+      // json_schema strict=true forces the exact fields, types, and array shape → parser cannot fail.
+      // If the model rejects the schema (HTTP 400), callAiRecLlmWithFallback returns null
+      // and the retry path will attempt with json_object as a safety net.
+      responseFormat: "json_schema",
+      responseSchema: {
+        name: "v3_stock_recommendations",
+        strict: true,
+        schema: V3_SYNTHESIS_JSON_SCHEMA,
+      },
     }
   );
 
@@ -1901,10 +1985,14 @@ ${previousMarkdownForRepair}`
   // Problem: the 43-char sentinel passes `report.trim().length > 0` retry guard
   // → repair prompt receives garbage as "previous markdown" → retry also fails.
   // Fix: empty string so retry guard `!isLlmNullReport(report)` correctly skips.
+  const rawContent = llmResult?.content ?? "";
   return {
-    markdown: llmResult?.content ?? "",
+    markdown: rawContent,
     totalTokens: llmResult?.usage.totalTokens ?? 0,
     costUsd: llmResult?.costUsd ?? 0,
+    // ★ Diagnostic: first 2000 chars of raw synthesis content — Elva can see exactly what
+    // gpt-5.5 returned even when the parser fails (surfaced in parserDiagnostic on GET response).
+    rawContentPreview: rawContent.slice(0, 2000),
   };
 }
 
@@ -1921,19 +2009,25 @@ async function synthesizeAndParseReportV3(
   let costUsd = first.costUsd;
   let retryUsed = false;
 
-  // ── Primary: JSON parser (structured output from json_object mode) ──────────
-  // When gpt-5.5 is in json_object mode, output is a JSON array of stock items.
-  // parseV3JsonSynthesis() returns [] if content is not parseable JSON — we then
-  // fall through to the markdown parser as secondary path.
+  // ★ Diagnostic: capture raw synthesis preview from the first attempt.
+  // With json_schema strict mode this IS the structured JSON — parser should never fail.
+  // If it does, Elva can read rawSynthesisPreview directly to see what gpt-5.5 returned.
+  const rawSynthesisPreview = first.rawContentPreview;
+
+  // ── Primary: JSON parser (structured output from json_schema strict mode) ──────────
+  // With json_schema strict=true, gpt-5.5 returns a schema-guaranteed JSON object
+  // with shape {items: [...]}. parseV3JsonSynthesis() handles both array and {items:[...]} wrapper.
+  // parseV3JsonSynthesis() returns [] only if content is completely unparseable JSON — extremely
+  // unlikely with strict mode; we still fall through to markdown parser as last-resort safety net.
   let items = enrichV3Items(parseV3JsonSynthesis(report, dateStr), trace);
   const usedJsonParser = items.length > 0;
 
   if (!usedJsonParser) {
-    // ── Secondary: markdown parser (fallback for non-JSON model responses) ────
-    console.info("[v3-synthesis] JSON parse returned 0 items — falling back to markdown parser");
+    // ── Secondary: markdown parser (safety net — should not fire with json_schema strict mode) ─
+    console.warn("[v3-synthesis] JSON parse returned 0 items after json_schema strict mode — falling back to markdown parser (unexpected)");
     items = enrichV3Items(parseAiReportToRecommendationsV3(report, dateStr), trace);
   } else {
-    console.info(`[v3-synthesis] JSON parser succeeded: ${items.length} items parsed`);
+    console.info(`[v3-synthesis] JSON parser succeeded (json_schema strict mode): ${items.length} items parsed`);
   }
 
   const initialItemCount = completeItemCount(items);
@@ -1957,6 +2051,7 @@ async function synthesizeAndParseReportV3(
       llmReturnedNull: reportIsEmpty,
       usedJsonParser,
       headingCandidates,
+      rawSynthesisPreview,
       reportPreview: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(0, 800),
       reportTail: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(-800),
     }));
@@ -1985,7 +2080,7 @@ async function synthesizeAndParseReportV3(
     }
   }
 
-  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount };
+  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount, rawSynthesisPreview };
 }
 
 // ── Core runAiRecommendationV3 ────────────────────────────────────────────────
