@@ -27,9 +27,11 @@ import {
   getOpsSnapshot,
   getKgiQuoteStatus,
   getStrategyIdeas,
+  getRecommendationsToday,
   getTwseMarketHeatmap,
   getTwseMarketOverview,
   listStrategyRuns,
+  type RecommendationListResponse,
   type CompanyAnnouncement,
   type DashboardSnapshot,
   type FinMindDatasetStatus,
@@ -2401,6 +2403,103 @@ function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboar
   );
 }
 
+function recommendationActionState(action: string | null | undefined): DashboardState {
+  if (action === "今日首選" || action === "可觀察布局（研究參考）") return "LIVE";
+  if (action === "等回檔") return "REVIEW";
+  if (action === "高風險排除" || action === "資料不足暫不推薦") return "BLOCKED";
+  return "EMPTY";
+}
+
+function recommendationPrimaryReason(item: RecommendationListResponse["items"][number]) {
+  const candidates = [
+    item.reasons?.technical?.[0],
+    item.reasons?.news?.[0],
+    item.reasons?.theme?.[0],
+    item.reasons?.quant?.[0],
+    item.reasons?.chip?.[0],
+    item.reasons?.macro?.[0],
+  ];
+  const reason = candidates.find((value) => value && value.trim().length > 0);
+  return reason ? cleanNarrativeText(reason) : "推薦理由待回補；前端不補示意內容。";
+}
+
+function recommendationPlanSummary(item: RecommendationListResponse["items"][number]) {
+  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
+  const tp2 = item.targets?.find((target) => target.label === "TP2")?.price ?? null;
+  const stop = item.invalidation?.price ?? null;
+  return [
+    item.entryZone?.primary ? `進場 ${item.entryZone.primary}` : null,
+    stop ? `停損 ${formatPrice(stop)}` : item.invalidation?.rule ? `停損 ${cleanNarrativeText(item.invalidation.rule).slice(0, 18)}` : null,
+    tp1 ? `TP1 ${formatPrice(tp1)}` : null,
+    tp2 ? `TP2 ${formatPrice(tp2)}` : null,
+  ].filter(Boolean).join(" · ") || "交易計畫待回補";
+}
+
+function recommendationTradeHref(item: RecommendationListResponse["items"][number]) {
+  const params = new URLSearchParams();
+  params.set("symbol", item.ticker);
+  params.set("prefill", "true");
+  params.set("from_rec", item.recommendationId);
+  params.set("side", item.direction === "偏空" ? "sell" : "buy");
+  if (item.entryZone?.primary) params.set("entry", item.entryZone.primary);
+  if (item.invalidation?.price) params.set("stop", String(item.invalidation.price));
+  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
+  if (tp1) params.set("tp", String(tp1));
+  return `/portfolio?${params.toString()}`;
+}
+
+function AiRecommendationActionPanel({ recommendations }: { recommendations: LoadState<RecommendationListResponse> }) {
+  const rows = recommendations.state === "LIVE" && !recommendations.data._mock
+    ? recommendations.data.items.slice(0, 5)
+    : [];
+  const panelState: DashboardState = rows.length > 0
+    ? "LIVE"
+    : recommendations.state === "BLOCKED"
+      ? "BLOCKED"
+      : "EMPTY";
+  const sourceLine = recommendations.state === "LIVE"
+    ? `生成 ${formatDateTime(recommendations.data.generatedAt)} · ${formatNumber(recommendations.data.count)} 檔`
+    : recommendations.reason;
+  const emptyReason = recommendations.state === "LIVE"
+    ? recommendations.data._mock
+      ? "API 標記為 mock，首頁已拒絕顯示。"
+      : "正式推薦清單目前為空；等待下一次 AI 推薦生成。"
+    : recommendations.reason;
+
+  return (
+    <Panel
+      eyebrow="AI RECOMMENDATIONS"
+      title="今日 AI 推薦行動板"
+      sub="只顯示正式推薦 API 回傳；不以策略候選或假資料冒充推薦"
+      right={<StatusChip state={panelState} label={rows.length > 0 ? `${rows.length} 檔` : "待回補"} />}
+    >
+      {rows.length > 0 ? (
+        <>
+          <div className="tac-strategy-table tac-ai-recs-table" data-testid="homepage-ai-recommendations">
+            <div><span>代號</span><span>公司 / 主要理由</span><span>分類</span><span>計畫</span><span>動作</span></div>
+            {rows.map((item) => (
+              <Link href={recommendationTradeHref(item)} key={item.recommendationId}>
+                <b>{item.ticker}</b>
+                <span><strong>{item.companyName}</strong><small>{recommendationPrimaryReason(item)}</small></span>
+                <small>{item.action}<br />信心 {Math.round(item.confidence * 100)}%</small>
+                <small>{recommendationPlanSummary(item)}</small>
+                <StatusChip state={recommendationActionState(item.action)} label="進交易室" compact />
+              </Link>
+            ))}
+          </div>
+          <div className="tac-brief-quality">
+            來源：GET /api/v1/recommendations/today · {sourceLine} · 點任一檔會帶入交易室紙上預覽。
+          </div>
+        </>
+      ) : (
+        <div className="tac-empty-line">
+          今日 AI 推薦尚未形成正式清單。來源：GET /api/v1/recommendations/today。{emptyReason}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   const featured = intel.data.items[0] ?? null;
   const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
@@ -2754,6 +2853,7 @@ async function DashboardContent({
     briefResult,
     paperResult,
     brokerResult,
+    recommendationsResult,
     ideasResult,
     runsResult,
     intelResult,
@@ -2778,6 +2878,13 @@ async function DashboardContent({
     timedFetch("brief", FETCH_SOFT_MS, loadDailyBriefDashboard()),
     timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
     timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
+    timedFetch("recommendations", FETCH_SOFT_MS, load(
+      "AI recommendations",
+      { date: todayTaipeiDate(), generatedAt: now, count: 0, items: [] } as RecommendationListResponse,
+      async () => await getRecommendationsToday(),
+      (value) => value._mock === true || value.items.length === 0,
+      "今日 AI 推薦尚未回傳正式清單。",
+    )),
     timedFetch("ideas", FETCH_SOFT_MS, load(
       "Strategy ideas",
       null,
@@ -2874,6 +2981,13 @@ async function DashboardContent({
     if (isTimeoutSentinel(v)) return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
+  const recommendations = (() => {
+    const emptyRecommendations: RecommendationListResponse = { date: todayTaipeiDate(), generatedAt: updatedAt, count: 0, items: [] };
+    if (recommendationsResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: "載入失敗" };
+    const v = recommendationsResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
   const ideas = (() => {
     if (ideasResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
     const v = ideasResult.value;
@@ -2934,6 +3048,10 @@ async function DashboardContent({
             <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
+          <section className="tac-two-grid tac-action-grid">
+            <AiRecommendationActionPanel recommendations={recommendations} />
+            <StrategyPanel ideas={ideas} />
+          </section>
           <section className="tac-two-grid tac-fresh-heat">
             <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
             <FreshnessPanel sources={sources} />
@@ -2944,11 +3062,11 @@ async function DashboardContent({
           </section>
           <section className="tac-two-grid tac-paper-grid">
             <PaperPanel paper={paper} broker={broker} />
-            <StrategyPanel ideas={ideas} />
+            <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
           </section>
           <section className="tac-two-grid tac-bottom-grid">
-            <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
             <DataReadinessPanel sources={sources} />
+            <DataGapPanel sources={sources} />
           </section>
         </div>
       </main>

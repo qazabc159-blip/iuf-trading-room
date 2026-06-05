@@ -14092,9 +14092,30 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: var(--tac-bg-2);
 }
 
+.tac-strategy-table.tac-ai-recs-table > div,
+.tac-strategy-table.tac-ai-recs-table > a {
+  grid-template-columns: 72px minmax(140px, 1.2fr) 104px minmax(150px, 1fr) 92px;
+}
+
 .tac-strategy-table b {
   color: var(--tac-brand);
   font: 900 12px/1.2 var(--mono);
+}
+
+.tac-strategy-table span strong,
+.tac-strategy-table span small {
+  display: block;
+}
+
+.tac-strategy-table span strong {
+  color: var(--tac-fg-0);
+  font: 850 12px/1.35 var(--sans-tc);
+}
+
+.tac-strategy-table span small {
+  margin-top: 3px;
+  color: var(--tac-fg-3);
+  font: 720 11px/1.45 var(--sans-tc);
 }
 
 .tac-strategy-table span,
