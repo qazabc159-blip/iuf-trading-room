@@ -38,7 +38,7 @@ const TICK_CSS = `
 }
 ._ts-row {
   display: grid;
-  grid-template-columns: 48px 1fr 1fr 60px;
+  grid-template-columns: 58px 1fr 1fr 60px;
   gap: 4px;
   padding: 3px 6px;
   font-size: 11px;
@@ -57,7 +57,7 @@ const TICK_CSS = `
 ._ts-side-flat { color: var(--night-mid, #91a0b5); font-size: 9.5px; text-align: right; }
 ._ts-header {
   display: grid;
-  grid-template-columns: 48px 1fr 1fr 60px;
+  grid-template-columns: 58px 1fr 1fr 60px;
   gap: 4px;
   padding: 2px 6px 4px;
   font-size: 9.5px;
@@ -73,11 +73,9 @@ const TICK_CSS = `
 
 function tickTime(dt: string | null | undefined): string {
   if (!dt) return "--:--:--";
-  try {
-    return new Date(dt).toLocaleTimeString("zh-TW", { hour12: false });
-  } catch {
-    return "--:--:--";
-  }
+  const date = new Date(dt);
+  if (Number.isNaN(date.getTime())) return "--:--:--";
+  return date.toLocaleTimeString("zh-TW", { hour12: false });
 }
 
 function chgTypeLabel(chgType: number | null | undefined): { cls: string; label: string } {
@@ -95,17 +93,17 @@ function priceClass(chgType: number | null | undefined): string {
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
   if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
-    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；逐筆成交面板降級，不補假成交明細。";
+    return "KGI SIM 尚未提供唯讀逐筆 token；目前不顯示假逐筆。";
   }
-  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未列入唯讀逐筆行情覆蓋清單；不顯示假成交明細。";
-  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI 唯讀逐筆暫時無法連線；請稍後再讀取。";
-  if (/QUOTE_DISABLED/i.test(msg)) return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
-  if (/GATEWAY_AUTH/i.test(msg)) return "KGI 唯讀行情憑證暫時失效；此面板保持降級，不顯示假成交明細。";
+  if (/SYMBOL_NOT_ALLOWED/i.test(msg)) return "此股票尚未訂閱 KGI 唯讀逐筆；訂閱完成後會自動回到 LIVE。";
+  if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) return "KGI 唯讀逐筆閘道暫時無法連線，稍後會自動重試。";
+  if (/QUOTE_DISABLED/i.test(msg)) return "KGI 唯讀逐筆目前被後端暫停，避免顯示錯誤成交。";
+  if (/GATEWAY_AUTH/i.test(msg)) return "KGI 唯讀逐筆授權尚未通過，暫不顯示逐筆。";
   return `逐筆成交暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
 function offHoursReason() {
-  return `目前為盤外/休市時段，KGI 唯讀逐筆不會回傳即時成交明細；下一次讀取窗口：${kgiNextOpenLabel()}。`;
+  return `目前不在台股即時撮合時段，KGI 唯讀逐筆不會回傳盤中成交。下一次觀察窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
@@ -119,7 +117,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     try {
       const result = await getKgiTicks(symbol, MAX_TICKS);
       if (!result || result.ticks.length === 0) {
-        setState({ status: "waiting", reason: "KGI 唯讀逐筆目前尚未回傳有效成交明細；系統會持續輪詢，不使用假逐筆補畫。" });
+        setState({ status: "waiting", reason: "KGI 唯讀逐筆目前尚未回傳有效成交明細，系統會持續輪詢；這不是系統故障。" });
         return;
       }
       setState({ status: "live", ticks: result.ticks, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
@@ -138,11 +136,11 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     <section className="panel hud-frame _ts-panel" style={{ marginBottom: 12 }}>
       <style>{TICK_CSS}</style>
       <h3 className="ascii-head" style={{ marginBottom: 6 }}>
-        <span className="ascii-head-bracket">逐筆</span> 成交明細
+        <span className="ascii-head-bracket">逐筆</span> 即時成交
         {state.status === "live" && (
           <span className="_ts-live-badge" style={{ marginLeft: 10 }}>
             <span className="_ts-live-ring" />
-            LIVE 於 {state.updatedAt}
+            LIVE / {state.updatedAt}
           </span>
         )}
         {state.status === "loading" && (
@@ -155,7 +153,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason} 這不是系統故障；正式逐筆只在盤中顯示，不使用假成交明細補畫。</span>
+          <span className="state-reason">{state.reason} 盤中會自動回到 LIVE。</span>
         </div>
       )}
 
@@ -163,7 +161,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">待回傳</span>
           <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason} 這不是系統故障；只要 KGI 回傳正式逐筆就會自動切回 LIVE。</span>
+          <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
@@ -178,7 +176,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在取得 KGI 唯讀逐筆成交明細。</span>
+          <span className="tg soft">正在讀取 KGI 唯讀逐筆成交。</span>
         </div>
       )}
 
@@ -187,7 +185,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
           <div className="_ts-header">
             <span>時間</span>
             <span>成交價</span>
-            <span>成交量</span>
+            <span>量</span>
             <span style={{ textAlign: "right" }}>方向</span>
           </div>
           <div className="_ts-tape">
