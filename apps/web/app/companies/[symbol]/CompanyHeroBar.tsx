@@ -313,11 +313,9 @@ export function CompanyHeroBar({
           <span className="badge badge-blue">{marketLabel[company.market] ?? company.market}</span>
           <span className="badge badge-yellow">{tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}</span>
           {/* freshness badge — 4 states: live / intraday / stale / eod */}
-          <FreshnessBadge
-            mode={freshnessMode}
-            ageMs={freshnessMs}
-            testId="company-hero-freshness-badge"
-          />
+          <span data-testid="company-hero-freshness-badge" data-freshness-mode={freshnessMode}>
+            <FreshnessBadge mode={freshnessMode} ageMs={freshnessMs} />
+          </span>
         </div>
 
         {/* Meta line */}
