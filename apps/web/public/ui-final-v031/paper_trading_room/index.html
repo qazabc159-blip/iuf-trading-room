@@ -582,6 +582,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
         </div>
         <iframe
           id="real-kline-frame"
+          data-symbol="2330"
           title="交易室真實 K 線"
           src="/final-v031/portfolio/kline-frame?symbol=2330"
           loading="eager"
@@ -936,7 +937,11 @@ function pickRow(sym){
   updPreview();
 }
 
-let __realChartSymbol='';
+let __realChartSymbol='2330';
+window.__IUF_REAL_KLINE_FRAME_SYMBOL__='2330';
+function sameChartSym(left,right){
+  return String(left||'').trim().toUpperCase()===String(right||'').trim().toUpperCase();
+}
 function buildRealChartFrameSrc(sym){
   const nextParams=new URLSearchParams();
   const selected=String(sym||'').toUpperCase();
@@ -944,7 +949,7 @@ function buildRealChartFrameSrc(sym){
   try{
     const sourceParams=new URLSearchParams(window.location.search);
     const handoffSymbol=String(sourceParams.get('symbol')||sourceParams.get('ticker')||'').toUpperCase();
-    const sameHandoff=!handoffSymbol||handoffSymbol===selected;
+    const sameHandoff=!handoffSymbol||sameChartSym(handoffSymbol,selected);
     if(sameHandoff){
       ['entry','stop','tp','from_rec','recommendationId','side'].forEach((key)=>{
         const value=sourceParams.get(key);
@@ -980,7 +985,7 @@ window.updateRealChartFrame=updateRealChartFrame;
 
 function syncRealChartFrameFromLocation(){
   const sym=new URLSearchParams(window.location.search).get('symbol');
-  if(sym&&sym!==__realChartSymbol)updateRealChartFrame(sym);
+  if(sym&&!sameChartSym(sym,__realChartSymbol))updateRealChartFrame(sym);
 }
 document.addEventListener('click',(event)=>{
   const row=event.target&&event.target.closest?event.target.closest('.wrow[data-sym]'):null;

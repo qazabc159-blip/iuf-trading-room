@@ -773,7 +773,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (!key) return "未知產業";
     return industryLabels[key] || key;
   };
-  const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
+  const sameSym = (left, right) => String(left || "").trim().toUpperCase() === String(right || "").trim().toUpperCase();
+  if (live.screen === "paper-trading-room") {
+    const seededSymbol = String(paperPrefill()?.symbol || live.selected?.symbol || "2330").trim().toUpperCase();
+    currentPaperSymbol = /^[0-9A-Z._-]{2,16}$/.test(seededSymbol) ? seededSymbol : "2330";
+  }
   const firstNumber = (value) => {
     const match = String(value || "").replace(/,/g, "").match(/\\d+(?:\\.\\d+)?/);
     return match ? Number(match[0]) : null;
