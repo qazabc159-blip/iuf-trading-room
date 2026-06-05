@@ -16071,6 +16071,26 @@ test("GPT55-UPGRADE-4: brief generator uses OPENAI_MODEL_BRIEF + synthesis promp
   );
 });
 
+test("GPT55-UPGRADE-5: ai rec v3 has a model fallback so one bad deep model cannot blank the product", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("resolveAiRecFallbackModel"),
+    "GPT55-UPGRADE-5: orchestrator-v3 must resolve a fallback model for AI recommendations"
+  );
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC_FALLBACK"]'),
+    "GPT55-UPGRADE-5: fallback model must be configurable via OPENAI_MODEL_AI_REC_FALLBACK"
+  );
+  assert.ok(
+    src.includes("callAiRecLlmWithFallback"),
+    "GPT55-UPGRADE-5: v3 LLM calls must go through the fallback wrapper"
+  );
+  assert.ok(
+    src.includes("_model_fallback"),
+    "GPT55-UPGRADE-5: fallback calls must be visible in the LLM ledger task type"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
