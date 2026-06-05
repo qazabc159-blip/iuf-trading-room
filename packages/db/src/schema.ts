@@ -1018,3 +1018,53 @@ export const aiRecommendationsRuns = pgTable(
     workspaceStatusIdx:   index("ai_rec_runs_workspace_status_idx").on(table.workspaceId, table.status, table.generatedAt.desc())
   })
 );
+
+// -- AI Rec Pick Snapshots -- migration 0044_ai_rec_pick_snapshots.sql
+// ai_rec_pick_snapshots: one row per (pick_date, ticker) — daily forward-performance tracking.
+// Records each v3 pick with entry price at snapshot time, then daily cron fills ret_1d/5d/20d
+// and excess returns vs TAIEX.
+export const aiRecPickSnapshots = pgTable(
+  "ai_rec_pick_snapshots",
+  {
+    id:             uuid("id").defaultRandom().primaryKey(),
+    // pick_date: TST calendar date of the AI pick (YYYY-MM-DD)
+    pickDate:       date("pick_date").notNull(),
+    // ticker: 4-digit TWSE ticker
+    ticker:         text("ticker").notNull(),
+    // bucket: A+ / A / B / C per Yang SOP
+    bucket:         text("bucket").notNull(),
+    // action: v3 action string
+    action:         text("action").notNull(),
+    // confidence: LLM confidence [0,1]
+    confidence:     real("confidence"),
+    // total_score: Yang SOP 7-axis composite [0,100]
+    totalScore:     real("total_score"),
+    // pick_price: closing price at time of snapshot (companies_ohlcv)
+    pickPrice:      numeric("pick_price", { precision: 12, scale: 2 }),
+    // entry zone from v3 STEP 5
+    entryLow:       numeric("entry_low", { precision: 12, scale: 2 }),
+    entryHigh:      numeric("entry_high", { precision: 12, scale: 2 }),
+    // profit targets and stop from v3 STEP 5
+    tp1:            numeric("tp1", { precision: 12, scale: 2 }),
+    tp2:            numeric("tp2", { precision: 12, scale: 2 }),
+    stopLoss:       numeric("stop_loss", { precision: 12, scale: 2 }),
+    // run_id: links back to ai_recommendations_runs.run_id for full trace
+    runId:          text("run_id").notNull(),
+    // Forward return columns (updated by daily cron after market close)
+    ret1d:          real("ret_1d"),
+    ret5d:          real("ret_5d"),
+    ret20d:         real("ret_20d"),
+    // Excess returns vs TAIEX benchmark
+    excess1d:       real("excess_1d"),
+    excess5d:       real("excess_5d"),
+    excess20d:      real("excess_20d"),
+    // Last time forward returns were updated (NULL = not yet computed)
+    retUpdatedAt:   timestamp("ret_updated_at", { withTimezone: true }),
+    createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pickDateIdx:        index("ai_rec_pick_snaps_pick_date_idx").on(table.pickDate.desc()),
+    bucketIdx:          index("ai_rec_pick_snaps_bucket_idx").on(table.bucket, table.pickDate.desc()),
+    retUpdatedIdx:      index("ai_rec_pick_snaps_ret_updated_idx").on(table.retUpdatedAt, table.pickDate.desc()),
+  })
+);
