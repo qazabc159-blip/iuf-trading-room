@@ -269,7 +269,7 @@ export interface AiRecommendationV3RunOptions {
 
 export interface AiRecommendationV3RunResult {
   runId: string;
-  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools" | "synthesis_format_error";
+  status: "running" | "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools" | "synthesis_format_error";
   generatedAt: string;
   items: AiStockRecommendationV2[];
   reactTrace: unknown[];
@@ -358,6 +358,19 @@ function completeItemCount(items: AiStockRecommendationV2[]): number {
 // need generous headroom; fast models finish well under these and are unaffected.
 const V3_SYNTHESIS_TIMEOUT_MS = 240_000;
 const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 300_000;
+export const V3_RUNNING_STALE_AFTER_MS = 45 * 60 * 1000;
+
+export function getV3RunAgeMs(generatedAt: string, nowMs = Date.now()): number | null {
+  const startedMs = Date.parse(generatedAt);
+  if (!Number.isFinite(startedMs)) return null;
+  return Math.max(0, nowMs - startedMs);
+}
+
+export function isV3RunningStale(status: AiRecommendationV3RunResult["status"], generatedAt: string, nowMs = Date.now()): boolean {
+  if (status !== "running") return false;
+  const ageMs = getV3RunAgeMs(generatedAt, nowMs);
+  return ageMs !== null && ageMs > V3_RUNNING_STALE_AFTER_MS;
+}
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {

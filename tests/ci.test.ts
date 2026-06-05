@@ -15330,6 +15330,36 @@ test("AI-REC-V3-CRON-5: deterministic fallback is last resort after rounds are e
   assert.ok(continueIdx !== -1, "AI-REC-V3-CRON-5: insufficient output must continue while rounds remain");
 });
 
+test("AI-REC-V3-DIAG-1: v3 exposes stale running diagnostics helpers", async () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  assert.ok(
+    src.includes('status: "running" | "complete"'),
+    "AI-REC-V3-DIAG-1: run result status type must include persisted DB running rows"
+  );
+  assert.ok(
+    src.includes("export const V3_RUNNING_STALE_AFTER_MS"),
+    "AI-REC-V3-DIAG-1: stale threshold must be exported for API diagnostics"
+  );
+  const { getV3RunAgeMs, isV3RunningStale, V3_RUNNING_STALE_AFTER_MS } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const nowMs = Date.parse("2026-06-05T12:00:00.000Z");
+  assert.equal(getV3RunAgeMs("2026-06-05T11:59:00.000Z", nowMs), 60_000);
+  assert.equal(isV3RunningStale("complete", "2026-06-05T10:00:00.000Z", nowMs), false);
+  assert.equal(isV3RunningStale("running", new Date(nowMs - V3_RUNNING_STALE_AFTER_MS - 1).toISOString(), nowMs), true);
+});
+
+test("AI-REC-V3-DIAG-2: v3 API surfaces runDiagnostics and admin stale-running fields", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(src.includes("runDiagnostics"), "AI-REC-V3-DIAG-2: public v3 GET must expose runDiagnostics");
+  assert.ok(src.includes("staleRunning"), "AI-REC-V3-DIAG-2: public v3 GET must expose staleRunning");
+  assert.ok(src.includes("latest_run_age_ms"), "AI-REC-V3-DIAG-2: admin status must expose latest_run_age_ms");
+  assert.ok(src.includes("latest_stale_running"), "AI-REC-V3-DIAG-2: admin status must expose latest_stale_running");
+  assert.ok(
+    src.includes("Latest AI recommendation v3 run is still running past the expected window"),
+    "AI-REC-V3-DIAG-2: stale running diagnostic must explain the operator action"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 // =============================================================================
@@ -16325,11 +16355,15 @@ test("JSON-SYNTHESIS-4: parseV3JsonSynthesis filters year-like tickers (e.g. 202
   assert.ok(items.some((i: any) => i.ticker === "2330"), "JSON-SYNTHESIS-4: valid ticker 2330 must be included");
 });
 
-test("JSON-SYNTHESIS-5: synthesizeReportV3 uses responseFormat:json_object for synthesis calls", () => {
+test("JSON-SYNTHESIS-5: synthesizeReportV3 uses strict structured JSON synthesis calls", () => {
   const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
   assert.ok(
-    src.includes('responseFormat: "json_object"'),
-    "JSON-SYNTHESIS-5: synthesizeReportV3 must use responseFormat json_object"
+    src.includes('responseFormat: "json_schema"'),
+    "JSON-SYNTHESIS-5: synthesizeReportV3 must use strict responseFormat json_schema"
+  );
+  assert.ok(
+    src.includes("responseSchema") && src.includes("v3_stock_recommendations") && src.includes("V3_SYNTHESIS_JSON_SCHEMA"),
+    "JSON-SYNTHESIS-5: synthesizeReportV3 must pass the AI rec v3 schema definition"
   );
   assert.ok(
     src.includes("parseV3JsonSynthesis"),

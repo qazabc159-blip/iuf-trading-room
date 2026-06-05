@@ -18420,7 +18420,12 @@ async function _runAiRecV3Cron(opts: {
 // GET /api/v1/ai-recommendations/v3
 // F4: Exposes reactTrace + finalReportMarkdown for debug; fallback shows raw markdown when items=0
 app.get("/api/v1/ai-recommendations/v3", async (c) => {
-  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const {
+    getLatestAiRecommendationV3RunForRead,
+    getV3RunAgeMs,
+    isV3RunningStale,
+    V3_RUNNING_STALE_AFTER_MS,
+  } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = await getLatestAiRecommendationV3RunForRead();
   if (!latest) {
     return c.json({
@@ -18462,6 +18467,17 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
   const synthesisFallbackUsed =
     latest.synthesisFallbackUsed ?? (latest.status === "synthesis_format_error" && latest.items.length >= 5);
+  const runAgeMs = getV3RunAgeMs(latest.generatedAt);
+  const staleRunning = isV3RunningStale(latest.status, latest.generatedAt);
+  const runDiagnostics = {
+    status: latest.status,
+    runAgeMs,
+    staleRunning,
+    staleAfterMs: V3_RUNNING_STALE_AFTER_MS,
+    cronRunning: _aiRecV3CronRunning,
+    cronLastFiredAt: _aiRecV3CronLastFiredAt,
+    cronLastError: _aiRecV3CronLastError,
+  };
   return c.json({
     ok: true,
     runId: latest.runId,
@@ -18482,11 +18498,19 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
     scoreBreakdown: latest.scoreBreakdown ?? null,
+    runDiagnostics,
     // F4 debug fields:
     reactTrace: includeTrace ? latest.reactTrace : undefined,
     finalReportMarkdown: latest.finalReportMarkdown,
     // Diagnostic: when parser/fallback path fired, surface a hint
-    parserDiagnostic: (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
+    parserDiagnostic: staleRunning
+      ? {
+          hint: "Latest AI recommendation v3 run is still running past the expected window. Check cronLastError and Railway logs before trusting the stale product surface.",
+          usedFallback: synthesisFallbackUsed,
+          runAgeMs,
+          staleAfterMs: V3_RUNNING_STALE_AFTER_MS,
+        }
+      : (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
       ? {
           hint: latest.status === "synthesis_format_error"
             ? "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present."
@@ -18523,14 +18547,25 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "forbidden_role" }, 403);
   }
-  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const {
+    getLatestAiRecommendationV3RunForRead,
+    getV3RunAgeMs,
+    isV3RunningStale,
+    V3_RUNNING_STALE_AFTER_MS,
+  } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = await getLatestAiRecommendationV3RunForRead();
+  const latestRunAgeMs = latest ? getV3RunAgeMs(latest.generatedAt) : null;
+  const latestStaleRunning = latest ? isV3RunningStale(latest.status, latest.generatedAt) : false;
   return c.json({
     cron_running: _aiRecV3CronRunning,
     cron_last_fired_at: _aiRecV3CronLastFiredAt,
     cron_last_error: _aiRecV3CronLastError,
     latest_run_id: latest?.runId ?? null,
     latest_status: latest?.status ?? null,
+    latest_generated_at: latest?.generatedAt ?? null,
+    latest_run_age_ms: latestRunAgeMs,
+    latest_stale_running: latestStaleRunning,
+    stale_after_ms: V3_RUNNING_STALE_AFTER_MS,
     latest_item_count: latest?.items.length ?? 0,
     latest_cost_usd: latest?.totalCostUsd ?? 0,
     latest_market_state: latest?.marketState ?? null,
