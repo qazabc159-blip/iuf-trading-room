@@ -244,7 +244,7 @@ type IntelItem = {
 async function fetchInternal<T>(url: string, cookie: string): Promise<T | null> {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, {
       headers: { cookie },
       signal: ctrl.signal,
