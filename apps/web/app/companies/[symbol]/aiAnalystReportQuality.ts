@@ -1,3 +1,5 @@
+import { COMPANY_AI_ANALYST_REQUIRED_SECTIONS } from "./aiAnalystReportContract";
+
 const ENGINEERING_REPORT_LEAK_PATTERNS = [
   /\bget_market_overview\b/i,
   /\bget_news_top10\b/i,
@@ -16,7 +18,7 @@ const ENGINEERING_REPORT_LEAK_PATTERNS = [
 
 export interface CompanyAiReportQuality {
   ok: boolean;
-  reason: "empty" | "engineering_leak" | "quality_protected" | "ok";
+  reason: "empty" | "engineering_leak" | "missing_sections" | "quality_protected" | "ok";
   blockedTerms: string[];
 }
 
@@ -34,6 +36,11 @@ export function assessCompanyAiReportQuality(reportMd: string | null | undefined
 
   if (md.includes("品質保護版") || md.includes("保守分析版")) {
     return { ok: false, reason: "quality_protected", blockedTerms: [] };
+  }
+
+  const missingSections = COMPANY_AI_ANALYST_REQUIRED_SECTIONS.filter((section) => !md.includes(section));
+  if (missingSections.length > 0) {
+    return { ok: false, reason: "missing_sections", blockedTerms: missingSections };
   }
 
   return { ok: true, reason: "ok", blockedTerms: [] };

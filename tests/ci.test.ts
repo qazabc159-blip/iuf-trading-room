@@ -16448,6 +16448,45 @@ test("COMPANIES-REGISTRY-1: companies page labels and fallback must be product-r
   }
 });
 
+test("COMPANY-AI-ANALYST-1: company AI analyst must enforce a complete product report", () => {
+  const contractSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/aiAnalystReportContract.ts"), "utf8");
+  const qualitySrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/aiAnalystReportQuality.ts"), "utf8");
+  const panelSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/AiAnalystReportPanel.tsx"), "utf8");
+
+  for (const section of [
+    "## 1. 公司概況與定位",
+    "## 2. 今日/最近資料狀態",
+    "## 3. 近期事件與新聞",
+    "## 4. 技術結構",
+    "## 5. 籌碼與法人",
+    "## 6. 主題與產業鏈位置",
+    "## 7. 主要風險",
+    "## 8. AI 結論與觀察等級",
+    "## 9. 資料來源與生成時間",
+  ]) {
+    assert.ok(contractSrc.includes(section), `COMPANY-AI-ANALYST-1: missing required section ${section}`);
+  }
+
+  assert.ok(
+    contractSrc.includes("不要複述本段規則、禁止詞或工具名稱"),
+    "COMPANY-AI-ANALYST-1: prompt must forbid echoing engineering rules or tool names"
+  );
+  assert.ok(
+    qualitySrc.includes("missing_sections") && qualitySrc.includes("COMPANY_AI_ANALYST_REQUIRED_SECTIONS"),
+    "COMPANY-AI-ANALYST-1: quality gate must block incomplete reports, not only tool leaks"
+  );
+  assert.ok(
+    panelSrc.includes("本次回覆缺少公司頁要求的固定九段") && panelSrc.includes("這份 AI 報告需要重新生成"),
+    "COMPANY-AI-ANALYST-1: UI must stop incomplete reports from masquerading as formal analysis"
+  );
+
+  for (const fragment of ["?砍", "甇?", "銝", "蝮賢", "鞈", "瑼", "�"]) {
+    assert.ok(!contractSrc.includes(fragment), `COMPANY-AI-ANALYST-1: contract still contains mojibake fragment ${fragment}`);
+    assert.ok(!qualitySrc.includes(fragment), `COMPANY-AI-ANALYST-1: quality gate still contains mojibake fragment ${fragment}`);
+    assert.ok(!panelSrc.includes(fragment), `COMPANY-AI-ANALYST-1: panel still contains mojibake fragment ${fragment}`);
+  }
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

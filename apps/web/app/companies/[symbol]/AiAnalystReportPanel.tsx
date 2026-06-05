@@ -450,6 +450,11 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           報告品質未通過：AI 回傳內容含有內部工具或工程標籤，已停止當作正式分析展示。請重新分析，系統會重新取得公司資料、新聞、技術面與法人資料後再產出報告。
         </div>
       )}
+      {reportQuality.reason === "missing_sections" && (
+        <div className="_ai-budget-banner _ai-quality-banner">
+          報告品質未通過：本次回覆缺少公司頁要求的固定九段，已停止當作正式分析展示。請重新分析，直到報告完整覆蓋公司定位、資料狀態、事件、技術、籌碼、主題、風險、結論與來源。
+        </div>
+      )}
 
       {/* ── Report body ── */}
       <div className="_ai-report-body">
@@ -457,13 +462,20 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           <div className="_ai-md-content">
             {renderMarkdownSimple(result.report_md)}
           </div>
-        ) : reportQuality.reason === "engineering_leak" ? (
+        ) : reportQuality.reason !== "empty" ? (
           <div className="_ai-quality-state">
             <b>這份 AI 報告需要重新生成</b>
-            <span>目前結果仍帶有工程內部資訊，不適合給客戶當成投資研究閱讀。</span>
+            <span>
+              {reportQuality.reason === "engineering_leak"
+                ? "目前結果仍帶有工程內部資訊，不適合給客戶當成投資研究閱讀。"
+                : reportQuality.reason === "missing_sections"
+                  ? "目前結果沒有完整通過九段正式報告格式，不適合給客戶當成投資研究閱讀。"
+                  : "目前結果是保守品質保護版，還不是可正式展示的公司分析報告。"}
+            </span>
             <ul>
-              <li>已攔截：工具名、run id、token、placeholder 或 raw dump 類內容。</li>
-              <li>下一步：按「重新分析」，重新產出 9 段正式公司報告。</li>
+              <li>已攔截：工程內部詞、缺段落、placeholder 或未完成品質保護內容。</li>
+              <li>格式要求：公司定位、資料狀態、事件、技術、籌碼、主題、風險、AI 結論、資料來源，共 9 段。</li>
+              <li>下一步：按「重新分析」，重新產出正式公司報告。</li>
               <li>原始資料來源仍保留在後端紀錄，不會冒充正式結論。</li>
             </ul>
             <button className="_ai-generate-btn btn-sm" onClick={handleRefresh}>
