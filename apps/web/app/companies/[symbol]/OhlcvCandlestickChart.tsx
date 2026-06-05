@@ -1095,6 +1095,20 @@ export function OhlcvCandlestickChart({
       setHoverBar(null);
     }
   }, [bars.length, chartBars.length, isIntraday]);
+  useEffect(() => {
+    if (
+      compactTradingRoom &&
+      !isIntraday &&
+      interval !== "1d" &&
+      chartBars.length > 0 &&
+      chartBars.length < MIN_TREND_BARS &&
+      bars.length >= MIN_TREND_BARS
+    ) {
+      setInterval("1d");
+      setRange("all");
+      setHoverBar(null);
+    }
+  }, [bars.length, chartBars.length, compactTradingRoom, interval, isIntraday]);
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {
     if (!isIntraday) return null;
