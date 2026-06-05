@@ -298,12 +298,27 @@ const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
+const V3_BUCKET_A_PLUS_MIN_SCORE = 85;
+const V3_BUCKET_A_MIN_SCORE = 75;
+const V3_BUCKET_B_MIN_SCORE = 65;
+
+function bucketFromTotalScoreV3(score: number | null | undefined): AiRecBucket | null {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  if (score >= V3_BUCKET_A_PLUS_MIN_SCORE) return "A+";
+  if (score >= V3_BUCKET_A_MIN_SCORE) return "A";
+  if (score >= V3_BUCKET_B_MIN_SCORE) return "B";
+  return "C";
+}
+
+function normalizeBucketByScoreV3(bucket: AiRecBucket, score: number | null | undefined): AiRecBucket {
+  return bucketFromTotalScoreV3(score) ?? bucket;
+}
 
 function isActionableRecommendationItem(item: AiStockRecommendationV2): boolean {
   if (item.isIncomplete) return false;
   if (item.bucket === "C") return false;
   if (item.action === "高風險排除") return false;
-  if ((item.totalScore ?? 0) < 65) return false;
+  if ((item.totalScore ?? 0) < V3_BUCKET_B_MIN_SCORE) return false;
   return true;
 }
 
@@ -1178,7 +1193,9 @@ export function buildDeterministicFallbackItemsFromTrace(
       const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
         subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
       const bucket: AiRecBucket =
-        totalScore >= 82 ? "A+" : totalScore >= 75 ? "A" : totalScore >= 60 ? "B" : "C";
+        totalScore >= V3_BUCKET_A_PLUS_MIN_SCORE ? "A+" :
+        totalScore >= V3_BUCKET_A_MIN_SCORE ? "A" :
+        totalScore >= V3_BUCKET_B_MIN_SCORE ? "B" : "C";
       const action: AiStockRecommendationV2["action"] =
         bucket === "A+" ? "今日首選" :
         bucket === "A" ? "可觀察布局（研究參考）" :
@@ -1443,12 +1460,17 @@ export function parseAiReportToRecommendationsV3(
     const rationale = cleanedRationaleLines.join("; ") ||
       whyBuy.join("; ") ||
       block.slice(0, 200).replace(/\n/g, " ").trim();
+    const finalTotalScore = totalScore ?? computedTotal ?? undefined;
+    const finalBucket = normalizeBucketByScoreV3(bucketResult.bucket, finalTotalScore);
+    const finalAction = finalBucket === bucketResult.bucket
+      ? bucketResult.action
+      : parseBucket(finalBucket).action;
 
     const rec: AiStockRecommendationV2 = {
       id: randomUUID(),
       ticker,
       companyName,
-      action: bucketResult.action,
+      action: finalAction,
       date: dateStr,
       confidence: confidence ?? defaultConfidence,
       rationale,
@@ -1464,8 +1486,8 @@ export function parseAiReportToRecommendationsV3(
       marketState,
       marketScores: undefined, // Set at run level, not per-stock
       subScores,
-      totalScore: totalScore ?? computedTotal ?? undefined,
-      bucket: bucketResult.bucket,
+      totalScore: finalTotalScore,
+      bucket: finalBucket,
       entryZone: (entryLow !== null || entryHigh !== null) ? {
         low: entryLow,
         high: entryHigh,
@@ -1623,6 +1645,7 @@ CRITICAL PARSER RULES:
 3. Do NOT output any heading containing "risk-off" or "市場" — only stock ticker headings are parsed.
 4. Do NOT use markdown tables — use bullet list format (- 欄位: 值) exclusively.
 5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 actionable A+/A/B stocks. C bucket is allowed only as a clearly labeled exclusion list and does not count toward the minimum.
+6. Score thresholds are mandatory: A+ >= 85, A = 75-84, B = 65-74, C < 65. Never label a score below 65 as B; analyze another verified ticker instead.
 
 Previous markdown:
 ${previousMarkdownForRepair}`
@@ -1972,6 +1995,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items = synthesis.items;
       let synthesisFallbackUsed = false;
       if (
+        round >= maxRounds - 1 &&
         completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS &&
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         progScore < 3

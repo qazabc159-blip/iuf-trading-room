@@ -13416,6 +13416,43 @@ test("AI-REC-V3-4: bucket assignment logic A+/A/B/C by totalScore thresholds", a
   assert.equal(b!.action, "等回檔", "AI-REC-V3-4: B action must be 等回檔");
 });
 
+test("AI-REC-V3-BUCKET-CONSISTENCY-1: score below 65 cannot stay in B bucket", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const markdown = `## 1444 力麗
+- 分類: B等回檔
+- 總分: 60
+- 市場狀態: trend
+- 主題位置分: 15
+- 營收財報分: 8
+- 法人ETF分: 8
+- 融資借券分: 8
+- 相對強弱量能分: 5
+- 技術結構分: 10
+- 估值事件分: 3
+- 進場區: 6.8-7.5
+- 進場理由: OTE 0.618-0.705
+- TP1: 8
+- TP1理由: 前波高
+- TP2: 9
+- TP2理由: 月線上緣
+- 停損: 6
+- ATR倍數: 0.5
+- R值: 0.4
+- 信心: 0.4
+- 為什麼買: 成交量放大但分數仍低於可操作門檻。
+- 為什麼不買: 總分低於65，不可標成可操作B卡。
+- NAV比重: 0.4%
+- 市場倍率: 0.6
+`;
+
+  const items = parseAiReportToRecommendationsV3(markdown, "2026-06-05");
+  assert.equal(items.length, 1, "AI-REC-V3-BUCKET-CONSISTENCY-1: sample must parse one item");
+  assert.equal(items[0]!.bucket, "C", "AI-REC-V3-BUCKET-CONSISTENCY-1: score 60 must be downgraded to C");
+});
+
 test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-ratio and why_buy/why_not_buy", async () => {
   const { parseAiReportToRecommendationsV3 } = await import(
     "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
@@ -15236,6 +15273,21 @@ test("AI-REC-V3-CRON-4: v3 refresh gives the rejection loop enough rounds to rep
     cronFn.includes("maxRounds: 15"),
     "AI-REC-V3-CRON-4: v3 cron/manual refresh must allow 15 rounds so five-card gate can replace one weak C-bucket ticker"
   );
+});
+
+test("AI-REC-V3-CRON-5: deterministic fallback is last resort after rounds are exhausted", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  const f3Idx = src.indexOf("F3: Final answer validation");
+  assert.ok(f3Idx !== -1, "AI-REC-V3-CRON-5: F3 final-answer validation block must exist");
+  const finalAnswerIdx = src.indexOf("if (!step.toolName)", f3Idx);
+  assert.ok(finalAnswerIdx !== -1, "AI-REC-V3-CRON-5: final-answer branch must exist after F3 validation marker");
+  const finalAnswerBlock = src.slice(finalAnswerIdx, finalAnswerIdx + 4500);
+  const fallbackIdx = finalAnswerBlock.indexOf("buildDeterministicFallbackItemsFromTrace");
+  const guardIdx = finalAnswerBlock.indexOf("round >= maxRounds - 1");
+  const continueIdx = finalAnswerBlock.indexOf("continue; // continue loop");
+  assert.ok(fallbackIdx !== -1, "AI-REC-V3-CRON-5: final-answer branch must still have deterministic last resort");
+  assert.ok(guardIdx !== -1 && guardIdx < fallbackIdx, "AI-REC-V3-CRON-5: fallback must be guarded by round >= maxRounds - 1");
+  assert.ok(continueIdx !== -1, "AI-REC-V3-CRON-5: insufficient output must continue while rounds remain");
 });
 
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
