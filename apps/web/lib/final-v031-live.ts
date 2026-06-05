@@ -439,6 +439,53 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
   return ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
 }
 
+function finiteNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function firstFiniteNumber(...values: unknown[]) {
+  for (const value of values) {
+    const n = finiteNumber(value);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function resolveTradingRoomQuoteSnapshot(
+  quote: Awaited<ReturnType<typeof getCompanyQuoteRealtime>> | null,
+  lastBar: OhlcvBar | null,
+  prevBar: OhlcvBar | null,
+  fallbackPrice: number | null,
+) {
+  const lastPrice = firstFiniteNumber(quote?.lastPrice, lastBar?.close, fallbackPrice);
+  const previous = firstFiniteNumber(
+    quote?.prevClose,
+    quote?.previousClose,
+    quote?.referencePrice,
+    quote?.yesterdayClose,
+    prevBar?.close,
+  );
+  const computedChange = lastPrice !== null && previous !== null
+    ? Number((lastPrice - previous).toFixed(2))
+    : null;
+  const computedChangePct = computedChange !== null && previous
+    ? Number(((computedChange / previous) * 100).toFixed(2))
+    : null;
+
+  return {
+    lastPrice,
+    open: firstFiniteNumber(quote?.open, lastBar?.open, lastPrice),
+    high: firstFiniteNumber(quote?.high, lastBar?.high, lastPrice),
+    low: firstFiniteNumber(quote?.low, lastBar?.low, lastPrice),
+    previous,
+    change: computedChange ?? firstFiniteNumber(quote?.change),
+    changePct: computedChangePct ?? firstFiniteNumber(quote?.changePct),
+    volume: firstFiniteNumber(quote?.volume, lastBar?.volume),
+  };
+}
+
 function paperPrefillSourceLabel(source: PaperPrefillHandoff["source"]) {
   if (source === "ai_recommendations") return "AI 推薦帶入";
   if (source === "strategy_home") return "首頁策略帶入";
@@ -564,10 +611,17 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     ? await getCompanyOhlcv(company.id, { interval: "1d", from: tradingRoomOhlcvFromDate() }).catch(() => [] as OhlcvBar[])
     : [];
   const lastBar = latestOhlcv(ohlcv);
-  const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
-  const previous = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2]?.close : null;
-  const change = lastPrice != null && previous != null ? lastPrice - previous : null;
-  const changePct = change != null && previous ? (change / previous) * 100 : null;
+  const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] ?? null : null;
+  const quoteSnapshot = resolveTradingRoomQuoteSnapshot(
+    quote,
+    lastBar,
+    prevBar,
+    selectedPosition?.avgCostPerShare ?? null,
+  );
+  const lastPrice = quoteSnapshot.lastPrice;
+  const previous = quoteSnapshot.previous;
+  const change = quoteSnapshot.change;
+  const changePct = quoteSnapshot.changePct;
 
   const defaultWatchlist = DEFAULT_TRADING_ROOM_WATCHLIST.map((item) => ({
     symbol: item.symbol,
@@ -612,14 +666,14 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       name: company?.name ?? selectedSymbol,
       sector: industryLabel(company?.chainPosition ?? selectedIdea?.sector ?? "台股"),
       price: lastPrice,
-      open: quote?.lastPrice ?? lastBar?.open ?? null,
-      high: lastBar?.high ?? null,
-      low: lastBar?.low ?? null,
+      open: quoteSnapshot.open,
+      high: quoteSnapshot.high,
+      low: quoteSnapshot.low,
       close: lastPrice,
       previous,
       change,
       changePct,
-      volume: quote?.volume ?? lastBar?.volume ?? null,
+      volume: quoteSnapshot.volume,
       quoteState: quote?.state ?? "NO_DATA",
     },
     watchlist,
@@ -1022,6 +1076,35 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return { screen:"strategy-ideas", generatedAt:view?.generatedAt || new Date().toISOString(), summary, items, selected:items[0] || null };
   }
 
+  function numVal(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  function firstNum() {
+    for (let i = 0; i < arguments.length; i++) {
+      const n = numVal(arguments[i]);
+      if (n !== null) return n;
+    }
+    return null;
+  }
+  function resolvePaperQuoteSnapshot(quote, lastBar, prevBar, fallbackPrice) {
+    const lastPrice = firstNum(quote?.lastPrice, lastBar?.close, fallbackPrice);
+    const previous = firstNum(quote?.prevClose, quote?.previousClose, quote?.referencePrice, quote?.yesterdayClose, prevBar?.close);
+    const computedChange = lastPrice !== null && previous !== null ? Number((lastPrice - previous).toFixed(2)) : null;
+    const computedPct = computedChange !== null && previous ? Number(((computedChange / previous) * 100).toFixed(2)) : null;
+    return {
+      lastPrice,
+      open: firstNum(quote?.open, lastBar?.open, lastPrice),
+      high: firstNum(quote?.high, lastBar?.high, lastPrice),
+      low: firstNum(quote?.low, lastBar?.low, lastPrice),
+      previous,
+      change: computedChange ?? firstNum(quote?.change),
+      changePct: computedPct ?? firstNum(quote?.changePct),
+      volume: firstNum(quote?.volume, lastBar?.volume)
+    };
+  }
+
   async function clientPaperPayload() {
     const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
@@ -1057,10 +1140,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const lastBar = ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
     const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
     const quote = quoteResult.ok ? quoteResult.data : null;
-    const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
-    const previous = prevBar?.close ?? null;
-    const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
-    const changePct = change != null && previous ? change / Number(previous) * 100 : null;
+    const quoteSnapshot = resolvePaperQuoteSnapshot(quote, lastBar, prevBar, selectedPosition?.avgCostPerShare ?? null);
+    const lastPrice = quoteSnapshot.lastPrice;
+    const previous = quoteSnapshot.previous;
+    const change = quoteSnapshot.change;
+    const changePct = quoteSnapshot.changePct;
     const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
     const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
     const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
@@ -1084,7 +1168,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
-      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
       portfolio,

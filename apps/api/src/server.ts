@@ -9036,6 +9036,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     high: number | null;
     low: number | null;
     prevClose: number | null;
+    changePct: number | null;
     volume: number | null;
     bid: number | null;
     ask: number | null;
@@ -9075,6 +9076,10 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const high = parseNum(msg["h"]);
       const low = parseNum(msg["l"]);
       const prevClose = parseNum(msg["y"]);
+      const changePct =
+        prevClose && prevClose > 0
+          ? Math.round(((lastPrice - prevClose) / prevClose) * 10000) / 100
+          : null;
       const volume = parseNum(msg["v"]); // accumulated trade volume (lots)
       // b = underscore-separated ask prices; a = bid prices (MIS convention reversed)
       const bPrices = msg["b"]?.split("_").filter(Boolean);
@@ -9085,7 +9090,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const tradeDate = msg["d"] ?? "";
       if (!_isTwseLiveSessionNow() || !_isTodayMisTradeDate(tradeDate)) return null;
 
-      return { lastPrice, open, high, low, prevClose, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
+      return { lastPrice, open, high, low, prevClose, changePct, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
     } catch {
       return null;
     }
@@ -9095,6 +9100,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   // Used when both KGI and MIS intraday are unavailable.
   async function _twseEodFallback(sym: string, blockReason?: string | null): Promise<{
     lastPrice: number | null;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    prevClose: number | null;
+    changePct: number | null;
     volume: number | null;
     source: "twse_openapi_eod";
     state: "STALE" | "NO_DATA";
@@ -9108,14 +9118,29 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const rows = await getStockDayAllRows();
       const row = rows.find((r) => r.Code === sym);
       if (!row) {
-        return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+        return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", marketSession, referenceReason: _eodReferenceReason(blockReason) };
       }
-      const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
-      const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
-      const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
-      const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+      const parseEodNum = (value?: string | null) => {
+        const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
+      const close = parseEodNum(row.ClosingPrice);
+      const open = parseEodNum(row.OpeningPrice);
+      const high = parseEodNum(row.HighestPrice);
+      const low = parseEodNum(row.LowestPrice);
+      const vol = parseEodNum(row.TradeVolume);
+      const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+      const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
+      const changePct = prevClose && prevClose > 0
+        ? Math.round((changeRaw / prevClose) * 10000) / 100
+        : null;
       return {
         lastPrice: close,
+        open,
+        high,
+        low,
+        prevClose,
+        changePct,
         volume: vol,
         source: "twse_openapi_eod",
         state: close !== null ? "STALE" : "NO_DATA",
@@ -9126,7 +9151,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       };
     } catch (e) {
       console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
-      return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+      return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
   }
 
@@ -9141,6 +9166,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: mis.lastPrice,
+          open: mis.open,
+          high: mis.high,
+          low: mis.low,
+          prevClose: mis.prevClose,
+          changePct: mis.changePct,
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
@@ -9158,6 +9188,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       data: {
         symbol,
         lastPrice: fb.lastPrice,
+        open: fb.open,
+        high: fb.high,
+        low: fb.low,
+        prevClose: fb.prevClose,
+        changePct: fb.changePct,
         bid: null,
         ask: null,
         volume: fb.volume,
@@ -9196,6 +9231,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           data: {
             symbol,
             lastPrice: mis.lastPrice,
+            open: mis.open,
+            high: mis.high,
+            low: mis.low,
+            prevClose: mis.prevClose,
+            changePct: mis.changePct,
             bid: mis.bid,
             ask: mis.ask,
             volume: mis.volume,
@@ -9214,6 +9254,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: fb.lastPrice,
+          open: fb.open,
+          high: fb.high,
+          low: fb.low,
+          prevClose: fb.prevClose,
+          changePct: fb.changePct,
           bid: null,
           ask: null,
           volume: fb.volume,
@@ -9299,6 +9344,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: mis.lastPrice,
+          open: mis.open,
+          high: mis.high,
+          low: mis.low,
+          prevClose: mis.prevClose,
+          changePct: mis.changePct,
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
@@ -9318,6 +9368,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       data: {
         symbol,
         lastPrice: fb.lastPrice,
+        open: fb.open,
+        high: fb.high,
+        low: fb.low,
+        prevClose: fb.prevClose,
+        changePct: fb.changePct,
         bid: null,
         ask: null,
         volume: fb.volume,
