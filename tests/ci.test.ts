@@ -15975,6 +15975,76 @@ test("OVERVIEW-MIS-3: overview handler enriches heatmap tiles from _misTileCache
   );
 });
 
+// ── GPT-5.5 UPGRADE: per-feature model override + max_completion_tokens support ──
+
+test("GPT55-UPGRADE-1: llm-gateway MODEL_PRICING contains gpt-5.5 entry", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/llm/llm-gateway.ts"), "utf8");
+  assert.ok(
+    src.includes('"gpt-5.5"'),
+    "GPT55-UPGRADE-1: MODEL_PRICING must include gpt-5.5 entry"
+  );
+  assert.ok(
+    src.includes("input: 5.000") || src.includes("input:5.000") || src.includes("input: 5"),
+    "GPT55-UPGRADE-1: gpt-5.5 input price must be $5/1M"
+  );
+  assert.ok(
+    src.includes("output: 30.000") || src.includes("output:30.000") || src.includes("output: 30"),
+    "GPT55-UPGRADE-1: gpt-5.5 output price must be $30/1M"
+  );
+});
+
+test("GPT55-UPGRADE-2: llm-gateway uses max_completion_tokens for gpt-5.5 family models", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/llm/llm-gateway.ts"), "utf8");
+  assert.ok(
+    src.includes("USES_MAX_COMPLETION_TOKENS"),
+    "GPT55-UPGRADE-2: USES_MAX_COMPLETION_TOKENS Set must be defined"
+  );
+  assert.ok(
+    src.includes("max_completion_tokens"),
+    "GPT55-UPGRADE-2: requestBody must use max_completion_tokens for applicable models"
+  );
+  assert.ok(
+    src.includes("tokenLimitKey"),
+    "GPT55-UPGRADE-2: tokenLimitKey variable must select correct token limit parameter per model"
+  );
+});
+
+test("GPT55-UPGRADE-3: orchestrator-v3 uses OPENAI_MODEL_AI_REC per-feature override", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC"]'),
+    "GPT55-UPGRADE-3: orchestrator-v3 must read OPENAI_MODEL_AI_REC env var"
+  );
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"]'),
+    "GPT55-UPGRADE-3: orchestrator-v3 must fall back to OPENAI_MODEL if AI_REC override absent"
+  );
+});
+
+test("GPT55-UPGRADE-4: brief generator uses OPENAI_MODEL_BRIEF + synthesis prompt is narrative not dump", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-strategy-brief.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_BRIEF"]'),
+    "GPT55-UPGRADE-4: strategy-brief must read OPENAI_MODEL_BRIEF env var"
+  );
+  assert.ok(
+    src.includes("briefModel"),
+    "GPT55-UPGRADE-4: briefModel variable must pass to callLlm modelKey"
+  );
+  assert.ok(
+    src.includes("premarket_context") || src.includes("盤前市況情境"),
+    "GPT55-UPGRADE-4: brief prompt must include pre-market context narrative section"
+  );
+  assert.ok(
+    src.includes("institutional_flow_analysis") || src.includes("法人動向解讀"),
+    "GPT55-UPGRADE-4: brief prompt must include institutional flow analysis section"
+  );
+  assert.ok(
+    src.includes("美股隔夜資料本日缺席") || src.includes("美股隔夜"),
+    "GPT55-UPGRADE-4: brief prompt must handle missing overnight US market data honestly"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
