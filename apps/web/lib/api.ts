@@ -1306,6 +1306,15 @@ export async function getKgiQuoteStatus() {
 export type CompanyRealtimeQuote = {
   symbol: string;
   lastPrice: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  prevClose?: number | null;
+  previousClose?: number | null;
+  referencePrice?: number | null;
+  yesterdayClose?: number | null;
+  change?: number | null;
+  changePct?: number | null;
   bid: number | null;
   ask: number | null;
   volume: number | null;

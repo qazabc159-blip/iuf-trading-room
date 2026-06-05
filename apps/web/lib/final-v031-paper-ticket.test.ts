@@ -253,13 +253,16 @@ describe("final-v031 paper ticket price gate", () => {
     expect(finmindFullIngestSource).toContain("allOhlcvTickers.find((row) => row.ticker === symbol)");
   });
 
-  it("loads the company registry from the lightweight real company pool instead of the broad full list", () => {
+  it("loads the company registry from the lightweight real company pool before the full-list fallback", () => {
     expect(apiServerSource).toContain('app.get("/api/v1/companies/lite"');
     expect(apiServerSource).toContain("getCompaniesLiteCached(c.get(\"repo\"), workspaceSlug)");
     expect(apiClientSource).toContain("export async function getCompaniesLite");
     expect(apiClientSource).toContain("/api/v1/companies/lite");
     expect(companiesRegistryPageSource).toContain("getCompaniesLite({ limit: 2500 })");
-    expect(companiesRegistryPageSource).not.toContain("getCompanies()");
+    expect(companiesRegistryPageSource).toContain("const response = await getCompanies();");
+    expect(companiesRegistryPageSource.indexOf("getCompaniesLite({ limit: 2500 })")).toBeLessThan(
+      companiesRegistryPageSource.indexOf("const response = await getCompanies();"),
+    );
   });
 
   it("does not replace the trading-room chart with a sparse-data card while backfill runs", () => {
@@ -396,6 +399,20 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("window.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__");
     expect(liveHydration).toContain("if (!sameSym(symbol, paperPulseSymbol())) return;");
     expect(liveHydration).not.toContain("refreshPaperQuotePulse();\n    window.updateRealChartFrame");
+  });
+
+  it("keeps trading-room OHLC and change math tied to quote semantics instead of reusing last price as open", () => {
+    expect(liveHydration).toContain("function resolveTradingRoomQuoteSnapshot");
+    expect(liveHydration).toContain("function resolvePaperQuoteSnapshot");
+    expect(liveHydration).toContain("quote?.prevClose");
+    expect(liveHydration).toContain("quote?.previousClose");
+    expect(liveHydration).toContain("quote?.referencePrice");
+    expect(liveHydration).toContain("open: firstFiniteNumber(quote?.open, lastBar?.open, lastPrice)");
+    expect(liveHydration).toContain("open: firstNum(quote?.open, lastBar?.open, lastPrice)");
+    expect(liveHydration).toContain("open: quoteSnapshot.open");
+    expect(liveHydration).toContain("const changePct = quoteSnapshot.changePct");
+    expect(liveHydration).not.toContain("open: quote?.lastPrice ?? lastBar?.open");
+    expect(liveHydration).not.toContain("open:quote?.lastPrice ?? lastBar?.open");
   });
 
   it("draws real volume-price indicators instead of decorative technical labels", () => {
