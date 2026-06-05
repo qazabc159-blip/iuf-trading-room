@@ -13,7 +13,7 @@
  *   4. SIM observation audit panel (visible after SIM selected)
  *
  * HARD LINES enforced here:
- *   - Not displaying "已驗證" / "approved" / "可上線" / "strategy approved"
+ *   - Not displaying endorsement wording or live-trading claims
  *   - Not truncating caveat
  *   - Owner role only for toggle (checked via apiGetMe)
  *   - No KGI live broker write controls exposed
@@ -26,10 +26,9 @@ import { apiGetMe } from "@/lib/auth-client";
 import { StrategyChartPanel } from "./StrategyChartPanel";
 import type { LabStrategySnapshot } from "@/lib/api";
 
-// ── Embedded snapshot — cont_liq_v36 (Athena snapshot_v0, 2026-05-09) ─────────
-// Jason per-strategy endpoint (/api/v1/lab/strategy/:strategyId/snapshot) is now
-// shipped on this branch (commit 85a1132). Frontend uses embedded fallback data
-// until LAB_SNAPSHOT_BASE_URL is confirmed live in production environment.
+// ── Local research snapshot — cont_liq_v36 (2026-05-09) ──────────────────────
+// This read-only research snapshot is historical evidence, not a trade ledger.
+// Trade rows stay empty until the backend provides real backtest/SIM records.
 const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
   schema: "lab_tr_strategy_snapshot_v0",
   strategyId: "cont_liq_v36",
@@ -103,24 +102,15 @@ const CONT_LIQ_V36_SNAPSHOT: LabStrategySnapshot = {
     { date: "2026-02-25", drawdown: 0.0, underwaterDays: 0 },
     { date: "2026-03-26", drawdown: 0.0, underwaterDays: 0 },
   ]},
-  sampleTrades: { entries: [
-    { rebalanceDate: "2025-08-22", exitDateApprox: "2025-08-22", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.0373, netReturn120bps: 0.0253, benchmarkReturn: 0.0991, excessReturn120bps: -0.0737, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2025-09-19", exitDateApprox: "2025-09-19", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.2655, netReturn120bps: 0.2535, benchmarkReturn: 0.0457, excessReturn120bps: 0.2078, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2025-10-22", exitDateApprox: "2025-10-22", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.1447, netReturn120bps: 0.1357, benchmarkReturn: 0.0434, excessReturn120bps: 0.0923, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2025-11-20", exitDateApprox: "2025-11-20", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.0401, netReturn120bps: 0.0281, benchmarkReturn: 0.0275, excessReturn120bps: 0.0005, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2025-12-18", exitDateApprox: "2025-12-18", holdingDays: 20, holdingCount: 4, turnover: 1.0, grossReturn: 0.3667, netReturn120bps: 0.3547, benchmarkReturn: 0.2658, excessReturn120bps: 0.0889, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2026-01-19", exitDateApprox: "2026-01-19", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.2672, netReturn120bps: 0.2582, benchmarkReturn: 0.154, excessReturn120bps: 0.1042, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2026-02-25", exitDateApprox: "2026-02-25", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.2285, netReturn120bps: 0.2195, benchmarkReturn: 0.0128, excessReturn120bps: 0.2067, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-    { rebalanceDate: "2026-03-26", exitDateApprox: "2026-03-26", holdingDays: 20, holdingCount: 4, turnover: 0.75, grossReturn: 0.3139, netReturn120bps: 0.3049, benchmarkReturn: 0.1772, excessReturn120bps: 0.1278, rationale: "Top-N by score", source: "mock_for_demo", uiLabel_zh: "\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09" },
-  ]},
+  sampleTrades: { entries: [] },
   spec: {
-    capacityCaveat: "Requires liquid pool >= 50 names by 20d dollar volume; alpha degrades sharply below K=40 (v40 evidence).",
-    commonWindowStart: "2025-04-10",  // v47 canonical common-window
-    commonWindowEnd: "2026-03-06",  // v47 canonical common-window
+    capacityCaveat: "策略需要至少 50 檔具流動性的候選池；若候選池低於 40 檔，研究結果可靠度會明顯下降。",
+    commonWindowStart: "2025-04-10",
+    commonWindowEnd: "2026-03-06",
   },
   uiCopyHints: {
-    warningBanner_zh: "策略需 ≥50 檔流動性 universe；資金過度集中於 <40 檔時 alpha 失效",
-    commonWindowCaveat_zh: "基準為 0050，common-window：2025-04-10 → 2026-03-06（11 個月）。三大策略共用同一時間窗口比較基準。0050 同窗 +95.25%（Codex v47 Athena Codex v46 confirmed）。",
+    warningBanner_zh: "策略需使用至少 50 檔具流動性的候選池；若候選池低於 40 檔，研究結果可靠度會明顯下降。",
+    commonWindowCaveat_zh: "基準為 0050；比較期間為 2025-04-10 至 2026-03-06（11 個月）。此段僅供同期間研究比較，不代表前向觀察或未來績效。",
   },
 };
 const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
@@ -130,8 +120,8 @@ const STAGE2_SNAPSHOTS: Record<string, LabStrategySnapshot> = {
   cont_liq_v36: CONT_LIQ_V36_SNAPSHOT,
   // Legacy short alias
   cont_liq_h20_top3_market_trail20_gt_5pct: CONT_LIQ_V36_SNAPSHOT,
-  // strategy_002 and strategy_003 have no chart snapshot yet (BACKTESTED_RAW, Task #400 pending)
-  // They will be added when Athena ships snapshot schema for these strategies
+  // strategy_002 and strategy_003 have no verified chart snapshot yet.
+  // They will be added when the strategy data API provides verified chart records.
 };
 
 
@@ -566,7 +556,7 @@ function PaperObservationPanel({
         </div>
       )}
 
-      {/* Info fields placeholder — backend event: paper_observation_complete */}
+      {/* Info fields — backend event: paper_observation_complete */}
       <div
         style={{
           marginTop: 12,
@@ -618,7 +608,7 @@ export function StrategyDetailClient({ data }: { data: StrategyDetailData }) {
   // Candidate/live broker-write is intentionally closed in this frontend lane.
   const liveDisabled = true;
   const liveDisabledReason =
-    "正式券商寫入關閉；目前只允許研究與 SIM 觀察，候選交接需 Jason/風控另行開啟後端契約。";
+    "正式券商寫入關閉；目前只允許研究與 SIM 觀察，候選交接需 Owner 與風控另行開啟後端契約。";
 
   // Load user role
   useEffect(() => {

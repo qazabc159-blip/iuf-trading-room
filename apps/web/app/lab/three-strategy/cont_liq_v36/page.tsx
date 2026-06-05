@@ -1,16 +1,16 @@
 /**
- * /lab/three-strategy/cont_liq_v36 — cont_liq v36 Forward Observation Period 1
+ * /lab/three-strategy/cont_liq_v36 — cont_liq v36 前向觀察第一期
  *
  * Server component: resolves company names + entry prices (OHLCV 2026-05-06 close)
  * Client component: ContLiqPeriod1Panel polls KGI ticks every 30s for live prices
  *
- * Holdings (Athena Day-0 lock 2026-05-06): 3707 / 2426 / 6205 / 2486
- * Mode: research forward observation only — no real order, no production execution
+ * Holdings locked on 2026-05-06: 3707 / 2426 / 6205 / 2486
+ * Mode: research observation only — no real order, no production execution
  *
  * HARD LINES:
  *   - entry_price from FinMind OHLCV 5/6 close (real data); null if unavailable
  *   - latest_price from KGI gateway (client-side); stale flagged post-market
- *   - FORBIDDEN: approved / alpha confirmed / live-ready / 實單策略 / 已驗證 / 可以跟單 / 保證獲利
+ *   - FORBIDDEN: endorsement wording, live-ready claims, real-order claims, follow-trade claims
  */
 
 import Link from "next/link";
@@ -51,10 +51,10 @@ async function resolveHolding(ticker: string): Promise<HoldingEntryInput> {
       companyId = company.id;
     }
   } catch {
-    // fallback to hardcoded name
+    // Keep the local display name when company lookup is unavailable.
   }
 
-  // 2. Fetch OHLCV for Day-0 close price
+  // 2. Fetch OHLCV for the observation-start close price
   let entryPrice: number | null = null;
   let entryPriceSource: HoldingEntryInput["entryPriceSource"] = "unavailable";
 
@@ -112,17 +112,17 @@ export default async function ContLiqV36Period1Page() {
   return (
     <PageFrame
       code="LAB"
-      title="持續流動性強勢策略 — Forward Observation Period 1"
-      sub={`Day-0: ${DAY0} · Holdings: ${TICKERS.join(" / ")} · 預期退出: 2026-06-03 · ${entryDataNote}`}
-      note="研究前向觀察記錄。不顯示已驗證、approved、可上線或任何背書字樣。非交易建議。"
+      title="持續流動性強勢策略 — 前向觀察第一期"
+      sub={`觀察起始日: ${DAY0} · 觀察標的: ${TICKERS.join(" / ")} · 預期退出: 2026-06-03 · ${entryDataNote}`}
+      note="研究前向觀察記錄。不顯示背書、可上線或可跟單字樣。非交易建議。"
     >
-      {/* A 區 — Forward Observation Period 1 */}
+      {/* A 區 — 前向觀察第一期 */}
       <ContLiqPeriod1Panel
         holdings={holdingResults}
         bench0050EntryPrice={bench0050Entry}
       />
 
-      {/* B 區 — 歷史研究證據 (hardcode Codex v46 verbatim numbers) */}
+      {/* B 區 — 歷史研究證據 */}
       <ContLiqHistoricalEvidencePanel />
 
       <div style={{ marginTop: 28, display: "flex", gap: 16, alignItems: "center" }}>

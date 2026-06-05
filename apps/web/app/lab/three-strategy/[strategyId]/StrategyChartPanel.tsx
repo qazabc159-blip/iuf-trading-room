@@ -10,13 +10,13 @@
  *   D. Headline KPI grid (Sharpe / Sortino / maxDD / winRate / hitRate / avgHoldDays)
  *   E. Capacity warning banner (ALWAYS visible, NEVER hidden)
  *   Robustness 4-light panel (horizonSweep / regimeBandSweep / costStressSweep / universeShrinkage)
- *   F. Sample trades section (ALWAYS labelled 示範交易（非真實成交）)
+ *   F. Trade record section (only real backtest/SIM records render)
  *
  * HARD LINES:
  *   - no fake / no inflated numbers
  *   - capacity banner ALWAYS visible
- *   - sample trades ALWAYS labelled 示範交易（非真實成交）
- *   - no 已驗證 / approved / 可上線
+ *   - non-production sample rows never render as customer-facing records
+ *   - no endorsement wording or live-trading claims
  */
 
 import type { LabStrategySnapshot, LabStrategySnapshotSampleTrade } from "@/lib/api";
@@ -96,7 +96,7 @@ const CHART_CSS = `
   font-family: var(--mono, monospace);
   margin-bottom: 6px;
 }
-._chart-demo-banner {
+._chart-record-banner {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -328,7 +328,7 @@ function DrawdownChart({ points, maxDrawdown, maxDrawdownDate }: { points: { dat
   );
 }
 
-// ── D. KPI Grid (v46 common-window fields) ────────────────────────────────────────
+// ── D. KPI Grid ───────────────────────────────────────────────────────────────
 
 function HeadlineKpiGrid({ metrics }: { metrics: LabStrategySnapshot["headlineMetrics"] }) {
   // v47: only use explicit strategy / benchmark / excess fields.
@@ -367,13 +367,13 @@ function ExcessVs0050Card({ metrics, spec, uiCopyHints }: { metrics: LabStrategy
   const netReturn = metrics.strategyNetAbsoluteReturnPct ?? null;
   const windowStart = spec.commonWindowStart;
   const windowEnd = spec.commonWindowEnd;
-  const caveat = uiCopyHints?.commonWindowCaveat_zh ?? "基準為 0050，同一時間窗口（common-window）一個共同數字，三大策略共用。";
+  const caveat = uiCopyHints?.commonWindowCaveat_zh ?? "基準為 0050；同一觀察期間只使用一個共同基準數字，避免混用不同時間窗口。";
   if (excess == null && benchmark == null) return null;
   const excessColor = (excess ?? 0) >= 0 ? "#2ecc71" : "#e63946";
   const excessSign = (excess ?? 0) >= 0 ? "+" : "";
   return (
     <div style={{ padding: "14px 16px", marginBottom: 16, background: "rgba(46,204,113,0.04)", border: "1px solid rgba(46,204,113,0.18)", borderLeft: "3px solid #2ecc71", borderRadius: 5 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#2ecc71", letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)", marginBottom: 10 }}>vs 0050 基準比較（common-window）</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#2ecc71", letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)", marginBottom: 10 }}>0050 同期間基準比較</div>
       {/* 3-column grid: 策略絕對 / 0050 同窗 / 超額 */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1px", background: "rgba(255,255,255,0.06)", borderRadius: 5, overflow: "hidden", marginBottom: 10 }}>
         <div style={{ background: "rgba(11,16,23,0.9)", padding: "12px 14px" }}>
@@ -408,7 +408,7 @@ function OperationalStateBanner({ snapshot }: { snapshot: LabStrategySnapshot })
   const modeConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
     research_only: { label: "研究階段（非交易）", color: "#888", bg: "rgba(128,128,128,0.05)", border: "rgba(128,128,128,0.2)" },
     paper: { label: "SIM 模擬觀察", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
-    shadow: { label: "Shadow Mode（不送單）", color: "#a78bfa", bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.2)" },
+    shadow: { label: "影子觀察（不送單）", color: "#a78bfa", bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.2)" },
     live: { label: "上線候選（券商寫入關閉）", color: "#ffb800", bg: "rgba(255,184,0,0.05)", border: "rgba(255,184,0,0.2)" },
   };
   const cfg = modeConfig[mode] ?? modeConfig["research_only"]!;
@@ -418,8 +418,8 @@ function OperationalStateBanner({ snapshot }: { snapshot: LabStrategySnapshot })
     <div style={{ padding: "10px 14px", marginBottom: 12, background: cfg.bg, border: `1px solid ${cfg.border}`, borderLeft: `3px solid ${cfg.color}`, borderRadius: 5, display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: cfg.color, letterSpacing: "0.8px", textTransform: "uppercase", fontFamily: "var(--mono,monospace)" }}>{cfg.label}</div>
       <div style={{ fontSize: 10, color: "#666", fontFamily: "var(--mono,monospace)" }}>交接狀態: <span style={{ color: orderColor, fontWeight: 700 }}>{orderLabel}</span></div>
-      {brokerWrite && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>BROKER_WRITE=ON</div>}
-      {realOrder && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>REAL_ORDER=ON</div>}
+      {brokerWrite && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>券商寫入需要 Owner 複核</div>}
+      {realOrder && <div style={{ fontSize: 10, color: "#e63946", fontFamily: "var(--mono,monospace)", fontWeight: 700 }}>正式下單入口仍封鎖</div>}
     </div>
   );
 }
@@ -445,7 +445,7 @@ function RobustnessPanel({ robustness }: { robustness: { horizonSweep: string; r
   );
 }
 
-// ── F. Sample Trades ──────────────────────────────────────────────────────────
+// ── F. Trade records ─────────────────────────────────────────────────────────
 
 function isRealTradeEntry(entry: LabStrategySnapshotSampleTrade) {
   return !/\bmock\b|\bdemo\b/i.test(entry.source);
@@ -466,10 +466,9 @@ function SampleTradesSection({ entries }: { entries: LabStrategySnapshotSampleTr
           lineHeight: 1.65,
         }}
       >
-        <b>正式交易紀錄未接入</b>
+        <b>正式交易紀錄尚未接入</b>
         <div style={{ color: "#b9c0cc", marginTop: 6 }}>
-          目前只有 mock_for_demo 示範資料，產品頁不顯示假交易表格。請等待 Athena / strategy snapshot
-          提供正式回測或 SIM observation 交易紀錄。
+          目前沒有正式回測或 SIM 成交紀錄。產品頁已隱藏非正式示範列，等待策略資料管線提供可驗證的交易紀錄後才會顯示表格。
         </div>
       </div>
     );
@@ -477,7 +476,7 @@ function SampleTradesSection({ entries }: { entries: LabStrategySnapshotSampleTr
 
   return (
     <div>
-      <div className="_chart-demo-banner">正式交易紀錄</div>
+      <div className="_chart-record-banner">正式交易紀錄</div>
       <div style={{ overflowX: "auto" }}>
         <table className="_chart-table">
           <thead>
@@ -501,7 +500,7 @@ function SampleTradesSection({ entries }: { entries: LabStrategySnapshotSampleTr
           </tbody>
         </table>
       </div>
-      <div className="_chart-note">來源 / strategy snapshot · 已排除 mock_for_demo 示範列</div>
+      <div className="_chart-note">來源 / 策略資料快照 · 已排除非正式示範列</div>
     </div>
   );
 }
@@ -510,7 +509,7 @@ function SampleTradesSection({ entries }: { entries: LabStrategySnapshotSampleTr
 
 export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot }) {
   const m = snapshot.headlineMetrics;
-  const capacityWarning = snapshot.uiCopyHints?.warningBanner_zh ?? snapshot.spec.capacityCaveat ?? "需注意容量限制，詳見 Athena 魏棒性報告。";
+  const capacityWarning = snapshot.uiCopyHints?.warningBanner_zh ?? snapshot.spec.capacityCaveat ?? "需注意容量限制；候選池不足時，策略研究結果可靠度會下降。";
   return (
     <>
       <style>{CHART_CSS}</style>
@@ -518,7 +517,7 @@ export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot
       <OperationalStateBanner snapshot={snapshot} />
       {/* E. Capacity Warning — always visible */}
       <div className="_chart-capacity-banner">
-        <div className="_chart-capacity-label">容量警告（永遠顯示）</div>
+        <div className="_chart-capacity-label">容量限制</div>
         {capacityWarning}
       </div>
       {/* D2. Excess vs 0050 基準比較卡 */}
@@ -530,7 +529,7 @@ export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot
       </div>
       {/* Robustness */}
       <div className="_chart-section">
-        <div className="_chart-section-title">四重魏棒性燈號</div>
+        <div className="_chart-section-title">四重穩健性燈號</div>
         <RobustnessPanel robustness={m.robustness} />
       </div>
       {/* A. Equity Curve */}
@@ -552,9 +551,9 @@ export function StrategyChartPanel({ snapshot }: { snapshot: LabStrategySnapshot
           maxDrawdownDate={m.maxDrawdownDate}
         />
       </div>
-      {/* F. Sample Trades */}
+      {/* F. Trade records */}
       <div className="_chart-section">
-        <div className="_chart-section-title">示範再平衡紀錄（Sample Trades）</div>
+        <div className="_chart-section-title">正式交易紀錄</div>
         <SampleTradesSection entries={snapshot.sampleTrades.entries} />
       </div>
     </>

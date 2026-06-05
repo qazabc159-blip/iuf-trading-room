@@ -4,13 +4,13 @@
  * 2026-05-09: 接通 Athena 5/9 morning truth
  *   - cont_liq v36: 9/9 PASS + 四重魯棒（Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost / Universe PARTIAL）
  *   - rs_20_60: RETIRED (sector-pinned, family-level no-edge)
- *   - strategy_002 + strategy_003: walk-forward + bootstrap CI in progress (Task #400)
+ *   - strategy_002 + strategy_003: research candidates, extended data pending
  *
  * Stage 2 DEFER: equity curve / monthly bar / drawdown / Sharpe / win rate
- *   → pending Athena schema ship
+ *   → render only when verified data exists
  *
  * HARD LINES:
- *   - 不准顯示 "已驗證" / "approved" / "可上線" / "strategy approved"
+ *   - 不准顯示背書、可上線或可跟單字樣
  *   - 不准截斷 Athena caveat
  *   - 不准隱藏 KGI 真錢警示
  *   - 不准 mock 真實 quote / fake metric
@@ -85,10 +85,10 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     badgeVariant: "amber",
     badgeLabel: "9/9 PASS",
     governanceState:
-      "cont_liq_v36 · 9/9 PASS + 四重魯棒 · forward observation 進行中",
+      "cont_liq_v36 · 研究檢查完成 · 前向觀察中",
     isRetired: false,
     fullCaveat:
-      "9/9 驗證項目通過（截至 2026-05-09 Athena morning update）/ 四重魯棒：Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost 40-250bps script done / Universe K=68→20 PARTIAL（K≥50 liquid universe required）/ 仍需完整 forward observation 才算 process pass / 不是已驗證可上線策略 / capacity note: K≥50 流動性股票宇宙必要條件",
+      "研究檢查已完成，但仍需完整前向觀察才可進入下一階段。容量限制：候選池需至少 50 檔具流動性的股票；若候選池不足，策略可靠度會下降。此策略不是可上線或可跟單策略。",
     spec: {
       intro:
         "cont_liq v36 策略在 h20（20 個交易日）持有期框架下，選取流動性相對強度排前五的股票。v36 通過 9/9 Athena 驗證項目，並完成四重魯棒性測試（Horizon / Regime / Cost / Universe 四軸）。",
@@ -137,8 +137,8 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       },
       {
         icon: "fail",
-        label: "Forward observation / 可上線背書",
-        detail: "仍需完整 forward observation 才算 process pass / 不得背書可上線 / paper trade 需楊董 explicit ACK",
+        label: "前向觀察 / 上線狀態",
+        detail: "仍需完整前向觀察才可進入下一階段；不得背書可上線；模擬觀察需 Owner 明確授權",
       },
     ],
     paperObservation: {
@@ -163,7 +163,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     retiredReason:
       "sector-pinned · family-level no-edge（Athena 2026-05-09 morning update）",
     fullCaveat:
-      "rs_20_60 family 已於 2026-05-09 Athena morning update 正式退場（RETIRED）/ 根本原因：sector-pinned — 策略表現高度依賴特定板塊曝險，非獨立 alpha 來源 / family-level no-edge 確認 / 不再進行任何 forward observation 或 paper trade / 此 slot 未來由 Athena 新候選策略填補",
+      "rs_20_60 family 已於 2026-05-09 正式退場。根本原因：策略表現高度依賴特定板塊曝險，非獨立選股能力來源；不再進行任何前向觀察或模擬交易。",
     spec: RETIRED_SPEC,
     caveatVerdicts: [
       {
@@ -179,19 +179,19 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       {
         icon: "fail",
         label: "後續觀察",
-        detail: "已終止所有 forward observation 及 paper trade",
+        detail: "已終止所有前向觀察及模擬交易",
       },
       {
         icon: "fail",
-        label: "可上線背書",
-        detail: "RETIRED — 不得以任何形式背書或重啟",
+        label: "上線狀態",
+        detail: "已退場，不得以任何形式背書或重啟",
       },
       { icon: "fail", label: "統計顯著性", detail: "不適用（已退場）" },
       { icon: "fail", label: "CPCV PBO", detail: "不適用（已退場）" },
       { icon: "fail", label: "DSR", detail: "不適用（已退場）" },
       {
         icon: "fail",
-        label: "Forward observation",
+        label: "前向觀察",
         detail: "不適用（已退場）",
       },
     ],
@@ -203,7 +203,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     dataSource: "athena_morning_5_9_chat_update",
   },
 
-  // MAIN — walk-forward + bootstrap CI in progress (Task #400)
+  // MAIN — research candidate, extended data pending
   MAIN_execution_rank_buffer_top20: {
     strategyId: "MAIN_execution_rank_buffer_top20",
     displayName: "主控排序緩衝策略",
@@ -212,10 +212,10 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     badgeVariant: "blue",
     badgeLabel: "研究候選",
     governanceState:
-      "MAIN · RESEARCH_CANDIDATE · strategy_002/003 walk-forward + bootstrap CI in progress (Task #400)",
+      "MAIN · 研究候選 · 等待前向觀察與延伸資料",
     isRetired: false,
     fullCaveat:
-      "MAIN 策略保持 RESEARCH_CANDIDATE 狀態 / strategy_002 + strategy_003 walk-forward + bootstrap CI 進行中（Task #400）/ 尚未進入 forward observation / sector/regime dependent — 非 clean stock-picking claim / 不是已驗證策略 / cash_order_path: BLOCKED_until_Yang_final_manual_ACK",
+      "MAIN 策略仍是研究候選。strategy_002 與 strategy_003 的延伸資料與前向觀察尚未完成，且表現可能受產業與市場環境影響；不得視為已驗證策略或交易建議。",
     spec: {
       intro:
         "MAIN 策略以執行強度排序為核心機制，維持 20 股候選池緩衝，在市場流動性充足時才觸發換倉。MICRO_LIVE_CORE 角色（pilot role），capital_cap_twd_max: 50,000 TWD。",
@@ -229,25 +229,25 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     caveatVerdicts: [
       {
         icon: "warn",
-        label: "Walk-forward 狀態",
+        label: "前向觀察狀態",
         detail:
-          "strategy_002 + strategy_003 walk-forward + bootstrap CI in progress（Task #400）",
+          "strategy_002 與 strategy_003 尚未完成前向觀察與延伸資料檢查",
       },
       {
         icon: "fail",
         label: "統計顯著性",
-        detail: "待 walk-forward 完成後計算，目前不具統計 evidence",
+        detail: "待前向觀察完成後計算，目前不具統計證據",
       },
-      { icon: "fail", label: "CPCV PBO", detail: "尚未計算，待 Task #400 完成" },
+      { icon: "fail", label: "CPCV PBO", detail: "尚未計算，待延伸資料完成" },
       {
         icon: "fail",
         label: "DSR（Deflated Sharpe）",
-        detail: "尚未計算，待 Task #400 完成",
+        detail: "尚未計算，待延伸資料完成",
       },
       {
         icon: "fail",
-        label: "Forward observation",
-        detail: "尚未啟動 forward obs，需先完成 walk-forward 設計",
+        label: "前向觀察",
+        detail: "尚未啟動前向觀察，需先完成觀察協議",
       },
       {
         icon: "warn",
@@ -257,8 +257,8 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       { icon: "fail", label: "L9 gate", detail: "尚未進入 L9 評估流程" },
       {
         icon: "fail",
-        label: "可上線背書",
-        detail: "RESEARCH_CANDIDATE — 不具任何可上線背書，cash_order_path: BLOCKED",
+        label: "上線狀態",
+        detail: "研究候選階段，不具任何上線背書",
       },
     ],
     paperObservation: {
@@ -280,7 +280,7 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     governanceState: "舊 ID — 參見 cont_liq_v36 (9/9 PASS)",
     isRetired: false,
     fullCaveat:
-      "此 strategyId (cont_liq_h20_top3_market_trail20_gt_5pct) 為舊版 ID，對應策略現已更新為 cont_liq_v36。cont_liq_v36: 9/9 PASS + 四重魯棒（Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost 40-250bps / Universe K≥50 required）。仍需完整 forward observation，不得背書可上線。",
+      "此舊版 ID 對應策略現已更新為 cont_liq_v36。cont_liq_v36 已完成研究檢查，但仍需完整前向觀察，不得背書可上線。",
     spec: {
       intro:
         "請查看更新後的策略 ID: cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25。",
@@ -307,10 +307,10 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       },
       {
         icon: "fail",
-        label: "Forward observation",
-        detail: "仍需完整 forward observation，不得背書可上線",
+        label: "前向觀察",
+        detail: "仍需完整前向觀察，不得背書可上線",
       },
-      { icon: "fail", label: "可上線背書", detail: "不得背書，需楊董 explicit ACK" },
+      { icon: "fail", label: "上線狀態", detail: "不得背書，需 Owner 明確授權" },
       { icon: "warn", label: "Horizon 魯棒性", detail: "NEAR_PASS（非 FULL_PASS）" },
       { icon: "pass", label: "Regime 魯棒性", detail: "FULL_PASS" },
       { icon: "pass", label: "Cost 魯棒性", detail: "40-250bps script done" },
@@ -323,19 +323,19 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     dataSource: "athena_morning_5_9_chat_update",
   },
 
-  // strategy_002 — walk-forward + bootstrap CI in progress (Task #400)
+  // strategy_002 — research candidate, extended data pending
   strategy_002_revenue_yoy_surprise: {
     strategyId: "strategy_002_revenue_yoy_surprise",
     displayName: "營收動能驚喜",
     tagline:
-      "選出營收年增率大幅優於預期的個股，捕捉市場對基本面修正的動能。walk-forward + bootstrap CI in progress (Task #400)。",
+      "選出營收年增率大幅優於預期的個股，捕捉市場對基本面修正的動能。目前仍是研究候選，延伸資料尚未補齊。",
     badgeVariant: "blue",
-    badgeLabel: "Walk-forward 進行中",
+    badgeLabel: "研究待審",
     governanceState:
-      "strategy_002 · walk-forward + bootstrap CI in progress · Task #400",
+      "strategy_002 · 研究待審 · 延伸資料待補",
     isRetired: false,
     fullCaveat:
-      "walk-forward + bootstrap CI 進行中（Task #400，2026-05-09 Athena morning update）/ 不具 matured forward observation / 回測數字僅供研究用，未通過完整 L9 gate / 不是已驗證策略 / 不顯示任何配置建議或勝率數字",
+      "此策略仍在研究待審階段。延伸資料與前向觀察尚未完成，回測數字僅供研究追蹤，不代表已驗證策略或交易建議；不顯示任何配置建議或勝率數字。",
     spec: {
       intro:
         "strategy_002 以月度/季度營收年增率的「超預期幅度」作為主要選股訊號。當實際營收公告超出市場預期中位數 15% 以上，觸發追蹤觀察視窗，並搭配股價動能確認訊號。",
@@ -349,28 +349,28 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     caveatVerdicts: [
       {
         icon: "warn",
-        label: "Walk-forward 狀態",
-        detail: "walk-forward + bootstrap CI in progress（Task #400, 2026-05-09）",
+        label: "前向觀察狀態",
+        detail: "尚未完成前向觀察與延伸資料檢查",
       },
       {
         icon: "fail",
         label: "統計顯著性",
-        detail: "待 walk-forward 完成後計算",
+        detail: "待前向觀察完成後計算",
       },
       {
         icon: "fail",
         label: "CPCV PBO",
-        detail: "尚未計算，待 Task #400 完成",
+        detail: "尚未計算，待延伸資料完成",
       },
       {
         icon: "fail",
         label: "DSR（Deflated Sharpe）",
-        detail: "尚未計算，等待 walk-forward 完成",
+        detail: "尚未計算，待延伸資料完成",
       },
       {
         icon: "fail",
-        label: "Forward observation",
-        detail: "尚無 matured forward observation，walk-forward 先完成",
+        label: "前向觀察",
+        detail: "尚未完成前向觀察",
       },
       {
         icon: "warn",
@@ -385,8 +385,8 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       },
       {
         icon: "fail",
-        label: "可上線背書",
-        detail: "walk-forward 期間，不具任何可上線背書",
+        label: "上線狀態",
+        detail: "研究待審階段，不得上線",
       },
     ],
     paperObservation: {
@@ -397,19 +397,19 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     dataSource: "athena_morning_5_9_chat_update",
   },
 
-  // strategy_003 — walk-forward + bootstrap CI in progress (Task #400)
+  // strategy_003 — research candidate, extended data pending
   strategy_003_ma200_trend_follow: {
     strategyId: "strategy_003_ma200_trend_follow",
     displayName: "200 日均線順勢",
     tagline:
-      "追蹤股價站穩 200 日均線的個股，順大趨勢方向持有，依 cache 換倉。walk-forward + bootstrap CI in progress (Task #400)。",
+      "追蹤股價站穩 200 日均線的個股，順大趨勢方向持有。目前仍是研究候選，延伸資料尚未補齊。",
     badgeVariant: "violet",
-    badgeLabel: "Walk-forward 進行中",
+    badgeLabel: "研究待審",
     governanceState:
-      "strategy_003 · walk-forward + bootstrap CI in progress · Task #400",
+      "strategy_003 · 研究待審 · 延伸資料待補",
     isRetired: false,
     fullCaveat:
-      "walk-forward + bootstrap CI 進行中（Task #400，2026-05-09 Athena morning update）/ 僅有回測數字，尚未進行 forward observation / cache 持有期較短，換倉頻率敏感 / 未通過 L9 gate / 不是已驗證策略 / 研究中，下一步需 forward test 設計",
+      "此策略仍在研究待審階段。只有回測研究數字，尚未完成前向觀察；持有期較短，對換倉成本敏感。不得視為已驗證策略或交易建議。",
     spec: {
       intro:
         "strategy_003 以個股股價相對 200 日移動平均（MA200）的位置為核心濾網，在大趨勢向上時持有，大趨勢轉空時空倉。屬於古典趨勢追蹤框架，換倉頻率受持倉 cache 長度影響較敏感。",
@@ -423,26 +423,26 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     caveatVerdicts: [
       {
         icon: "warn",
-        label: "Walk-forward 狀態",
-        detail: "walk-forward + bootstrap CI in progress（Task #400, 2026-05-09）",
+        label: "前向觀察狀態",
+        detail: "尚未完成前向觀察與延伸資料檢查",
       },
       {
         icon: "fail",
         label: "統計顯著性",
-        detail: "待 walk-forward 完成後計算",
+        detail: "待前向觀察完成後計算",
       },
-      { icon: "fail", label: "CPCV PBO", detail: "尚未計算，待 Task #400 完成" },
+      { icon: "fail", label: "CPCV PBO", detail: "尚未計算，待延伸資料完成" },
       { icon: "fail", label: "DSR（Deflated Sharpe）", detail: "尚未計算" },
       {
         icon: "fail",
-        label: "Forward observation",
-        detail: "尚未啟動 forward obs，需先設計觀察協議",
+        label: "前向觀察",
+        detail: "尚未啟動前向觀察，需先完成觀察協議",
       },
       {
         icon: "warn",
         label: "換倉成本敏感",
         detail:
-          "cache 持倉期短（10–30 日）導致換倉頻率高，transaction cost 對 Sharpe 影響未完整評估",
+          "持有期短（10–30 日）導致換倉頻率高，交易成本影響尚未完整評估",
       },
       {
         icon: "warn",
@@ -452,8 +452,8 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       },
       {
         icon: "fail",
-        label: "可上線背書",
-        detail: "walk-forward 期間，無任何 forward evidence，不得上線",
+        label: "上線狀態",
+        detail: "研究待審階段，不得上線",
       },
     ],
     paperObservation: {
@@ -475,10 +475,10 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
     badgeVariant: "amber" as const,
     badgeLabel: "9/9 PASS",
     governanceState:
-      "cont_liq_v36 \u00b7 9/9 PASS + \u56db\u91cd\u9b4f\u68d2 \u00b7 forward observation \u9032\u884c\u4e2d",
+      "cont_liq_v36 · 研究檢查完成 · 前向觀察中",
     isRetired: false,
     fullCaveat:
-      "9/9 \u9a57\u8b49\u9805\u76ee\u901a\u904e\uff08\u622a\u81f3 2026-05-09 Athena morning update\uff09/ \u56db\u91cd\u9b4f\u68d2\uff1aHorizon \u00b15d NEAR_PASS / Regime \u00b12% FULL_PASS / Cost 40-250bps script done / Universe K=68\u219220 PARTIAL\uff08K\u226550 liquid universe required\uff09/ \u4ecd\u9700\u5b8c\u6574 forward observation \u624d\u7b97 process pass / \u4e0d\u662f\u5df2\u9a57\u8b49\u53ef\u4e0a\u7dda\u7b56\u7565 / capacity note: K\u226550 \u6d41\u52d5\u6027\u80a1\u7968\u5b87\u5b99\u5fc5\u8981\u689d\u4ef6",
+      "研究檢查已完成，但仍需完整前向觀察才可進入下一階段。容量限制：候選池需至少 50 檔具流動性的股票；若候選池不足，策略可靠度會下降。此策略不是可上線或可跟單策略。",
     spec: {
       intro:
         "cont_liq v36 \u7b56\u7565\u5728 h20\uff0820 \u500b\u4ea4\u6613\u65e5\uff09\u6301\u6709\u671f\u6846\u67b6\u4e0b\uff0c\u9078\u53d6\u6d41\u52d5\u6027\u76f8\u5c0d\u5f37\u5ea6\u6392\u524d\u4e94\u7684\u80a1\u7968\u3002v36 \u901a\u904e 9/9 Athena \u9a57\u8b49\u9805\u76ee\u3002",
@@ -497,77 +497,77 @@ const STRATEGY_REGISTRY: Record<string, StrategyDetailData> = {
       { icon: "pass" as const, label: "Regime \u9b4f\u68d2\u6027", detail: "FULL_PASS" },
       { icon: "pass" as const, label: "Cost \u9b4f\u68d2\u6027", detail: "Cost 40-250bps: script done" },
       { icon: "warn" as const, label: "Universe \u9b4f\u68d2\u6027 / capacity", detail: "Universe K=68\u219220: PARTIAL \u2014 K\u226550 required" },
-      { icon: "fail" as const, label: "Forward observation / \u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "\u4ecd\u9700\u5b8c\u6574 forward observation\uff0c\u4e0d\u5f97\u80cc\u66f8\u53ef\u4e0a\u7dda" },
+      { icon: "fail" as const, label: "前向觀察 / 上線狀態", detail: "仍需完整前向觀察，不得背書可上線" },
     ],
     paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
     dataSource: "athena_morning_5_9_chat_update",
   },
 
-  // strategy_002 = endpoint short ID (BACKTESTED_RAW, Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA)
+  // strategy_002 = endpoint short ID
   strategy_002: {
     strategyId: "strategy_002",
     displayName: "\u71df\u6536\u52d5\u80fd\u9a5a\u559c",
     tagline:
-      "\u9078\u51fa\u71df\u6536\u5e74\u5897\u7387\u5927\u5e45\u512a\u65bc\u9810\u671f\u7684\u500b\u80a1\u3002BACKTESTED_RAW \u2014 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA\u3002",
+      "選出營收年增率大幅優於預期的個股。目前仍是研究候選，延伸資料尚未補齊。",
     badgeVariant: "blue" as const,
-    badgeLabel: "Walk-forward \u9032\u884c\u4e2d",
+    badgeLabel: "研究待審",
     governanceState:
-      "strategy_002 \u00b7 BACKTESTED_RAW \u00b7 walk-forward + bootstrap CI in progress \u00b7 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA",
+      "strategy_002 · 研究待審 · 延伸資料待補",
     isRetired: false,
     fullCaveat:
-      "BACKTESTED_RAW \u2014 walk-forward + bootstrap CI \u9032\u884c\u4e2d\uff08Task #400\uff0c2026-05-09\uff09/ Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA / \u4e0d\u5177 matured forward observation / \u56de\u6e2c\u6578\u5b57\u50c5\u4f9b\u7814\u7a76\u7528\uff0c\u672a\u901a\u904e\u5b8c\u6574 L9 gate / \u4e0d\u662f\u5df2\u9a57\u8b49\u7b56\u7565 / \u6b64\u70ba strategy_002 endpoint short ID alias",
+      "此策略仍在研究待審階段。延伸資料與前向觀察尚未完成，回測數字僅供研究追蹤，不代表已驗證策略或交易建議。",
     spec: {
       intro:
-        "strategy_002 \u4ee5\u6708\u5ea6/\u5b63\u5ea6\u71df\u6536\u5e74\u5897\u7387\u7684\u300c\u8d85\u9810\u671f\u5e45\u5ea6\u300d\u4f5c\u70ba\u4e3b\u8981\u9078\u80a1\u8a0a\u865f\u3002BACKTESTED_RAW \u72c0\u614b\uff0cwalk-forward \u9032\u884c\u4e2d\u3002",
+        "strategy_002 以月度/季度營收年增率的「超預期幅度」作為主要選股訊號。目前仍是研究候選，前向觀察尚未完成。",
       signalLogic:
         "\u8a08\u7b97\u500b\u80a1\u6700\u65b0\u4e00\u671f\u71df\u6536\u5e74\u5897\u7387\u76f8\u5c0d\u5e02\u5834\u5206\u6790\u5e2b\u9810\u671f\u4e2d\u4f4d\u6578\u7684\u504f\u5dee\uff08surprise ratio > 15%\uff09\uff0c\u642d\u914d\u80a1\u50f9\u52d5\u80fd\u78ba\u8a8d\u3002",
       sizing: "\u7b49\u6b0a\u91cd\u6301\u6709\u6700\u591a 5 \u6a94\uff0c\u6bcf\u6a94\u6700\u9ad8 20%\u3002\u63db\u5009\u983b\u7387\uff1a\u6bcf\u6708\u672b\u91cd\u65b0\u8a55\u4f30\u3002\u4e0d\u4f7f\u7528\u69d3\u687f\u3002",
       exitRule: "\u6301\u6709\u671f\u6700\u9577 3 \u500b\u6708\u3002\u82e5 surprise ratio \u964d\u81f3 5% \u4ee5\u4e0b\uff0c\u6216\u80a1\u50f9\u52d5\u80fd\u53cd\u8f49\uff0c\u63d0\u524d\u6e05\u5009\u3002",
     },
     caveatVerdicts: [
-      { icon: "warn" as const, label: "Walk-forward \u72c0\u614b", detail: "walk-forward + bootstrap CI in progress\uff08Task #400, 2026-05-09\uff09" },
-      { icon: "warn" as const, label: "Task #400 \u9032\u5ea6", detail: "PARTIAL_PASS_PENDING_EXTENDED_DATA \u2014 \u5ef6\u4f38\u8cc7\u6599\u5f85\u88dc" },
-      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "\u5f85 walk-forward \u5b8c\u6210\u5f8c\u8a08\u7b97" },
-      { icon: "fail" as const, label: "CPCV PBO", detail: "\u5c1a\u672a\u8a08\u7b97\uff0c\u5f85 Task #400 \u5b8c\u6210" },
+      { icon: "warn" as const, label: "前向觀察狀態", detail: "尚未完成前向觀察與延伸資料檢查" },
+      { icon: "warn" as const, label: "資料完整度", detail: "延伸資料待補" },
+      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "待前向觀察完成後計算" },
+      { icon: "fail" as const, label: "CPCV PBO", detail: "尚未計算" },
       { icon: "fail" as const, label: "DSR\uff08Deflated Sharpe\uff09", detail: "\u5c1a\u672a\u8a08\u7b97" },
-      { icon: "fail" as const, label: "Forward observation", detail: "\u5c1a\u7121 matured forward observation" },
+      { icon: "fail" as const, label: "前向觀察", detail: "尚未完成前向觀察" },
       { icon: "warn" as const, label: "\u56de\u6e2c\u6a23\u672c", detail: "2018\u20132024\uff0c\u53f0\u80a1\u6708\u5831\u516c\u544a\u6a5f\u5236\u56de\u6e2c" },
-      { icon: "fail" as const, label: "\u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "BACKTESTED_RAW \u671f\u9593\uff0c\u4e0d\u5177\u4efb\u4f55\u53ef\u4e0a\u7dda\u80cc\u66f8" },
+      { icon: "fail" as const, label: "上線狀態", detail: "研究待審階段，不得上線" },
     ],
     paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
     dataSource: "athena_morning_5_9_chat_update",
   },
 
-  // strategy_003 = endpoint short ID (BACKTESTED_RAW, Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA)
+  // strategy_003 = endpoint short ID
   strategy_003: {
     strategyId: "strategy_003",
     displayName: "200 \u65e5\u5747\u7dda\u9806\u52e2",
     tagline:
-      "\u8ffd\u8e64\u80a1\u50f9\u7ad9\u7a69 200 \u65e5\u5747\u7dda\u7684\u500b\u80a1\uff0c\u9806\u5927\u8da8\u52e2\u65b9\u5411\u6301\u6709\u3002BACKTESTED_RAW \u2014 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA\u3002",
+      "追蹤股價站穩 200 日均線的個股，順大趨勢方向持有。目前仍是研究候選，延伸資料尚未補齊。",
     badgeVariant: "violet" as const,
-    badgeLabel: "Walk-forward \u9032\u884c\u4e2d",
+    badgeLabel: "研究待審",
     governanceState:
-      "strategy_003 \u00b7 BACKTESTED_RAW \u00b7 walk-forward + bootstrap CI in progress \u00b7 Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA",
+      "strategy_003 · 研究待審 · 延伸資料待補",
     isRetired: false,
     fullCaveat:
-      "BACKTESTED_RAW \u2014 walk-forward + bootstrap CI \u9032\u884c\u4e2d\uff08Task #400\uff0c2026-05-09\uff09/ Task #400 PARTIAL_PASS_PENDING_EXTENDED_DATA / \u50c5\u6709\u56de\u6e2c\u6578\u5b57\uff0c\u5c1a\u672a\u9032\u884c forward observation / cache \u6301\u6709\u671f\u8f03\u77ed\uff0c\u63db\u5009\u983b\u7387\u654f\u611f / \u672a\u901a\u904e L9 gate / \u4e0d\u662f\u5df2\u9a57\u8b49\u7b56\u7565 / \u6b64\u70ba strategy_003 endpoint short ID alias",
+      "此策略仍在研究待審階段。只有回測研究數字，尚未完成前向觀察；持有期較短，對換倉成本敏感。不得視為已驗證策略或交易建議。",
     spec: {
       intro:
-        "strategy_003 \u4ee5\u500b\u80a1\u80a1\u50f9\u76f8\u5c0d 200 \u65e5\u79fb\u52d5\u5e73\u5747\u7684\u4f4d\u7f6e\u70ba\u6838\u5fc3\u6fe3\u7db2\uff0c\u5728\u5927\u8da8\u52e2\u5411\u4e0a\u6642\u6301\u6709\u3002BACKTESTED_RAW \u72c0\u614b\u3002",
+        "strategy_003 以個股股價相對 200 日移動平均的位置為核心濾網，在大趨勢向上時持有。目前仍是研究候選。",
       signalLogic:
         "\u8a08\u7b97\u500b\u80a1\u6536\u76e4\u50f9 / MA200 \u6bd4\u5024 > 1.0 \u4e14\u4e0a\u5347\u8da8\u52e2\u78ba\u8a8d\u8005\u9032\u5165\u5019\u9078\u6c60\u3002\u5c31\u524d 10 \u540d\u3002\u82e5\u5927\u76e4 MA200 \u4e0b\u65b9\u5247\u6240\u6709\u6301\u5009\u6e05\u7a7a\u3002",
       sizing: "\u7b49\u6b0a\u91cd\u6700\u591a 10 \u6a94\uff0c\u6bcf\u6a94\u6700\u9ad8 10%\u3002\u6301\u5009 cache \u9031\u671f\uff1a10\u201330 \u65e5\u6e2c\u8a66\u4e2d\u3002\u4e0d\u4f7f\u7528\u69d3\u687f\u3002",
       exitRule: "\u500b\u80a1\u8dcc\u7834 MA200 \u6642\u6e05\u5009\u3002\u5927\u76e4\u6574\u9ad4\u89f8\u767c kill switch \u6642\u5168\u6e05\u3002",
     },
     caveatVerdicts: [
-      { icon: "warn" as const, label: "Walk-forward \u72c0\u614b", detail: "walk-forward + bootstrap CI in progress\uff08Task #400, 2026-05-09\uff09" },
-      { icon: "warn" as const, label: "Task #400 \u9032\u5ea6", detail: "PARTIAL_PASS_PENDING_EXTENDED_DATA \u2014 \u5ef6\u4f38\u8cc7\u6599\u5f85\u88dc" },
-      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "\u5f85 walk-forward \u5b8c\u6210\u5f8c\u8a08\u7b97" },
+      { icon: "warn" as const, label: "前向觀察狀態", detail: "尚未完成前向觀察與延伸資料檢查" },
+      { icon: "warn" as const, label: "資料完整度", detail: "延伸資料待補" },
+      { icon: "fail" as const, label: "\u7d71\u8a08\u986f\u8457\u6027", detail: "待前向觀察完成後計算" },
       { icon: "fail" as const, label: "CPCV PBO", detail: "\u5c1a\u672a\u8a08\u7b97" },
       { icon: "fail" as const, label: "DSR\uff08Deflated Sharpe\uff09", detail: "\u5c1a\u672a\u8a08\u7b97" },
-      { icon: "fail" as const, label: "Forward observation", detail: "\u5c1a\u672a\u555f\u52d5 forward obs" },
-      { icon: "warn" as const, label: "\u63db\u5009\u6210\u672c\u654f\u611f", detail: "cache \u6301\u5009\u671f\u77ed\uff0810\u201330 \u65e5\uff09\uff0ctransaction cost \u5f71\u97ff\u672a\u5b8c\u6574\u8a55\u4f30" },
-      { icon: "fail" as const, label: "\u53ef\u4e0a\u7dda\u80cc\u66f8", detail: "BACKTESTED_RAW \u671f\u9593\uff0c\u7121\u4efb\u4f55 forward evidence\uff0c\u4e0d\u5f97\u4e0a\u7dda" },
+      { icon: "fail" as const, label: "前向觀察", detail: "尚未啟動前向觀察" },
+      { icon: "warn" as const, label: "\u63db\u5009\u6210\u672c\u654f\u611f", detail: "持有期短（10–30 日），交易成本影響尚未完整評估" },
+      { icon: "fail" as const, label: "上線狀態", detail: "研究待審階段，不得上線" },
     ],
     paperObservation: { startDate: null, expectedUnlockDate: null, status: "not_started" as const },
     dataSource: "athena_morning_5_9_chat_update",
@@ -733,14 +733,14 @@ export default async function StrategyDetailPage({
   const { strategyId } = await params;
   const data = STRATEGY_REGISTRY[strategyId];
 
-  // Defensive fallback — show a friendly "unknown strategy" page instead of black-screen 404
+  // Defensive fallback — show a friendly unknown-strategy page instead of a blank screen.
   if (!data) {
     return (
       <PageFrame
         code="LAB"
         title="策略 ID 不認識"
         sub="此 strategyId 不在已知清單中"
-        note="不顯示已驗證、approved、可上線或任何背書字樣。"
+        note="不顯示背書、可上線或可跟單字樣。"
       >
         <div
           style={{
@@ -763,7 +763,7 @@ export default async function StrategyDetailPage({
               marginBottom: 8,
             }}
           >
-            Strategy ID Not Found
+            策略 ID 不在清單中
           </div>
           <div style={{ fontSize: 14, color: "#c8c8c8", lineHeight: 1.7, marginBottom: 12 }}>
             策略 ID <code style={{ fontFamily: "var(--mono, monospace)", color: "#ffb800", background: "rgba(255,184,0,0.08)", padding: "1px 6px", borderRadius: 3 }}>{strategyId}</code> 不在已知策略清單中。
@@ -798,7 +798,7 @@ export default async function StrategyDetailPage({
       code="LAB"
       title={`策略詳情 / ${data.displayName}`}
       sub={`${data.governanceState} · 來源: ${data.dataSource}`}
-      note="此頁顯示策略詳細治理資料。不顯示已驗證、approved、可上線或任何背書字樣。所有 caveat 全文顯示。"
+      note="此頁顯示策略詳細治理資料。不顯示背書、可上線或可跟單字樣。所有限制全文顯示。"
     >
       {/* RETIRED: render static panel only, skip client toggle */}
       {data.isRetired ? (
