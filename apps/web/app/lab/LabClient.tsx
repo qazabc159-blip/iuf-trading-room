@@ -151,7 +151,7 @@ export function LabClient({ initialBundles, initialBlockedReason }: LabClientPro
               <p>{blockedReason}</p>
               <div>
                 <span>接上後顯示：策略包、股票、主題、來源、審核狀態、分歧備註。</span>
-                <span>仍不會顯示：未驗證績效、假曲線、假交易紀錄。</span>
+                <span>仍不會顯示：未審核績效、未審核曲線、未審核交易紀錄。</span>
               </div>
             </div>
           ) : bundles.length === 0 ? (

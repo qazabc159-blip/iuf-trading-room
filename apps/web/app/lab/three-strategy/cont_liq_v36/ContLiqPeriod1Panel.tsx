@@ -1,19 +1,19 @@
 "use client";
 
 /**
- * ContLiqPeriod1Panel — cont_liq v36 Forward Observation Period 1
+ * ContLiqPeriod1Panel — cont_liq v36 前向觀察第一期
  *
- * Day-0 anchor: 2026-05-06 (Athena lock-in)
- * Holdings: 3707 / 2426 / 6205 / 2486 (4 tickers)
+ * Observation start: 2026-05-06
+ * Holdings: 3707 / 2426 / 6205 / 2486
  * Expected exit: 2026-06-03 (H20 target)
- * Mode: research forward observation only — no real order, no production execution
+ * Mode: research observation only — no real order, no production execution
  *
  * HARD LINES:
  *   - entry_price from server (FinMind OHLCV 2026-05-06 close) — no fake
  *   - latest_price from KGI ticks 30s poll — stale flagged if not live
  *   - status banner always shown — cannot be hidden
- *   - FORBIDDEN: approved / alpha confirmed / live-ready / 實單策略 / 已驗證 / 可以跟單 / 保證獲利
- *   - ALLOWED: research tracking / forward observation / simulated / not a trading recommendation / pending H20 maturation
+ *   - FORBIDDEN: endorsement wording, live-ready claims, real-order claims, follow-trade claims
+ *   - ALLOWED: research tracking / observation / simulated / not a trading recommendation / pending H20 maturation
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -365,7 +365,7 @@ function approxTradingDays(from: string, to: string): number {
     if (day !== 0 && day !== 6) count++;
     cur.setDate(cur.getDate() + 1);
   }
-  return Math.max(0, count - 1); // minus Day-0 itself
+  return Math.max(0, count - 1); // exclude observation start
 }
 
 // ── KGI quote fetch (client-side) ─────────────────────────────────────────────
@@ -566,15 +566,15 @@ export function ContLiqPeriod1Panel({
 
       {/* Status banner — always shown, cannot be removed */}
       <div className="_cl1-status-banner">
-        <strong>研究前向觀察期間（Research Forward Observation）</strong><br />
-        本 panel 僅供研究追蹤用途。無真實下單，無生產環境執行。結果在 H20 觀察期結束前不算成熟（pending H20 maturation）。<br />
+        <strong>研究前向觀察期間</strong><br />
+        本區僅供研究追蹤用途。無真實下單，無生產環境執行。結果在 H20 觀察期結束前不算成熟。<br />
         <strong>非交易建議。非已驗證策略。不適合跟單。</strong><br />
-        This is simulated / observation only — not a trading recommendation.
+        這是模擬觀察紀錄，不是買賣建議。
       </div>
 
-      {/* Day-0 anchor hero */}
+      {/* Observation-start hero */}
       <div className="_cl1-anchor">
-        <div className="_cl1-anchor-eyebrow">DAY-0 ANCHOR DATE — Athena 5/6 鎖倉</div>
+        <div className="_cl1-anchor-eyebrow">觀察起始日 — 5/6 鎖定觀察組合</div>
         <div className="_cl1-anchor-date">{DAY0}</div>
         <div className="_cl1-anchor-sub">
           策略：持續流動性強勢策略 v36（cont_liq_v36）&nbsp;·&nbsp;
@@ -587,7 +587,7 @@ export function ContLiqPeriod1Panel({
       {/* Progress */}
       <div className="_cl1-progress-wrap">
         <div className="_cl1-progress-header">
-          <span className="_cl1-progress-title">Forward Observation 進度</span>
+          <span className="_cl1-progress-title">前向觀察進度</span>
           <span className="_cl1-progress-count">
             約 {tradingDaysElapsed} 交易日 / H20 目標
           </span>
@@ -599,7 +599,7 @@ export function ContLiqPeriod1Panel({
           />
         </div>
         <div className="_cl1-progress-meta">
-          <span>開始：{DAY0}（Day-0）</span>
+          <span>開始：{DAY0}（觀察起始日）</span>
           <span>今日：{today}（+{calDaysElapsed} 日曆日）</span>
           <span>預期退出：{EXPECTED_EXIT}</span>
         </div>
@@ -608,7 +608,7 @@ export function ContLiqPeriod1Panel({
       {/* Basket KPI hero */}
       <div className="_cl1-kpi-bar">
         <div className="_cl1-kpi-cell">
-          <div className="_cl1-kpi-label">Basket 未實現報酬</div>
+          <div className="_cl1-kpi-label">組合未實現報酬</div>
           <div className={`_cl1-kpi-value ${kpi.avgReturn == null ? "dim" : kpi.avgReturn >= 0 ? "pos" : "neg"}`}>
             {fmtPct(kpi.avgReturn)}
           </div>
@@ -633,7 +633,7 @@ export function ContLiqPeriod1Panel({
           <div className={`_cl1-kpi-value ${kpi.excess == null ? "dim" : kpi.excess >= 0 ? "amber" : "neg"}`}>
             {fmtPct(kpi.excess)}
           </div>
-          <div className="_cl1-kpi-sub">Basket − Benchmark（前向觀察中）</div>
+          <div className="_cl1-kpi-sub">觀察組合 − 0050（前向觀察中）</div>
         </div>
       </div>
 
@@ -673,8 +673,8 @@ export function ContLiqPeriod1Panel({
           lineHeight: 1.7,
         }}
       >
-        本 panel 為 Period 1 研究紀錄。數據來源：入場價 = FinMind OHLCV 2026-05-06 收盤；
-        即時報價 = KGI EC2 gateway；0050 基準 = 同期 OHLCV 比較。
+        本區為第一期研究紀錄。數據來源：入場價 = FinMind OHLCV 2026-05-06 收盤；
+        即時報價 = KGI 報價服務；0050 基準 = 同期 OHLCV 比較。
         等權損益為研究試算（每檔 10,000 TWD），不代表實際倉位大小。
         策略尚在前向觀察期，H20 到期前不得作為任何投資決策依據。
       </div>

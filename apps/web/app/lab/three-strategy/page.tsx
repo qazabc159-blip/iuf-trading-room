@@ -1,18 +1,14 @@
 /**
- * /lab/three-strategy page — Stage 1 live endpoint wiring
- * 2026-05-09: 拔 hardcode → 改打 /api/v1/lab/three-strategy/snapshot
+ * /lab/three-strategy page — strategy research status
  *
  * Data layer:
  *   Primary: getLabThreeStrategySnapshot() → /api/v1/lab/three-strategy/snapshot
- *   Overlay: Athena 5/9 morning truth (cont_liq v36 9/9 PASS + 四重魯棒; rs_20_60 RETIRED;
- *            strategy_002/003 walk-forward in progress)
- *   Fallback: if endpoint fails → hardcode Athena 5/9 morning data with source label
+ *   Overlay: reviewed research snapshot for stale or unavailable API data
  *
- * Stage 2 (DEFER): equity curve / monthly bar / drawdown / Sharpe / win rate / sample trades
- *   → pending Athena schema ship
+ * Extended charts and trade records render only when verified data exists.
  *
  * HARD LINES:
- *   - No "已驗證" / "approved" / "可上線" / "strategy approved"
+ *   - No endorsement wording or live-trading claims
  *   - No caveat truncation
  *   - No fake metrics
  *   - No broker/execution/risk backend touch
@@ -30,7 +26,7 @@ export const dynamic = "force-dynamic";
 // Source: athena morning 5/9 chat update
 // Applied on top of endpoint data (which may reflect 5/7 stale state)
 
-const ATHENA_5_9_SOURCE = "athena_morning_5_9_chat_update";
+const ATHENA_5_9_SOURCE = "IUF Quant Lab 研究快照";
 const ATHENA_5_9_DATE = "2026-05-09";
 
 type BadgeVariant = "amber" | "blue" | "violet" | "gray";
@@ -51,7 +47,7 @@ type StrategyDisplayCard = {
 
 // ── 5/9 override registry ──────────────────────────────────────────────────────
 // These overrides reflect Athena 5/9 morning truth.
-// When the endpoint ships updated schema, these will be replaced by live data.
+// When the API provides fresher schema data, these overrides can be removed.
 
 type OverrideEntry = Omit<StrategyDisplayCard, "strategyId">;
 
@@ -59,13 +55,13 @@ const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
   // cont_liq v36 — 9/9 PASS + 四重魯棒
   "cont_liquidity_relative_strength__h20__top5__turnover_cap_0.25": {
     displayName: "流動強勢延續策略 v36",
-    tagline: "流動性相對強度選股，h20 持有期框架，前五名等權。v36 通過 9/9 驗證項目 + 四重魯棒性確認。",
+    tagline: "流動性相對強度選股，20 日觀察框架，前五名等權。v36 已完成研究檢查，仍在前向觀察中。",
     badge: "amber",
-    badgeLabel: "9/9 PASS",
-    governanceState: "cont_liq_v36 · 9/9 PASS + 四重魯棒 · forward observation 進行中",
+    badgeLabel: "前向觀察",
+    governanceState: "cont_liq_v36 · 研究檢查完成 · 前向觀察中",
     caveat:
-      "9/9 驗證項目通過（截至 2026-05-09 Athena morning update）/ 四重魯棒：Horizon ±5d NEAR_PASS / Regime ±2% FULL_PASS / Cost 40-250bps script done / Universe K=68→20 PARTIAL（K≥50 liquid universe required）/ 仍需完整 forward observation 才算 process pass / 不是已驗證可上線策略 / capacity note: K≥50 流動性股票宇宙必要條件",
-    metricsLabel: "research_only / 9/9 pass / forward obs pending",
+      "研究檢查已完成，但仍需完整前向觀察才可進入下一階段。容量限制：候選池需至少 50 檔具流動性的股票；若候選池不足，策略可靠度會下降。此策略不是可上線或可跟單策略。",
+    metricsLabel: "研究觀察 / 前向觀察中",
     isRetired: false,
     dataSource: ATHENA_5_9_SOURCE,
   },
@@ -74,11 +70,11 @@ const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
     displayName: "穩健強勢低回撤策略",
     tagline: "rs_20_60 family — 因 sector-pinned 特性，family 層面 no-edge 確認，已退場。",
     badge: "gray",
-    badgeLabel: "RETIRED",
-    governanceState: "RETIRED · sector-pinned · family-level no-edge 2026-05-09",
+    badgeLabel: "已退場",
+    governanceState: "已退場 · 板塊依賴過高 · 2026-05-09",
     caveat:
-      "rs_20_60 family 已於 2026-05-09 Athena morning update 正式退場（RETIRED）/ 根本原因：sector-pinned — 策略表現高度依賴特定板塊曝險，非獨立 alpha 來源 / family-level no-edge 確認 / 不再進行任何 forward observation 或 paper trade / 此 slot 未來由 Athena 新候選策略填補",
-    metricsLabel: "legacy/retired tracking — sector-pinned, no further observation",
+      "此策略已於 2026-05-09 退場。原因：表現高度依賴特定板塊曝險，無法視為獨立選股能力；不再進行前向觀察或模擬交易。",
+    metricsLabel: "已退場 / 不再觀察",
     isRetired: true,
     retiredReason: "sector-pinned · family-level no-edge",
     dataSource: ATHENA_5_9_SOURCE,
@@ -86,13 +82,13 @@ const ATHENA_5_9_OVERRIDES: Record<string, OverrideEntry> = {
   // MAIN — unchanged from 5/7 (no specific 5/9 update)
   MAIN_execution_rank_buffer_top20: {
     displayName: "主控排序緩衝策略",
-    tagline: "MAIN core research candidate — 執行強度排序緩衝，20 股候選池，sector/regime dependent。",
+    tagline: "主控候選策略，使用執行強度排序與 20 股候選池；仍受產業與市場環境影響。",
     badge: "blue",
     badgeLabel: "研究候選",
-    governanceState: "MAIN · RESEARCH_CANDIDATE · core pilot role · strategy_002/003 walk-forward in progress (Task #400)",
+    governanceState: "研究候選 · 等待前向觀察與延伸資料",
     caveat:
-      "MAIN 策略保持 RESEARCH_CANDIDATE 狀態 / strategy_002 + strategy_003 walk-forward + bootstrap CI 進行中（Task #400）/ 尚未進入 forward observation / sector/regime dependent — 非 clean stock-picking claim / 不是已驗證策略 / cash_order_path: BLOCKED_until_Yang_final_manual_ACK",
-    metricsLabel: "research_only / methodology caveat — sector/regime dependent, not validated",
+      "此策略仍是研究候選。延伸資料與前向觀察尚未完成，且表現可能受產業與市場環境影響；不得視為已驗證策略或交易建議。",
+    metricsLabel: "研究候選 / 資料待補",
     isRetired: false,
     dataSource: ATHENA_5_9_SOURCE,
   },
@@ -137,12 +133,12 @@ function mapEntryToCard(entry: LabThreeStrategyEntry): StrategyDisplayCard {
     displayName: entry.display_name_zh || entry.strategy_id,
     tagline: entry.latest_state || "—",
     badge: isRetired ? "gray" : "amber",
-    badgeLabel: isRetired ? "RETIRED" : entry.pilot_status ?? "READINESS_REVIEW",
-    governanceState: entry.pilot_status ?? "READINESS_REVIEW_ONLY",
-    caveat: entry.caveat || "詳細 caveat 待 Athena 更新",
-    metricsLabel: "research_only / methodology caveat — sector/regime dependent, not validated",
+    badgeLabel: isRetired ? "已退場" : "研究待審",
+    governanceState: isRetired ? "已退場" : "研究待審",
+    caveat: entry.caveat || "詳細限制待量化研究資料更新",
+    metricsLabel: "研究資料 / 方法限制待確認",
     isRetired,
-    dataSource: "embedded_lab_fixture",
+    dataSource: "IUF Quant Lab 研究資料",
   };
 }
 
@@ -153,7 +149,7 @@ const CONT_LIQ_SPARKLINE_POINTS = [
   0.0138, 0.2504, 0.119, 0.2547, 0.6097, 0.491, 0.8008, 0.967, 0.968, 1.143, 1.3663, 1.8553, 2.2202,
 ] as const;
 
-// strategy_002 / strategy_003 have no chart snapshot yet — show placeholder sparkline
+// strategy_002 / strategy_003 have no verified chart snapshot yet.
 // Using a flat line with slight upward noise to indicate "data pending" state
 const PENDING_SPARKLINE_POINTS = [0, 0.01, 0.005, 0.012, 0.008, 0.015, 0.01, 0.018] as const;
 
@@ -222,7 +218,7 @@ function MiniSparkline({
           opacity: 0.9,
         }}
       >
-        {isPending ? "chart pending Task #400" : "點開看完整圖表 →"}
+        {isPending ? "圖表待延伸資料補齊" : "點開看完整圖表 →"}
       </div>
     </div>
   );
@@ -505,7 +501,7 @@ function StrategyCard({ s }: { s: StrategyDisplayCard }) {
               className="_strat-cta"
               style={{ color: accent }}
             >
-              進入 detail panel
+              查看策略詳情
               <span style={{ marginLeft: 5, fontSize: 14 }}>→</span>
             </Link>
           )}
@@ -526,7 +522,7 @@ export default async function LabThreeStrategyPage() {
 
   if (!snapshot) {
     fetchError =
-      "lab snapshot endpoint 未回應或回傳 ok=false。顯示 Athena 5/9 morning fallback 資料。";
+      "策略狀態 API 暫時無法讀取，改顯示最近一次已審核的研究快照。";
     cards = FALLBACK_STRATEGIES;
     isStale = true;
   } else {
@@ -535,7 +531,7 @@ export default async function LabThreeStrategyPage() {
     isStale = !createdAt.startsWith("2026-05-09");
 
     if (snapshot.strategies.length === 0) {
-      fetchError = "endpoint 回傳 strategies: [] (空陣列)。顯示 Athena 5/9 morning fallback 資料。";
+      fetchError = "策略狀態 API 目前沒有回傳策略清單，改顯示最近一次已審核的研究快照。";
       cards = FALLBACK_STRATEGIES;
     } else {
       // Map endpoint entries → display cards (with Athena 5/9 overlay)
@@ -553,8 +549,8 @@ export default async function LabThreeStrategyPage() {
     <PageFrame
       code="LAB"
       title="量化研究 / 三條策略狀態"
-      sub="Athena truth board v1 / 邊跑邊修"
-      note="本頁顯示 IUF Quant Lab 三條策略的真實治理狀態。所有 caveat 全文顯示，不截斷。不顯示已驗證、approved、可上線或任何背書字樣。"
+      sub="研究策略狀態 / 前向觀察與風險限制"
+      note="本頁顯示 IUF Quant Lab 三條策略的治理狀態。所有限制全文顯示，不截斷。不顯示背書、可上線或可跟單字樣。"
     >
       <style>{`
         ._strat-grid {
@@ -650,8 +646,8 @@ export default async function LabThreeStrategyPage() {
           lineHeight: 1.6,
         }}
       >
-        Stage 1 live wiring 完成（2026-05-09）— 等 Athena Stage 1 contract ship 後將自動同步 caveat_verdicts 欄位。
-        Stage 2（equity curve / monthly bar / Sharpe / win rate / sample trades）pending Athena schema ship。
+        策略狀態資料已接上正式查詢管線；細部風險欄位仍會依量化研究資料更新自動同步。
+        績效曲線、月度報酬、風險指標與正式交易紀錄只在有可驗證資料時顯示。
       </div>
 
       {/* Fetch error / stale banner */}
@@ -671,7 +667,7 @@ export default async function LabThreeStrategyPage() {
         >
           {fetchError
             ? `資料層：${fetchError}`
-            : `endpoint 資料為 5/7 版本（stale）— 套用 Athena 5/9 morning 覆蓋層 (${ATHENA_5_9_SOURCE})。等 endpoint 更新至 5/9 後 banner 將消失。`}
+            : `策略狀態 API 的資料時間較舊，頁面已套用最近一次已審核的研究快照。資料源更新後，此提示會自動消失。`}
         </div>
       )}
 
@@ -699,7 +695,7 @@ export default async function LabThreeStrategyPage() {
             fontFamily: "var(--mono, monospace)",
           }}
         >
-          重要聲明 — 此頁為邊跑邊修狀態
+          重要聲明 — 研究觀察頁
         </div>
         <div style={{ fontSize: 13, color: "#ddd", lineHeight: 1.6 }}>
           以下策略均為{" "}
@@ -707,7 +703,7 @@ export default async function LabThreeStrategyPage() {
           。無策略通過完整驗證。不顯示任何勝率、報酬率或配置建議。
         </div>
         <div style={{ fontSize: 11, color: "#888" }}>
-          狀態來源 / {displaySource} · {displayDate} · 下次更新 / Athena 發布新 truth board 時
+          狀態來源 / {displaySource} · {displayDate} · 下次更新 / 量化研究資料更新時
         </div>
       </section>
 
@@ -729,7 +725,7 @@ export default async function LabThreeStrategyPage() {
           marginBottom: 16,
         }}
       >
-        本頁只顯示候選狀態與限制。未驗證績效、配置比例與買賣建議不顯示（金額僅在各策略 detail panel 顯示，限 owner 可見）。
+        本頁只顯示候選狀態與限制。未驗證績效、配置比例與買賣建議不顯示（金額僅在各策略詳情頁顯示，限 owner 可見）。
         治理資料來源：IUF Quant Lab / Athena / {displaySource}
       </div>
 

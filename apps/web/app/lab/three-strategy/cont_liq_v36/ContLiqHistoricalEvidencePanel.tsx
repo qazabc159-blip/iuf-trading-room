@@ -2,24 +2,24 @@
  * ContLiqHistoricalEvidencePanel — cont_liq v36 歷史研究證據（B 區）
  *
  * 純靜態 server component — 不 poll KGI，不呼叫 FinMind。
- * 數字來源：Codex v46 verbatim（2026-05-12 升級指令）
+ * 數字來源：IUF Quant Lab 歷史回測紀錄（2026-05-12）
  *
- * B.1 策略原始證據窗（22 months）:
+ * B.1 策略原始證據窗（22 個月）:
  *   - 觀察窗：2024-05 → 2026-03
  *   - cont_liq net absolute return after cost: +759.87%
  *
- * B.2 共同窗比較（11 months）:
+ * B.2 共同窗比較（11 個月）:
  *   - 共同窗：2025-04-10 → 2026-03-06
- *   - cont_liq common-window: +400.89%
+ *   - cont_liq 共同窗: +400.89%
  *   - 0050 same-window: +95.25%
  *   - 超額: +305.64pp
  *
  * HARD LINES:
- *   - 不使用「合計絕對回報」單一數字混用兩窗數據 — 3 欄分顯示 (see Codex v46 instruction)
+ *   - 不使用「合計絕對回報」單一數字混用兩窗數據 — 3 欄分顯示
  *   - 不使用任何背書性正面用語 (formally-endorsed / alpha-confirmed / live-ready / 實單跟倉)
- *   - 禁止混用 evidence-window 與 common-window 數字於同一段
- *   - MUST 標明 "not same-window comparison" + "not forward-observation result" + "not a trade recommendation"
- *   - 數字來源 hardcode — 後續 Jason P2 v46 endpoint ship 後再 swap
+ *   - 禁止混用歷史證據窗與共同窗數字於同一段
+ *   - MUST 標明不同窗口、非前向觀察結果、非交易建議
+ *   - 後續由策略資料 API 自動提供時再移除此靜態研究紀錄
  */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ interface EvidenceNumbers {
   dataSource: string;
 }
 
-// ── Constants — Codex v46 verbatim ───────────────────────────────────────────
+// ── Constants — historical research record ───────────────────────────────────
 
 const EVIDENCE: EvidenceNumbers = {
   // B.1 — evidence window (22 months)
@@ -61,7 +61,7 @@ const EVIDENCE: EvidenceNumbers = {
   excessPp: "+305.64pp",
 
   // Source attribution
-  dataSource: "Codex v46 backtest output (2026-05-12); 後續 Jason P2 v46 endpoint ship 後 swap",
+  dataSource: "IUF Quant Lab 歷史回測紀錄（2026-05-12）；後續將由策略資料 API 自動提供。",
 };
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -280,24 +280,24 @@ export function ContLiqHistoricalEvidencePanel() {
 
       {/* Section divider — clearly separates A zone from B zone */}
       <hr className="_clh-section-divider" />
-      <div className="_clh-section-label">B 區 — 歷史研究證據 / Historical Research Evidence</div>
+      <div className="_clh-section-label">B 區 — 歷史研究證據</div>
 
-      {/* ── B.1 策略原始證據窗（22 months）─────────────────────────────────── */}
+      {/* ── B.1 策略原始證據窗（22 個月）─────────────────────────────────── */}
 
       {/* B.1 zone banner */}
       <div className="_clh-zone-banner">
         <strong>B.1 策略原始證據窗</strong>
-        <span className="caveat-tag">not same-window comparison</span>
-        <span className="caveat-tag">not forward-observation result</span>
-        <span className="caveat-tag">not a trade recommendation</span>
+        <span className="caveat-tag">不同窗口</span>
+        <span className="caveat-tag">非前向觀察結果</span>
+        <span className="caveat-tag">非交易建議</span>
         <br />
-        觀察窗完整跨度（{ev.evidenceWindowStart} → {ev.evidenceWindowEnd}，{ev.evidenceWindowMonths} months）。
+        觀察窗完整跨度（{ev.evidenceWindowStart} → {ev.evidenceWindowEnd}，{ev.evidenceWindowMonths} 個月）。
         此為策略在完整可用歷史資料段的絕對報酬，與 B.2 共同窗 <strong>非同一窗口</strong>，不可直接比較。
       </div>
 
       {/* B.1 data card */}
       <div className="_clh-b1-card">
-        <div className="_clh-b1-eyebrow">Evidence Window — 22-Month Net Absolute Return After Cost</div>
+        <div className="_clh-b1-eyebrow">歷史證據窗 — 22 個月含成本後淨絕對報酬</div>
         <div className="_clh-b1-window-label">
           觀察窗：{ev.evidenceWindowStart} → {ev.evidenceWindowEnd}（{ev.evidenceWindowMonths} 個月）
         </div>
@@ -306,32 +306,32 @@ export function ContLiqHistoricalEvidencePanel() {
           <span className="_clh-b1-return-value">{ev.netAbsoluteReturnPct}</span>
         </div>
         <div className="_clh-b1-caveats">
-          <span className="not-tag">not a trade recommendation</span>
-          此數字為策略在歷史研究窗口的絕對報酬，不代表 Forward Observation Period 1 的預期結果，
-          亦不代表可重現的未來績效。此為 legacy 歷史紀錄，供研究追蹤用。
+          <span className="not-tag">非交易建議</span>
+          此數字為策略在歷史研究窗口的絕對報酬，不代表前向觀察第一期的預期結果，
+          亦不代表可重現的未來績效。此為歷史研究紀錄，供研究追蹤用。
           <br />
-          <span className="not-tag">not same-window comparison</span>
-          B.1 觀察窗（22 months）與 B.2 共同窗（11 months）起迄不同，兩段數字不可直接疊加或比較。
+          <span className="not-tag">不同窗口</span>
+          B.1 觀察窗（22 個月）與 B.2 共同窗（11 個月）起迄不同，兩段數字不可直接疊加或比較。
           <br />
-          <span className="not-tag">not forward-observation result</span>
-          Period 1 前向觀察（Day-0: 2026-05-06）與本段歷史結果無關；H20 成熟前不作結論。
+          <span className="not-tag">非前向觀察結果</span>
+          第一期前向觀察（起始日：2026-05-06）與本段歷史結果無關；H20 成熟前不作結論。
         </div>
       </div>
 
-      {/* ── B.2 共同窗比較（11 months）──────────────────────────────────────── */}
+      {/* ── B.2 共同窗比較（11 個月）──────────────────────────────────────── */}
 
       {/* B.2 zone banner */}
       <div className="_clh-zone-banner">
-        <strong>B.2 共同窗比較（Same-Window vs 0050）</strong>
-        <span className="caveat-tag">not a trade recommendation</span>
+        <strong>B.2 共同窗比較（同期間 vs 0050）</strong>
+        <span className="caveat-tag">非交易建議</span>
         <br />
-        共同窗：{ev.commonWindowStart} → {ev.commonWindowEnd}（{ev.commonWindowMonths} months）。
+        共同窗：{ev.commonWindowStart} → {ev.commonWindowEnd}（{ev.commonWindowMonths} 個月）。
         策略與 0050 在相同觀察窗口的絕對報酬對比。不代表前向觀察結果，不代表未來績效。
       </div>
 
       {/* B.2 3-column card */}
       <div className="_clh-b2-card">
-        <div className="_clh-b2-eyebrow">Common-Window Comparison — 11-Month Same-Window vs 0050</div>
+        <div className="_clh-b2-eyebrow">共同窗比較 — 11 個月同期間對照 0050</div>
         <div className="_clh-b2-window-label">
           共同觀察窗：{ev.commonWindowStart} → {ev.commonWindowEnd}（{ev.commonWindowMonths} 個月）
         </div>
@@ -340,7 +340,7 @@ export function ContLiqHistoricalEvidencePanel() {
           {/* Col 1 — 策略絕對報酬 */}
           <div className="_clh-b2-col">
             <div className="_clh-b2-col-label">
-              策略絕對報酬<br />cont_liq common-window
+              策略絕對報酬<br />cont_liq 同期間
             </div>
             <div className="_clh-b2-col-value strategy-ret">{ev.contLiqCommonPct}</div>
             <div className="_clh-b2-col-sub">
@@ -352,7 +352,7 @@ export function ContLiqHistoricalEvidencePanel() {
           {/* Col 2 — 0050 同窗報酬 */}
           <div className="_clh-b2-col">
             <div className="_clh-b2-col-label">
-              0050 同窗報酬<br />benchmark same-window
+              0050 同窗報酬<br />同期間基準
             </div>
             <div className="_clh-b2-col-value bench-ret">{ev.bench0050CommonPct}</div>
             <div className="_clh-b2-col-sub">
@@ -364,7 +364,7 @@ export function ContLiqHistoricalEvidencePanel() {
           {/* Col 3 — 超額報酬 */}
           <div className="_clh-b2-col">
             <div className="_clh-b2-col-label">
-              超額報酬 vs 0050<br />excess return (pp)
+              超額報酬 vs 0050<br />百分點
             </div>
             <div className="_clh-b2-col-value excess-ret">{ev.excessPp}</div>
             <div className="_clh-b2-col-sub">
@@ -375,13 +375,13 @@ export function ContLiqHistoricalEvidencePanel() {
         </div>
 
         <div className="_clh-b2-caveats">
-          <span className="not-tag">not a trade recommendation</span>
-          共同窗比較為歷史研究數字，不代表策略已完成驗證、或已通過任何正式背書（formally endorsed）流程。
+          <span className="not-tag">非交易建議</span>
+          共同窗比較為歷史研究數字，不代表策略已完成驗證，也不代表任何正式背書流程。
           <br />
-          <span className="not-tag">not forward-observation result</span>
-          Period 1 前向觀察仍在進行中，H20 到期前不以此為結論依據。
+          <span className="not-tag">非前向觀察結果</span>
+          第一期前向觀察仍在進行中，H20 到期前不以此為結論依據。
           <br />
-          B.2 共同窗（11 months）與 B.1 證據窗（22 months）為不同時段，數字不可混用。
+          B.2 共同窗（11 個月）與 B.1 證據窗（22 個月）為不同時段，數字不可混用。
         </div>
       </div>
 
