@@ -25,6 +25,16 @@ describe("computeFreshnessMode", () => {
     ).toBe("stale");
   });
 
+  it("keeps TWSE EOD fallback stale when session metadata is missing", () => {
+    expect(
+      realtimeFreshnessMode({
+        ...baseQuote,
+        marketSession: undefined,
+        referenceReason: undefined,
+      }, Date.parse("2026-06-05T01:05:05.000Z")),
+    ).toBe("stale");
+  });
+
   it("keeps post-close TWSE EOD reference as eod", () => {
     expect(
       realtimeFreshnessMode({
