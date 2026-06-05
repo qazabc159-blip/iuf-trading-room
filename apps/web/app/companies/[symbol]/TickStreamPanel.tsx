@@ -134,7 +134,7 @@ export function TickStreamPanel({
         if (aggregateRows.length > 0) {
           setState({
             status: "aggregate",
-            reason: "KGI 唯讀逐筆尚未回傳有效成交；目前以 FinMind 分 K 轉成最近成交摘要，不補假 tick。",
+            reason: "KGI 唯讀逐筆尚未回傳有效成交；目前以 FinMind 分 K 轉成最近成交摘要（FinMind 分K成交摘要）呈現成交節奏。這不是逐筆 tick，不混充，也不補假 tick。",
             fetchedAt: new Date().toISOString(),
           });
           return;
@@ -194,7 +194,7 @@ export function TickStreamPanel({
           {state.status === "live"
             ? `KGI 逐筆 ${state.ticks.length} 筆`
             : state.status === "aggregate"
-              ? `FinMind 分K ${aggregateRows.length} 筆`
+              ? `FinMind 分K成交摘要 ${aggregateRows.length} 筆`
               : "等待可用資料"}
         </span>
       </div>
@@ -218,7 +218,7 @@ export function TickStreamPanel({
       {state.status === "aggregate" && (
         <>
           <div className="state-panel" style={{ marginBottom: 10 }}>
-            <span className="badge badge-yellow">分K聚合</span>
+            <span className="badge badge-yellow">FinMind 分K成交摘要</span>
             <span className="state-reason">{state.reason}</span>
           </div>
           <div className="table-scroll">

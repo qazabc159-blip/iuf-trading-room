@@ -207,7 +207,7 @@ function detailBody(item: CompanyAnnouncement) {
   if (body) return body;
   return [
     item.title ? `公告摘要：${item.title}` : "此公告目前只有標題與分類資料。",
-    "系統已保留官方來源、日期與公司代號；若官方明細連結可用，請從下方來源開啟完整公告。",
+    "官方來源未提供完整內文；系統已保留官方來源、日期與公司代號，若官方明細連結可用，請從下方來源開啟完整公告。",
   ].join("\n");
 }
 
@@ -215,6 +215,7 @@ function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
   const [expanded, setExpanded] = useState(false);
   const kind = annKind(item.category ?? "");
   const body = useMemo(() => detailBody(item), [item]);
+  const hasDetail = Boolean(item.body || item.url || item.source);
 
   return (
     <div className="_co-ann-row">
@@ -231,7 +232,9 @@ function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
             <span className={`_co-ann-badge --${kind}`}>{annKindLabel(item.category ?? "")}</span>
           </div>
           <div className="_co-ann-title">{item.title || "未命名公告"}</div>
-          <div className="_co-ann-expand">{expanded ? "收合內容" : "展開公告內容與來源"}</div>
+          <div className="_co-ann-expand">
+            {hasDetail ? (expanded ? "收合內容" : "展開公告內容與來源") : "公告摘要"}
+          </div>
         </button>
         {expanded && (
           <div className="_co-ann-body">
@@ -251,8 +254,14 @@ function AnnouncementRow({ item }: { item: CompanyAnnouncement }) {
               </div>
             </dl>
             {item.url ? (
-              <a className="_co-ann-link" href={item.url} target="_blank" rel="noreferrer">
-                開啟官方公告
+              <a
+                className="_co-ann-link"
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="開啟官方公告"
+              >
+                開啟正式公告
               </a>
             ) : null}
           </div>
