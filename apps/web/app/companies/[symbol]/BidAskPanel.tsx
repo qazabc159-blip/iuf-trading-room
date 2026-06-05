@@ -26,7 +26,7 @@ const LIVE_CSS = `
 }
 @keyframes _ba-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.5; transform: scale(1.35); }
+  50% { opacity: 0.5; transform: scale(1.35); }
 }
 ._ba-table {
   width: 100%;
@@ -50,7 +50,11 @@ const LIVE_CSS = `
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid rgba(220,228,240,0.04);
 }
-._ba-table td:first-child { text-align: left; color: var(--night-mid,#91a0b5); font-size: 10px; }
+._ba-table td:first-child {
+  text-align: left;
+  color: var(--night-mid,#91a0b5);
+  font-size: 10px;
+}
 ._ba-ask { color: var(--tw-up-bright, #e63946); font-weight: 700; }
 ._ba-bid { color: var(--tac-ok, #4ade80); font-weight: 700; }
 ._ba-vol { color: var(--night-mid, #91a0b5); }
@@ -65,25 +69,25 @@ const LIVE_CSS = `
 function blockedReason(error: unknown) {
   const msg = error instanceof Error ? error.message : String(error);
   if (/KGI_QUOTE_AUTH_UNAVAILABLE|QUOTE_AUTH_UNAVAILABLE/i.test(msg)) {
-    return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；五檔面板降級，不補假委買委賣。";
+    return "KGI SIM 尚未提供唯讀報價 token；目前只顯示公司日線、分 K 與交易室正股資訊。";
   }
   if (/SYMBOL_NOT_ALLOWED/i.test(msg)) {
-    return "此股票尚未列入唯讀五檔行情覆蓋清單；不顯示假委買委賣。";
+    return "此股票尚未訂閱 KGI 唯讀五檔；請等報價訂閱完成後再查看。";
   }
   if (/GATEWAY_UNREACHABLE|unreachable/i.test(msg)) {
-    return "KGI 唯讀行情暫時無法連線；請稍後再讀取。";
+    return "KGI 唯讀報價閘道暫時無法連線，稍後會自動重試。";
   }
   if (/QUOTE_DISABLED/i.test(msg)) {
-    return "KGI 唯讀行情目前停用；正式委託路徑仍保持封鎖。";
+    return "KGI 唯讀報價目前被後端暫停，避免顯示錯誤五檔。";
   }
   if (/GATEWAY_AUTH/i.test(msg)) {
-    return "KGI 唯讀行情憑證暫時失效；此面板保持降級，不顯示假資料。";
+    return "KGI 唯讀報價授權尚未通過，暫不顯示五檔。";
   }
-  return `五檔報價暫時無法讀取：${msg.slice(0, 80)}`;
+  return `五檔資料暫時無法讀取：${msg.slice(0, 80)}`;
 }
 
 function offHoursReason() {
-  return `目前為盤外/休市時段，KGI 唯讀五檔不會回傳即時委買委賣；下一次讀取窗口：${kgiNextOpenLabel()}。`;
+  return `目前不在台股即時撮合時段，KGI 唯讀五檔不會回傳盤中資料。下一次觀察窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function BidAskPanel({ symbol }: { symbol: string }) {
@@ -97,7 +101,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
     try {
       const data = await getKgiBidAsk(symbol);
       if (!data) {
-        setState({ status: "waiting", reason: "KGI 唯讀五檔目前尚未回傳有效委買委賣；系統會持續輪詢，不使用假五檔補畫。" });
+        setState({ status: "waiting", reason: "KGI 唯讀五檔目前尚未回傳有效委買委賣，系統會持續輪詢；這不是系統故障。" });
         return;
       }
       setState({ status: "live", data, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
@@ -128,7 +132,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         {state.status === "live" && (
           <span className="_ba-live-badge" style={{ marginLeft: 10 }}>
             <span className="_ba-live-ring" />
-            LIVE 於 {state.updatedAt}
+            LIVE / {state.updatedAt}
           </span>
         )}
         {state.status === "loading" && (
@@ -140,7 +144,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason} 這不是系統故障；正式五檔只在盤中顯示，不使用假委買委賣補畫。</span>
+          <span className="state-reason">{state.reason} 盤中會自動回到 LIVE。</span>
         </div>
       )}
 
@@ -148,7 +152,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">待回傳</span>
           <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason} 這不是系統故障；只要 KGI 回傳正式五檔就會自動切回 LIVE。</span>
+          <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
@@ -163,7 +167,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在讀取 KGI 唯讀五檔資料。</span>
+          <span className="tg soft">正在讀取 KGI 唯讀五檔。</span>
         </div>
       )}
 

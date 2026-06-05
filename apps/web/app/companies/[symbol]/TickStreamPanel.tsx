@@ -20,18 +20,19 @@ type TickPanelState =
 function formatTime(value: string | null | undefined) {
   if (!value) return "--:--";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 5);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
   return date.toLocaleTimeString("zh-TW", {
     timeZone: "Asia/Taipei",
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
 }
 
 function formatKbarTime(row: FinMindKBarRow) {
   const minute = row.minute || "";
-  if (/^\d{2}:\d{2}/.test(minute)) return minute.slice(0, 5);
+  if (/^\d{2}:\d{2}/.test(minute)) return `${row.date} ${minute.slice(0, 5)}`;
   return `${row.date} ${minute}`.trim();
 }
 
@@ -73,20 +74,26 @@ function kbarTone(row: FinMindKBarRow) {
 function statusCopy(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err ?? "");
   if (/401|403|OWNER_ONLY|unauth/i.test(msg)) {
-    return "目前登入權限不足，無法讀取 KGI 唯讀逐筆；下方改用正式 FinMind 分K成交摘要。";
+    return "目前沒有 owner session，無法讀取 KGI 唯讀逐筆；改用 FinMind 分 K 聚合顯示最近成交節奏。";
   }
   if (/SYMBOL_NOT_ALLOWED/i.test(msg)) {
-    return "此股票尚未列入 KGI 唯讀逐筆覆蓋清單；下方改用正式 FinMind 分K成交摘要。";
+    return "此股票尚未訂閱 KGI 唯讀逐筆；改用 FinMind 分 K 聚合顯示最近成交節奏。";
   }
   if (/GATEWAY|unreachable|timeout|fetch/i.test(msg)) {
-    return "KGI 唯讀逐筆暫時無法連線；下方改用正式 FinMind 分K成交摘要。";
+    return "KGI 唯讀逐筆暫時連線不穩；改用 FinMind 分 K 聚合顯示最近成交節奏。";
   }
-  return "KGI 唯讀逐筆暫時沒有回傳；下方改用正式 FinMind 分K成交摘要。";
+  return "KGI 唯讀逐筆暫時不可用；改用 FinMind 分 K 聚合顯示最近成交節奏。";
 }
 
 function rowsFromKbar(kbarRows: FinMindKBarRow[]) {
   return [...kbarRows]
-    .filter((row) => Number.isFinite(row.close) && Number.isFinite(row.volume))
+    .filter((row) => (
+      Number.isFinite(row.open)
+      && Number.isFinite(row.high)
+      && Number.isFinite(row.low)
+      && Number.isFinite(row.close)
+      && Number.isFinite(row.volume)
+    ))
     .sort((a, b) => {
       const left = `${a.date} ${a.minute}`;
       const right = `${b.date} ${b.minute}`;
@@ -127,14 +134,16 @@ export function TickStreamPanel({
         if (aggregateRows.length > 0) {
           setState({
             status: "aggregate",
-            reason: "KGI 逐筆尚未回傳，先顯示正式 FinMind 分K成交摘要；這不是逐筆 tick，不混充。",
+            reason: "KGI 唯讀逐筆尚未回傳有效成交；目前以 FinMind 分 K 轉成最近成交摘要，不補假 tick。",
             fetchedAt: new Date().toISOString(),
           });
           return;
         }
         setState({
           status: "empty",
-          reason: kbarState === "BLOCKED" ? kbarReason : "目前沒有可顯示的 KGI 逐筆或 FinMind 分K成交資料。",
+          reason: kbarState === "BLOCKED"
+            ? kbarReason
+            : "目前沒有 KGI 逐筆，也沒有可聚合的 FinMind 分 K。",
           fetchedAt: new Date().toISOString(),
         });
       })
@@ -158,10 +167,10 @@ export function TickStreamPanel({
 
   const badge =
     state.status === "live" ? "LIVE" :
-    state.status === "aggregate" ? "分K摘要" :
+    state.status === "aggregate" ? "分K聚合" :
     state.status === "loading" ? "讀取中" :
-    state.status === "empty" ? "無資料" :
-    "暫停";
+    state.status === "empty" ? "EMPTY" :
+    "BLOCKED";
   const badgeClass =
     state.status === "live" ? "badge-green" :
     state.status === "aggregate" ? "badge-yellow" :
@@ -174,7 +183,7 @@ export function TickStreamPanel({
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">逐筆</span> 成交明細
         <span className="dim" style={{ fontSize: 11, marginLeft: 10 }}>
-          KGI 逐筆 / FinMind 分K摘要
+          KGI 逐筆 / FinMind 分K
         </span>
       </h3>
 
@@ -186,21 +195,21 @@ export function TickStreamPanel({
             ? `KGI 逐筆 ${state.ticks.length} 筆`
             : state.status === "aggregate"
               ? `FinMind 分K ${aggregateRows.length} 筆`
-              : "等待資料"}
+              : "等待可用資料"}
         </span>
       </div>
 
       {state.status === "loading" && (
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
-          <span className="state-reason">正在讀取 KGI 逐筆；若沒有回傳，會自動切到正式 FinMind 分K成交摘要。</span>
+          <span className="state-reason">正在讀取 KGI 逐筆；若未回傳，會自動切到 FinMind 分 K 聚合。</span>
         </div>
       )}
 
       {(state.status === "blocked" || state.status === "empty") && (
         <div className="state-panel">
           <span className={`badge ${state.status === "blocked" ? "badge-red" : "badge-yellow"}`}>
-            {state.status === "blocked" ? "暫停" : "無資料"}
+            {state.status === "blocked" ? "BLOCKED" : "EMPTY"}
           </span>
           <span className="state-reason">{state.reason}</span>
         </div>
@@ -209,7 +218,7 @@ export function TickStreamPanel({
       {state.status === "aggregate" && (
         <>
           <div className="state-panel" style={{ marginBottom: 10 }}>
-            <span className="badge badge-yellow">分K摘要</span>
+            <span className="badge badge-yellow">分K聚合</span>
             <span className="state-reason">{state.reason}</span>
           </div>
           <div className="table-scroll">
@@ -248,8 +257,8 @@ export function TickStreamPanel({
               <tr>
                 <th>時間</th>
                 <th>成交價</th>
-                <th>漲跌</th>
                 <th>量</th>
+                <th>漲跌</th>
               </tr>
             </thead>
             <tbody>
@@ -257,12 +266,8 @@ export function TickStreamPanel({
                 <tr key={`${tick.datetime ?? tick._received_at ?? index}-${index}`}>
                   <td>{formatTime(tick.datetime ?? tick._received_at)}</td>
                   <td className={tickTone(tick)}>{formatPrice(tick.close)}</td>
-                  <td className={tickTone(tick)}>
-                    {typeof tick.price_chg === "number" && Number.isFinite(tick.price_chg)
-                      ? `${tick.price_chg > 0 ? "+" : ""}${formatPrice(tick.price_chg)}`
-                      : "--"}
-                  </td>
-                  <td>{formatVolume(tick.volume ?? tick.total_volume)}</td>
+                  <td>{formatVolume(tick.volume)}</td>
+                  <td className={tickTone(tick)}>{formatPrice(tick.price_chg)}</td>
                 </tr>
               ))}
             </tbody>
