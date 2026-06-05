@@ -14644,12 +14644,16 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-4: orchestrator-v3.ts maxTokens is >= 5000 for
   const src = await import("fs").then(fs =>
     fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
   );
-  const match = src.match(/maxTokens:\s*repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)/);
-  assert.ok(match, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: synthesizeReportV3 must have maxTokens pattern");
-  const repairTokens = parseInt(match![1]!, 10);
-  const normalTokens = parseInt(match![2]!, 10);
+  const match = src.match(/maxTokens:\s*\/\^\(gpt-5\|o1\|o3\)\/\.test\(model\)\s*\?\s*\(repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)\)\s*:\s*\(repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)\)/s);
+  assert.ok(match, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: synthesizeReportV3 must have reasoning/non-reasoning maxTokens pattern");
+  const reasoningRepairTokens = parseInt(match![1]!, 10);
+  const reasoningNormalTokens = parseInt(match![2]!, 10);
+  const repairTokens = parseInt(match![3]!, 10);
+  const normalTokens = parseInt(match![4]!, 10);
   assert.ok(normalTokens >= 5000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: normal maxTokens must be >= 5000 for 5-stock report, got ${normalTokens}`);
   assert.ok(repairTokens >= 6000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: repair maxTokens must be >= 6000, got ${repairTokens}`);
+  assert.ok(reasoningNormalTokens >= normalTokens, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: reasoning model normal budget must be at least non-reasoning budget");
+  assert.ok(reasoningRepairTokens >= repairTokens, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: reasoning model repair budget must be at least non-reasoning budget");
 });
 
 test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP sentinel not markdown heading", async () => {
@@ -14659,7 +14663,7 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP s
   assert.ok(src.includes("RISK_OFF_FINAL_SKIP"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: prompt must define RISK_OFF_FINAL_SKIP sentinel");
   assert.ok(src.includes("hasStockHeadings"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must check hasStockHeadings before treating risk-off as skip");
   assert.ok(src.includes("isExplicitSkip"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must use isExplicitSkip guard instead of broad regex");
-  assert.ok(src.includes("CRITICAL PARSER RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL PARSER RULES block");
+  assert.ok(src.includes("CRITICAL JSON RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL JSON RULES block");
 });
 
 test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when programmatic score is below 3", async () => {
@@ -14675,14 +14679,14 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when p
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: repair pass must reject invalid risk-off skip text"
   );
   assert.ok(
-    src.includes("RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止"),
+    src.includes("RISK_OFF_FINAL_SKIP is forbidden when system_programmatic_risk_off_score < 3"),
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: prompt must forbid skip sentinels when score < 3"
   );
   assert.ok(
-    src.includes("推薦 A+/A/B 的股票") &&
-      src.includes("C 分類必須標示高風險排除") &&
-      src.includes("不算推薦卡"),
-    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must forbid C bucket high-risk exclusions from satisfying the five-card gate"
+    src.includes("Include at least ${MIN_V3_RECOMMENDATION_ITEMS} items") &&
+      src.includes("Score thresholds: A+ >= 85, A = 75-84, B = 65-74, C < 65") &&
+      src.includes("totalScore must match action"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis JSON repair must require five actionable score-consistent cards"
   );
 });
 
@@ -16197,6 +16201,40 @@ test("GPT55-UPGRADE-5: ai rec v3 has a model fallback so one bad deep model cann
 });
 
 // ── JSON-SYNTHESIS (structured output parser — PR feat/api-ai-rec-json-output) ─────────────────
+
+test("GPT55-UPGRADE-6: ai rec v3 caps fallback model token budget", async () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("capAiRecFallbackMaxTokensForModel"),
+    "GPT55-UPGRADE-6: orchestrator-v3 must define a fallback token cap helper"
+  );
+  assert.ok(
+    src.includes("capAiRecFallbackMaxTokensForModel(fallback, opts.maxTokens)"),
+    "GPT55-UPGRADE-6: fallback call must cap maxTokens before retrying with a smaller model"
+  );
+  assert.ok(
+    src.includes("[/^gpt-4o(?:$|-)/i, 16000]"),
+    "GPT55-UPGRADE-6: gpt-4o fallback must stay below its 16384 completion-token limit"
+  );
+
+  const { capAiRecFallbackMaxTokensForModel } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-4o", 28000),
+    16000,
+    "GPT55-UPGRADE-6: synthesis fallback must not send 28000 max_tokens to gpt-4o"
+  );
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-4o-mini", 32000),
+    16000,
+    "GPT55-UPGRADE-6: repair fallback must not send 32000 max_tokens to gpt-4o-mini"
+  );
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-5.5", 32000),
+    32000,
+    "GPT55-UPGRADE-6: deep reasoning model budget should not be capped by the gpt-4o fallback rule"
+  );
+});
 
 test("JSON-SYNTHESIS-1: parseV3JsonSynthesis is exported from orchestrator-v3", () => {
   const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
