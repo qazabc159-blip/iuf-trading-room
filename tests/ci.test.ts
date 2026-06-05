@@ -14079,7 +14079,13 @@ test("COMPANY-ANN-P0-GATE-1: company announcements are cache-first before TWSE l
   const routeBlock = source.slice(companyRouteStart, legacyRouteStart);
   assert.ok(routeBlock.includes("tw_announcements_cache"), "COMPANY-ANN-P0-GATE-1: route must read official tw_announcements cache first");
   assert.ok(routeBlock.includes("FROM tw_announcements"), "COMPANY-ANN-P0-GATE-1: route must query persisted official announcement cache");
+  assert.ok(routeBlock.includes("/rwd/zh/IIH/company/events"), "COMPANY-ANN-P0-GATE-1: route must use official TWSE IIH single-company event source");
+  assert.ok(routeBlock.includes("twse_iih_company_events"), "COMPANY-ANN-P0-GATE-1: route must expose TWSE IIH company events source");
   assert.ok(routeBlock.includes("fetchAllTwseMaterialAnnouncements"), "COMPANY-ANN-P0-GATE-1: route must use maintained TWSE t187ap11_L fallback chain");
+  assert.ok(
+    routeBlock.indexOf("twse_iih_company_events") < routeBlock.indexOf("fetchAllTwseMaterialAnnouncements"),
+    "COMPANY-ANN-P0-GATE-1: single-company official source must run before broad market fallback"
+  );
   assert.equal(routeBlock.includes("getMaterialAnnouncements(stockId"), false, "COMPANY-ANN-P0-GATE-1: product route must not directly call deprecated per-ticker TWSE fetch");
 });
 
