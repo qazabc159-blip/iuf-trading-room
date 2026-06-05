@@ -14,13 +14,13 @@ describe("account settings page", () => {
   });
 
   it("uses clean customer-facing Chinese copy", () => {
-    expect(pageSource).toContain("帳號設定");
-    expect(pageSource).toContain("變更密碼");
+    expect(pageSource).toContain("帳號與安全");
     expect(pageSource).toContain("目前密碼");
     expect(pageSource).toContain("新密碼");
     expect(pageSource).toContain("再次輸入新密碼");
-    expect(pageSource).toContain("更新密碼");
-    expect(pageSource).not.toMatch(/[�銝蝣瘝甇閮]/);
+    expect(pageSource).toContain("密碼已更新");
+    expect(pageSource).toContain("券商 SIM 憑證不會在瀏覽器頁面輸入或保存");
+    expect(pageSource).not.toMatch(/[�]|嚙|踐|蝣|銝|摰|瘝|甇|閮/);
   });
 
   it("keeps safe password UX without exposing values", () => {
