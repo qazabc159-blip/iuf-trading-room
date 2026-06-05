@@ -7855,6 +7855,98 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
     return [];
   }
 
+  function asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  }
+
+  function pickText(row: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = row[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return null;
+  }
+
+  function rocDateToIso(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    const rocMatch = text.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+    if (rocMatch) {
+      const year = Number(rocMatch[1]) + 1911;
+      const month = String(Number(rocMatch[2])).padStart(2, "0");
+      const day = String(Number(rocMatch[3])).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    const iso = text.replace(/\//g, "-");
+    return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+  }
+
+  function twseIihRowsFromSection(
+    payload: Record<string, unknown>,
+    key: "news" | "fina" | "conference",
+    category: string,
+    cutoff: Date
+  ): CompanyAnnouncementRow[] {
+    const rows = Array.isArray(payload[key]) ? payload[key] : [];
+    return rows.flatMap((raw, index): CompanyAnnouncementRow[] => {
+      const row = asRecord(raw);
+      if (!row) return [];
+      const date = rocDateToIso(pickText(row, ["date", "meetingDate", "publishDate", "reportDate"]));
+      if (!date) return [];
+      if (new Date(`${date}T23:59:59+08:00`).getTime() < cutoff.getTime()) return [];
+
+      const title = pickText(row, ["subject", "title", "name", "purpose", "type"]);
+      if (!title) return [];
+      const time = pickText(row, ["time", "meetingTime", "publishTime"]);
+      const url = pickText(row, ["link", "url", "file", "downloadUrl"]);
+      const sourceCompanyId = pickText(row, ["companyId", "code", "stockNo"]);
+      const sourceCompanyName = pickText(row, ["companyName", "name", "shortName"]);
+
+      return [{
+        id: `${stockId}-twse-iih-${key}-${date}-${index}`,
+        date,
+        title,
+        category,
+        body: time ? `揭露時間 ${time}` : null,
+        ticker: sourceCompanyId ?? stockId,
+        company_name: sourceCompanyName ?? companyName,
+        url,
+        source: "twse_iih_company_events"
+      }];
+    });
+  }
+
+  async function fetchTwseIihCompanyEventRows(): Promise<CompanyAnnouncementRow[]> {
+    const url = `https://www.twse.com.tw/rwd/zh/IIH/company/events?code=${encodeURIComponent(stockId)}`;
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json,text/plain,*/*",
+        "user-agent": "IUF-Trading-Room/1.0 company-announcements"
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error(`twse_iih_company_events_http_${response.status}`);
+
+    const text = await response.text();
+    const payload = asRecord(JSON.parse(text));
+    if (!payload) return [];
+    const info = asRecord(payload.info);
+    if (info && String(info.status ?? "").toLowerCase() !== "success") return [];
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return [
+      ...twseIihRowsFromSection(payload, "news", "重大訊息", cutoff),
+      ...twseIihRowsFromSection(payload, "fina", "財務報告", cutoff),
+      ...twseIihRowsFromSection(payload, "conference", "法說會", cutoff)
+    ]
+      .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")))
+      .slice(0, 30);
+  }
+
   if (db) {
     try {
       const result = await db.execute(drizzleSql`
@@ -7896,6 +7988,19 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
     } catch (err) {
       console.warn("[company/announcements] tw_announcements cache unavailable:", err instanceof Error ? err.message : String(err));
     }
+  }
+
+  try {
+    const iihRows = await fetchTwseIihCompanyEventRows();
+    if (iihRows.length > 0) {
+      return c.json({
+        data: iihRows.map(toItem),
+        state: "LIVE" as const,
+        source: "twse_iih_company_events"
+      });
+    }
+  } catch (err) {
+    console.warn("[company/announcements] TWSE IIH company events unavailable:", err instanceof Error ? err.message : String(err));
   }
 
   try {
