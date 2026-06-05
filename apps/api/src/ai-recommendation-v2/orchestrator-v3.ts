@@ -1984,7 +1984,7 @@ export function buildDeterministicFallbackItemsFromTrace(
     if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
   }
 
-  const fallbackItems = Array.from(byTicker.values())
+  const fallbackItems: AiStockRecommendationV2[] = Array.from(byTicker.values())
     .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
     .sort((a, b) =>
       b.rank - a.rank ||
