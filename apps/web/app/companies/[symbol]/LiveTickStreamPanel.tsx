@@ -10,6 +10,7 @@ const MAX_TICKS = 20;
 type TickStreamState =
   | { status: "loading" }
   | { status: "closed"; reason: string }
+  | { status: "waiting"; reason: string }
   | { status: "blocked"; reason: string }
   | { status: "live"; ticks: KgiTickEntry[]; updatedAt: string };
 
@@ -118,7 +119,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     try {
       const result = await getKgiTicks(symbol, MAX_TICKS);
       if (!result || result.ticks.length === 0) {
-        setState({ status: "blocked", reason: "KGI 唯讀逐筆暫時無回傳；不顯示假成交明細。" });
+        setState({ status: "waiting", reason: "KGI 唯讀逐筆目前尚未回傳有效成交明細；系統會持續輪詢，不使用假逐筆補畫。" });
         return;
       }
       setState({ status: "live", ticks: result.ticks, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
@@ -155,6 +156,14 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀逐筆</span>
           <span className="state-reason">{state.reason} 這不是系統故障；正式逐筆只在盤中顯示，不使用假成交明細補畫。</span>
+        </div>
+      )}
+
+      {state.status === "waiting" && (
+        <div className="state-panel">
+          <span className="badge badge-yellow">待回傳</span>
+          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
+          <span className="state-reason">{state.reason} 這不是系統故障；只要 KGI 回傳正式逐筆就會自動切回 LIVE。</span>
         </div>
       )}
 
