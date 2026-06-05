@@ -98,7 +98,7 @@ export const subscriptionFeatures: SubscriptionFeature[] = [
   },
   {
     id: "owner_internal",
-    label: "Owner 後台與內部診斷",
+    label: "Owner 後台",
     customerCopy: "Brain、EventLog、ToolCenter、UTA 與內部排錯頁，只對 Owner 帳號開放。",
   },
 ];
@@ -206,7 +206,7 @@ export function isOwnerRole(role: string | null | undefined) {
 
 export function featureStatusLabel(status: EntitlementStatus) {
   const labels: Record<EntitlementStatus, string> = {
-    included: "已開啟",
+    included: "已包含",
     limited: "有限開放",
     not_included: "未包含",
     owner_only: "Owner 專用",
@@ -220,7 +220,7 @@ export function billingCycleLabel(cycle: BillingCycle) {
 
 export function tierPriceLabel(tier: SubscriptionTier, cycle: BillingCycle) {
   const value = cycle === "monthly" ? tier.monthlyPriceTwd : tier.yearlyPriceTwd;
-  if (typeof value !== "number") return "價格待定";
+  if (typeof value !== "number") return "價格待設定";
   return `NT$ ${value.toLocaleString("zh-TW")}`;
 }
 
@@ -312,7 +312,7 @@ export function buildMyEntitlements(user: EntitlementUser, now = new Date()): My
       billingCycle: null,
       status: owner ? "owner_internal" : "trial",
       source: owner ? "owner_override" : "role_default",
-      priceLabel: "價格待定",
+      priceLabel: "價格待設定",
       nextBillingAt: null,
     },
     features,

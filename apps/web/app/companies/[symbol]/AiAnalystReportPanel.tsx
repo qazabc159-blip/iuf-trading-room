@@ -455,6 +455,11 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           報告品質未通過：本次回覆缺少公司頁要求的固定九段，已停止當作正式分析展示。請重新分析，直到報告完整覆蓋公司定位、資料狀態、事件、技術、籌碼、主題、風險、結論與來源。
         </div>
       )}
+      {reportQuality.reason === "low_substance" && (
+        <div className="_ai-budget-banner _ai-quality-banner">
+          報告品質未通過：本次回覆雖然有段落，但可驗證數字、資料來源或實質判斷不足，已停止當作正式分析展示。請重新分析，系統會要求模型補足價格、量價、事件、籌碼與來源。
+        </div>
+      )}
 
       {/* ── Report body ── */}
       <div className="_ai-report-body">
@@ -470,11 +475,14 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
                 ? "目前結果仍帶有工程內部資訊，不適合給客戶當成投資研究閱讀。"
                 : reportQuality.reason === "missing_sections"
                   ? "目前結果沒有完整通過九段正式報告格式，不適合給客戶當成投資研究閱讀。"
+                  : reportQuality.reason === "low_substance"
+                    ? "目前結果太像空泛備忘錄，缺少足夠數字、來源與可檢查判斷，不適合給客戶當成投資研究閱讀。"
                   : "目前結果是保守品質保護版，還不是可正式展示的公司分析報告。"}
             </span>
             <ul>
-              <li>已攔截：工程內部詞、缺段落、placeholder 或未完成品質保護內容。</li>
+              <li>已攔截：工程內部詞、缺段落、placeholder、低實質內容或未完成品質保護內容。</li>
               <li>格式要求：公司定位、資料狀態、事件、技術、籌碼、主題、風險、AI 結論、資料來源，共 9 段。</li>
+              <li>內容要求：至少 3 個可驗證數字、3 種資料來源類型，不能整篇反覆寫資料不足。</li>
               <li>下一步：按「重新分析」，重新產出正式公司報告。</li>
               <li>原始資料來源仍保留在後端紀錄，不會冒充正式結論。</li>
             </ul>

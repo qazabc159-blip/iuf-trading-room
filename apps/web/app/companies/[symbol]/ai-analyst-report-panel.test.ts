@@ -187,13 +187,13 @@ describe("Company AI analyst report quality gate", () => {
   it("allows a customer-facing report without engineering internals", () => {
     const report = [
       "## 1. 公司概況與定位",
-      "台積電仍是全球先進製程與高階封裝的核心供應商。",
+      "台積電仍是全球先進製程與高階封裝的核心供應商，2330 是半導體權值核心。",
       "## 2. 今日/最近資料狀態",
-      "近期行情與新聞資料可用，但仍需搭配法人與量價確認。",
+      "即時行情顯示最新價 2,425 元，日 K 線日期為 2026-06-05，成交量 29,219,904 股。",
       "## 3. 近期事件與新聞",
-      "重大訊息與產業新聞需確認日期與來源。",
+      "重大訊息與 TWSE 公告需確認日期與來源，AI 精選新聞顯示半導體需求仍是焦點。",
       "## 4. 技術結構",
-      "日 K 線與均線可用於判斷趨勢，但不代表下單建議。",
+      "日 K 線與均線可用於判斷趨勢，20 日線與成交量共同確認，不代表下單建議。",
       "## 5. 籌碼與法人",
       "法人資料若延遲，需明確標示來源狀態。",
       "## 6. 主題與產業鏈位置",
@@ -211,6 +211,34 @@ describe("Company AI analyst report quality gate", () => {
       reason: "ok",
       blockedTerms: [],
     });
+  });
+
+  it("blocks reports that repeat data gaps without enough facts or sources", () => {
+    const report = [
+      "## 1. 公司概況與定位",
+      "資料不足：公司概況目前無法判斷。",
+      "## 2. 今日/最近資料狀態",
+      "資料不足：尚未回傳。",
+      "## 3. 近期事件與新聞",
+      "資料不足：未提供。",
+      "## 4. 技術結構",
+      "資料不足：缺少資料。",
+      "## 5. 籌碼與法人",
+      "資料不足：待確認。",
+      "## 6. 主題與產業鏈位置",
+      "資料不足：無法分析。",
+      "## 7. 主要風險",
+      "資料風險偏高。",
+      "## 8. AI 結論與觀察等級",
+      "觀察等級：資料不足。",
+      "## 9. 資料來源與生成時間",
+      "資料來源：公司資料。",
+    ].join("\n\n");
+
+    const quality = assessCompanyAiReportQuality(report);
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("low_substance");
+    expect(quality.blockedTerms.join(" / ")).toContain("資料缺口句過多");
   });
 
   it("blocks reports that leak tool names and placeholder reasons", () => {
