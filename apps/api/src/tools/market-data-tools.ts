@@ -473,6 +473,412 @@ export async function getInstitutionalFlow(ticker: string): Promise<Institutiona
   }
 }
 
+// ── get_company_fundamentals ─────────────────────────────────────────────────
+
+export interface CompanyRevenueMonth {
+  month: string;           // 'YYYY-MM'
+  revenue: number;
+  yoy: number | null;      // % YoY vs same month last year
+  mom: number | null;      // % MoM vs prior month
+}
+
+export interface CompanyFundamentalsResult {
+  ticker: string;
+  /** Monthly revenue: up to 6 months, newest first */
+  monthlyRevenue: CompanyRevenueMonth[];
+  revenueYoyTrend: "accelerating" | "decelerating" | "positive" | "negative" | "unavailable";
+  /** Latest quarterly financials */
+  latestQuarterDate: string | null;
+  epsLatestQuarter: number | null;
+  grossMarginPct: number | null;
+  operatingMarginPct: number | null;
+  /** Valuation */
+  per: number | null;
+  pbr: number | null;
+  dividendYield: number | null;
+  dataAvailable: boolean;
+  reason: string;
+  source: string;
+}
+
+/**
+ * Fetches fundamental data for a specific ticker from FinMind:
+ *   - Monthly revenue (last 6 months, YoY / MoM computed)
+ *   - Quarterly financial statements (EPS, gross margin, operating margin)
+ *   - PER / PBR / dividend yield
+ *
+ * Fail-open: returns dataAvailable=false when token missing, circuit open, or all upstream empty.
+ * No DB table for fundamentals — hits FinMind API directly (cached via Redis).
+ */
+export async function getCompanyFundamentals(ticker: string): Promise<CompanyFundamentalsResult> {
+  const base: CompanyFundamentalsResult = {
+    ticker,
+    monthlyRevenue: [],
+    revenueYoyTrend: "unavailable",
+    latestQuarterDate: null,
+    epsLatestQuarter: null,
+    grossMarginPct: null,
+    operatingMarginPct: null,
+    per: null,
+    pbr: null,
+    dividendYield: null,
+    dataAvailable: false,
+    reason: "not_attempted",
+    source: "finmind",
+  };
+
+  try {
+    const { getFinMindClient } = await import("../data-sources/finmind-client.js");
+    const client = getFinMindClient();
+
+    if (!client.hasToken()) {
+      return { ...base, reason: "finmind_token_missing" };
+    }
+
+    // ── Monthly revenue: last ~18 months so we can compute 6 months of YoY ──
+    const revenueStartDate = new Date(Date.now() - 18 * 31 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+    const revenueEndDate = new Date().toISOString().slice(0, 10);
+
+    const revenueRows = await client.getMonthRevenue(ticker, revenueStartDate, revenueEndDate)
+      .catch(() => []);
+
+    // Sort descending
+    const sortedRevenue = [...revenueRows].sort((a, b) => b.date.localeCompare(a.date));
+
+    // Build month→revenue map (key = 'YYYY-MM')
+    const revenueByMonth = new Map<string, number>();
+    for (const row of sortedRevenue) {
+      const monthKey = row.date.slice(0, 7);
+      if (!revenueByMonth.has(monthKey)) {
+        revenueByMonth.set(monthKey, row.revenue);
+      }
+    }
+
+    const monthlyRevenue: CompanyRevenueMonth[] = [];
+    const recentMonths = Array.from(revenueByMonth.keys()).slice(0, 8);
+    for (let i = 0; i < Math.min(6, recentMonths.length); i++) {
+      const monthKey = recentMonths[i]!;
+      const revenue = revenueByMonth.get(monthKey)!;
+      const [yr, mo] = monthKey.split("-");
+      const lastYearKey = `${parseInt(yr!) - 1}-${mo}`;
+      const lastYearRevenue = revenueByMonth.get(lastYearKey) ?? null;
+      const yoy = lastYearRevenue !== null && lastYearRevenue > 0
+        ? Math.round(((revenue - lastYearRevenue) / lastYearRevenue) * 10000) / 100
+        : null;
+      const priorMonth = recentMonths[i + 1] ?? null;
+      const priorRevenue = priorMonth ? (revenueByMonth.get(priorMonth) ?? null) : null;
+      const mom = priorRevenue !== null && priorRevenue > 0
+        ? Math.round(((revenue - priorRevenue) / priorRevenue) * 10000) / 100
+        : null;
+      monthlyRevenue.push({ month: monthKey, revenue, yoy, mom });
+    }
+
+    const yoyValues = monthlyRevenue.map(m => m.yoy).filter((v): v is number => v !== null);
+    let revenueYoyTrend: CompanyFundamentalsResult["revenueYoyTrend"] = "unavailable";
+    if (yoyValues.length >= 2) {
+      const allPositive = yoyValues.every(v => v > 0);
+      const allNegative = yoyValues.every(v => v < 0);
+      const accelerating = yoyValues[0]! > yoyValues[1]!;
+      if (allPositive && accelerating) revenueYoyTrend = "accelerating";
+      else if (allPositive) revenueYoyTrend = "positive";
+      else if (allNegative) revenueYoyTrend = "negative";
+      else revenueYoyTrend = "decelerating";
+    } else if (yoyValues.length === 1) {
+      revenueYoyTrend = yoyValues[0]! > 0 ? "positive" : "negative";
+    }
+
+    // ── Financial statements: last ~5 quarters ────────────────────────────────
+    const finStartDate = new Date(Date.now() - 18 * 30 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+    const finRows = await client.getFinancialStatements(ticker, finStartDate, revenueEndDate)
+      .catch(() => []);
+
+    let latestQuarterDate: string | null = null;
+    let epsLatestQuarter: number | null = null;
+    let grossMarginPct: number | null = null;
+    let operatingMarginPct: number | null = null;
+
+    if (finRows.length > 0) {
+      const sortedFin = [...finRows].sort((a, b) => b.date.localeCompare(a.date));
+      latestQuarterDate = sortedFin[0]?.date ?? null;
+      const latestDate = latestQuarterDate;
+      const latestRows = sortedFin.filter(r => r.date === latestDate);
+      const byType = new Map<string, number>();
+      for (const row of latestRows) {
+        if (row.type) byType.set(row.type.toLowerCase(), row.value);
+      }
+      const eps = byType.get("eps") ?? byType.get("basiceps") ?? byType.get("basic_eps") ?? null;
+      epsLatestQuarter = eps !== null ? Math.round(eps * 100) / 100 : null;
+      const grossProfit = byType.get("grossprofit") ?? byType.get("gross_profit") ?? null;
+      const revenue = byType.get("revenue") ?? byType.get("total_revenue") ?? null;
+      if (grossProfit !== null && revenue !== null && revenue > 0) {
+        grossMarginPct = Math.round((grossProfit / revenue) * 10000) / 100;
+      }
+      const opIncome = byType.get("operatingincome") ?? byType.get("operating_income") ?? null;
+      if (opIncome !== null && revenue !== null && revenue > 0) {
+        operatingMarginPct = Math.round((opIncome / revenue) * 10000) / 100;
+      }
+    }
+
+    // ── PER / PBR / dividend yield ────────────────────────────────────────────
+    const perStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+    const perRows = await client.getPER(ticker, perStartDate, revenueEndDate).catch(() => []);
+
+    let per: number | null = null;
+    let pbr: number | null = null;
+    let dividendYield: number | null = null;
+
+    if (perRows.length > 0) {
+      const latestPer = [...perRows].sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (latestPer) {
+        per = latestPer.PER > 0 ? Math.round(latestPer.PER * 100) / 100 : null;
+        pbr = latestPer.PBR > 0 ? Math.round(latestPer.PBR * 100) / 100 : null;
+        dividendYield = latestPer.dividend_yield >= 0
+          ? Math.round(latestPer.dividend_yield * 100) / 100
+          : null;
+      }
+    }
+
+    const dataAvailable = monthlyRevenue.length > 0 || epsLatestQuarter !== null || per !== null;
+
+    return {
+      ticker,
+      monthlyRevenue,
+      revenueYoyTrend,
+      latestQuarterDate,
+      epsLatestQuarter,
+      grossMarginPct,
+      operatingMarginPct,
+      per,
+      pbr,
+      dividendYield,
+      dataAvailable,
+      reason: dataAvailable ? "ok" : "finmind_data_empty",
+      source: "finmind",
+    };
+  } catch (err) {
+    console.warn("[get_company_fundamentals] error for", ticker, ":", err instanceof Error ? err.message : err);
+    return { ...base, reason: "error" };
+  }
+}
+
+// ── get_supply_chain ──────────────────────────────────────────────────────────
+
+export interface SupplyChainResult {
+  ticker: string;
+  /** e.g. "CoAP_Chip", "EMS", "Material" — from companies.chain_position */
+  chainPosition: string | null;
+  /** "Core" | "Direct" | "Indirect" | "Observation" */
+  beneficiaryTier: string | null;
+  themes: Array<{ name: string; lifecycle: string }>;
+  suppliers: Array<{ ticker: string | null; label: string; confidence: number }>;
+  customers: Array<{ ticker: string | null; label: string; confidence: number }>;
+  peers: Array<{ ticker: string | null; label: string; confidence: number }>;
+  dataAvailable: boolean;
+  source: string;
+}
+
+/**
+ * Returns supply chain positioning for a ticker from the companies DB:
+ *   - chainPosition + beneficiaryTier (楊董 4-tier framework)
+ *   - Associated investment themes (name + lifecycle)
+ *   - Relations: suppliers, customers, technology peers (confidence >= 0.3)
+ *
+ * Fail-open: returns dataAvailable=false when DB unavailable or company not found.
+ * Pure DB query — no external API.
+ */
+export async function getSupplyChain(ticker: string): Promise<SupplyChainResult> {
+  const base: SupplyChainResult = {
+    ticker,
+    chainPosition: null,
+    beneficiaryTier: null,
+    themes: [],
+    suppliers: [],
+    customers: [],
+    peers: [],
+    dataAvailable: false,
+    source: "company_graph_db",
+  };
+
+  try {
+    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return base;
+    const db = getDb();
+    if (!db) return base;
+
+    const { sql } = await import("drizzle-orm");
+
+    // Company lookup
+    const companyRows = (await db.execute(sql`
+      SELECT id, chain_position, beneficiary_tier
+      FROM companies
+      WHERE ticker = ${ticker}
+      LIMIT 1
+    `)) as unknown as { rows: Array<{ id: string; chain_position: string | null; beneficiary_tier: string | null }> };
+
+    const company = companyRows.rows?.[0];
+    if (!company) return base;
+    const companyId = company.id;
+
+    // Themes via company_theme_links
+    const themeRows = (await db.execute(sql`
+      SELECT t.name, t.lifecycle
+      FROM company_theme_links ctl
+      INNER JOIN themes t ON t.id = ctl.theme_id
+      WHERE ctl.company_id = ${companyId}
+      LIMIT 10
+    `)) as unknown as { rows: Array<{ name: string; lifecycle: string }> };
+
+    // Relations (outbound, confidence >= 0.3)
+    const relRows = (await db.execute(sql`
+      SELECT
+        cr.relation_type,
+        cr.target_company_id,
+        cr.target_label,
+        cr.confidence,
+        tc.ticker AS target_ticker
+      FROM company_relations cr
+      LEFT JOIN companies tc ON tc.id = cr.target_company_id
+      WHERE cr.company_id = ${companyId}
+        AND cr.confidence >= 0.3
+      ORDER BY cr.confidence DESC
+      LIMIT 30
+    `)) as unknown as { rows: Array<{
+      relation_type: string;
+      target_company_id: string | null;
+      target_label: string;
+      confidence: number;
+      target_ticker: string | null;
+    }> };
+
+    const suppliers: SupplyChainResult["suppliers"] = [];
+    const customers: SupplyChainResult["customers"] = [];
+    const peers: SupplyChainResult["peers"] = [];
+
+    for (const rel of relRows.rows ?? []) {
+      const entry = {
+        ticker: rel.target_ticker ?? null,
+        label: rel.target_label,
+        confidence: Math.round(rel.confidence * 100) / 100,
+      };
+      if (rel.relation_type === "supplier") suppliers.push(entry);
+      else if (rel.relation_type === "customer") customers.push(entry);
+      else if (rel.relation_type === "technology" || rel.relation_type === "co_occurrence") peers.push(entry);
+    }
+
+    return {
+      ticker,
+      chainPosition: company.chain_position,
+      beneficiaryTier: company.beneficiary_tier,
+      themes: (themeRows.rows ?? []).map(r => ({ name: r.name, lifecycle: r.lifecycle })),
+      suppliers: suppliers.slice(0, 5),
+      customers: customers.slice(0, 5),
+      peers: peers.slice(0, 5),
+      dataAvailable: true,
+      source: "company_graph_db",
+    };
+  } catch (err) {
+    console.warn("[get_supply_chain] error for", ticker, ":", err instanceof Error ? err.message : err);
+    return base;
+  }
+}
+
+// ── get_company_news ──────────────────────────────────────────────────────────
+
+export interface CompanyNewsItem {
+  date: string;
+  title: string;
+  url?: string | null;
+  source?: string | null;
+}
+
+export interface CompanyNewsResult {
+  ticker: string;
+  items: CompanyNewsItem[];
+  itemCount: number;
+  /** "finmind_news_experimental" — availability depends on FinMind sponsor tier */
+  source: string;
+  /** "live" | "empty" | "unavailable" */
+  state: "live" | "empty" | "unavailable";
+  asOf: string | null;
+  note: string;
+}
+
+/**
+ * Fetches company-specific news for a ticker from FinMind TaiwanStockNews.
+ *
+ * IMPORTANT: This is an EXPERIMENTAL FinMind dataset — availability depends on sponsor tier.
+ * Empty items=[] is a normal outcome (not an error). Callers must degrade gracefully.
+ *
+ * 【美股隔夜資料：未接入。VIX/DXY/10Y/WTI 均為 fail-open=0，不得以假資料推論。】
+ *
+ * Fail-open: returns state="unavailable" when token missing or upstream error.
+ */
+export async function getCompanyNews(ticker: string): Promise<CompanyNewsResult> {
+  const base: CompanyNewsResult = {
+    ticker,
+    items: [],
+    itemCount: 0,
+    source: "finmind_news_experimental",
+    state: "unavailable",
+    asOf: null,
+    note: "未嘗試取得",
+  };
+
+  try {
+    const { getFinMindClient } = await import("../data-sources/finmind-client.js");
+    const client = getFinMindClient();
+
+    if (!client.hasToken()) {
+      return {
+        ...base,
+        state: "unavailable",
+        note: "【個股新聞：FinMind token 未設定，此維度無資料，請勿幻覺推論。】",
+      };
+    }
+
+    // FinMind TaiwanStockNews: single-day only (omit end_date per FinMind constraint)
+    const startDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const rows = await client.getStockNews(ticker, startDate, "").catch(() => []);
+
+    if (rows.length === 0) {
+      return {
+        ...base,
+        state: "empty",
+        asOf: new Date().toISOString(),
+        note: "FinMind 個股新聞 experimental tier 本日無資料（空陣列屬正常，非錯誤）。分析時請標注此維度暫缺。",
+      };
+    }
+
+    const sorted = [...rows].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+    const items: CompanyNewsItem[] = sorted.map(r => ({
+      date: r.date.slice(0, 10),
+      title: r.title,
+      url: r.url ?? null,
+      source: r.source_name ?? null,
+    }));
+
+    return {
+      ticker,
+      items,
+      itemCount: items.length,
+      source: "finmind_news_experimental",
+      state: "live",
+      asOf: sorted[0]?.date ?? new Date().toISOString(),
+      note: "ok",
+    };
+  } catch (err) {
+    console.warn("[get_company_news] error for", ticker, ":", err instanceof Error ? err.message : err);
+    return {
+      ...base,
+      state: "unavailable",
+      note: "FinMind 個股新聞取得失敗，此維度暫缺，分析時標注。",
+    };
+  }
+}
+
 // ── get_news_top10 ────────────────────────────────────────────────────────────
 
 /**

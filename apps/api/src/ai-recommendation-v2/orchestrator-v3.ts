@@ -33,6 +33,9 @@ import {
   getCompanyTechnical,
   getInstitutionalFlow,
   getNewsTop10,
+  getCompanyFundamentals,
+  getSupplyChain,
+  getCompanyNews,
 } from "../tools/market-data-tools.js";
 
 const DEFAULT_AI_REC_MODEL = "gpt-4o-mini";
@@ -598,6 +601,9 @@ const TOOL_WHITELIST_V3 = [
   "get_company_technical",
   "get_institutional_flow",
   "get_news_top10",
+  "get_company_fundamentals",
+  "get_supply_chain",
+  "get_company_news",
 ] as const;
 
 // ── dispatchTool ──────────────────────────────────────────────────────────────
@@ -627,6 +633,21 @@ async function dispatchMarketToolV3(
       }
       case "get_news_top10":
         return getNewsTop10();
+      case "get_company_fundamentals": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getCompanyFundamentals(inp.ticker);
+      }
+      case "get_supply_chain": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getSupplyChain(inp.ticker);
+      }
+      case "get_company_news": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getCompanyNews(inp.ticker);
+      }
       default:
         throw new Error(`TOOL_NOT_FOUND: ${toolName} not in v3 whitelist`);
     }
@@ -647,10 +668,22 @@ ${programmaticRiskOffScore >= 3
 === END SYSTEM CONTEXT ===
 `;
 
-  return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 5-module 框架執行推薦分析。
+  return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 6-module 框架執行多維度整合選股分析。
 今天是 ${dateStr}（台北時間）。
 ${riskOffContext}
 你有以下工具可用：${TOOL_WHITELIST_V3.join(", ")}
+
+【重要】工具說明：
+- get_market_overview：TAIEX 指數 + 量能 + 大盤狀態
+- get_sector_rotation：類股輪動，按 avgChangePct 排序
+- get_company_technical：個股技術面 (lastPrice/RSI/MA20/MA60/volumeRatio)
+- get_institutional_flow：個股三大法人 30 日淨買賣
+- get_news_top10：AI 精選市場新聞 10 則 (含 impact_tier/why_matters/tags)
+- get_company_fundamentals：個股基本面 (月營收 YoY/MoM、EPS、毛利率、PER/PBR)
+- get_supply_chain：個股產業鏈定位 (chainPosition/beneficiaryTier/上下游/主題)
+- get_company_news：個股專屬新聞 (FinMind experimental，空 items 屬正常)
+
+【美股隔夜/VIX/DXY/10Y/WTI：未接入。S1-S5 資料缺失，fail-open score=0，禁止幻覺推論美股訊號。】
 
 ---
 [STEP 1] 市場狀態（前置條件 — 必須最先執行）
@@ -662,7 +695,7 @@ ${riskOffContext}
   ★★ CRITICAL: 系統 programmatic risk_off_score = ${programmaticRiskOffScore}。
   ${programmaticRiskOffScore >= 3
     ? "risk_off_score >= 3 → 你必須在第一輪 toolName=null，thought 包含「RISK_OFF_SKIP」。"
-    : `risk_off_score < 3 → 你絕對不可 RISK_OFF_SKIP。必須執行完整 STEP 2-5。
+    : `risk_off_score < 3 → 你絕對不可 RISK_OFF_SKIP。必須執行完整 STEP 2-6。
   若 event日（FOMC/CPI/法說 T-2~T+1 或振幅>2*ATR20）→ 市場狀態設 event，倉位倍率 0.5，但仍推薦。`}
 
 [STEP 2] 主題穿透（risk_off_score < 3 時強制執行）
@@ -703,6 +736,41 @@ ${riskOffContext}
   totalScore = 7個分數相加，最大100
   ★★★ 嚴禁在任何 sub-score 填寫 0 除非有明確負面訊號；「無資料」應填預設值而非 0
 
+[STEP 3.5] 基本面驗證（強制執行，提升「營收/財報」sub-score 精準度）
+  ★★ 對 STEP 3 有效技術資料的標的，各呼叫一次 callTool(get_company_fundamentals)。
+  重點讀取：
+  → monthlyRevenue[0..2]：最近 3 月的 yoy 值 — 判斷是 accelerating / positive / negative
+  → epsLatestQuarter：最近一季 EPS（>0 為正成長）
+  → grossMarginPct / operatingMarginPct：毛利率趨勢
+  → per / pbr：估值水位（PER < 15 視為便宜；PER > 30 視為貴）
+  ★★ dataAvailable=false 時：此標的財務面資料不可用，revenue sub-score 維持預設 8，
+     不得編造任何財務數字。
+  ★★ 基本面資料必須用於修正「營收/財報」分數（最大 ±5 分調整）：
+     revenueYoyTrend=accelerating → +4；positive → +2；negative → -4；unavailable → 0
+     EPS > 0 → +2；EPS < 0 → -2；無資料 → 0
+
+[STEP 3.6] 產業鏈定位（強制執行，提升「主題位置」sub-score 精準度）
+  ★★ 對 STEP 3 有效技術資料的標的，各呼叫一次 callTool(get_supply_chain)。
+  重點讀取：
+  → chainPosition：供應鏈層位（"CoAP_Chip"/"EMS"/"Material" 等）
+  → beneficiaryTier："Core"(核心受益)/Direct/Indirect/Observation
+  → themes：關聯投資主題（name + lifecycle，Expansion 最強）
+  → suppliers/customers/peers：上下游關聯股（可輔助判斷受益傳導）
+  ★★ dataAvailable=false 時：chainPosition 不明，theme sub-score 維持預設 8，不得猜測。
+  ★★ beneficiaryTier 與楊董 4 層框架對應：
+     Core ≈ 第一層龍頭（20分上限）；Direct ≈ 第二/三層（14-16分）；
+     Indirect ≈ 第三/四層（10-14分）；Observation ≈ 觀察（8分）
+  ★★ themes[0].lifecycle=Expansion → theme sub-score 可給到滿分；Crowded → -4
+
+[STEP 3.7] 個股催化劑（選擇性執行，補充最重要的 2-3 個候選標的）
+  對 STEP 3 最高分的前 3 個候選標的，各呼叫一次 callTool(get_company_news)。
+  重點讀取：
+  → state="live" + items：有個股專屬新聞 → 找法說/重大合約/除息/併購/AI 訂單等催化劑
+  → state="empty"：此標的今日無個股新聞（正常，標注在 synthesis 中）
+  → state="unavailable"：FinMind token 問題，此維度暫缺，分析時誠實標注
+  ★★ items 有法說 / 重大合約 / 除息 / 轉機消息 → valuation/事件 sub-score +2 至 +5
+  ★★ 禁止幻覺：state="empty"/"unavailable" 時，不得編造任何個股新聞。
+
 [STEP 4] Bucket assign（依 totalScore）
   totalScore >= 85 → A+ 今日首選（0.8% NAV）
   75–84 → A 可觀察布局（0.6% NAV）
@@ -725,6 +793,7 @@ ${riskOffContext}
   R值：(TP1-進場中點)/(進場中點-SL)
   信心：0.0-1.0
   ★★ 必加欄位「一句話理由」：≤80 字白話中文，說明為什麼現在可以買（給操盤師 5 秒快速判斷用）
+  ★★★ 「一句話理由」必須同時引用 2 個以上維度（技術+法人、或技術+基本面、或基本面+產業鏈）
 
 ---
 回應格式（每輪 JSON，無 markdown 包裝）：
@@ -732,8 +801,11 @@ ${riskOffContext}
 
 規則：
 - 先完成 STEP 1（market overview），再 STEP 2（news+sector），再 STEP 3（技術/法人個股，≥5次）
-- 至少執行7輪工具呼叫再給最終答案（1次overview + 1次news + 1次sector + 5次company_technical）
-- 最終答案時 toolName=null，thought 包含完整分析摘要
+- 接著 STEP 3.5（基本面，每個候選各一次），STEP 3.6（產業鏈，每個候選各一次），STEP 3.7（個股新聞，前3個）
+- 至少執行 13 輪工具呼叫再給最終答案：
+    1次overview + 1次news + 1次sector + 5次technical + 3次fundamentals + 3次supply_chain
+  （company_news 若能多叫更好，但不是硬性最低門檻）
+- 最終答案時 toolName=null，thought 包含完整多維度分析摘要
 - ★★ 禁止在 risk_off_score < 3 時使用 RISK_OFF_SKIP（系統已驗證，LLM 不可 override）`;
 }
 
@@ -753,25 +825,33 @@ ${programmaticRiskOffScore >= 3
 === 深度分析要求（CRITICAL — 違反視同輸出失敗）===
 【每檔股票必須具備「該股專屬」的 thesis — 嚴禁套版】
 
-A. 「為什麼買」欄位每一點都必須引用 trace 中該股的具體數據：
-   - 法人買賣：「外資連續 X 日買超 Y 張，佔流通籌碼 Z%」（取自 get_institutional_flow 或 trace）
+A. 「為什麼買」欄位每一點都必須引用 trace 中該股的具體數據（多維度整合，至少引用2個維度）：
    - 技術結構：「收盤 XXX，突破月線 YYY，量 Z 萬張為近 20 日均量 A 倍」（取自 get_company_technical）
-   - 新聞/題材：「news trace 顯示 [具體新聞標題/事件]，為近期催化劑」（取自 get_news_top10 或 trace 中該股新聞）
-   - 可辨別的數字就填數字；trace 中沒有對應數字就說「依 trace 法人面偏多」而不是捏造數字
+   - 法人買賣：「外資連續 X 日買超 Y 張，佔流通籌碼 Z%」（取自 get_institutional_flow 或 trace）
+   - 基本面：「月營收 YoY X% 連續加速 / 最近季 EPS X 元 / 毛利率 X%」（取自 get_company_fundamentals trace）
+   - 產業鏈定位：「供應鏈定位 [chainPosition]，屬楊董第N層 [beneficiaryTier] 受益股，主題 [theme] lifecycle=[lifecycle]」（取自 get_supply_chain trace）
+   - 個股催化劑：「個股新聞 [具體標題/事件]，為本週近期催化劑」（取自 get_company_news 或 get_news_top10 trace）
+   - 可辨別的數字就填數字；trace 中沒有對應數字就說「依 trace 基本面資料暫缺，維持預設分」而不是捏造數字
 
 B. 「為什麼買」絕對禁止的套版句（會被自動檢測為 FAIL）：
    ❌ 「技術面良好」/ 「指標偏多」/ 「籌碼面穩定」/ 「市場認可」
    ❌ 「在台股當前環境下具有相對優勢」（無差異化，每股都能用）
    ❌ 把另一檔股票的新聞/法人數字直接搬來用（跨股複製）
-   ✅ 正確示例：「外資連 3 日買超共 1.2 萬張 + 月線多頭排列 + AI 伺服器族群題材帶動需求端」
-   ✅ 正確示例：「trace 顯示法人面無明顯買賣超，但技術結構 trace 顯示 W 底形成、突破頸線 XX 後量縮回測」
+   ❌ dataAvailable=false 時仍編造 EPS / 月營收數字（禁止幻覺）
+   ✅ 正確示例（技術+法人+基本面）：「外資連 3 日買超 1.2 萬張 + 月營收 YoY +15% 加速 + 月線多頭排列突破頸線 XXX」
+   ✅ 正確示例（技術+產業鏈+催化劑）：「供應鏈定位 CoAP_Chip 第三層，AI 伺服器主題 Expansion 期，上週法說釋利多，技術面 W 底突破 XXX」
+   ✅ 正確示例（基本面缺資料時）：「技術面頸線 XXX 突破量縮回測 + 外資連 5 日淨買；基本面 FinMind 資料暫缺，維持預設分」
 
-C. 「一句話理由」必須包含：[具體數字或事件] + [當下時機性]
+C. 「一句話理由」必須包含：[具體數字或事件] + [當下時機性] + [至少2個不同維度]
    ❌ 「具備長線投資價值」/ 「短期動能強勁」— 不具體，每股都能用
-   ✅ 「法人連 5 日買超 + 本週 AI 概念股輪動，技術面頸線 XXX 突破，上行阻力 YYY」
+   ❌ 只引用技術面（RSI/均線）— 必須搭配法人 or 基本面 or 產業鏈 or 個股新聞
+   ✅ 「月營收 YoY+22% 連加速 3 月 + 外資買超 + AI 伺服器族群，技術面突破月線 XXX」
+   ✅ 「供應鏈第三層 CoAP 直接受益，上季 EPS X 元年增 Y%，法人連買，技術頸線突破待確認」
 
 D. 跨股禁令：每支股票的理由必須互不相同。若 trace 顯示數檔股票都在同一族群，
-   理由仍要區分各自的「本週新聞催化劑」或「具體技術位置」，不允許理由字字相同。
+   理由仍要區分各自的「本週新聞催化劑」或「具體技術位置」或「基本面差異」，不允許理由字字相同。
+
+E. 美股隔夜/VIX/DXY：【未接入，不得在分析中編造美股隔夜訊號。如有相關判斷，應明確標注「美股資料未接入，僅依台股內部訊號判斷」。】
 === END 深度分析要求 ===
 
 ## 分析過程（以下為 ReAct trace，包含真實市場工具回傳數據）
