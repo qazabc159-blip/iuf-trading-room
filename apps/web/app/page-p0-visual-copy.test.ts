@@ -36,4 +36,13 @@ describe("homepage P0 visual product copy", () => {
     expect(source).toContain("recommendationTradeHref");
     expect(source).toContain("進交易室");
   });
+
+  it("does not let one slow market-intel source blank the whole homepage intel panel", () => {
+    expect(source).toContain("const FETCH_INTEL_MS = 12000");
+    expect(source).toContain("const INTEL_SOURCE_MS = 7000");
+    expect(source).toContain("withTimeout(getNewsTop10(), INTEL_SOURCE_MS, \"market_intel_news\")");
+    expect(source).toContain("\"market_intel_announcements\"");
+    expect(source).toContain("newsFailed && announcementsFailed");
+    expect(source).toContain("timedFetch(\"intel\", FETCH_INTEL_MS");
+  });
 });
