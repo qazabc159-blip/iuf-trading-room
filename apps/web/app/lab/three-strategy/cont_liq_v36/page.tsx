@@ -79,15 +79,25 @@ async function resolveHolding(ticker: string): Promise<HoldingEntryInput> {
   return { ticker, displayName, entryPrice, entryPriceSource };
 }
 
-async function resolve0050EntryPrice(): Promise<number | null> {
+async function resolve0050BenchmarkPrices(): Promise<{
+  entryPrice: number | null;
+  latestPrice: number | null;
+  latestDate: string | null;
+}> {
   try {
     const company = await getCompanyByTicker("0050");
-    if (!company) return null;
-    const bars = await getCompanyOhlcv(company.id, { from: DAY0, to: DAY0, interval: "1d" });
-    const bar = bars.find((b) => b.dt === DAY0) ?? bars[bars.length - 1] ?? null;
-    return bar && bar.close > 0 ? bar.close : null;
+    if (!company) return { entryPrice: null, latestPrice: null, latestDate: null };
+    const today = new Date().toISOString().slice(0, 10);
+    const bars = await getCompanyOhlcv(company.id, { from: DAY0, to: today, interval: "1d" });
+    const entryBar = bars.find((b) => b.dt === DAY0) ?? null;
+    const latestBar = [...bars].reverse().find((b) => b.close > 0) ?? null;
+    return {
+      entryPrice: entryBar && entryBar.close > 0 ? entryBar.close : null,
+      latestPrice: latestBar?.close ?? null,
+      latestDate: latestBar?.dt ?? null,
+    };
   } catch {
-    return null;
+    return { entryPrice: null, latestPrice: null, latestDate: null };
   }
 }
 
@@ -95,9 +105,9 @@ async function resolve0050EntryPrice(): Promise<number | null> {
 
 export default async function ContLiqV36Period1Page() {
   // Parallel fetch all holdings + 0050 benchmark
-  const [holdingResults, bench0050Entry] = await Promise.all([
+  const [holdingResults, bench0050] = await Promise.all([
     Promise.all(TICKERS.map(resolveHolding)),
-    resolve0050EntryPrice(),
+    resolve0050BenchmarkPrices(),
   ]);
 
   // Count how many entry prices resolved
@@ -119,7 +129,9 @@ export default async function ContLiqV36Period1Page() {
       {/* A 區 — 前向觀察第一期 */}
       <ContLiqPeriod1Panel
         holdings={holdingResults}
-        bench0050EntryPrice={bench0050Entry}
+        bench0050EntryPrice={bench0050.entryPrice}
+        bench0050LatestPrice={bench0050.latestPrice}
+        bench0050LatestDate={bench0050.latestDate}
       />
 
       {/* B 區 — 歷史研究證據 */}
