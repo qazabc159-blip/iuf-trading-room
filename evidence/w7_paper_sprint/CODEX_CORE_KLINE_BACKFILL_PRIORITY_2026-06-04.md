@@ -135,3 +135,56 @@ Required platform action before merge/deploy:
   - `1d` K-line returns hundreds/thousands of bars where FinMind has history
   - `1w`/`1mo` derive from daily bars, not shallow 3-bar caches
   - company page panels stop showing DB-backed blanks caused by `CONNECT_TIMEOUT`.
+
+## 2026-06-05 Production Recovery + Verification
+
+Yang expanded `pg-volume` from `500MB` to `100000MB`.
+
+Postgres recovered successfully:
+
+- `railway service status --service pg --environment production --json`
+  - `status=SUCCESS`
+  - `stopped=false`
+- Postgres logs:
+  - `database system is ready to accept connections`
+
+API deploys:
+
+- `26987325020` for commit `5ce41f58` succeeded after Postgres recovery.
+- `26987662366` for commit `3f1e773d` booted API with:
+  - `Migration count verified: 44/44 OK`
+  - `Database schema is up to date`
+  - API service status `SUCCESS`
+
+Follow-up fix in commit `3f1e773d`:
+
+- The first `/api/v1/companies/:id/ohlcv` route accepted only `interval`.
+- Product/trading-room calls can use `timeframe=1w` / `timeframe=1mo`.
+- Added `normalizeOhlcvQuery()` so `timeframe` / `freq` aliases are supported and `1mo` maps to stored monthly interval `1m`.
+- Added CI guard `TRADING-ROOM-KLINE-ALIAS-1`.
+
+Authenticated production K-line verification using owner cookie:
+
+| Ticker | 1d bars | 1w bars | 1mo bars | Latest |
+| --- | ---: | ---: | ---: | --- |
+| 2330 | 2437 | 516 | 121 | 2026-06-04 |
+| 6202 | 2436 | 516 | 121 | 2026-06-04 |
+| 2002 | 2436 | 516 | 121 | 2026-06-04 |
+| 2412 | 2436 | 516 | 121 | 2026-06-04 |
+| 2603 | 2429 | 515 | 121 | 2026-06-04 |
+| 9958 | 2435 | 516 | 121 | 2026-06-04 |
+| 0050 | 2431 | 516 | 121 | 2026-06-04 |
+
+Company page endpoint spot check for `2330` after DB recovery:
+
+- `/api/v1/companies/2330/financials-v2?type=income&years=5` -> HTTP 200, `342` rows
+- `/api/v1/companies/2330/monthly-revenue?months=24` -> HTTP 200, `24` rows
+- `/api/v1/companies/2330/institutional-flow?days=60` -> HTTP 200, `210` rows
+- `/api/v1/companies/2330/margin?days=60` -> HTTP 200, `42` rows
+- `/api/v1/companies/2330/dividend` -> HTTP 200, `20` rows
+
+Conclusion:
+
+- The product K-line universe is no longer limited to fixed heatmap representative pools.
+- The three-candle weekly/monthly bug is fixed at the API query compatibility layer.
+- Remaining visible company-page blanks should now be treated as frontend panel wiring issues, not DB outage fallout.
