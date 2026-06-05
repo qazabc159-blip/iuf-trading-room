@@ -212,6 +212,131 @@ import {
   type ThemeManualUpdateResult,
 } from "../apps/api/src/admin-themes-manual-update.ts";
 
+test("DB-POOL-1: production DB client must not serialize the whole app through one connection", () => {
+  const src = readFileSync("packages/db/src/client.ts", "utf8");
+  assert.ok(
+    src.includes("getDatabasePoolMax"),
+    "DB-POOL-1: DB pool size must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes("process.env.DATABASE_POOL_MAX"),
+    "DB-POOL-1: production must allow DATABASE_POOL_MAX override"
+  );
+  assert.doesNotMatch(
+    src,
+    /max:\s*1\b/,
+    "DB-POOL-1: postgres pool max must not be hard-coded to 1 because ingest/backfill can starve auth/login"
+  );
+  assert.match(
+    src,
+    /Math\.max\(\s*10\s*,\s*Math\.min\(raw,\s*20\)\s*\)/,
+    "DB-POOL-1: production must clamp DATABASE_POOL_MAX to at least 10 so stale env cannot starve auth/login"
+  );
+  assert.ok(
+    src.includes("DATABASE_CONNECT_TIMEOUT_SECONDS"),
+    "DB-POOL-1: production DB connections need a bounded timeout so auth/login does not hang indefinitely"
+  );
+  assert.match(
+    src,
+    /if\s*\(!Number\.isFinite\(raw\)\)\s*return\s+15/,
+    "DB-POOL-1: default connect timeout must be long enough for Railway private-network cold starts"
+  );
+  assert.match(
+    src,
+    /connect_timeout:\s*getDatabaseConnectTimeoutSeconds\(\)/,
+    "DB-POOL-1: postgres client must use the bounded connect timeout"
+  );
+});
+
+test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {
+  const src = readFileSync("scripts/start-api-railway.mjs", "utf8");
+  assert.ok(
+    src.includes("const migrationRequired = true"),
+    "RAILWAY-BOOT-1: Railway API startup must always fail closed when migrations fail"
+  );
+  assert.match(
+    src,
+    /Math\.max\(\s*120_000\s*,\s*Math\.min\(rawMigrationTimeoutMs,\s*10\s*\*\s*60_000\)\s*\)/,
+    "RAILWAY-BOOT-1: stale Railway env must not shrink migration timeout below 120 seconds"
+  );
+  assert.match(
+    src,
+    /refusing to start because production database mode requires migrations/,
+    "RAILWAY-BOOT-1: degraded API boot must refuse to serve product data when migration fails"
+  );
+  assert.doesNotMatch(
+    src,
+    /const migrationRequired\s*=\s*process\.env\.RAILWAY_MIGRATION_REQUIRED\s*===\s*"1"\s*;/,
+    "RAILWAY-BOOT-1: production DB startup must not depend only on an opt-in env var"
+  );
+  assert.ok(
+    src.includes("refusing to start because production database mode requires migrations"),
+    "RAILWAY-BOOT-1: failure reason must make the product-data safety gate explicit"
+  );
+});
+
+test("SCHEDULER-BOOT-1: DB-heavy schedulers must not starve auth and K-line reads at production boot", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("function getSchedulerStartupDelayMs") && src.includes("SCHEDULER_STARTUP_DELAY_MS"),
+    "SCHEDULER-BOOT-1: scheduler boot delay must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes('process.env.NODE_ENV === "production" ? 180_000 : 0'),
+    "SCHEDULER-BOOT-1: production database mode must default to a 180s scheduler warm-up delay"
+  );
+  assert.ok(
+    src.includes("const launchBackgroundSchedulers = async () =>") &&
+      src.includes("startSchedulers(schedulerWorkspace)") &&
+      src.includes("startOutboxPoller()"),
+    "SCHEDULER-BOOT-1: scheduler/outbox launch must be grouped behind the warm-up gate"
+  );
+  assert.match(
+    src,
+    /setTimeout\(\(\)\s*=>\s*\{\s*void launchBackgroundSchedulers\(\)\.catch/s,
+    "SCHEDULER-BOOT-1: production boot must schedule background launch instead of starting it inline"
+  );
+});
+
+test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB failures", () => {
+  const authStoreSrc = readFileSync("apps/api/src/auth-store.ts", "utf8");
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  const loginBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function loginWithPassword"),
+    authStoreSrc.indexOf("// ── register with invite")
+  );
+  const getUserBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function getUserById"),
+    authStoreSrc.indexOf("// ── issue an invite code")
+  );
+
+  assert.ok(
+    authStoreSrc.includes("const authUserColumns") && authStoreSrc.includes("const authWorkspaceColumns"),
+    "AUTH-LOGIN-1: auth must use explicit user/workspace column allow-lists, not full schema selects"
+  );
+  assert.ok(
+    loginBlock.includes("select(authUserColumns)") && getUserBlock.includes("select(authUserColumns)"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(users) full-row reads"
+  );
+  assert.ok(
+    loginBlock.includes("selectAuthWorkspace") && getUserBlock.includes("selectAuthWorkspace"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(workspaces) full-row reads"
+  );
+  assert.doesNotMatch(
+    loginBlock + getUserBlock,
+    /select\(\)\.from\((users|workspaces)\)/,
+    "AUTH-LOGIN-1: auth login path must not be vulnerable to non-essential prod schema drift"
+  );
+  assert.ok(
+    serverSrc.includes("AUTH_LOGIN_DB_ERROR") && serverSrc.includes("[auth/login] database login failed"),
+    "AUTH-LOGIN-1: login route must expose sanitized deploy diagnostics for DB login failures"
+  );
+  assert.ok(
+    serverSrc.includes("serializeOperationalError") && serverSrc.includes("sanitizeOperationalErrorMessage"),
+    "AUTH-LOGIN-1: auth DB failure logs must include sanitized cause/code details for Railway diagnosis"
+  );
+});
+
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
     category: "industry",
@@ -12025,6 +12150,29 @@ test("EL-OUTBOX-4: getOutboxDiag returns zero counts in non-DB mode", async () =
   assert.equal(diag.isPollerRunning, false, "EL-OUTBOX-4: poller must not be running after stop");
 });
 
+test("EL-OUTBOX-4b: outbox poller must be low-priority and boot-safe", () => {
+  const source = readFileSync("apps/api/src/events/event-log-outbox.ts", "utf8");
+  assert.match(
+    source,
+    /const POLLER_INITIAL_DELAY_MS = 120_000/,
+    "EL-OUTBOX-4b: outbox poller must not compete with auth/login during API boot"
+  );
+  assert.match(
+    source,
+    /const POLLER_INTERVAL_MS = 5_000/,
+    "EL-OUTBOX-4b: outbox poller must not hammer the DB at sub-second cadence"
+  );
+  assert.ok(
+    source.includes("_pollBackoffUntil") && source.includes("_pollInFlight"),
+    "EL-OUTBOX-4b: outbox poller needs in-flight and failure-backoff guards"
+  );
+  assert.doesNotMatch(
+    source,
+    /FOR UPDATE SKIP LOCKED/,
+    "EL-OUTBOX-4b: outbox poller must not use the lock query that repeatedly failed in Railway"
+  );
+});
+
 test("EL-OUTBOX-5: sequential appendEventWithOutbox produces strictly increasing seq numbers", async () => {
   const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
   const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");
@@ -13489,7 +13637,11 @@ test("AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt contains programmatic risk_off_s
   assert.ok(src.includes("DO NOT OVERRIDE"), "AI-REC-V3-RISK-OFF-2: prompt must say DO NOT OVERRIDE");
   // F3: minimum tool call rules
   assert.ok(src.includes("MIN_V3_TECHNICAL_CALLS = 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls through the shared minimum constant");
-  assert.ok(src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=5 recommendations through the shared minimum constant");
+  assert.ok(
+    src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B 推薦卡片") ||
+      src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動推薦"),
+    "AI-REC-V3-RISK-OFF-2: prompt must require >=5 A+/A/B actionable recommendations through the shared minimum constant"
+  );
   // Orchestrator must intercept LLM RISK_OFF_SKIP when progScore < 3
   assert.ok(src.includes("LLM_RISK_OFF_REJECTED"), "AI-REC-V3-RISK-OFF-2: orchestrator must intercept LLM risk-off when progScore < 3");
   assert.ok(src.includes("companyTechnicalCallCount"), "AI-REC-V3-RISK-OFF-2: orchestrator must track get_company_technical call count");
@@ -14431,8 +14583,10 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when p
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: prompt must forbid skip sentinels when score < 3"
   );
   assert.ok(
-    src.includes("推薦 A+/A/B/C 的股票"),
-    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must allow C bucket high-risk exclusion cards to satisfy the five-card gate without fake buy signals"
+    src.includes("推薦 A+/A/B 的股票") &&
+      src.includes("C 分類必須標示高風險排除") &&
+      src.includes("不算推薦卡"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must forbid C bucket high-risk exclusions from satisfying the five-card gate"
   );
 });
 
@@ -14578,6 +14732,24 @@ test("TRADING-ROOM-4GAP-1: ohlcvQuerySchema in server.ts includes 5m/15m/60m + N
   assert.ok(
     src.includes("intradayIntervals"),
     "TRADING-ROOM-4GAP-1: intradayIntervals Set must gate intraday requests"
+  );
+});
+
+test("TRADING-ROOM-KLINE-ALIAS-1: OHLCV route accepts product timeframe aliases", async () => {
+  const src = await import("fs").then((fs) =>
+    fs.readFileSync("apps/api/src/server.ts", "utf8")
+  );
+  assert.ok(
+    src.includes("function normalizeOhlcvQuery") && src.includes("raw.interval ?? raw.timeframe ?? raw.freq"),
+    "TRADING-ROOM-KLINE-ALIAS-1: OHLCV route must accept timeframe/freq aliases, not only interval"
+  );
+  assert.ok(
+    src.includes('value === "1mo"') && src.includes('return "1m"'),
+    "TRADING-ROOM-KLINE-ALIAS-1: product timeframe=1mo must normalize to stored monthly interval=1m"
+  );
+  assert.ok(
+    src.includes("ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery"),
+    "TRADING-ROOM-KLINE-ALIAS-1: bulk OHLCV route must share the same alias normalization"
   );
 });
 
@@ -14919,6 +15091,49 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   assert.ok(
     src.includes("tpex.org.tw"),
     "BULK-SEED-5: must include TPEx OpenAPI URL"
+  );
+});
+
+test("BULK-SEED-6: ticker resolution read-throughs missing official companies", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const resolveBlock = src.slice(
+    src.indexOf("async function resolveCompany"),
+    src.indexOf("async function requireOpenAliceDevice")
+  );
+
+  assert.ok(
+    resolveBlock.includes("ensureCompanyFromOfficialUniverse"),
+    "BULK-SEED-6: resolveCompany must discover missing TW tickers from official company universe"
+  );
+  assert.ok(
+    src.includes("Official company master read-through"),
+    "BULK-SEED-6: auto-created company rows must be attributed to official TWSE/TPEx source"
+  );
+  assert.ok(
+    src.includes("OFFICIAL_COMPANY_TICKER_PATTERN"),
+    "BULK-SEED-6: read-through must be restricted to valid Taiwan ticker-like symbols"
+  );
+});
+
+test("BULK-SEED-7: official read-through re-reads after duplicate insert races", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const helperBlock = src.slice(
+    src.indexOf("async function ensureCompanyFromOfficialUniverse"),
+    src.indexOf('app.post("/api/v1/admin/companies/bulk-seed"')
+  );
+
+  assert.ok(
+    helperBlock.includes("repo.createCompany"),
+    "BULK-SEED-7: read-through must create the missing official company master row"
+  );
+  assert.ok(
+    helperBlock.includes("repo.listCompanies"),
+    "BULK-SEED-7: read-through must re-read after create conflicts so concurrent searches do not false-404"
+  );
+  assert.doesNotMatch(
+    helperBlock,
+    /mock|fake|demo/i,
+    "BULK-SEED-7: official read-through must not create fake/demo company rows"
   );
 });
 
@@ -15452,8 +15667,10 @@ test("TWSE-MIS-7: cron z='-' fallback — server.ts uses bid as proxy when z is 
 test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
   // Handles "1150602" compact format: first 3 chars = ROC year, next 2 = month, next 2 = day
-  assert.match(source, /\/\^\d\{7\}\$\/.test\(raw\)/);
-  assert.match(source, /const rocYear = parseInt\(raw\.slice\(0, 3\)/);
+  assert.ok(source.includes("/^\\d{7}$/.test(raw)"));
+  assert.ok(source.includes("const rocYear = parseInt(raw.slice(0, 3), 10)"));
+  assert.ok(source.includes("const mm = raw.slice(3, 5)"));
+  assert.ok(source.includes("const dd = raw.slice(5, 7)"));
 });
 
 test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB companies LIMIT 200", () => {
@@ -15484,7 +15701,7 @@ test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB compani
 
 test("MIS-UNIVERSE-1: universe ticker filter accepts valid 4-6 digit codes, rejects others", () => {
   // Inline the filter used in _refreshMisUniverseCache
-  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t.trim());
+  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t);
   const valid = ["2330", "0050", "00878", "3008", "6669", "910861"];
   const invalid = ["TSMC", "2330A", "99", "ABC", "", "  ", "2330 ", "00"];
   for (const t of valid) {

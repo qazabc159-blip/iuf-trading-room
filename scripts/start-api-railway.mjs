@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const migrationTimeoutMs = Number(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? 120_000);
-const migrationRequired = process.env.RAILWAY_MIGRATION_REQUIRED === "1";
+const rawMigrationTimeoutMs = Number.parseInt(process.env.RAILWAY_MIGRATION_TIMEOUT_MS ?? "", 10);
+const migrationTimeoutMs = Number.isFinite(rawMigrationTimeoutMs)
+  ? Math.max(120_000, Math.min(rawMigrationTimeoutMs, 10 * 60_000))
+  : 120_000;
+const migrationRequired = true;
 
 function run(command, args, options = {}) {
   const timeoutMs = options.timeoutMs ?? 0;
@@ -61,7 +64,9 @@ if (!migration.ok) {
     : `exited with code ${migration.code ?? "unknown"}`;
   const message = `[start-api-railway] Migration ${reason}`;
   if (migrationRequired) {
-    console.error(`${message}; refusing to start because RAILWAY_MIGRATION_REQUIRED=1`);
+    console.error(
+      `${message}; refusing to start because production database mode requires migrations before serving product data`
+    );
     process.exit(1);
   }
   console.warn(`${message}; starting API in degraded mode so /health remains available`);

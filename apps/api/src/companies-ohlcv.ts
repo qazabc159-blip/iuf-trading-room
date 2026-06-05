@@ -45,10 +45,14 @@ export interface OhlcvQueryParams {
   ticker?: string;
 }
 
-// FinMind only covers daily bars; weekly/monthly use DB or mock paths.
+// FinMind provides daily bars. Product weekly/monthly candles must be derived
+// from official daily bars, otherwise a shallow monthly cache can render as
+// three useless candles in the trading room.
 const TAIWAN_TICKER_PATTERN = /^\d{4}$/;
 const MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL = 720;
 const MIN_DAILY_BARS_FOR_LONG_WINDOW = 180;
+const MIN_WEEKLY_BARS_FOR_LONG_WINDOW = 104;
+const MIN_MONTHLY_BARS_FOR_LONG_WINDOW = 36;
 const FINMIND_DAILY_CHUNK_DAYS = 730;
 const FINMIND_DAILY_PERSIST_CHUNK_SIZE = 500;
 const MAX_DAILY_BARS_QUERY_LIMIT = 2500;
@@ -60,9 +64,9 @@ function nDaysAgoIso(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function canTryFinMindDaily(params: OhlcvQueryParams, interval: string): boolean {
+function canTryFinMindForInterval(params: OhlcvQueryParams, interval: string): boolean {
   return (
-    interval === "1d" &&
+    (interval === "1d" || interval === "1w" || interval === "1m") &&
     Boolean(params.ticker) &&
     TAIWAN_TICKER_PATTERN.test(params.ticker ?? "") &&
     Boolean(process.env.FINMIND_API_TOKEN)
@@ -83,8 +87,7 @@ function addDaysIso(value: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function isLongDailyWindow(params: OhlcvQueryParams): boolean {
-  if (params.interval && params.interval !== "1d") return false;
+function isLongOhlcvWindow(params: OhlcvQueryParams): boolean {
   if (!params.from) return true;
   const fromTs = isoDayMs(params.from);
   if (!Number.isFinite(fromTs)) return true;
@@ -93,9 +96,30 @@ function isLongDailyWindow(params: OhlcvQueryParams): boolean {
   return (toTs - fromTs) / 86_400_000 >= 300;
 }
 
+function isLongDailyWindow(params: OhlcvQueryParams): boolean {
+  if (params.interval && params.interval !== "1d") return false;
+  return isLongOhlcvWindow(params);
+}
+
 function hasEnoughDailyDepthForRequest(bars: OhlcvBar[], params: OhlcvQueryParams): boolean {
   if (!isLongDailyWindow(params)) return bars.length > 0;
   return bars.length >= MIN_DAILY_BARS_FOR_LONG_WINDOW;
+}
+
+function isDerivedInterval(interval: string): interval is "1w" | "1m" {
+  return interval === "1w" || interval === "1m";
+}
+
+function hasEnoughDepthForInterval(
+  bars: OhlcvBar[],
+  params: OhlcvQueryParams,
+  interval: string
+): boolean {
+  if (interval === "1d") return hasEnoughDailyDepthForRequest(bars, { ...params, interval: "1d" });
+  if (!isLongOhlcvWindow(params)) return bars.length > 0;
+  if (interval === "1w") return bars.length >= MIN_WEEKLY_BARS_FOR_LONG_WINDOW;
+  if (interval === "1m") return bars.length >= MIN_MONTHLY_BARS_FOR_LONG_WINDOW;
+  return bars.length > 0;
 }
 
 function uniqueSortedBars(bars: OhlcvBar[]): OhlcvBar[] {
@@ -105,6 +129,57 @@ function uniqueSortedBars(bars: OhlcvBar[]): OhlcvBar[] {
     byDate.set(bar.dt, bar);
   }
   return Array.from(byDate.values()).sort((a, b) => a.dt.localeCompare(b.dt));
+}
+
+function startOfWeekIso(value: string): string {
+  const date = new Date(isoDayMs(value));
+  const dow = date.getUTCDay();
+  const mondayOffset = (dow + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - mondayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
+function periodStartIso(value: string, interval: "1w" | "1m"): string {
+  if (interval === "1w") return startOfWeekIso(value);
+  return `${value.slice(0, 7)}-01`;
+}
+
+function aggregateSource(group: OhlcvBar[]): OhlcvBar["source"] {
+  if (group.some((bar) => bar.source === "kgi")) return "kgi";
+  if (group.some((bar) => bar.source === "tej")) return "tej";
+  return "mock";
+}
+
+export function aggregateDailyOhlcvBars(
+  dailyBars: OhlcvBar[],
+  interval: "1d" | "1w" | "1m"
+): OhlcvBar[] {
+  const sorted = uniqueSortedBars(dailyBars).filter((bar) => Number.isFinite(bar.close));
+  if (interval === "1d") return sorted;
+
+  const groups = new Map<string, OhlcvBar[]>();
+  for (const bar of sorted) {
+    const key = periodStartIso(bar.dt, interval);
+    const group = groups.get(key) ?? [];
+    group.push(bar);
+    groups.set(key, group);
+  }
+
+  const aggregated: OhlcvBar[] = [];
+  for (const [dt, group] of groups) {
+    const first = group[0]!;
+    const last = group[group.length - 1]!;
+    aggregated.push({
+      dt,
+      open: first.open,
+      high: Math.max(...group.map((bar) => bar.high)),
+      low: Math.min(...group.map((bar) => bar.low)),
+      close: last.close,
+      volume: group.reduce((sum, bar) => sum + bar.volume, 0),
+      source: aggregateSource(group)
+    });
+  }
+  return aggregated;
 }
 
 function finMindDailyChunks(startDate: string, endDate: string | null): Array<{ start: string; end: string | null }> {
@@ -343,6 +418,71 @@ function persistFinMindDailyBarsSoon(
   });
 }
 
+async function queryStoredOhlcvBars(
+  companyId: string,
+  interval: "1d" | "1w" | "1m",
+  params: OhlcvQueryParams
+): Promise<OhlcvBar[]> {
+  const db = getDb();
+  if (!db) return [];
+
+  const conditions = [
+    eq(companiesOhlcv.companyId, companyId),
+    eq(companiesOhlcv.interval, interval)
+  ];
+  if (params.from) conditions.push(gte(companiesOhlcv.dt, params.from));
+  if (params.to) conditions.push(lte(companiesOhlcv.dt, params.to));
+
+  const rows = await db
+    .select()
+    .from(companiesOhlcv)
+    .where(and(...conditions))
+    .orderBy(desc(companiesOhlcv.dt))
+    .limit(MAX_DAILY_BARS_QUERY_LIMIT);
+
+  return rows.map((r) => ({
+    dt: typeof r.dt === "string" ? r.dt : (r.dt as Date).toISOString().slice(0, 10),
+    open: Number(r.open),
+    high: Number(r.high),
+    low: Number(r.low),
+    close: Number(r.close),
+    volume: Number(r.volume),
+    source: r.source as "mock" | "kgi" | "tej"
+  })).reverse();
+}
+
+function dailyParamsForOfficialBackfill(params: OhlcvQueryParams): OhlcvQueryParams {
+  return {
+    ...params,
+    interval: "1d",
+    from: params.from ?? nDaysAgoIso(DEFAULT_DAILY_BACKFILL_DAYS)
+  };
+}
+
+async function deriveOfficialBarsFromDaily(
+  companyId: string,
+  workspaceId: string,
+  params: OhlcvQueryParams,
+  interval: "1w" | "1m"
+): Promise<OhlcvBar[]> {
+  const dailyParams = dailyParamsForOfficialBackfill(params);
+  const storedDailyBars = await queryStoredOhlcvBars(companyId, "1d", dailyParams);
+  if (!allBarsAreMock(storedDailyBars) && hasEnoughDailyDepthForRequest(storedDailyBars, dailyParams)) {
+    return aggregateDailyOhlcvBars(storedDailyBars, interval);
+  }
+
+  const finmindBars = await getFinMindDailyBarsForRequest(dailyParams);
+  if (hasEnoughDailyDepthForRequest(finmindBars, dailyParams)) {
+    persistFinMindDailyBarsSoon(companyId, workspaceId, finmindBars);
+    return aggregateDailyOhlcvBars(finmindBars, interval);
+  }
+
+  if (!allBarsAreMock(storedDailyBars) && storedDailyBars.length > 0) {
+    return aggregateDailyOhlcvBars(storedDailyBars, interval);
+  }
+  return [];
+}
+
 export async function getCompanyOhlcv(
   companyId: string,
   session: AppSession,
@@ -353,12 +493,11 @@ export async function getCompanyOhlcv(
 
   // Try cache first
   const cached = await getCachedOhlcv(cacheKey);
-  const shouldTryFinMind = canTryFinMindDaily(params, interval);
+  const shouldTryFinMind = canTryFinMindForInterval(params, interval);
   const cachedNeedsFinMindBackfill =
     Boolean(cached) &&
     shouldTryFinMind &&
-    interval === "1d" &&
-    cached!.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL;
+    !hasEnoughDepthForInterval(cached!, params, interval);
   if (cached && !cachedNeedsFinMindBackfill && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
     return cached;
   }
@@ -369,35 +508,35 @@ export async function getCompanyOhlcv(
   if (db) {
     // DB path: query real rows
     try {
-      const conditions = [
-        eq(companiesOhlcv.companyId, companyId),
-        eq(companiesOhlcv.interval, interval)
-      ];
-      if (params.from) conditions.push(gte(companiesOhlcv.dt, params.from));
-      if (params.to)   conditions.push(lte(companiesOhlcv.dt, params.to));
+      bars = await queryStoredOhlcvBars(companyId, interval, params);
 
-      const rows = await db
-        .select()
-        .from(companiesOhlcv)
-        .where(and(...conditions))
-        .orderBy(desc(companiesOhlcv.dt))
-        .limit(MAX_DAILY_BARS_QUERY_LIMIT);
-
-      if (rows.length > 0) {
-        bars = rows.map((r) => ({
-          dt: typeof r.dt === "string" ? r.dt : (r.dt as Date).toISOString().slice(0, 10),
-          open:   Number(r.open),
-          high:   Number(r.high),
-          low:    Number(r.low),
-          close:  Number(r.close),
-          volume: Number(r.volume),
-          source: r.source as "mock" | "kgi" | "tej"
-        })).reverse(); // return ascending
+      if (bars.length > 0) {
 
         // F1 fix (2026-05-05): If ALL rows in DB are mock-sourced, treat as if DB
-        // is empty for FinMind purposes — do not serve stale mock data as "live".
+        // is empty for FinMind purposes - do not serve stale mock data as "live".
         // Real rows (source=tej or kgi) are served normally.
         const allMock = allBarsAreMock(bars);
+
+        if (isDerivedInterval(interval) && shouldTryFinMind) {
+          if (!allMock && hasEnoughDepthForInterval(bars, params, interval)) {
+            await setCachedOhlcv(cacheKey, bars);
+            return bars;
+          }
+
+          try {
+            const derivedBars = await deriveOfficialBarsFromDaily(companyId, session.workspace.id, params, interval);
+            if (hasEnoughDepthForInterval(derivedBars, params, interval)) {
+              await setCachedOhlcv(cacheKey, derivedBars);
+              return derivedBars;
+            }
+          } catch (e) {
+            console.warn(
+              "[companies-ohlcv] FinMind derived backfill failed, refusing shallow derived DB rows",
+              e instanceof Error ? e.message : String(e)
+            );
+          }
+          return [];
+        }
 
         if (
           interval === "1d" &&
@@ -439,8 +578,21 @@ export async function getCompanyOhlcv(
     }
   }
 
-  // FinMind fallback: when DB returned 0 rows, ticker looks like Taiwan, token set, daily interval.
-  // FinMind covers daily adjusted bars only — weekly/monthly fall through to mock.
+  // FinMind fallback: when DB returned 0 rows, ticker looks like Taiwan, token set.
+  // Weekly/monthly are derived from official daily bars instead of mock.
+  if (isDerivedInterval(interval) && shouldTryFinMind) {
+    try {
+      const derivedBars = await deriveOfficialBarsFromDaily(companyId, session.workspace.id, params, interval);
+      if (hasEnoughDepthForInterval(derivedBars, params, interval)) {
+        await setCachedOhlcv(cacheKey, derivedBars);
+        return derivedBars;
+      }
+    } catch (e) {
+      console.warn("[companies-ohlcv] FinMind derived fallback failed", e instanceof Error ? e.message : String(e));
+    }
+    return [];
+  }
+
   if (
     interval === "1d" &&
     params.ticker &&

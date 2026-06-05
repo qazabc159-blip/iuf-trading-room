@@ -506,6 +506,7 @@ function getBearerToken(c: Context) {
 
 // UUID v4 pattern — used to decide whether `:id` needs ticker fallback.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OFFICIAL_COMPANY_TICKER_PATTERN = /^\d{4,6}$/;
 
 /**
  * Resolve a company by UUID or ticker within a workspace.
@@ -522,7 +523,14 @@ async function resolveCompany(
   }
   // Ticker fallback: scan list within workspace. listCompanies is workspace-scoped.
   const companies = await repo.listCompanies(undefined, options);
-  return companies.find((c) => c.ticker === idOrTicker) ?? null;
+  const existing = companies.find((c) => c.ticker === idOrTicker);
+  if (existing) return existing;
+
+  // Product rule: K-line/company pages must not be limited to the curated
+  // representative pools. If a valid TW ticker is missing from our company
+  // master, discover it from official TWSE/TPEx company lists and create a
+  // minimal official master row before the caller fetches FinMind data.
+  return ensureCompanyFromOfficialUniverse(repo, idOrTicker, options);
 }
 
 async function requireOpenAliceDevice(c: Context, deviceId: string) {
@@ -5598,9 +5606,41 @@ const authRegisterSchema = z.object({
   inviteCode: z.string().min(1).max(128)
 });
 
+function sanitizeOperationalErrorMessage(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value
+    .replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, "postgres://[REDACTED]@")
+    .replace(/(password|passwd|pwd|token|secret)=([^&\s]+)/gi, "$1=[REDACTED]")
+    .slice(0, 1200);
+}
+
+function serializeOperationalError(error: unknown) {
+  const record = error && typeof error === "object"
+    ? (error as Record<string, unknown>)
+    : {};
+  const cause = record.cause && typeof record.cause === "object"
+    ? (record.cause as Record<string, unknown>)
+    : {};
+
+  return {
+    name: typeof record.name === "string" ? record.name : undefined,
+    code: typeof record.code === "string" ? record.code : undefined,
+    message: sanitizeOperationalErrorMessage(record.message),
+    causeName: typeof cause.name === "string" ? cause.name : undefined,
+    causeCode: typeof cause.code === "string" ? cause.code : undefined,
+    causeMessage: sanitizeOperationalErrorMessage(cause.message)
+  };
+}
+
 app.post("/auth/login", async (c) => {
   const body = authLoginSchema.parse(await c.req.json());
-  const result = await loginWithPassword(body.email, body.password);
+  let result;
+  try {
+    result = await loginWithPassword(body.email, body.password);
+  } catch (error) {
+    console.warn("[auth/login] database login failed", serializeOperationalError(error));
+    return c.json({ error: "auth_login_unavailable", code: "AUTH_LOGIN_DB_ERROR" }, 503);
+  }
   if (!result.ok) {
     return c.json({ error: result.error }, 401);
   }
@@ -6323,10 +6363,26 @@ const ohlcvQuerySchema = z.object({
   interval: z.enum(["1d", "1w", "1m", "5m", "15m", "60m"]).optional().default("1d")
 });
 
+function normalizeOhlcvInterval(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const value = raw.trim().toLowerCase();
+  if (value === "1mo" || value === "1mon" || value === "1month" || value === "month") return "1m";
+  if (value === "1wk" || value === "1week" || value === "week") return "1w";
+  return value;
+}
+
+function normalizeOhlcvQuery(raw: Record<string, string | undefined>): Record<string, string | undefined> {
+  const interval = normalizeOhlcvInterval(raw.interval ?? raw.timeframe ?? raw.freq);
+  return {
+    ...raw,
+    interval: interval ?? raw.interval
+  };
+}
+
 app.get("/api/v1/companies/:id/ohlcv", async (c) => {
   let query: ReturnType<typeof ohlcvQuerySchema.parse>;
   try {
-    query = ohlcvQuerySchema.parse(c.req.query());
+    query = ohlcvQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -6505,7 +6561,7 @@ const ohlcvBulkQuerySchema = z.object({
 app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
   let query: ReturnType<typeof ohlcvBulkQuerySchema.parse>;
   try {
-    query = ohlcvBulkQuerySchema.parse(c.req.query());
+    query = ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -14559,6 +14615,96 @@ async function _fetchTpexListedCompanies(): Promise<Array<{ ticker: string; name
   }
 }
 
+type OfficialCompanyMasterRow = {
+  ticker: string;
+  name: string;
+  industry: string;
+  market: "TWSE" | "TPEX";
+};
+
+let _officialCompanyUniverseCache:
+  | { loadedAtMs: number; rows: OfficialCompanyMasterRow[] }
+  | null = null;
+const OFFICIAL_COMPANY_UNIVERSE_CACHE_MS = 6 * 60 * 60 * 1000;
+
+async function getOfficialCompanyUniverse(): Promise<OfficialCompanyMasterRow[]> {
+  const now = Date.now();
+  if (
+    _officialCompanyUniverseCache &&
+    now - _officialCompanyUniverseCache.loadedAtMs < OFFICIAL_COMPANY_UNIVERSE_CACHE_MS
+  ) {
+    return _officialCompanyUniverseCache.rows;
+  }
+
+  const [twseCompanies, tpexCompanies] = await Promise.all([
+    _fetchTwseListedCompanies(),
+    _fetchTpexListedCompanies(),
+  ]);
+
+  const byTicker = new Map<string, OfficialCompanyMasterRow>();
+  for (const company of tpexCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上櫃",
+      market: "TPEX",
+    });
+  }
+  for (const company of twseCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上市",
+      market: "TWSE",
+    });
+  }
+
+  const rows = Array.from(byTicker.values());
+  _officialCompanyUniverseCache = { loadedAtMs: now, rows };
+  return rows;
+}
+
+async function ensureCompanyFromOfficialUniverse(
+  repo: TradingRoomRepository,
+  ticker: string,
+  options: { workspaceSlug: string }
+) {
+  const normalizedTicker = ticker;
+  if (!OFFICIAL_COMPANY_TICKER_PATTERN.test(normalizedTicker)) return null;
+
+  const official = (await getOfficialCompanyUniverse()).find((row) => row.ticker === normalizedTicker);
+  if (!official) return null;
+
+  try {
+    return await repo.createCompany(
+      {
+        ticker: official.ticker,
+        name: official.name,
+        market: official.industry || official.market,
+        country: "Taiwan",
+        chainPosition: official.industry || official.market,
+        beneficiaryTier: "Observation" as const,
+        exposure: _BULK_SEED_EXPOSURE,
+        validation: _BULK_SEED_VALIDATION,
+        notes: `Official company master read-through from ${official.market} OpenAPI ${new Date().toISOString().slice(0, 10)}`,
+        themeIds: [],
+      },
+      options
+    );
+  } catch (err) {
+    // Another request may have created the same ticker between our list and insert.
+    // Re-read once so concurrent customer searches do not surface a false 404.
+    const companies = await repo.listCompanies(undefined, options).catch(() => []);
+    const existing = companies.find((company) => company.ticker === normalizedTicker);
+    if (existing) return existing;
+    console.warn(
+      `[companies/read-through] failed ticker=${normalizedTicker}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
 app.post("/api/v1/admin/companies/bulk-seed", async (c) => {
   const session = c.get("session");
   if (session.user.role !== "Owner") {
@@ -16459,7 +16605,7 @@ function startSchedulers(workspaceSlug: string): void {
 
         // Filter to valid ticker format and known exchange prefixes
         const valid = rows.filter(
-          (r) => r.ticker && /^\d{4,6}$/.test(r.ticker.trim())
+          (r) => r.ticker && OFFICIAL_COMPANY_TICKER_PATTERN.test(r.ticker)
         );
         _misUniverseCache = valid;
         _misUniverseCacheUpdatedAt = now;
@@ -19670,6 +19816,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
+function getSchedulerStartupDelayMs(): number {
+  const raw = Number.parseInt(process.env.SCHEDULER_STARTUP_DELAY_MS ?? "", 10);
+  if (Number.isFinite(raw)) {
+    return Math.max(0, Math.min(raw, 10 * 60_000));
+  }
+  return isDatabaseMode() && process.env.NODE_ENV === "production" ? 180_000 : 0;
+}
+
 if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
   serve(
     {
@@ -19678,85 +19832,95 @@ if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT ==
       hostname: host
     },
     async (info) => {
-    console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
-    const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
-    await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
-    const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
-    await initRiskStore(schedulerWorkspace);
-    console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
-    // F2 + F3: Start ETL schedulers after server is ready
-    console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
-    startSchedulers(schedulerWorkspace);
-    // B-EL-4: Start outbox poller (transactional event delivery, 500ms interval)
-    const { startOutboxPoller } = await import("./events/event-log-outbox.js");
-    startOutboxPoller();
-    // Job #3: Seed real operational events so GET /api/v1/event-streams always has data.
-    // BUG FIX (PR #739): previous version ran immediately at boot → DB pool not yet ready
-    // → isDatabaseMode()=false at call time → seedEventLog() hit in-memory fallback
-    // → events written to _memStreams, not el_event_streams → lost on process restart → streams=[].
-    // Fix: defer 30s to ensure DB pool + migrations are warm before seeding.
-    setTimeout(async () => {
-      try {
-        if (!isDatabaseMode()) {
-          console.warn("[event-seed] skipping — isDatabaseMode()=false at 30s seed time");
-          return;
-        }
-        const db = getDb();
-        if (!db) {
-          console.warn("[event-seed] skipping — getDb() returned null at 30s seed time");
-          return;
-        }
-        const wsRows = await db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(eq(workspaces.slug, schedulerWorkspace))
-          .limit(1);
-        const wsId = wsRows[0]?.id ?? null;
-        if (!wsId) {
-          console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
-          return;
-        }
-        console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
-        const { seedEventLog } = await import("./events/event-seed.js");
-        const seedResult = await seedEventLog(wsId);
-        console.log(
-          `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
-        );
-      } catch (e) {
-        console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
-      }
-    }, 30_000); // 30s: DB pool + migration apply must be complete before first write
+      console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
+      const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+      await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
+      const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
+      await initRiskStore(schedulerWorkspace);
+      console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
+      console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
 
-    // Job #2b fix: Boot+10s dryRun seed for never-run tools (b — 8 tools lastRunAt=null).
-    // Runs after schedulers start so real calls may have already populated some keys.
-    setTimeout(() => {
-      import("./tools/tool-boot-seed.js")
-        .then(({ seedNeverRunTools }) => {
-          // Resolve workspace UUID for tool_calls.workspace_id (nullable — pass null if unavailable)
-          const db2 = getDb();
-          if (!db2) {
-            seedNeverRunTools(null).catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+      const launchBackgroundSchedulers = async () => {
+        startSchedulers(schedulerWorkspace);
+        const { startOutboxPoller } = await import("./events/event-log-outbox.js");
+        startOutboxPoller();
+
+        // Seed real operational events after the app has proven DB connectivity.
+        const eventSeedHandle = setTimeout(async () => {
+          try {
+            if (!isDatabaseMode()) {
+              console.warn("[event-seed] skipping — isDatabaseMode()=false at seed time");
+              return;
+            }
+            const db = getDb();
+            if (!db) {
+              console.warn("[event-seed] skipping — getDb() returned null at seed time");
+              return;
+            }
+            const wsRows = await db
+              .select({ id: workspaces.id })
+              .from(workspaces)
+              .where(eq(workspaces.slug, schedulerWorkspace))
+              .limit(1);
+            const wsId = wsRows[0]?.id ?? null;
+            if (!wsId) {
+              console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
+              return;
+            }
+            console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
+            const { seedEventLog } = await import("./events/event-seed.js");
+            const seedResult = await seedEventLog(wsId);
+            console.log(
+              `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
             );
-            return;
+          } catch (e) {
+            console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
           }
-          db2
-            .select({ id: workspaces.id })
-            .from(workspaces)
-            .where(eq(workspaces.slug, schedulerWorkspace))
-            .limit(1)
-            .then((wsRows2) => {
-              const wsId2 = wsRows2[0]?.id ?? null;
-              return seedNeverRunTools(wsId2);
+        }, 30_000);
+        eventSeedHandle.unref?.();
+
+        const toolSeedHandle = setTimeout(() => {
+          import("./tools/tool-boot-seed.js")
+            .then(({ seedNeverRunTools }) => {
+              const db2 = getDb();
+              if (!db2) {
+                seedNeverRunTools(null).catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
+                return;
+              }
+              db2
+                .select({ id: workspaces.id })
+                .from(workspaces)
+                .where(eq(workspaces.slug, schedulerWorkspace))
+                .limit(1)
+                .then((wsRows2) => {
+                  const wsId2 = wsRows2[0]?.id ?? null;
+                  return seedNeverRunTools(wsId2);
+                })
+                .catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
             })
             .catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+              console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
             );
-        })
-        .catch((e) =>
-          console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
-        );
-    }, 10_000);
+        }, 10_000);
+        toolSeedHandle.unref?.();
+      };
+
+      const schedulerStartupDelayMs = getSchedulerStartupDelayMs();
+      if (schedulerStartupDelayMs > 0) {
+        console.log(`[schedulers] Delaying DB-heavy schedulers for ${schedulerStartupDelayMs}ms so auth/company/K-line reads warm first.`);
+        const schedulerDelayHandle = setTimeout(() => {
+          void launchBackgroundSchedulers().catch((e) =>
+            console.warn("[schedulers] delayed launch failed:", e instanceof Error ? e.message : e)
+          );
+        }, schedulerStartupDelayMs);
+        schedulerDelayHandle.unref?.();
+      } else {
+        await launchBackgroundSchedulers();
+      }
     }
   );
 }
