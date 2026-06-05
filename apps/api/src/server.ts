@@ -17535,6 +17535,39 @@ function startSchedulers(workspaceSlug: string): void {
 
     console.log("[schedulers] S1-SIM-PIPELINE wired: auto signal(Mon 08:30 TST) + auto orders(Mon 09:00 TST, signal catch-up before submit) + eod(daily 14:00 TST); manual trigger is backup only");
   }
+
+  // =============================================================================
+  // AI-REC-PERF-CRON: forward-return update for ai_rec_pick_snapshots
+  //
+  // Fires daily at 14:40–15:00 TST (after market close + EOD snapshot).
+  // Finds snapshot rows with ret_updated_at IS NULL or stale and fills
+  // ret_1d/ret_5d/ret_20d + excess vs TAIEX from companies_ohlcv.
+  // Processes up to 50 rows per tick (see updateForwardReturns batch limit).
+  // =============================================================================
+  {
+    const AI_REC_PERF_POLL_MS = 15 * 60 * 1000;
+    let _aiRecPerfRetUpdatedDate: string | null = null;
+
+    function isAiRecPerfRetWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      return hhmm >= 1440 && hhmm < 1500; // 14:40–15:00 TST
+    }
+
+    ui(async () => {
+      if (!isAiRecPerfRetWindow()) return;
+      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const todayDate = taipeiNow.toISOString().slice(0, 10);
+      if (_aiRecPerfRetUpdatedDate === todayDate) return;
+      _aiRecPerfRetUpdatedDate = todayDate;
+      try {
+        const { updateForwardReturns } = await import("./ai-rec-perf-store.js");
+        const result = await updateForwardReturns();
+        console.info(`[ai-rec-perf-cron] daily ret update done: updated=${result.updated} errors=${result.errors}`);
+      } catch (e) {
+        console.warn("[ai-rec-perf-cron] tick error:", e instanceof Error ? e.message : String(e));
+      }
+    }, AI_REC_PERF_POLL_MS);
+  }
 }
 
 async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {
@@ -18395,7 +18428,7 @@ async function _runAiRecV3Cron(opts: {
   _aiRecV3CronRunning = true;
   _aiRecV3CronLastFiredAt = new Date().toISOString();
   try {
-    const { runAiRecommendationV3 } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    const { runAiRecommendationV3, getLatestAiRecommendationV3Run } = await import("./ai-recommendation-v2/orchestrator-v3.js");
     await runAiRecommendationV3({
       trigger: opts.trigger,
       // Five technical checks are too brittle for a five-card product gate:
@@ -18408,6 +18441,17 @@ async function _runAiRecV3Cron(opts: {
       workspaceId: opts.workspaceId ?? null,
     });
     _aiRecV3CronLastError = null;
+
+    // AI-REC-PERF: snapshot picks after run completes (fail-open — must not crash v3 cron)
+    try {
+      const latestRun = getLatestAiRecommendationV3Run();
+      if (latestRun && latestRun.items.length > 0) {
+        const { snapshotV3Picks } = await import("./ai-rec-perf-store.js");
+        await snapshotV3Picks(latestRun);
+      }
+    } catch (snapErr) {
+      console.warn("[ai-rec-v3-cron] snapshot error (non-fatal):", snapErr instanceof Error ? snapErr.message : snapErr);
+    }
   } catch (err) {
     _aiRecV3CronLastError = err instanceof Error ? err.message : String(err);
     console.error("[ai-rec-v3] run error:", _aiRecV3CronLastError);
@@ -18574,6 +18618,73 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
     latest_synthesis_fallback_used:
       latest?.synthesisFallbackUsed ?? (latest?.status === "synthesis_format_error" && (latest?.items.length ?? 0) >= 5),
   });
+});
+
+// =============================================================================
+// AI-REC FORWARD PERFORMANCE ENDPOINTS (Jason 2026-06-05)
+// Prove whether AI-picked stocks make money vs TAIEX benchmark.
+// Lane: strategy backend (Jason). Files: ai-rec-perf-store.ts
+// Auth: Owner-only (production alpha — not yet surfaced to frontend)
+// =============================================================================
+
+// GET /api/v1/admin/ai-rec/performance
+// Returns hit_rate, avg_excess_return (1d/5d/20d), sample_count, by_bucket breakdown.
+app.get("/api/v1/admin/ai-rec/performance", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const fromDate = c.req.query("from") ?? undefined;
+  const toDate = c.req.query("to") ?? undefined;
+
+  const { getAiRecPerformance } = await import("./ai-rec-perf-store.js");
+  const perf = await getAiRecPerformance({ fromDate, toDate });
+
+  return c.json(perf);
+});
+
+// POST /api/v1/admin/ai-rec/snapshot — manual snapshot trigger (for today's v3 run)
+// Useful for backfilling: call after v3 refresh to force-write snapshot.
+app.post("/api/v1/admin/ai-rec/snapshot", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const latest = await getLatestAiRecommendationV3RunForRead();
+
+  if (!latest) {
+    return c.json({ ok: false, error: "no_v3_run_available", hint: "Trigger a v3 refresh first." }, 404);
+  }
+  if (latest.items.length === 0) {
+    return c.json({ ok: false, error: "v3_run_has_no_items", status: latest.status }, 422);
+  }
+
+  const { snapshotV3Picks } = await import("./ai-rec-perf-store.js");
+  await snapshotV3Picks(latest);
+
+  return c.json({
+    ok: true,
+    runId: latest.runId,
+    itemsSnapshotted: latest.items.length,
+    snappedAt: new Date().toISOString(),
+  });
+});
+
+// POST /api/v1/admin/ai-rec/update-returns — manual forward-return update trigger
+// Normally fired by daily cron; exposed here for Bruce manual verify / backfill.
+app.post("/api/v1/admin/ai-rec/update-returns", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { updateForwardReturns } = await import("./ai-rec-perf-store.js");
+  const result = await updateForwardReturns();
+
+  return c.json({ ok: true, ...result, updatedAt: new Date().toISOString() });
 });
 
 // =============================================================================
