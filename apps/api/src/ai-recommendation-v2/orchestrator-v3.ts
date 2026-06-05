@@ -352,8 +352,12 @@ function isActionableRecommendationItem(item: AiStockRecommendationV2): boolean 
 function completeItemCount(items: AiStockRecommendationV2[]): number {
   return items.filter(isActionableRecommendationItem).length;
 }
-const V3_SYNTHESIS_TIMEOUT_MS = 75_000;
-const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 90_000;
+// gpt-5.5 (reasoning model) synthesis over the candidate set takes 75–90s+ —
+// the old 75s/90s timeout aborted it exactly at the limit (FETCH_ERROR,
+// completionTokens=0 → empty content → deterministic fallback). Reasoning models
+// need generous headroom; fast models finish well under these and are unaffected.
+const V3_SYNTHESIS_TIMEOUT_MS = 240_000;
+const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 300_000;
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
