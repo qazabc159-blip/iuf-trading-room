@@ -35,6 +35,63 @@ import {
   getNewsTop10,
 } from "../tools/market-data-tools.js";
 
+const DEFAULT_AI_REC_MODEL = "gpt-4o-mini";
+const DEFAULT_AI_REC_FALLBACK_MODEL = "gpt-4o";
+
+type AiRecLlmMessage = { role: "system" | "user" | "assistant"; content: string };
+type AiRecLlmOptions = {
+  modelKey: string;
+  callerModule: string;
+  taskType: string;
+  workspaceId?: string | null;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+  responseFormat?: "json_object";
+};
+type AiRecLlmResult = {
+  content: string;
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  costUsd: number;
+  callId: string | null;
+  modelKey: string;
+  usedModelFallback: boolean;
+};
+
+export function resolveAiRecPrimaryModel(): string {
+  return process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"] ?? DEFAULT_AI_REC_MODEL;
+}
+
+export function resolveAiRecFallbackModel(primaryModel: string): string | null {
+  const configured = process.env["OPENAI_MODEL_AI_REC_FALLBACK"]?.trim();
+  const fallback = configured && configured.length > 0 ? configured : DEFAULT_AI_REC_FALLBACK_MODEL;
+  if (fallback === primaryModel) return null;
+  return fallback;
+}
+
+async function callAiRecLlmWithFallback(
+  messages: AiRecLlmMessage[],
+  opts: AiRecLlmOptions
+): Promise<AiRecLlmResult | null> {
+  const { callLlm } = await import("../llm/llm-gateway.js");
+  const primary = opts.modelKey;
+  const first = await callLlm(messages, opts);
+  if (first) return { ...first, modelKey: primary, usedModelFallback: false };
+
+  const fallback = resolveAiRecFallbackModel(primary);
+  if (!fallback) return null;
+
+  console.warn(
+    `[v3-orchestrator] model ${primary} returned no content for ${opts.taskType}; retrying with fallback ${fallback}`
+  );
+  const retry = await callLlm(messages, {
+    ...opts,
+    modelKey: fallback,
+    taskType: `${opts.taskType}_model_fallback`,
+  });
+  return retry ? { ...retry, modelKey: fallback, usedModelFallback: true } : null;
+}
+
 export type AiStockRecommendationV3Card = AiStockRecommendationV2 & {
   entry?: string;
   stop?: number | null;
@@ -1543,7 +1600,6 @@ async function synthesizeReportV3(
   programmaticRiskOffScore: number,
   repairMarkdown?: string
 ): Promise<V3SynthesisAttempt> {
-  const { callLlm } = await import("../llm/llm-gateway.js");
   const traceText = trace
     .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
     .join("\n\n");
@@ -1572,7 +1628,7 @@ Previous markdown:
 ${previousMarkdownForRepair}`
     : buildV3SynthesisPrompt(traceText, dateStr, programmaticRiskOffScore);
 
-  const llmResult = await callLlm(
+  const llmResult = await callAiRecLlmWithFallback(
     [
       { role: "system", content: "你是 IUF 台股操盤師 AI，輸出嚴格格式的推薦報告。" },
       { role: "user", content: userPrompt },
@@ -1683,7 +1739,7 @@ export async function runAiRecommendationV3(
   // Per-feature model override: OPENAI_MODEL_AI_REC takes priority over global OPENAI_MODEL.
   // This allows upgrading AI rec to gpt-5.5 without touching global env (which would
   // also upgrade high-frequency cheap tasks like news-top10).
-  const model = process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+  const model = resolveAiRecPrimaryModel();
   const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
 
@@ -1728,9 +1784,6 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
     return finalizeV3Run(result, model, opts.workspaceId);
   }
 
-  const { callLlm } = await import("../llm/llm-gateway.js");
-  type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
-
   const trace: V3ReActStep[] = [];
   let totalTokens = 0;
   let totalCostUsd = 0;
@@ -1738,7 +1791,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
   let detectedRiskOffScore: number | null = progScore;
 
   // Inject programmatic score into system prompt — LLM cannot override
-  const messages: LlmMessage[] = [
+  const messages: AiRecLlmMessage[] = [
     { role: "system", content: buildV3SystemPrompt(dateStr, progScore) },
     {
       role: "user",
@@ -1784,7 +1837,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       return finalizeV3Run(result, model, opts.workspaceId);
     }
 
-    const llmResult = await callLlm(messages, {
+    const llmResult = await callAiRecLlmWithFallback(messages, {
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: "react_reason",
