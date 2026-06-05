@@ -2246,7 +2246,9 @@ export async function runAiRecommendationV3(
   // This allows upgrading AI rec to gpt-5.5 without touching global env (which would
   // also upgrade high-frequency cheap tasks like news-top10).
   const model = resolveAiRecPrimaryModel();
-  const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
+  // Raised 12→18 (cap 15→22): multi-dimension forcing needs extra rounds for
+  // get_company_fundamentals + get_supply_chain calls on top candidates.
+  const maxRounds = Math.min(opts.maxRounds ?? 18, 22);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
 
   await persistV3RunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger, model });
@@ -2309,6 +2311,12 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
 
   // Track get_company_technical call count for F3 validation
   let companyTechnicalCallCount = 0;
+  // Multi-dimension forcing: require fundamentals + supply-chain calls before synthesis
+  // so gpt-5.5 actually integrates 基本面/產業鏈, not just technical+flow.
+  let fundamentalsCallCount = 0;
+  let supplyChainCallCount = 0;
+  const MIN_FUNDAMENTALS_CALLS = 3;
+  const MIN_SUPPLY_CHAIN_CALLS = 2;
 
   for (let round = 1; round <= maxRounds; round++) {
     if (totalCostUsd >= costCap) {
@@ -2468,7 +2476,12 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         observation: null,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      const allowSynthesisRetry = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS || round >= maxRounds - 1;
+      const multiDimSatisfied =
+        fundamentalsCallCount >= MIN_FUNDAMENTALS_CALLS &&
+        supplyChainCallCount >= MIN_SUPPLY_CHAIN_CALLS;
+      const allowSynthesisRetry =
+        (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS && multiDimSatisfied) ||
+        round >= maxRounds - 1;
       const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, allowSynthesisRetry);
       totalTokens += synthesis.totalTokens;
       totalCostUsd += synthesis.costUsd;
@@ -2500,7 +2513,11 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       // F3: Validate minimum items and tool call count (only complete items count)
       const completeCount = completeItemCount(items);
       const insufficientItems = completeCount < MIN_V3_RECOMMENDATION_ITEMS;
-      const insufficientTools = companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
+      const insufficientMultiDim =
+        fundamentalsCallCount < MIN_FUNDAMENTALS_CALLS ||
+        supplyChainCallCount < MIN_SUPPLY_CHAIN_CALLS;
+      const insufficientTools =
+        companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS || insufficientMultiDim;
       const unresolvedSynthesisFormatError =
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
@@ -2512,8 +2529,8 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}，不計缺 sub-score 或 C 高風險排除卡），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
-請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，確保每張推薦卡 7 個 sub-score 都填寫，並補充更多 A+/A/B bucket 卡片。C bucket 只能作為排除名單。`,
+          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}），get_company_fundamentals=${fundamentalsCallCount}（需 ≥${MIN_FUNDAMENTALS_CALLS}），get_supply_chain=${supplyChainCallCount}（需 ≥${MIN_SUPPLY_CHAIN_CALLS}）。
+★ 多維度強制：每檔準備推薦的標的，synthesis 前必須已對它呼叫過 get_company_fundamentals（取營收/EPS/估值）與 get_supply_chain（取產業鏈定位）。請立即 callTool(get_company_fundamentals) 與 callTool(get_supply_chain) 補齊主要候選的基本面與產業鏈資料，理由必須整合技術+基本面+產業鏈，不得只憑技術面。C bucket 只能作為排除名單。`,
         });
         continue; // continue loop
       }
@@ -2557,6 +2574,15 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       if (step.toolName === "get_company_technical") {
         companyTechnicalCallCount++;
         console.info(`[v3-orchestrator] round ${round}: get_company_technical call #${companyTechnicalCallCount}`);
+      }
+      // Track multi-dimension tool calls — gate synthesis until these fire.
+      if (step.toolName === "get_company_fundamentals") {
+        fundamentalsCallCount++;
+        console.info(`[v3-orchestrator] round ${round}: get_company_fundamentals call #${fundamentalsCallCount}`);
+      }
+      if (step.toolName === "get_supply_chain") {
+        supplyChainCallCount++;
+        console.info(`[v3-orchestrator] round ${round}: get_supply_chain call #${supplyChainCallCount}`);
       }
 
       // Try to extract risk_off_score from market overview result
