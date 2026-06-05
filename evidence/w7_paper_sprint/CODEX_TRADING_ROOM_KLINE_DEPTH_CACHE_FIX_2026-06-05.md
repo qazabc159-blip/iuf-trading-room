@@ -27,6 +27,14 @@ That means the product-visible short chart was not a database coverage problem. 
   - Updated the trading-room K-line guard from token-centric `cachedNeedsFinMindBackfill` to product-depth-centric `cachedNeedsOwnedBackfill`.
   - Added a regression guard so shallow cached weekly/monthly K-lines cannot be accepted as the formal trading-room chart.
 
+- `apps/web/public/ui-final-v031/paper_trading_room/index.html`
+  - Seeded the real K-line iframe with `data-symbol="2330"` and `__IUF_REAL_KLINE_FRAME_SYMBOL__="2330"` so the first client hydration does not start from an unknown chart symbol.
+  - Added `sameChartSym()` and used normalized symbol comparison for handoff preservation and URL sync. This prevents a same-symbol URL refresh from being treated as a different chart and reloading the iframe.
+
+- `apps/web/lib/final-v031-live.ts`
+  - Seeds `currentPaperSymbol` from URL handoff, selected live payload, or `2330` before quote refresh starts.
+  - Normalizes symbol comparison with `trim().toUpperCase()` so stale refresh payloads and quote pulses cannot drift because of whitespace/casing.
+
 ## Verification
 
 - `pnpm.cmd --filter @iuf-trading-room/api typecheck` — PASS

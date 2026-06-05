@@ -127,8 +127,13 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("keeps the trading-room K-line iframe stable during live refreshes", () => {
     expect(ticketHtml).not.toContain("nextParams.set('rev',Date.now()");
+    expect(ticketHtml).toContain('data-symbol="2330"');
+    expect(ticketHtml).toContain("let __realChartSymbol='2330'");
+    expect(ticketHtml).toContain("function sameChartSym(left,right)");
     expect(ticketHtml).toContain("const nextSrc=buildRealChartFrameSrc(sym)");
+    expect(ticketHtml).toContain("const sameHandoff=!handoffSymbol||sameChartSym(handoffSymbol,selected)");
     expect(ticketHtml).toContain("if(current!==nextSrc){");
+    expect(ticketHtml).toContain("if(sym&&!sameChartSym(sym,__realChartSymbol))updateRealChartFrame(sym)");
     expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_RELOAD_COUNT__");
     expect(ticketHtml).toContain("window.__IUF_REAL_KLINE_FRAME_SYMBOL__=selected");
     expect(ticketHtml).toContain("frame.setAttribute('src',nextSrc)");
@@ -283,6 +288,8 @@ describe("final-v031 paper ticket price gate", () => {
   it("drops stale trading-room refresh payloads after the user switches symbols", () => {
     expect(liveHydration).toContain("window.__IUF_FINAL_V031_STALE_REFRESH_DROPPED__");
     expect(liveHydration).toContain('live.screen === "paper-trading-room"');
+    expect(liveHydration).toContain('String(left || "").trim().toUpperCase()');
+    expect(liveHydration).toContain("const seededSymbol = String(paperPrefill()?.symbol || live.selected?.symbol || \"2330\").trim().toUpperCase()");
     expect(liveHydration).toContain("!sameSym(next.selected.symbol, currentPaperSymbol)");
     expect(liveHydration).toContain("received: next.selected.symbol");
   });
