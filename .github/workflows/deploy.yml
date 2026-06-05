@@ -72,7 +72,11 @@ jobs:
 
       - name: Install Railway CLI
         if: steps.gate.outputs.skip != 'true'
-        run: npm install -g @railway/cli@latest
+        run: |
+          # Keep CI auth stable while newer Railway CLI releases are ignoring
+          # RAILWAY_TOKEN and returning "Not signed in" during railway up.
+          npm install -g @railway/cli@3.14.0
+          railway --version
 
       - name: Remove non-runtime evidence before Railway upload
         if: steps.gate.outputs.skip != 'true'
