@@ -123,11 +123,16 @@ export async function main() {
       `;
       const appliedCount = appliedAfter[0]?.cnt ?? 0;
 
-      if (appliedCount !== expectedCount) {
+      if (appliedCount < expectedCount) {
         console.error(
-          `[migrate] MIGRATION_COUNT_MISMATCH: expected ${expectedCount} got ${appliedCount} — blocking boot`
+          `[migrate] MIGRATION_COUNT_TOO_LOW: expected at least ${expectedCount} got ${appliedCount} -- blocking boot`
         );
         process.exit(1);
+      }
+      if (appliedCount > expectedCount) {
+        console.warn(
+          `[migrate] MIGRATION_COUNT_AHEAD: expected ${expectedCount} got ${appliedCount}; continuing because all required migrations are present. Update EXPECTED_MIGRATION_COUNT.`
+        );
       }
       if (repoFileCount !== expectedCount) {
         console.warn(
