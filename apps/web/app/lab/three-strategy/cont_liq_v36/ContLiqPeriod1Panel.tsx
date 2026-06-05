@@ -477,9 +477,13 @@ function HoldingTableRow({ row }: { row: HoldingRow }) {
 export function ContLiqPeriod1Panel({
   holdings,
   bench0050EntryPrice,
+  bench0050LatestPrice,
+  bench0050LatestDate,
 }: {
   holdings: HoldingEntryInput[];
   bench0050EntryPrice: number | null;
+  bench0050LatestPrice: number | null;
+  bench0050LatestDate: string | null;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const tradingDaysElapsed = approxTradingDays(DAY0, today);
@@ -496,22 +500,22 @@ export function ContLiqPeriod1Panel({
   );
 
   const [bench0050Latest, setBench0050Latest] = useState<LiveQuote>({
-    price: null,
-    quoteTime: null,
-    state: "loading",
+    price: bench0050LatestPrice,
+    quoteTime: bench0050LatestDate,
+    state: bench0050LatestPrice != null ? "stale" : "blocked",
+    reason:
+      bench0050LatestPrice != null
+        ? "0050 使用 OHLCV 最新收盤價，不走 KGI 即時 tick"
+        : "0050 基準 OHLCV 暫不可用",
   });
 
   const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
 
   const pollQuotes = useCallback(async () => {
-    // Fetch all holdings + 0050 in parallel
+    // Fetch holdings only. 0050 is a benchmark and uses server-side OHLCV close,
+    // not KGI tick quote whitelist.
     const tickerList = holdings.map((h) => h.ticker);
-    const [quoteResults, bench0050Quote] = await Promise.all([
-      Promise.all(tickerList.map((t) => fetchLatestPrice(t))),
-      fetchLatestPrice("0050"),
-    ]);
-
-    setBench0050Latest(bench0050Quote);
+    const quoteResults = await Promise.all(tickerList.map((t) => fetchLatestPrice(t)));
 
     setRows((prev) =>
       prev.map((row, i) => {
@@ -530,6 +534,18 @@ export function ContLiqPeriod1Panel({
 
     setLastPolledAt(new Date().toLocaleTimeString("zh-TW", { hour12: false }));
   }, [holdings]);
+
+  useEffect(() => {
+    setBench0050Latest({
+      price: bench0050LatestPrice,
+      quoteTime: bench0050LatestDate,
+      state: bench0050LatestPrice != null ? "stale" : "blocked",
+      reason:
+        bench0050LatestPrice != null
+          ? "0050 使用 OHLCV 最新收盤價，不走 KGI 即時 tick"
+          : "0050 基準 OHLCV 暫不可用",
+    });
+  }, [bench0050LatestDate, bench0050LatestPrice]);
 
   useEffect(() => {
     pollQuotes();
