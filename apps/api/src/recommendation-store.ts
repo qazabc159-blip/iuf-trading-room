@@ -19,7 +19,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { StockRecommendation } from "@iuf-trading-room/contracts";
+import type { AppSession, StockRecommendation } from "@iuf-trading-room/contracts";
+import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import { getCompanyOhlcv, type OhlcvBar } from "./companies-ohlcv.js";
 
 // ---------------------------------------------------------------------------
 // Feedback in-process store (memory-mode v1; Day 5 wires to DB table)
@@ -470,13 +472,54 @@ function buildSupplementalSignals(
 async function fetchOhlcvByTicker(
   internalBaseUrl: string,
   sessionCookie: string,
-  tickers: string[]
+  tickers: string[],
+  opts: {
+    session?: AppSession;
+    repo?: TradingRoomRepository;
+  } = {}
 ): Promise<Map<string, OhlcvRow[]>> {
   const unique = Array.from(new Set(tickers.map(cleanTicker).filter(Boolean) as string[])).slice(0, 12);
   const from = ohlcvLookbackFromDate();
   const to = todayTstDate();
+  const result = new Map<string, OhlcvRow[]>();
+
+  if (opts.session && opts.repo) {
+    const companiesByTicker = new Map<string, { id: string; ticker: string }>();
+    try {
+      const companies = await opts.repo.listCompaniesLite({
+        workspaceSlug: opts.session.workspace.slug,
+      });
+      for (const company of companies) {
+        const ticker = cleanTicker(company.ticker);
+        if (ticker) companiesByTicker.set(ticker, { id: company.id, ticker });
+      }
+    } catch {
+      // Fall back to the HTTP path below. Recommendations must degrade, not crash.
+    }
+
+    const directSettled = await Promise.allSettled(
+      unique.map(async (ticker) => {
+        const company = companiesByTicker.get(ticker);
+        if (!company) return [ticker, [] as OhlcvRow[]] as const;
+        const bars = await getCompanyOhlcv(company.id, opts.session!, {
+          interval: "1d",
+          from,
+          to,
+          ticker,
+        });
+        return [ticker, normaliseOhlcvRows(bars.map(ohlcvBarToRow))] as const;
+      })
+    );
+
+    for (const item of directSettled) {
+      if (item.status !== "fulfilled") continue;
+      result.set(item.value[0], item.value[1]);
+    }
+  }
+
+  const missing = unique.filter((ticker) => (result.get(ticker)?.length ?? 0) < 20);
   const settled = await Promise.allSettled(
-    unique.map(async (ticker) => {
+    missing.map(async (ticker) => {
       const payload = await fetchInternal<OhlcvPayload>(
         `${internalBaseUrl}/api/v1/companies/${encodeURIComponent(ticker)}/ohlcv?interval=1d&from=${from}&to=${to}`,
         sessionCookie
@@ -485,12 +528,23 @@ async function fetchOhlcvByTicker(
     })
   );
 
-  const result = new Map<string, OhlcvRow[]>();
   for (const item of settled) {
     if (item.status !== "fulfilled") continue;
-    result.set(item.value[0], item.value[1]);
+    if (item.value[1].length > 0) result.set(item.value[0], item.value[1]);
   }
   return result;
+}
+
+function ohlcvBarToRow(bar: OhlcvBar): OhlcvRow {
+  return {
+    dt: bar.dt,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    source: bar.source,
+  };
 }
 
 /**
@@ -646,6 +700,8 @@ export function synthesizeFromFixture(
 export async function getTodayRecommendations(opts: {
   internalBaseUrl: string;
   sessionCookie: string;
+  session?: AppSession;
+  repo?: TradingRoomRepository;
 }): Promise<{ items: StockRecommendation[]; isMock: boolean }> {
   const fixture = loadAthenaFixture();
   if (!fixture) {
@@ -679,7 +735,8 @@ export async function getTodayRecommendations(opts: {
   const ohlcvByTicker = await fetchOhlcvByTicker(
     opts.internalBaseUrl,
     opts.sessionCookie,
-    candidateTickers
+    candidateTickers,
+    { session: opts.session, repo: opts.repo }
   );
 
   const items = synthesizeFromFixture(fixture, leaders, newsItems, ohlcvByTicker);

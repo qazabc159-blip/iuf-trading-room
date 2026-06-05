@@ -18221,13 +18221,15 @@ let _recCache: { items: import("@iuf-trading-room/contracts").StockRecommendatio
 
 async function getOrFetchRecommendations(
   internalBaseUrl: string,
-  sessionCookie: string
+  sessionCookie: string,
+  session: AppSession,
+  repo: TradingRoomRepository
 ): Promise<{ items: import("@iuf-trading-room/contracts").StockRecommendation[]; isMock: boolean }> {
   const now = Date.now();
   if (_recCache && now < _recCache.expiresAt) {
     return { items: _recCache.items, isMock: _recCache.isMock };
   }
-  const result = await getTodayRecommendations({ internalBaseUrl, sessionCookie });
+  const result = await getTodayRecommendations({ internalBaseUrl, sessionCookie, session, repo });
   _recCache = { ...result, expiresAt: now + 60_000 };
   return result;
 }
@@ -18272,7 +18274,7 @@ app.get("/api/v1/recommendations/today", async (c) => {
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
 
-  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie, auth.session, c.get("repo"));
 
   const response: Record<string, unknown> = {
     date: items[0]?.date ?? new Date().toISOString().slice(0, 10),
@@ -18295,7 +18297,7 @@ app.get("/api/v1/recommendations/:id", async (c) => {
   // Try real list first, then mock fallback
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
-  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie, auth.session, c.get("repo"));
 
   const rec = getRecommendationById(items, id) ?? getMockRecommendationById(id);
 
@@ -18319,7 +18321,7 @@ app.post("/api/v1/recommendations/:id/feedback", async (c) => {
   // Verify the recommendation exists — use real resolver (same cache as /today and /:id)
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
-  const { items } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items } = await getOrFetchRecommendations(internalBase, cookie, session, c.get("repo"));
   const rec = getRecommendationById(items, id);
   if (!rec) {
     return c.json({ error: "not_found", message: "推薦項目已過期或不存在" }, 404);
