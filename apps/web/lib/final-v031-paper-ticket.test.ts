@@ -386,6 +386,11 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("行情串流重連中");
     expect(liveHydration).toContain("輪詢備援 LIVE");
     expect(liveHydration).toContain('"/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"');
+    expect(liveHydration).toContain("function shouldFetchRawKgiQuoteSnapshot");
+    expect(liveHydration).toContain("function shouldFetchRawKgiQuote(quote)");
+    expect(liveHydration).toContain("function fetchRawKgiQuoteExtras(symbol, quote)");
+    expect(liveHydration).toContain('source === "kgi-gateway"');
+    expect(liveHydration).toContain("rawQuoteExtras.skipped");
     expect(liveHydration).toContain("/api/v1/kgi/quote/bidask?symbol=");
     expect(liveHydration).toContain("/api/v1/kgi/quote/ticks?symbol=");
     expect(liveHydration).toContain("setInterval(refreshPaperQuotePulse, 3000)");
