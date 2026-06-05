@@ -67,7 +67,7 @@ export function isActionableV3Item(item: AiRecommendationV3Item): boolean {
 }
 
 function localizeV3Narrative(value: string): string {
-  return value
+  const localized = value
     .trim()
     .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "系統依最新可用成交價推估觀察區間：$1。")
     .replace(/Verified technical data was available from get_company_technical\./i, "量價技術資料已完成核對。")
@@ -78,6 +78,16 @@ function localizeV3Narrative(value: string): string {
     .replace(/Deterministic fallback from verified get_company_technical data\./i, "系統依已核對的量價資料產生保守觀察值。")
     .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "完整 AI 敘事仍在補強，先以量價驗證訊號保守觀察。")
     .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "僅作研究候選，需搭配交易室風控與部位上限。");
+
+  const productText = localized
+    .replace(/\btrace\s*=\s*[^。；;\n]+[。；;]?\s*/gi, "")
+    .replace(/\b(?:RSI|institutional|margin|technical|news|revenue|source)?\s*parsing error\b[^。；;\n]*[。；;]?\s*/gi, "")
+    .replace(/\b(?:parser|diagnostic|rawSynthesisPreview|json_schema|usedFallback|synthesisFallbackUsed)\b[^。；;\n]*[。；;]?\s*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([。；;])/g, "$1")
+    .trim();
+
+  return productText || "資料仍在補齊，請搭配交易室風控與部位上限。";
 }
 
 function joinLines(...values: Array<string[] | string | null | undefined>): string | null {
@@ -274,8 +284,9 @@ export function mapV3ItemToStockRecCard(
 
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
-  const entryLabel = (item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null)
-    ?? (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
+  const entryReason = item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null;
+  const entryLabel = entryReason
+    || (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
