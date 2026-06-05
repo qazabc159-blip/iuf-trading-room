@@ -15,6 +15,16 @@ export type RealtimeFreshnessInput = {
 };
 
 function isTradingSessionEodFallback(quote: RealtimeFreshnessInput): boolean {
+  if (
+    quote.source === "twse_openapi_eod" &&
+    quote.state === "STALE" &&
+    quote.freshness === "stale" &&
+    quote.marketSession === undefined &&
+    quote.referenceReason === undefined
+  ) {
+    return true;
+  }
+
   return (
     quote.source === "twse_openapi_eod" &&
     quote.state === "STALE" &&
