@@ -18293,7 +18293,11 @@ async function _runAiRecV3Cron(opts: {
     const { runAiRecommendationV3 } = await import("./ai-recommendation-v2/orchestrator-v3.js");
     await runAiRecommendationV3({
       trigger: opts.trigger,
-      maxRounds: 10,
+      // Five technical checks are too brittle for a five-card product gate:
+      // one weak/C-bucket ticker makes the whole daily recommendation fail.
+      // Allow extra rounds so the rejection loop can fetch replacement
+      // candidates instead of ending with 4 actionable cards.
+      maxRounds: 15,
       costCapUsd: 2.0,
       runId: opts.runId,
       workspaceId: opts.workspaceId ?? null,

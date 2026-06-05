@@ -15221,6 +15221,17 @@ test("AI-REC-V3-CRON-3: AiRecTrigger type includes cron_daily and manual refresh
   );
 });
 
+test("AI-REC-V3-CRON-4: v3 refresh gives the rejection loop enough rounds to replace weak candidates", () => {
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  const cronFnIdx = serverSrc.indexOf("async function _runAiRecV3Cron");
+  assert.ok(cronFnIdx !== -1, "AI-REC-V3-CRON-4: shared v3 cron function must exist");
+  const cronFn = serverSrc.slice(cronFnIdx, cronFnIdx + 1200);
+  assert.ok(
+    cronFn.includes("maxRounds: 15"),
+    "AI-REC-V3-CRON-4: v3 cron/manual refresh must allow 15 rounds so five-card gate can replace one weak C-bucket ticker"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 // =============================================================================
