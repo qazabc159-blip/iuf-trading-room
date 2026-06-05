@@ -1521,6 +1521,37 @@ export function parseDirectBriefPayload(raw: string | null, sourcePack: SourcePa
   }
 }
 
+export function resolveDailyBriefModelKey(): string {
+  const configured = process.env["OPENAI_MODEL_BRIEF"]?.trim();
+  return configured && configured.length > 0 ? configured : "gpt-4o";
+}
+
+function isDailyBriefReasoningModel(modelKey: string): boolean {
+  return /^(gpt-5|o1|o3)/i.test(modelKey);
+}
+
+export function resolveDailyBriefLlmRuntimeOptions(modelKey = resolveDailyBriefModelKey()): {
+  maxTokens: number;
+  timeoutMs: number;
+  temperature?: number;
+} {
+  if (isDailyBriefReasoningModel(modelKey)) {
+    return {
+      // gpt-5.5 spends completion budget on hidden reasoning before visible text.
+      // Keep enough headroom and timeout so brief generation does not fall back
+      // to the rule-template dump path simply because reasoning took too long.
+      maxTokens: 12_000,
+      timeoutMs: 240_000,
+    };
+  }
+
+  return {
+    maxTokens: 2_500,
+    timeoutMs: 240_000,
+    temperature: 0.25,
+  };
+}
+
 async function generateDirectDailyBriefDraft(input: {
   workspaceId: string;
   sourcePack: SourcePack;
@@ -1573,6 +1604,8 @@ ${sourceContext}${liveSnapshotBlock}
 
 ${buildDailyBriefContractInstructions()}`;
 
+  const briefModelKey = resolveDailyBriefModelKey();
+  const briefRuntime = resolveDailyBriefLlmRuntimeOptions(briefModelKey);
   const raw = input.reason === "historical_backfill"
     ? null
     : (await callLlm(
@@ -1580,10 +1613,10 @@ ${buildDailyBriefContractInstructions()}`;
         {
           callerModule: "brief_writer",
           taskType: "generation",
-          modelKey: "gpt-4o",
-          maxTokens: 2_500,
-          temperature: 0.25,
-          timeoutMs: 45_000
+          modelKey: briefModelKey,
+          maxTokens: briefRuntime.maxTokens,
+          temperature: briefRuntime.temperature,
+          timeoutMs: briefRuntime.timeoutMs
         }
       ))?.content ?? null;
 
