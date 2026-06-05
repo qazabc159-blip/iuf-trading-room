@@ -7,43 +7,43 @@ import { featureStatusLabel, type MyEntitlements, type SubscriptionFeatureId } f
 type BrokerFeatureId = Extract<SubscriptionFeatureId, "trading_room_paper" | "kgi_read_only" | "kgi_sim">;
 
 const brokerFeatureIds: Array<{ id: BrokerFeatureId; label: string; note: string }> = [
-  { id: "trading_room_paper", label: "Paper 模擬交易室", note: "平台內紙上委託，不會送到券商。" },
-  { id: "kgi_read_only", label: "KGI Read-only", note: "讀取券商模擬/唯讀資訊，例如連線、庫存與資金狀態。" },
-  { id: "kgi_sim", label: "KGI SIM", note: "送出券商模擬委託，仍受平台風控與 SIM 模式限制。" },
+  { id: "trading_room_paper", label: "Paper 模擬交易", note: "平台模擬帳本，不會送到券商。" },
+  { id: "kgi_read_only", label: "KGI 唯讀", note: "讀取券商狀態、資金與部位，不送委託。" },
+  { id: "kgi_sim", label: "KGI SIM", note: "送到券商模擬環境，和正式下單完全分離。" },
 ];
 
 const modes = [
   {
     label: "Paper 模擬",
-    state: "正式可用",
+    state: "已開放",
     tone: "#34d399",
-    body: "平台內模擬帳本，可預覽與送出紙上委託。這不會讀取券商，也不會送任何委託到外部券商。",
+    body: "只寫入 IUF 平台模擬帳本，適合演練交易流程、檢查委託預覽與風控邏輯。",
   },
   {
-    label: "KGI Read-only",
-    state: "高級方案 + 憑證設定",
+    label: "KGI 唯讀",
+    state: "需憑證與連線",
     tone: "#fbbf24",
-    body: "用來讀取券商模擬或唯讀資料，例如連線狀態、庫存、資金與回報。它不提供下單能力。",
+    body: "讀取券商模擬或唯讀資訊，協助比對資金、部位與連線健康，不會下單。",
   },
   {
     label: "KGI SIM",
-    state: "高級方案 + SIM 憑證",
+    state: "需高級權限",
     tone: "#fbbf24",
-    body: "用來送出券商模擬委託。憑證只從安全環境讀取，頁面不顯示帳號、密碼或任何參數路徑。",
+    body: "使用安全憑證送到凱基模擬環境。此模式仍不是正式下單，所有結果需標示 SIM。",
   },
   {
     label: "Real Order",
-    state: "正式封鎖",
+    state: "停用",
     tone: "#f87171",
-    body: "正式實單目前停用。高級方案不會自動開啟實單，必須另有合規、風控與 Owner 核准流程。",
+    body: "正式下單目前維持鎖定。未完成授權、風控與驗收前，產品不提供真實委託入口。",
   },
 ];
 
 const secureRules = [
-  "本頁不收券商帳號、密碼、憑證路徑，也不把秘密值寫進瀏覽器、localStorage 或畫面文字。",
-  "KGI SIM 目前應使用安全環境中的模擬憑證；不要在聊天、截圖、PR 或前端表單貼出密碼。",
-  "券商憑證更新後，由後端 gateway / 安全環境讀取；前端只顯示連線與權限狀態。",
-  "Real Order 維持停用；任何正式下單能力都不能因訂閱方案或 UI 按鈕被誤開。",
+  "瀏覽器頁面不收集 KGI SIM 帳號或密碼。",
+  "KGI 憑證必須從安全環境讀取，例如 AWS SSM 或 Railway secret，不寫入 localStorage。",
+  "Paper、KGI SIM、Real Order 必須在 UI 和事件紀錄中清楚分開。",
+  "Real Order 保持停用，避免任何測試流程誤觸正式委託。",
 ];
 
 function brokerFeatureStatus(entitlements: MyEntitlements | null, id: BrokerFeatureId) {
@@ -65,20 +65,19 @@ export default async function BrokerSettingsPage() {
     >
       <div style={{ width: "100%", maxWidth: 1100, margin: "0 auto" }}>
         <header style={{ marginBottom: 28 }}>
-          <Link href="/settings/account" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
-            返回帳號設定
+          <Link href="/settings" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
+            返回設定中心
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18 }}>
             <Radio size={20} strokeWidth={1.8} style={{ color: "var(--accent, #c8943f)" }} />
             <div>
-              <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 800 }}>
-                BROKER CONNECTION
-              </div>
-              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>券商連線與安全模式</h1>
+              <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 900 }}>BROKER CONNECTION</div>
+              <h1 style={{ margin: "4px 0 0", fontSize: 24, letterSpacing: 0 }}>券商連線與交易模式</h1>
             </div>
           </div>
           <p style={{ maxWidth: 820, color: "var(--fg-3, #8a93a3)", lineHeight: 1.7, fontSize: 14 }}>
-            這裡只顯示券商功能的權限與安全狀態。憑證應放在受控安全環境，由後端讀取；前端不收、不存、不顯示任何密碼或參數路徑。
+            這裡只顯示連線能力與安全邊界。憑證不在網頁輸入；KGI SIM 需要安全環境提供憑證，
+            Real Order 在產品內維持鎖定。
           </p>
         </header>
 
@@ -92,7 +91,7 @@ export default async function BrokerSettingsPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399" }} />
-            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號的券商權限</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>目前帳號可用能力</h2>
           </div>
           {entitlements ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
@@ -111,22 +110,22 @@ export default async function BrokerSettingsPage() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                       <b>{feature.label}</b>
                       <span style={{ color: access ? "#34d399" : "#fbbf24", fontSize: 12, fontWeight: 900 }}>
-                        {status ? featureStatusLabel(status.status) : "未包含"}
+                        {status ? featureStatusLabel(status.status) : "未回傳"}
                       </span>
                     </div>
                     <p style={{ margin: "8px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 12, lineHeight: 1.55 }}>
-                      {feature.note} {status?.reason ?? "權限資料尚未回傳。"}
+                      {feature.note} {status?.reason ?? "尚未取得權限狀態。"}
                     </p>
                   </div>
                 );
               })}
               <p style={{ gridColumn: "1 / -1", margin: "4px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                目前方案：{entitlements.subscription.tierName}。KGI read-only / SIM 即使在高級方案，也仍需要憑證設定與後端 gateway 正常連線。
+                目前方案：{entitlements.subscription.tierName}。KGI 唯讀 / SIM 仍需要憑證、連線與風控檢查通過。
               </p>
             </div>
           ) : (
             <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
-              目前無法讀取帳號權限 API；為安全起見，KGI read-only 與 SIM 會視為尚未開通。
+              暫時無法讀取權限 API；交易室仍會以 Paper 與安全停用狀態呈現。
             </p>
           )}
         </section>
@@ -157,7 +156,7 @@ export default async function BrokerSettingsPage() {
                     background: `${mode.tone}14`,
                     padding: "3px 7px",
                     fontSize: 11,
-                    fontWeight: 800,
+                    fontWeight: 900,
                   }}
                 >
                   {mode.state}
@@ -180,7 +179,7 @@ export default async function BrokerSettingsPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
             <LockKeyhole size={18} strokeWidth={1.8} style={{ color: "#f87171" }} />
-            <h2 style={{ margin: 0, fontSize: 16 }}>憑證安全規則</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>憑證與下單安全</h2>
           </div>
           <div style={{ display: "grid", gap: 9 }}>
             {secureRules.map((rule) => (
@@ -204,18 +203,18 @@ export default async function BrokerSettingsPage() {
           <div style={{ display: "flex", gap: 10 }}>
             <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>方案決定能不能看到券商功能</b>
+              <b>客戶頁不要求貼券商密碼</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                入門與中級不開 KGI SIM；高級才會顯示券商 SIM/read-only 能力，但仍要完成安全設定。
+                如果需要更新 KGI SIM 憑證，應透過安全環境與後端服務處理，不透過一般網頁表單。
               </p>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <WalletCards size={18} strokeWidth={1.8} style={{ color: "var(--accent, #c8943f)", flexShrink: 0, marginTop: 2 }} />
             <div>
-              <b>連線狀態由後端與安全環境決定</b>
+              <b>訂閱方案決定可用模式</b>
               <p style={{ margin: "6px 0 0", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
-                這頁只讀取權限與安全模式；實際 gateway、quote、trade 連線狀態由後端 API 回報，不由前端假裝成功。
+                入門、中級、高級會逐步開放 AI、Paper、策略觀察、KGI 唯讀與 KGI SIM。正式下單仍不開放。
               </p>
             </div>
           </div>
