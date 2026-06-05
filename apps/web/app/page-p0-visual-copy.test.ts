@@ -26,4 +26,14 @@ describe("homepage P0 visual product copy", () => {
     expect(source).toContain("function polishedBriefText");
     expect(source).toContain("AI 簡報只整理盤勢、題材與公司觀察");
   });
+
+  it("surfaces real AI recommendations on the customer homepage instead of hiding them behind debug pages", () => {
+    expect(source).toContain("getRecommendationsToday");
+    expect(source).toContain("function AiRecommendationActionPanel");
+    expect(source).toContain("今日 AI 推薦行動板");
+    expect(source).toContain("data-testid=\"homepage-ai-recommendations\"");
+    expect(source).toContain("GET /api/v1/recommendations/today");
+    expect(source).toContain("recommendationTradeHref");
+    expect(source).toContain("進交易室");
+  });
 });
