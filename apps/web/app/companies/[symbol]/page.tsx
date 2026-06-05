@@ -535,7 +535,12 @@ export default async function CompanyDetailPage({
         </div>
         <div className="company-data-status-rail">
           <DerivativesPanel />
-          <TickStreamPanel />
+          <TickStreamPanel
+            symbol={company.ticker}
+            kbarRows={kbarView?.rows ?? []}
+            kbarState={kbarState}
+            kbarReason={kbarReason}
+          />
         </div>
       </div>
 
