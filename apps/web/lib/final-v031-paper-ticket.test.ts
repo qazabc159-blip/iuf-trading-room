@@ -201,12 +201,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiOhlcvSource).toContain("const MAX_DAILY_BARS_QUERY_LIMIT = 2500");
     expect(apiOhlcvSource).toContain("const DEFAULT_DAILY_BACKFILL_DAYS = 3650");
     expect(apiOhlcvSource).toContain("function isLongDailyWindow");
+    expect(apiOhlcvSource).toContain("function isOfficialTaiwanOhlcvRequest");
+    expect(apiOhlcvSource).toContain("function needsOwnedDepthBackfill");
     expect(apiOhlcvSource).toContain("function getFinMindDailyBarsForRequest");
     expect(apiOhlcvSource).toContain("finMindDailyChunks(startDate, endDate)");
     expect(apiOhlcvSource).toContain("hasEnoughDailyDepthForRequest(finmindBars, params)");
     expect(apiOhlcvSource).toContain("if (shouldTryFinMind) return []");
-    expect(apiOhlcvSource).toContain("cachedNeedsFinMindBackfill");
-    expect(apiOhlcvSource).toContain("!cachedNeedsFinMindBackfill");
+    expect(apiOhlcvSource).toContain("cachedNeedsOwnedBackfill");
+    expect(apiOhlcvSource).toContain("!cachedNeedsOwnedBackfill");
     expect(apiOhlcvSource).toContain("function persistFinMindDailyBarsSoon");
     expect(apiOhlcvSource).toContain("persistFinMindDailyBarsSoon(companyId, session.workspace.id, finmindBars)");
     expect(apiOhlcvSource).toContain(".onConflictDoUpdate");
@@ -219,6 +221,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(tradingRoomKlineFrameSource).toContain("from.setFullYear(from.getFullYear() - 10)");
     expect(tradingRoomKlineFrameSource).toContain("getCompanyKBar(company.id, requestedKbarDate, { days: 20 })");
     expect(companyPageSource).toContain("from.setFullYear(from.getFullYear() - 10)");
+  });
+
+  it("refuses shallow cached weekly/monthly K-lines even when FinMind token state changes", () => {
+    expect(apiOhlcvSource).toContain("needsOwnedDepthBackfill(cached, params, interval)");
+    expect(apiOhlcvSource).toContain("isDerivedInterval(interval) && isOfficialTaiwanOhlcvRequest(params, interval)");
+    expect(apiOhlcvSource).not.toContain("isDerivedInterval(interval) && shouldTryFinMind");
+    expect(apiOhlcvSource).toContain("deriveOfficialBarsFromDaily(companyId, session.workspace.id, params, interval)");
+    expect(apiOhlcvSource).toContain("interval === \"1d\" &&\n          isOfficialTaiwanOhlcvRequest(params, interval)");
   });
 
   it("keeps owner OHLCV backfill able to target product-visible symbols", () => {

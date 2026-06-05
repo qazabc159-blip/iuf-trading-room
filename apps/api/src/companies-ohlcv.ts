@@ -73,6 +73,22 @@ function canTryFinMindForInterval(params: OhlcvQueryParams, interval: string): b
   );
 }
 
+function isOfficialTaiwanOhlcvRequest(params: OhlcvQueryParams, interval: string): boolean {
+  return (
+    (interval === "1d" || interval === "1w" || interval === "1m") &&
+    Boolean(params.ticker) &&
+    TAIWAN_TICKER_PATTERN.test(params.ticker ?? "")
+  );
+}
+
+function needsOwnedDepthBackfill(
+  bars: OhlcvBar[] | null,
+  params: OhlcvQueryParams,
+  interval: string
+): boolean {
+  return Boolean(bars) && isOfficialTaiwanOhlcvRequest(params, interval) && !hasEnoughDepthForInterval(bars!, params, interval);
+}
+
 function allBarsAreMock(bars: OhlcvBar[]): boolean {
   return bars.length > 0 && bars.every((bar) => bar.source === "mock");
 }
@@ -494,11 +510,8 @@ export async function getCompanyOhlcv(
   // Try cache first
   const cached = await getCachedOhlcv(cacheKey);
   const shouldTryFinMind = canTryFinMindForInterval(params, interval);
-  const cachedNeedsFinMindBackfill =
-    Boolean(cached) &&
-    shouldTryFinMind &&
-    !hasEnoughDepthForInterval(cached!, params, interval);
-  if (cached && !cachedNeedsFinMindBackfill && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
+  const cachedNeedsOwnedBackfill = needsOwnedDepthBackfill(cached, params, interval);
+  if (cached && !cachedNeedsOwnedBackfill && (!allBarsAreMock(cached) || !shouldTryFinMind)) {
     return cached;
   }
 
@@ -517,7 +530,7 @@ export async function getCompanyOhlcv(
         // Real rows (source=tej or kgi) are served normally.
         const allMock = allBarsAreMock(bars);
 
-        if (isDerivedInterval(interval) && shouldTryFinMind) {
+        if (isDerivedInterval(interval) && isOfficialTaiwanOhlcvRequest(params, interval)) {
           if (!allMock && hasEnoughDepthForInterval(bars, params, interval)) {
             await setCachedOhlcv(cacheKey, bars);
             return bars;
@@ -559,7 +572,7 @@ export async function getCompanyOhlcv(
 
         const incompleteRealDaily =
           interval === "1d" &&
-          shouldTryFinMind &&
+          isOfficialTaiwanOhlcvRequest(params, interval) &&
           bars.length < MIN_DAILY_BARS_BEFORE_FINMIND_BACKFILL;
 
         if (!allMock) {
@@ -580,7 +593,7 @@ export async function getCompanyOhlcv(
 
   // FinMind fallback: when DB returned 0 rows, ticker looks like Taiwan, token set.
   // Weekly/monthly are derived from official daily bars instead of mock.
-  if (isDerivedInterval(interval) && shouldTryFinMind) {
+  if (isDerivedInterval(interval) && isOfficialTaiwanOhlcvRequest(params, interval)) {
     try {
       const derivedBars = await deriveOfficialBarsFromDaily(companyId, session.workspace.id, params, interval);
       if (hasEnoughDepthForInterval(derivedBars, params, interval)) {
