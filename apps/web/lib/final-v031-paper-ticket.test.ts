@@ -22,10 +22,16 @@ describe("final-v031 paper ticket price gate", () => {
   it("renders company KGI quote panels as closed during off-hours instead of product-broken blocked", () => {
     expect(companyBidAskPanelSource).toContain('| { status: "closed"; reason: string }');
     expect(companyTickStreamPanelSource).toContain('| { status: "closed"; reason: string }');
+    expect(companyBidAskPanelSource).toContain('| { status: "waiting"; reason: string }');
+    expect(companyTickStreamPanelSource).toContain('| { status: "waiting"; reason: string }');
     expect(companyBidAskPanelSource).toContain('setState({ status: "closed", reason: offHoursReason() })');
     expect(companyTickStreamPanelSource).toContain('setState({ status: "closed", reason: offHoursReason() })');
+    expect(companyBidAskPanelSource).toContain('setState({ status: "waiting", reason: "KGI 唯讀五檔目前尚未回傳有效委買委賣');
+    expect(companyTickStreamPanelSource).toContain('setState({ status: "waiting", reason: "KGI 唯讀逐筆目前尚未回傳有效成交明細');
     expect(companyBidAskPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
     expect(companyTickStreamPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
+    expect(companyBidAskPanelSource).toContain('<span className="badge badge-yellow">待回傳</span>');
+    expect(companyTickStreamPanelSource).toContain('<span className="badge badge-yellow">待回傳</span>');
     expect(companyBidAskPanelSource).toContain("這不是系統故障");
     expect(companyTickStreamPanelSource).toContain("這不是系統故障");
   });

@@ -53,3 +53,7 @@ Observed production state:
 
 - AI Analyst report should be regenerated/quality-gated when source data is available; empty report state is honest but not a finished premium experience.
 - KGI bid/ask and tick panels can only show live data during quote windows. A later PR should add a non-fake "last official quote snapshot" compact card for after-hours context if the product wants less empty space.
+
+## Follow-up: KGI Window Empty Return
+
+After PR #987 deployed, production still showed red `BLOCKED` when the page was inside the KGI quote polling window but KGI returned no bid/ask or tick rows yet. This is not the same as gateway/auth failure. The follow-up patch adds a yellow `待回傳` state for "valid polling window, no formal KGI rows returned yet" and keeps red `BLOCKED` only for real gateway/auth/read errors.

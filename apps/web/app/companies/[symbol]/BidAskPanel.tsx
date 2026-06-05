@@ -9,6 +9,7 @@ const POLL_MS = 30_000;
 type BidAskState =
   | { status: "loading" }
   | { status: "closed"; reason: string }
+  | { status: "waiting"; reason: string }
   | { status: "blocked"; reason: string }
   | { status: "live"; data: KgiBidAskData; updatedAt: string };
 
@@ -96,7 +97,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
     try {
       const data = await getKgiBidAsk(symbol);
       if (!data) {
-        setState({ status: "blocked", reason: "KGI 唯讀五檔資料暫時無回傳；不顯示假委買委賣。" });
+        setState({ status: "waiting", reason: "KGI 唯讀五檔目前尚未回傳有效委買委賣；系統會持續輪詢，不使用假五檔補畫。" });
         return;
       }
       setState({ status: "live", data, updatedAt: new Date().toLocaleTimeString("zh-TW", { hour12: false }) });
@@ -140,6 +141,14 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀五檔</span>
           <span className="state-reason">{state.reason} 這不是系統故障；正式五檔只在盤中顯示，不使用假委買委賣補畫。</span>
+        </div>
+      )}
+
+      {state.status === "waiting" && (
+        <div className="state-panel">
+          <span className="badge badge-yellow">待回傳</span>
+          <span className="tg soft">資料源：KGI 唯讀五檔</span>
+          <span className="state-reason">{state.reason} 這不是系統故障；只要 KGI 回傳正式五檔就會自動切回 LIVE。</span>
         </div>
       )}
 
