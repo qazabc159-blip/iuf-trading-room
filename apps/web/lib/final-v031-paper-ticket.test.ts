@@ -233,7 +233,7 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiOhlcvSource).toContain("isDerivedInterval(interval) && isOfficialTaiwanOhlcvRequest(params, interval)");
     expect(apiOhlcvSource).not.toContain("isDerivedInterval(interval) && shouldTryFinMind");
     expect(apiOhlcvSource).toContain("deriveOfficialBarsFromDaily(companyId, session.workspace.id, params, interval)");
-    expect(apiOhlcvSource).toContain("interval === \"1d\" &&\n          isOfficialTaiwanOhlcvRequest(params, interval)");
+    expect(apiOhlcvSource).toMatch(/interval === "1d" &&\s+isOfficialTaiwanOhlcvRequest\(params, interval\)/);
   });
 
   it("keeps owner OHLCV backfill able to target product-visible symbols", () => {
@@ -269,11 +269,14 @@ describe("final-v031 paper ticket price gate", () => {
     expect(klineChartSource).not.toContain("|| insufficientTrend) return");
     expect(klineChartSource).toContain("data-testid=\"kline-backfill-warning\"");
     expect(klineChartSource).toContain("renderInsufficientAsCard && insufficientTrend");
+    expect(klineChartSource).toContain("tradingRoomSparseDerivedInterval");
+    expect(klineChartSource).toContain("const renderInsufficientAsCard = tradingRoomDailyDepthShort || tradingRoomSparseDerivedInterval");
     expect(klineChartSource).toContain('compactTradingRoom &&');
     expect(klineChartSource).toContain('interval !== "1d"');
     expect(klineChartSource).toContain("chartBars.length < MIN_TREND_BARS");
     expect(klineChartSource).toContain('setInterval("1d")');
     expect(klineChartSource).toContain('setRange("all")');
+    expect(klineChartSource).not.toContain("chartBars.length < MIN_TREND_BARS &&\n      effectiveBars.length >= MIN_TREND_BARS");
   });
 
   it("does not reload the real K-line frame twice when selecting a watchlist row", () => {
@@ -329,6 +332,7 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("DEFAULT_TRADING_ROOM_WATCHLIST");
     expect(liveHydration).toContain('symbol:"1514", name:"亞力"');
     expect(liveHydration).toContain('symbol:"2066", name:"世德"');
+    expect(liveHydration).not.toMatch(/[�-]/u);
     expect(liveHydration).toContain(".concat(defaultWatchlist)");
     expect(liveHydration).toContain("sameSym(other.symbol, item.symbol)");
     expect(liveHydration).toContain('if (typeof window.pickRow === "function")');

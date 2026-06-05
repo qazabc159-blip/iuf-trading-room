@@ -1188,6 +1188,11 @@ export function OhlcvCandlestickChart({
     && !isIntraday
     && chartBars.length > 0
     && effectiveOfficialBars < TRADING_ROOM_PRODUCT_DAILY_BARS;
+  const tradingRoomSparseDerivedInterval = compactTradingRoom
+    && !isIntraday
+    && interval !== "1d"
+    && chartBars.length > 0
+    && chartBars.length < MIN_TREND_BARS;
   const insufficientTrend = !isIntraday
     && chartBars.length > 0
     && (chartBars.length < MIN_TREND_BARS || tradingRoomDailyDepthShort);
@@ -1204,8 +1209,7 @@ export function OhlcvCandlestickChart({
       !isIntraday &&
       interval !== "1d" &&
       chartBars.length > 0 &&
-      chartBars.length < MIN_TREND_BARS &&
-      effectiveBars.length >= MIN_TREND_BARS
+      chartBars.length < MIN_TREND_BARS
     ) {
       setInterval("1d");
       setRange("all");
@@ -1618,7 +1622,7 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
-  const renderInsufficientAsCard = tradingRoomDailyDepthShort;
+  const renderInsufficientAsCard = tradingRoomDailyDepthShort || tradingRoomSparseDerivedInterval;
   const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS;
   const compactIndicatorSignals = indicatorSignals.filter((signal) => {
     if (signal.key === "ma20" || signal.key === "ma60") return indicators.ma;
