@@ -16379,6 +16379,32 @@ test("JSON-SYNTHESIS-5: synthesizeReportV3 uses strict structured JSON synthesis
   );
 });
 
+test("COMPANY-TICK-PANEL-1: company成交明細 must render real tick or FinMind KBar aggregate data, not a static blocked shell", () => {
+  const panelSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/TickStreamPanel.tsx"), "utf8");
+  const pageSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/page.tsx"), "utf8");
+
+  assert.ok(
+    panelSrc.includes("getKgiTicks(symbol, MAX_TICKS)"),
+    "COMPANY-TICK-PANEL-1: TickStreamPanel must attempt the real KGI tick endpoint for the selected symbol"
+  );
+  assert.ok(
+    panelSrc.includes("FinMind 分K成交摘要"),
+    "COMPANY-TICK-PANEL-1: TickStreamPanel must fall back to labeled FinMind KBar aggregate data instead of staying blank"
+  );
+  assert.ok(
+    panelSrc.includes("這不是逐筆 tick，不混充"),
+    "COMPANY-TICK-PANEL-1: FinMind aggregate fallback must be honest and not pretend to be raw ticks"
+  );
+  assert.ok(
+    pageSrc.includes("kbarRows={kbarView?.rows ?? []}"),
+    "COMPANY-TICK-PANEL-1: company page must pass fetched FinMind KBar rows into the tick panel"
+  );
+  assert.ok(
+    pageSrc.includes("symbol={company.ticker}"),
+    "COMPANY-TICK-PANEL-1: company page must bind the current ticker to the tick panel"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
