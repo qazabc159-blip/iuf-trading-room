@@ -16426,6 +16426,28 @@ test("COMPANY-TICK-PANEL-1: company成交明細 must render real tick or FinMind
   );
 });
 
+test("COMPANIES-REGISTRY-1: companies page labels and fallback must be product-readable", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/web/app/companies/page.tsx"), "utf8");
+
+  for (const label of ["公司板", "公司搜尋", "主題雷達", "產業鏈", "公司圖譜", "公司主檔", "降級可用"]) {
+    assert.ok(src.includes(label), `COMPANIES-REGISTRY-1: companies page must include readable label ${label}`);
+  }
+
+  assert.ok(
+    src.includes("getCompaniesLite({ limit: 2500 })") && src.includes("getCompanies()"),
+    "COMPANIES-REGISTRY-1: companies registry must use full company master as a real fallback when lite registry fails"
+  );
+  assert.ok(
+    src.includes("完整公司主檔備援") && src.includes("Lite 主檔暫時不可用"),
+    "COMPANIES-REGISTRY-1: fallback state must be visible and honest"
+  );
+
+  const forbiddenFragments = ["?砍", "甇?", "銝", "蝮賢", "鞈", "瑼", "�"];
+  for (const fragment of forbiddenFragments) {
+    assert.ok(!src.includes(fragment), `COMPANIES-REGISTRY-1: companies page still contains mojibake fragment ${fragment}`);
+  }
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
