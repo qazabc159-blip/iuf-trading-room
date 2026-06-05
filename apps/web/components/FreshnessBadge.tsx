@@ -15,7 +15,7 @@
 
 "use client";
 
-import type { FreshnessMode } from "@/lib/quote-store";
+import { realtimeFreshnessMode, type FreshnessMode } from "@/lib/realtime-freshness";
 
 const BADGE_CSS = `
 @keyframes _fb-pulse {
@@ -181,35 +181,26 @@ export function FreshnessBadgeFromState({
   source,
   freshness,
   updatedAt,
+  marketSession,
+  referenceReason,
   compact,
 }: {
   state?: string;
   source?: string;
   freshness?: string;
   updatedAt?: string;
+  marketSession?: string;
+  referenceReason?: string;
   compact?: boolean;
 }) {
-  // 對應邏輯（mirror computeFreshnessMode）
-  let mode: FreshnessMode = "eod";
-
-  if (source === "twse_openapi_eod") {
-    mode = "eod";
-  } else if (state === "BLOCKED" || state === "NO_DATA") {
-    mode = "eod";
-  } else if (source === "twse_intraday") {
-    mode = "intraday";
-  } else if (source === "kgi-gateway") {
-    const ageMs = updatedAt ? Date.now() - Date.parse(updatedAt) : -1;
-    if (freshness === "fresh" && ageMs >= 0 && ageMs <= 2000) {
-      mode = "live";
-    } else {
-      mode = "stale";
-    }
-  } else if (state === "LIVE") {
-    mode = "live";
-  } else if (state === "STALE") {
-    mode = "stale";
-  }
+  const mode: FreshnessMode = realtimeFreshnessMode({
+    state,
+    source,
+    freshness,
+    updatedAt,
+    marketSession,
+    referenceReason,
+  });
 
   const ageMs = updatedAt ? Date.now() - Date.parse(updatedAt) : undefined;
 

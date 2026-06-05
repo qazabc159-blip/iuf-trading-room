@@ -30,6 +30,7 @@ import {
 } from "react";
 import { getCompanyQuoteRealtime } from "@/lib/api";
 import type { CompanyRealtimeQuote } from "@/lib/api";
+import { realtimeFreshnessMode, type FreshnessMode } from "@/lib/realtime-freshness";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ import type { CompanyRealtimeQuote } from "@/lib/api";
  * canonical freshness_mode — 這是給 UI 消費的 4 個狀態。
  * 來自後端 state + source + freshness 欄位的對應。
  */
-export type FreshnessMode = "live" | "intraday" | "stale" | "eod";
+export type { FreshnessMode };
 
 /**
  * QuoteEntry — store 內每個 symbol 的報價快照
@@ -77,26 +78,7 @@ export function computeFreshnessMode(
   quote: CompanyRealtimeQuote,
   nowMs: number,
 ): FreshnessMode {
-  // EOD 來源
-  if (quote.source === "twse_openapi_eod") return "eod";
-
-  // 資料不可用
-  if (quote.state === "BLOCKED" || quote.state === "NO_DATA") return "eod";
-
-  // TWSE MIS 盤中
-  if (quote.source === "twse_intraday") return "intraday";
-
-  // KGI 即時 — 必須驗 age
-  if (quote.source === "kgi-gateway") {
-    const ageMs = nowMs - Date.parse(quote.updatedAt);
-    if (quote.freshness === "fresh" && ageMs <= 2000) return "live";
-    // age > 2s 一律 stale（秒級系統最重要的 UX/風控界線）
-    return "stale";
-  }
-
-  // 其他（防禦）
-  if (quote.lastPrice !== null) return "stale";
-  return "eod";
+  return realtimeFreshnessMode(quote, nowMs);
 }
 
 export function computeFreshness_ms(quote: CompanyRealtimeQuote, nowMs: number): number {
