@@ -8,6 +8,7 @@ const POLL_MS = 30_000;
 
 type BidAskState =
   | { status: "loading" }
+  | { status: "closed"; reason: string }
   | { status: "blocked"; reason: string }
   | { status: "live"; data: KgiBidAskData; updatedAt: string };
 
@@ -81,7 +82,7 @@ function blockedReason(error: unknown) {
 }
 
 function offHoursReason() {
-  return `KGI 唯讀五檔目前在排程外，不讀即時五檔、也不補假委買委賣。下一次讀取窗口：${kgiNextOpenLabel()}。`;
+  return `目前為盤外/休市時段，KGI 唯讀五檔不會回傳即時委買委賣；下一次讀取窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function BidAskPanel({ symbol }: { symbol: string }) {
@@ -89,7 +90,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
 
   const fetchData = useCallback(async () => {
     if (!isKgiTradingHours()) {
-      setState({ status: "blocked", reason: offHoursReason() });
+      setState({ status: "closed", reason: offHoursReason() });
       return;
     }
     try {
@@ -133,6 +134,14 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
           <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中</span>
         )}
       </h3>
+
+      {state.status === "closed" && (
+        <div className="state-panel">
+          <span className="badge badge-yellow">休市</span>
+          <span className="tg soft">資料源：KGI 唯讀五檔</span>
+          <span className="state-reason">{state.reason} 這不是系統故障；正式五檔只在盤中顯示，不使用假委買委賣補畫。</span>
+        </div>
+      )}
 
       {state.status === "blocked" && (
         <div className="state-panel">

@@ -10,6 +10,8 @@ const klineChartSource = readFileSync(new URL("../app/companies/[symbol]/OhlcvCa
 const tradingRoomKlineFrameSource = readFileSync(new URL("../app/final-v031/portfolio/kline-frame/page.tsx", import.meta.url), "utf8");
 const companyPageSource = readFileSync(new URL("../app/companies/[symbol]/page.tsx", import.meta.url), "utf8");
 const companiesRegistryPageSource = readFileSync(new URL("../app/companies/page.tsx", import.meta.url), "utf8");
+const companyBidAskPanelSource = readFileSync(new URL("../app/companies/[symbol]/BidAskPanel.tsx", import.meta.url), "utf8");
+const companyTickStreamPanelSource = readFileSync(new URL("../app/companies/[symbol]/LiveTickStreamPanel.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const apiClientSource = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
@@ -17,6 +19,17 @@ const apiServerSource = readFileSync(new URL("../../api/src/server.ts", import.m
 const homePageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
+  it("renders company KGI quote panels as closed during off-hours instead of product-broken blocked", () => {
+    expect(companyBidAskPanelSource).toContain('| { status: "closed"; reason: string }');
+    expect(companyTickStreamPanelSource).toContain('| { status: "closed"; reason: string }');
+    expect(companyBidAskPanelSource).toContain('setState({ status: "closed", reason: offHoursReason() })');
+    expect(companyTickStreamPanelSource).toContain('setState({ status: "closed", reason: offHoursReason() })');
+    expect(companyBidAskPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
+    expect(companyTickStreamPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
+    expect(companyBidAskPanelSource).toContain("這不是系統故障");
+    expect(companyTickStreamPanelSource).toContain("這不是系統故障");
+  });
+
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
     expect(ticketHtml).toContain("const validTicket=validQty&&validPrice");
     expect(ticketHtml).toContain("submitBtn.disabled=true");

@@ -9,6 +9,7 @@ const MAX_TICKS = 20;
 
 type TickStreamState =
   | { status: "loading" }
+  | { status: "closed"; reason: string }
   | { status: "blocked"; reason: string }
   | { status: "live"; ticks: KgiTickEntry[]; updatedAt: string };
 
@@ -103,7 +104,7 @@ function blockedReason(error: unknown) {
 }
 
 function offHoursReason() {
-  return `KGI 唯讀逐筆目前在排程外，不讀即時逐筆、也不補假成交明細。下一次讀取窗口：${kgiNextOpenLabel()}。`;
+  return `目前為盤外/休市時段，KGI 唯讀逐筆不會回傳即時成交明細；下一次讀取窗口：${kgiNextOpenLabel()}。`;
 }
 
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
@@ -111,7 +112,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
 
   const fetchData = useCallback(async () => {
     if (!isKgiTradingHours()) {
-      setState({ status: "blocked", reason: offHoursReason() });
+      setState({ status: "closed", reason: offHoursReason() });
       return;
     }
     try {
@@ -148,6 +149,14 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         )}
         <span className="dim" style={{ fontSize: 9.5, marginLeft: 8 }}>最近 {MAX_TICKS} 筆 / 5s 更新</span>
       </h3>
+
+      {state.status === "closed" && (
+        <div className="state-panel">
+          <span className="badge badge-yellow">休市</span>
+          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
+          <span className="state-reason">{state.reason} 這不是系統故障；正式逐筆只在盤中顯示，不使用假成交明細補畫。</span>
+        </div>
+      )}
 
       {state.status === "blocked" && (
         <div className="state-panel">
