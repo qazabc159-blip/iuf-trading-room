@@ -49,7 +49,7 @@ export function FinalOnlyFrame({ src, title }: FinalOnlyFrameProps) {
         }
 
         body.app-root:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) {
-          display: block !important;
+          display: flex !important;
           min-height: 0 !important;
           background: #080b10 !important;
         }
