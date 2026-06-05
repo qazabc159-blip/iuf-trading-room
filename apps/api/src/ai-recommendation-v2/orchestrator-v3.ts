@@ -37,6 +37,11 @@ import {
 
 const DEFAULT_AI_REC_MODEL = "gpt-4o-mini";
 const DEFAULT_AI_REC_FALLBACK_MODEL = "gpt-4o";
+const AI_REC_FALLBACK_COMPLETION_TOKEN_CAPS: Array<[RegExp, number]> = [
+  [/^gpt-4o(?:$|-)/i, 16000],
+  [/^gpt-4\.1(?:$|-)/i, 32000],
+  [/^gpt-4(?:$|-)/i, 8000],
+];
 
 type AiRecLlmMessage = { role: "system" | "user" | "assistant"; content: string };
 type AiRecLlmOptions = {
@@ -74,6 +79,15 @@ export function resolveAiRecFallbackModel(primaryModel: string): string | null {
   return fallback;
 }
 
+export function capAiRecFallbackMaxTokensForModel(
+  modelKey: string,
+  requestedMaxTokens: number | undefined
+): number | undefined {
+  if (requestedMaxTokens === undefined) return undefined;
+  const cap = AI_REC_FALLBACK_COMPLETION_TOKEN_CAPS.find(([pattern]) => pattern.test(modelKey))?.[1];
+  return cap === undefined ? requestedMaxTokens : Math.min(requestedMaxTokens, cap);
+}
+
 async function callAiRecLlmWithFallback(
   messages: AiRecLlmMessage[],
   opts: AiRecLlmOptions
@@ -89,9 +103,16 @@ async function callAiRecLlmWithFallback(
   console.warn(
     `[v3-orchestrator] model ${primary} returned no content for ${opts.taskType}; retrying with fallback ${fallback}`
   );
+  const fallbackMaxTokens = capAiRecFallbackMaxTokensForModel(fallback, opts.maxTokens);
+  if (fallbackMaxTokens !== opts.maxTokens) {
+    console.warn(
+      `[v3-orchestrator] capped fallback ${fallback} maxTokens from ${opts.maxTokens} to ${fallbackMaxTokens} for ${opts.taskType}`
+    );
+  }
   const retry = await callLlm(messages, {
     ...opts,
     modelKey: fallback,
+    maxTokens: fallbackMaxTokens,
     taskType: `${opts.taskType}_model_fallback`,
   });
   return retry ? { ...retry, modelKey: fallback, usedModelFallback: true } : null;
