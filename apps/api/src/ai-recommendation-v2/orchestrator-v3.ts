@@ -604,7 +604,7 @@ ${riskOffContext}
 // Product policy: reports/spec/ai_recommendation_theme_penetration_sop_v1.md
 
 function buildV3SynthesisPrompt(traceText: string, dateStr: string, programmaticRiskOffScore: number): string {
-  return `你是 IUF 台股操盤師 AI，請根據以下 ReAct 分析過程，輸出符合楊董 SOP 的個股推薦報告（${dateStr}）。
+  return `你是 IUF 台股操盤師 AI。根據以下 ReAct 分析過程，輸出符合楊董 SOP 的深度個股推薦報告（${dateStr}）。
 
 === HARD GATE ===
 system_programmatic_risk_off_score = ${programmaticRiskOffScore}/6
@@ -613,7 +613,31 @@ ${programmaticRiskOffScore >= 3
   : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動卡片；C「高風險排除」只能放在排除名單，不可拿來湊推薦數。`}
 === END HARD GATE ===
 
-## 分析過程
+=== 深度分析要求（CRITICAL — 違反視同輸出失敗）===
+【每檔股票必須具備「該股專屬」的 thesis — 嚴禁套版】
+
+A. 「為什麼買」欄位每一點都必須引用 trace 中該股的具體數據：
+   - 法人買賣：「外資連續 X 日買超 Y 張，佔流通籌碼 Z%」（取自 get_institutional_flow 或 trace）
+   - 技術結構：「收盤 XXX，突破月線 YYY，量 Z 萬張為近 20 日均量 A 倍」（取自 get_company_technical）
+   - 新聞/題材：「news trace 顯示 [具體新聞標題/事件]，為近期催化劑」（取自 get_news_top10 或 trace 中該股新聞）
+   - 可辨別的數字就填數字；trace 中沒有對應數字就說「依 trace 法人面偏多」而不是捏造數字
+
+B. 「為什麼買」絕對禁止的套版句（會被自動檢測為 FAIL）：
+   ❌ 「技術面良好」/ 「指標偏多」/ 「籌碼面穩定」/ 「市場認可」
+   ❌ 「在台股當前環境下具有相對優勢」（無差異化，每股都能用）
+   ❌ 把另一檔股票的新聞/法人數字直接搬來用（跨股複製）
+   ✅ 正確示例：「外資連 3 日買超共 1.2 萬張 + 月線多頭排列 + AI 伺服器族群題材帶動需求端」
+   ✅ 正確示例：「trace 顯示法人面無明顯買賣超，但技術結構 trace 顯示 W 底形成、突破頸線 XX 後量縮回測」
+
+C. 「一句話理由」必須包含：[具體數字或事件] + [當下時機性]
+   ❌ 「具備長線投資價值」/ 「短期動能強勁」— 不具體，每股都能用
+   ✅ 「法人連 5 日買超 + 本週 AI 概念股輪動，技術面頸線 XXX 突破，上行阻力 YYY」
+
+D. 跨股禁令：每支股票的理由必須互不相同。若 trace 顯示數檔股票都在同一族群，
+   理由仍要區分各自的「本週新聞催化劑」或「具體技術位置」，不允許理由字字相同。
+=== END 深度分析要求 ===
+
+## 分析過程（以下為 ReAct trace，包含真實市場工具回傳數據）
 ${traceText}
 
 ---
@@ -631,24 +655,24 @@ ${traceText}
 - 技術結構分: [0-20]
 - 估值事件分: [0-5]
 - 進場區: [低-高，例如 870-890]
-- 進場理由: [OTE 0.618-0.705 / 突破後回測不破 / 其他]
+- 進場理由: [OTE 0.618-0.705 / 突破後回測不破 / 具體技術事件]
 - TP1: [具體價格]
-- TP1理由: [前波高/整數關等]
+- TP1理由: [前波高/整數關/具體技術位]
 - TP2: [具體價格]
-- TP2理由: [月線上緣/年線等]
+- TP2理由: [月線上緣/年線/具體技術位]
 - 停損: [具體價格]
 - ATR倍數: [0.5]
 - R值: [計算值]
 - 信心: [0.0-1.0]
-- 為什麼買: [具體bull thesis，至少2點，以分號分隔]
-- 一句話理由: [≤80字白話中文，說明為什麼現在可以買這支，給操盤師快速判斷用]
-- 為什麼不買: [具體bear case/風險，至少2點]
+- 為什麼買: [引用該股專屬 trace 數據的 bull thesis，至少2點，以分號分隔；每點必須含具體數字或新聞事件]
+- 一句話理由: [≤80字，含「具體數字/事件 + 當下時機性」，每支股票理由必須與其他股票不同]
+- 為什麼不買: [該股具體 bear case/風險，至少2點，不得用「市場不確定性」等泛指說法]
 - NAV比重: [0.8% | 0.6% | 0.4% | 0%]
 - 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
 
 推薦 A+/A/B 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，且只可作為排除名單，不算推薦卡。
 只有 system_programmatic_risk_off_score >= 3 時，才可只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
-當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；若找不到足夠 A+/A/B，請明確說明資料不足與排除原因，不要用 C bucket 偽裝成推薦完成。
+當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；若找不到足夠 A+/A/B，請明確說明資料不足與排除原因。
 使用真實市場資料（來自 ReAct trace），不要捏造數字。
 
 === 分數填寫規則（CRITICAL）===
@@ -657,7 +681,7 @@ ${traceText}
    → 絕對不可因為「工具查不到」就把所有欄位填 0 — 0 代表有明確負面訊號（如融資大增、RS 轉負），不代表資料缺失。
 3. 信心值：有 lastPrice 資料 → 不得低於 0.4；無任何技術資料 → 不得輸出該 ticker。
 4. 進場區/TP1/TP2/停損：必須根據 lastPrice 計算實際數值，例如進場區 = lastPrice*0.98 - lastPrice*1.01。不得填寫 [具體價格] 佔位符。
-5. 一句話理由：必須具體說明「為什麼現在、為什麼這支股票」，不得用「風險高但值得觀察」這類套話。要說明技術面訊號或題材催化劑。
+5. 一句話理由：必須具體說明「為什麼現在、為什麼這支股票」，不得用「風險高但值得觀察」這類套話。要說明技術面訊號或題材催化劑且含具體數字。
 === END 分數填寫規則 ===`;
 }
 
@@ -1557,7 +1581,11 @@ ${previousMarkdownForRepair}`
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
-      maxTokens: repairMarkdown ? 7000 : 5500,
+      // gpt-5.5 uses reasoning tokens internally before emitting output tokens.
+      // Increase budget to 10000/8000 to ensure synthesis is not truncated.
+      // gpt-4o-mini: reasoning_tokens=0, so old 5500/7000 was sufficient; these higher
+      // values are safe for both models (just cost more for gpt-5.5).
+      maxTokens: repairMarkdown ? 10000 : 8000,
       temperature: repairMarkdown ? 0.1 : 0.2,
       timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
     }
@@ -1652,7 +1680,10 @@ export async function runAiRecommendationV3(
   const trigger = opts.trigger ?? "manual_refresh";
   const dateStr = opts.dateStr ?? todayTst();
   const generatedAt = new Date().toISOString();
-  const model = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+  // Per-feature model override: OPENAI_MODEL_AI_REC takes priority over global OPENAI_MODEL.
+  // This allows upgrading AI rec to gpt-5.5 without touching global env (which would
+  // also upgrade high-frequency cheap tasks like news-top10).
+  const model = process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
   const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
 
@@ -1758,7 +1789,9 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       callerModule: "ai_rec_v2",
       taskType: "react_reason",
       workspaceId: opts.workspaceId,
-      maxTokens: 1024,
+      // gpt-5.5 needs more budget per ReAct step (reasoning tokens).
+      // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
+      maxTokens: 2048,
       temperature: 0.1,
     });
 

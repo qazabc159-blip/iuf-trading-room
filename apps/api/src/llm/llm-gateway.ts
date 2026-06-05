@@ -116,8 +116,18 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "gpt-4o":                  { input: 2.500, output: 10.000 },
   "gpt-4.1":                 { input: 2.000, output: 8.000 },
   "claude-3-haiku-20240307": { input: 0.250, output: 1.250 },
-  "gpt-5.4-mini":            { input: 0.150, output: 0.600 }
+  "gpt-5.4-mini":            { input: 0.150, output: 0.600 },
+  // gpt-5.5: deep-reasoning model for AI rec + brief ($5/$30 per 1M input/output, 1M context window).
+  // Per-feature override via OPENAI_MODEL_AI_REC / OPENAI_MODEL_BRIEF env vars.
+  // NOTE: uses max_completion_tokens instead of max_tokens — handled in callLlm().
+  "gpt-5.5":                 { input: 5.000, output: 30.000 }
 };
+
+/**
+ * Models that require max_completion_tokens instead of max_tokens (OpenAI o-series + gpt-5 family).
+ * Sending max_tokens to these models returns HTTP 400 unsupported_parameter.
+ */
+const USES_MAX_COMPLETION_TOKENS = new Set(["gpt-5.5", "o1", "o1-mini", "o1-preview", "o3", "o3-mini"]);
 
 export function estimateCostUsd(
   modelKey: string,
@@ -395,12 +405,21 @@ export async function callLlm(
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
 
+  // gpt-5.5 (and o-series reasoning models) have two API differences:
+  //   1. Use max_completion_tokens instead of max_tokens (sending max_tokens → HTTP 400)
+  //   2. Only support temperature=1 (sending any other value → HTTP 400)
+  // Both are handled transparently here so callers don't need to know the model family.
+  const isReasoningModel = USES_MAX_COMPLETION_TOKENS.has(modelKey);
+  const tokenLimitKey = isReasoningModel ? "max_completion_tokens" : "max_tokens";
   const requestBody: Record<string, unknown> = {
     model: modelKey,
     messages,
-    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    temperature: opts.temperature ?? DEFAULT_TEMPERATURE
+    [tokenLimitKey]: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   };
+  // Only add temperature for models that support it (non-reasoning family)
+  if (!isReasoningModel) {
+    requestBody["temperature"] = opts.temperature ?? DEFAULT_TEMPERATURE;
+  }
   if (opts.responseFormat === "json_object") {
     requestBody["response_format"] = { type: "json_object" };
   }

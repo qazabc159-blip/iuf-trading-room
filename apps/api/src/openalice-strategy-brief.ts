@@ -47,7 +47,10 @@ import { sanitizeBriefBody } from "./openalice-pipeline.js";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const STALE_AFTER_MS = 26 * 60 * 60 * 1000; // 26h — covers one full trading day
-const MAX_TOKENS_GENERATOR = 2_400;
+// Increased from 2400 to 6000 to accommodate gpt-5.5 reasoning tokens.
+// gpt-5.5 uses internal reasoning tokens (not visible in output) before generating content.
+// With a 7-section narrative brief, gpt-5.5 may use 2000-3000 reasoning tokens + 2000-3000 output.
+const MAX_TOKENS_GENERATOR = 6_000;
 const MAX_TOKENS_HALLUCINATION_CHECK = 600;
 const YAML_DIR_REL_TO_FILE = join(
   fileURLToPath(new URL(".", import.meta.url)),
@@ -630,29 +633,68 @@ function buildGeneratorPrompt(sourcePack: StrategyBriefSourcePack): string {
   const basketSymbols = sourcePack.contLiqDays[0]?.basket.map((b) => b.symbol) ?? [];
   const ohlcvSummary = formatOhlcvSummary(sourcePack.ohlcvRows, basketSymbols);
 
-  return `你是台股 AI 交易戰情室策略級簡報撰寫器。根據下方真實資料，生成繁體中文策略級 brief。
+  return `你是 IUF 台股交易戰情室的盤前分析師 AI。任務：根據下方真實資料，生成一份「分析型盤前敘事簡報」，
+幫助操盤師在開盤前快速建立當日市場情境認知，而不是資料的堆砌。
+
+=== 核心寫作原則（這決定品質好壞）===
+簡報不是把資料欄位複製一遍。你需要做的是：
+1. 台股今日的市場情境是什麼？大盤當前趨勢/橫盤/轉折信號是什麼？
+2. 法人資金流向今日的結論是什麼？是在輪動？集中？還是撤退？
+3. 今日值得關注的族群或主題是什麼？（基於法人、技術、OHLCV 資料推導）
+4. 策略持倉目前的狀況對操盤師意味著什麼？
+5. 今日的關鍵風險點（量化：距離警示門檻多遠）是什麼？
+
+「資料暫缺」也要說：若某個面向資料不足，明確寫「[欄位] 資料暫缺，待補充」而非跳過或填假數。
+美股隔夜指數：若 trace/資料中無美股數字，不可捏造，標記「美股隔夜資料本日缺席，以台股內部信號為主」。
 
 === 硬規則（任何違反 → 拒絕） ===
-- 只輸出 JSON。
-- 所有 heading 欄位必須使用繁體中文，禁止 "Market Overview" / "Technical Analysis" / "Risk Alert" / "Strategy Observation" / "Summary" 等英文標題。
-- heading 範例：「今日市場總覽」/「技術觀察」/「風控警示」/「策略觀察」/「今日訊號狀態」/「綜合觀察」。
-- 禁止買賣建議、禁止進場/賣出/買進/出脫/做多/做空。
-- 禁止目標價/target price/guarantee/必賺/保證/勝率。
+- 只輸出 JSON，不加任何 markdown 包裝。
+- 所有 heading 必須繁體中文，禁止英文標題。
+- 禁止買賣建議/進場/賣出/買進/出脫/做多/做空。
+- 禁止目標價/guarantee/必賺/保證/勝率。
 - 禁止 "approved" / "alpha confirmed" / "live-ready" 等促進用語。
-- 禁止捏造資料來源未提供的數字或新聞。
-- 中性語氣："觀察到" / "資料顯示" / "目前狀態為" — 不准寫 "建議" / "應該"。
-- 每個 section body 至少 80 字，最多 1200 字。
+- 禁止捏造任何資料來源未提供的數字、指數值或新聞標題。
+- 語氣中性："觀察到" / "資料顯示" / "目前狀態為"，不准寫"建議"/"應該"。
+- 每個 section body 至少 100 字，最多 1500 字；要有分析結論，不只是陳述數字。
 
 === 輸出 schema ===
 {
   "sections": [
-    { "sectionId": "today_market_summary", "heading": "今日市場總覽", "body": "..." },
-    { "sectionId": "strategy_observation_cont_liq_v36", "heading": "cont_liq_v36 觀察", "body": "..." },
-    { "sectionId": "strategy_observation_002", "heading": "strategy_002 觀察", "body": "..." },
-    { "sectionId": "strategy_observation_003", "heading": "strategy_003 觀察", "body": "..." },
-    { "sectionId": "signal_today", "heading": "今日訊號狀態", "body": "..." },
-    { "sectionId": "risk_alerts", "heading": "風控警示", "body": "..." },
-    { "sectionId": "commentary", "heading": "綜合觀察", "body": "..." }
+    {
+      "sectionId": "premarket_context",
+      "heading": "盤前市況情境",
+      "body": "台股今日盤前情境分析：大盤趨勢（多頭延伸/橫盤整理/技術轉折跡象）+ 若有美股隔夜資料則說明影響，否則標記缺席 + 今日台股開盤前主要情緒方向判斷（依法人流向 + 技術結構 + OHLCV）"
+    },
+    {
+      "sectionId": "institutional_flow_analysis",
+      "heading": "法人動向解讀",
+      "body": "本日或近期法人動向分析：外資/投信/自營的資金流向 + 是集中在哪些族群/個股 + 法人動向對今日盤勢的意義（資料來自 institutionalSummary）。若資料暫缺標明。"
+    },
+    {
+      "sectionId": "focus_themes_today",
+      "heading": "今日關注議題與族群",
+      "body": "依據法人流向 + OHLCV 技術面 + 策略持倉，推導今日值得關注的族群或主題（例：半導體、AI 伺服器、金融、原物料等）+ 說明關注理由（技術位置/法人資金/消息面）。若資料不足，說明無法判斷的原因。"
+    },
+    {
+      "sectionId": "strategy_position_status",
+      "heading": "策略持倉狀態",
+      "body": "cont_liq 策略當前持倉狀態分析：basket 整體含息報酬、各持股 unrealized_return_pct 分布、近 5 日趨勢方向 + 距離 kill_switch 門檻（-10%/-15%）的量化距離。strategy_002/003 狀態若有快照則說明，否則標記資料暫缺。"
+    },
+    {
+      "sectionId": "risk_alerts",
+      "heading": "風控警示",
+      "body": "量化風控：basket_equal_weight_unrealized_pct 目前值 + 距離 -10% 警示線差多少百分點 + 距離 -15% kill_switch 差多少百分點。任何個股 unrealized_return_pct 超出 ±10% 以上請列出。若資料標記 UNAVAILABLE/PROVISIONAL，明確標示。"
+    },
+    {
+      "sectionId": "signal_today",
+      "heading": "今日訊號狀態",
+      "body": "策略訊號（進場/離場/觀察/持倉）今日狀態摘要，以資料欄位為準，不推測無資料的部分。"
+    },
+    {
+      "sectionId": "commentary",
+      "heading": "操盤師今日重點提示",
+      "body": "綜合以上分析，今日操盤師需要特別關注的 2-3 個重點（非建議，是值得追蹤的觀察點）+ 今日最大的不確定性因素是什麼。"
+    }
   ]
 }
 
@@ -667,12 +709,13 @@ ${institutionalSummary}
 
 ${ohlcvSummary}
 
-=== 補充說明 ===
+=== 重要說明 ===
 cont_liq 策略為研究前瞻觀察期（RESEARCH_FORWARD_OBSERVATION）。
 strategy_002/003 狀態以快照 status 欄位為準。
 所有數字以上方資料為唯一來源；若資料標記 UNAVAILABLE 或 PROVISIONAL，
-請在 body 中明確標示「資料暫缺/待確認」，不准推估或補填數字。
-risk_alerts 中請明確標示 basket_equal_weight_unrealized_pct 與 -10% / -15% 門檻距離。`;
+在 body 中明確標示「資料暫缺/待確認」，不准推估或補填數字。
+美股隔夜數據（標普/那斯達克）：若上方資料中不存在此數字，禁止編造，
+改標記「美股隔夜資料本日缺席，分析以台股內部信號為主」。`;
 }
 
 function buildHallucinationCheckPrompt(draftSections: StrategyBriefSection[], sourcePack: StrategyBriefSourcePack): string {
@@ -859,10 +902,13 @@ export async function generateStrategyBrief(
   let status: StrategyBriefStatus = "published";
   let blockedReason: string | null = null;
 
+  // Per-feature model override: OPENAI_MODEL_BRIEF takes priority for strategy brief generation.
+  // This allows upgrading brief to gpt-5.5 without touching global OPENAI_MODEL.
+  const briefModel = process.env["OPENAI_MODEL_BRIEF"] ?? process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
   const prompt = buildGeneratorPrompt(sourcePack);
   const rawAiOutput = (await callLlm(
     [{ role: "user", content: prompt }],
-    { callerModule: "strategy_brief", taskType: "generation", maxTokens: MAX_TOKENS_GENERATOR, temperature: 0.15 }
+    { modelKey: briefModel, callerModule: "strategy_brief", taskType: "generation", maxTokens: MAX_TOKENS_GENERATOR, temperature: 0.15 }
   ))?.content ?? null;
 
   if (rawAiOutput) {
@@ -890,11 +936,11 @@ export async function generateStrategyBrief(
             generationMode = "source_only_fallback";
             hallucinationCheckPassed = null;
           } else {
-            // Hallucination check
+            // Hallucination check (use cheaper model — gpt-4o-mini sufficient for fact-check)
             const hcPrompt = buildHallucinationCheckPrompt(parsedSections, sourcePack);
             const hcRaw = (await callLlm(
               [{ role: "user", content: hcPrompt }],
-              { callerModule: "strategy_brief", taskType: "hallucination_check", maxTokens: MAX_TOKENS_HALLUCINATION_CHECK, temperature: 0.0 }
+              { modelKey: process.env["OPENAI_MODEL"] ?? "gpt-4o-mini", callerModule: "strategy_brief", taskType: "hallucination_check", maxTokens: MAX_TOKENS_HALLUCINATION_CHECK, temperature: 0.0 }
             ))?.content ?? null;
 
             let hcPassed = false;
