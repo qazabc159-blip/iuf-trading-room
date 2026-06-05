@@ -6545,6 +6545,57 @@ body:has(.login-route) > div {
   white-space: pre-wrap;
 }
 
+.company-announcement-detail {
+  display: grid;
+  gap: 10px;
+  white-space: normal;
+}
+
+.company-announcement-detail p {
+  margin: 0;
+  color: var(--night-mid, #91a0b5);
+  font-family: var(--sans-tc);
+  line-height: 1.8;
+}
+
+.company-announcement-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.company-announcement-detail-grid span {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(220, 228, 240, 0.09);
+  background: rgba(7, 11, 17, 0.42);
+  color: var(--night-soft, #566276);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.company-announcement-detail-grid b {
+  display: block;
+  margin-top: 3px;
+  color: var(--night-ink, #e7ecf3);
+  overflow-wrap: anywhere;
+}
+
+.company-announcement-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 11px;
+  border: 1px solid rgba(100, 170, 255, 0.45);
+  background: rgba(74, 144, 226, 0.08);
+  color: #8fc3ff;
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
 .daily-brief-sheet {
   border-top-color: rgba(226, 184, 92, 0.35);
   padding: clamp(24px, 2.8vw, 42px) clamp(26px, 3.2vw, 52px);
@@ -10415,6 +10466,14 @@ body:has(.login-route) > div {
 
   .full-profile-grid .market-intel-button > .tg:last-child {
     display: none;
+  }
+
+  .company-announcement-detail {
+    padding-left: 0;
+  }
+
+  .company-announcement-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 

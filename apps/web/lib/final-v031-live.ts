@@ -1507,10 +1507,37 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
-  function latestTick(ticks) {
+  function normalizeTickSymbol(value) {
+    return String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\.TW$/, "")
+      .replace(/[^0-9A-Z._-]/g, "");
+  }
+
+  function tickSymbolMatch(tick, symbol) {
+    if (!tick || typeof tick !== "object" || !symbol) return null;
+    const expected = normalizeTickSymbol(symbol);
+    const keys = ["symbol", "stockNo", "stockId", "stock_id", "code", "ticker", "ch"];
+    let sawSymbolField = false;
+    for (const key of keys) {
+      const raw = tick[key];
+      if (raw == null || raw === "") continue;
+      sawSymbolField = true;
+      if (normalizeTickSymbol(raw) === expected) return true;
+    }
+    return sawSymbolField ? false : null;
+  }
+
+  function latestTick(ticks, symbol, allowUnlabeled = true) {
     const arr = Array.isArray(ticks) ? ticks.filter(Boolean) : [];
     if (!arr.length) return null;
-    const scored = arr.map((tick, index) => {
+    const compatible = arr.filter((tick) => {
+      const match = tickSymbolMatch(tick, symbol);
+      return match === true || (allowUnlabeled && match === null);
+    });
+    if (!compatible.length) return null;
+    const scored = compatible.map((tick, index) => {
       const ts = Date.parse(tick._received_at || tick.datetime || tick.timestamp || tick.ts || "");
       return { tick, score: Number.isFinite(ts) ? ts : index };
     });
@@ -1683,25 +1710,54 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const quote = payload.quote || null;
     const bidAsk = payload.bidAsk || null;
     const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
-    const tick = latestTick(ticks);
-    const tickPrice = tickLastPrice(tick);
     const payloadPrice = payload.lastPrice != null ? Number(payload.lastPrice) : null;
     const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
-    const lastPrice = tickPrice ?? (Number.isFinite(payloadPrice) && payloadPrice > 0 ? payloadPrice : null) ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+    const authoritativePrice = (Number.isFinite(payloadPrice) && payloadPrice > 0 ? payloadPrice : null)
+      ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+    const tick = latestTick(ticks, symbol, authoritativePrice == null);
+    const tickPrice = tickLastPrice(tick);
+    const lastPrice = authoritativePrice ?? tickPrice;
     if (lastPrice == null && !bidAsk && !ticks.length) return;
-    const previous = live.selected?.previous ?? null;
-    const tickChange = tick?.price_chg ?? null;
-    const tickPct = tick?.pct_chg ?? null;
-    const change = payload.change != null ? Number(payload.change) : (tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null));
-    const changePct = payload.changePct != null ? Number(payload.changePct) : (tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null));
-    const nextSelected = Object.assign({}, live.selected || {}, {
+    const sameSelected = sameSym(live.selected?.symbol, symbol);
+    const previous = usableQuotePrice(
+      payload.prevClose
+      ?? quote?.prevClose
+      ?? quote?.previousClose
+      ?? quote?.referencePrice
+      ?? quote?.yesterdayClose
+      ?? (sameSelected ? live.selected?.previous : null)
+    );
+    const computedChange = previous != null && lastPrice != null ? Number((lastPrice - Number(previous)).toFixed(2)) : null;
+    const computedPct = computedChange != null && previous ? Number(((computedChange / Number(previous)) * 100).toFixed(2)) : null;
+    const payloadChange = payload.change != null ? Number(payload.change) : NaN;
+    const payloadPct = payload.changePct != null ? Number(payload.changePct) : NaN;
+    const tickChange = tick?.price_chg != null || tick?.change != null || tick?.changePrice != null
+      ? Number(tick?.price_chg ?? tick?.change ?? tick?.changePrice)
+      : NaN;
+    const tickPct = tick?.pct_chg != null || tick?.changePct != null || tick?.changePercent != null
+      ? Number(tick?.pct_chg ?? tick?.changePct ?? tick?.changePercent)
+      : NaN;
+    const liveChange = sameSelected ? live.selected?.change : null;
+    const livePct = sameSelected ? live.selected?.changePct : null;
+    const change = computedChange
+      ?? (Number.isFinite(payloadChange) ? payloadChange : null)
+      ?? (Number.isFinite(tickChange) ? tickChange : null)
+      ?? liveChange
+      ?? null;
+    const changePct = computedPct
+      ?? (Number.isFinite(payloadPct) ? payloadPct : null)
+      ?? (Number.isFinite(tickPct) ? tickPct : null)
+      ?? livePct
+      ?? null;
+    const nextSelected = Object.assign({}, sameSelected ? (live.selected || {}) : {}, {
       symbol,
-      price: lastPrice ?? live.selected?.price ?? null,
-      close: lastPrice ?? live.selected?.close ?? null,
-      open: tick?.open ?? live.selected?.open ?? null,
-      high: tick?.high ?? live.selected?.high ?? null,
-      low: tick?.low ?? live.selected?.low ?? null,
-      volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+      price: lastPrice ?? (sameSelected ? live.selected?.price : null) ?? null,
+      close: lastPrice ?? (sameSelected ? live.selected?.close : null) ?? null,
+      previous,
+      open: quote?.open ?? tick?.open ?? (sameSelected ? live.selected?.open : null),
+      high: quote?.high ?? tick?.high ?? (sameSelected ? live.selected?.high : null),
+      low: quote?.low ?? tick?.low ?? (sameSelected ? live.selected?.low : null),
+      volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? (sameSelected ? live.selected?.volume : null),
       bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
       ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
       change,
@@ -1774,8 +1830,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const chg = selected.change;
     const pct = selected.changePct;
     const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
+    const sameSelected = sameSym(live.selected?.symbol, selected.symbol);
     live = Object.assign({}, live, {
-      selected: Object.assign({}, live.selected || {}, selected),
+      selected: Object.assign({}, sameSelected ? (live.selected || {}) : {}, selected),
       bidAsk: bidAsk !== undefined ? bidAsk : live.bidAsk,
       ticks: ticks !== undefined ? ticks : live.ticks,
     });
@@ -1861,29 +1918,50 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         return;
       }
       paperQuotePulseBlockedUntil = 0;
-      const tick = latestTick(ticks);
-      const tickPrice = tickLastPrice(tick);
       const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
-      const lastPrice = tickPrice ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+      const authoritativePrice = Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null;
+      const tick = latestTick(ticks, symbol, authoritativePrice == null);
+      const tickPrice = tickLastPrice(tick);
+      const lastPrice = authoritativePrice ?? tickPrice;
       if (lastPrice == null && !bidAsk && !ticks.length) return;
-      const previous = live.selected?.previous ?? null;
-      const tickChange = tick?.price_chg ?? null;
-      const tickPct = tick?.pct_chg ?? null;
-      const change = tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null);
-      const changePct = tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null);
-      const nextSelected = Object.assign({}, live.selected || {}, {
+      const sameSelected = sameSym(live.selected?.symbol, symbol);
+      const previous = usableQuotePrice(
+        quote?.prevClose
+        ?? quote?.previousClose
+        ?? quote?.referencePrice
+        ?? quote?.yesterdayClose
+        ?? (sameSelected ? live.selected?.previous : null)
+      );
+      const computedChange = previous != null && lastPrice != null ? Number((lastPrice - Number(previous)).toFixed(2)) : null;
+      const computedPct = computedChange != null && previous ? Number(((computedChange / Number(previous)) * 100).toFixed(2)) : null;
+      const tickChange = tick?.price_chg != null || tick?.change != null || tick?.changePrice != null
+        ? Number(tick?.price_chg ?? tick?.change ?? tick?.changePrice)
+        : NaN;
+      const tickPct = tick?.pct_chg != null || tick?.changePct != null || tick?.changePercent != null
+        ? Number(tick?.pct_chg ?? tick?.changePct ?? tick?.changePercent)
+        : NaN;
+      const change = computedChange
+        ?? (Number.isFinite(tickChange) ? tickChange : null)
+        ?? (sameSelected ? live.selected?.change : null)
+        ?? null;
+      const changePct = computedPct
+        ?? (Number.isFinite(tickPct) ? tickPct : null)
+        ?? (sameSelected ? live.selected?.changePct : null)
+        ?? null;
+      const nextSelected = Object.assign({}, sameSelected ? (live.selected || {}) : {}, {
         symbol,
-        price: lastPrice ?? live.selected?.price ?? null,
-        close: lastPrice ?? live.selected?.close ?? null,
-        open: tick?.open ?? live.selected?.open ?? null,
-        high: tick?.high ?? live.selected?.high ?? null,
-        low: tick?.low ?? live.selected?.low ?? null,
-        volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+        price: lastPrice ?? (sameSelected ? live.selected?.price : null) ?? null,
+        close: lastPrice ?? (sameSelected ? live.selected?.close : null) ?? null,
+        previous,
+        open: quote?.open ?? tick?.open ?? (sameSelected ? live.selected?.open : null),
+        high: quote?.high ?? tick?.high ?? (sameSelected ? live.selected?.high : null),
+        low: quote?.low ?? tick?.low ?? (sameSelected ? live.selected?.low : null),
+        volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? (sameSelected ? live.selected?.volume : null),
         bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
         ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
         change,
         changePct,
-        quoteState: quote?.state ?? (ticks.length ? "LIVE" : live.selected?.quoteState ?? "NO_DATA"),
+        quoteState: quote?.state ?? (ticks.length ? "LIVE" : (sameSelected ? live.selected?.quoteState : null) ?? "NO_DATA"),
       });
       applyPaperQuotePulse(nextSelected, bidAsk, ticks);
       updatePaperQuoteQualityBadge("fallback", {
