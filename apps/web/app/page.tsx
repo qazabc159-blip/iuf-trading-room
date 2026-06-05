@@ -277,6 +277,8 @@ const FETCH_SOFT_MS = 3000; // 3s soft budget – ops/brief/paper/broker/ideas/r
 const FETCH_HARD_MS = 5000; // 5s hard budget – finmind/intel(TWSE crawl)/snapshot
 const FETCH_MARKET_MS = 15000; // 15s – TWSE EOD can be slow on cold cache; backend now 3s internal timeout + 5min cache
 const KGI_MARKET_ENDPOINT_MS = 3500;
+const FETCH_INTEL_MS = 12000;
+const INTEL_SOURCE_MS = 7000;
 const PUBLIC_MARKET_ENDPOINT_MS = 10000; // 10s – backend 3s timeout + dedup cache; generous for Railway→TWSE cold path
 
 function withTimeout<T>(
@@ -314,7 +316,12 @@ async function timedFetch<T>(
 
 // ── Detect timeout sentinel ───────────────────────────────────────────────────
 function isTimeoutSentinel(value: unknown): value is { _timeout: string } {
-  return typeof value === "object" && value !== null && "_timeout" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "_timeout" in value &&
+    typeof (value as { _timeout?: unknown })._timeout === "string"
+  );
 }
 
 function todayTaipeiDate() {
@@ -808,25 +815,65 @@ async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboar
     },
     async () => {
       const [newsResult, announcementsResult] = await Promise.allSettled([
-        getNewsTop10(),
-        getMarketIntelAnnouncements({
-          days: ANNOUNCEMENT_DAYS,
-          limit: MAX_INTEL_ROWS,
-          scope: "market",
-        }),
+        withTimeout(getNewsTop10(), INTEL_SOURCE_MS, "market_intel_news"),
+        withTimeout(
+          getMarketIntelAnnouncements({
+            days: ANNOUNCEMENT_DAYS,
+            limit: MAX_INTEL_ROWS,
+            scope: "market",
+          }),
+          INTEL_SOURCE_MS,
+          "market_intel_announcements",
+        ),
       ]);
-      if (newsResult.status === "rejected" && announcementsResult.status === "rejected") {
-        throw newsResult.reason;
+      const newsTimeoutLabel =
+        newsResult.status === "fulfilled" && isTimeoutSentinel(newsResult.value)
+          ? newsResult.value._timeout
+          : null;
+      const announcementsTimeoutLabel =
+        announcementsResult.status === "fulfilled" && isTimeoutSentinel(announcementsResult.value)
+          ? announcementsResult.value._timeout
+          : null;
+      const newsTimedOut = newsTimeoutLabel !== null;
+      const announcementsTimedOut = announcementsTimeoutLabel !== null;
+      const newsFailed = newsResult.status === "rejected" || newsTimedOut;
+      const announcementsFailed = announcementsResult.status === "rejected" || announcementsTimedOut;
+      if (newsFailed && announcementsFailed) {
+        if (newsResult.status === "rejected") {
+          throw newsResult.reason;
+        }
+        if (newsTimeoutLabel) {
+          throw new Error(newsTimeoutLabel);
+        }
+        throw new Error("market_intel_unavailable");
       }
-      const news = newsResult.status === "fulfilled" ? newsResult.value.data : null;
-      const aggregate = announcementsResult.status === "fulfilled" ? announcementsResult.value.data : null;
+      const news =
+        newsResult.status === "fulfilled" && !isTimeoutSentinel(newsResult.value)
+          ? newsResult.value.data
+          : null;
+      const aggregate =
+        announcementsResult.status === "fulfilled" && !isTimeoutSentinel(announcementsResult.value)
+          ? announcementsResult.value.data
+          : null;
+      const newsFailureReason =
+        newsResult.status === "rejected"
+          ? friendlyDataError(newsResult.reason)
+          : newsTimeoutLabel
+            ? newsTimeoutLabel
+            : null;
+      const announcementsFailureReason =
+        announcementsResult.status === "rejected"
+          ? friendlyDataError(announcementsResult.reason)
+          : announcementsTimeoutLabel
+            ? announcementsTimeoutLabel
+            : null;
       const aiItems = news?.items.map(aiNewsToIntelItem) ?? [];
       const officialItems = aggregate?.items.map(officialAnnouncementToIntelItem) ?? [];
       const items = [...aiItems, ...officialItems].slice(0, MAX_INTEL_ROWS);
       return {
         items,
         selected: aggregate?.selected ?? [],
-        failures: aggregate?.failures ?? 0,
+        failures: (aggregate?.failures ?? 0) + (newsFailureReason ? 1 : 0) + (announcementsFailureReason ? 1 : 0),
         aiSelectedCount: aiItems.length,
         officialCount: officialItems.length,
         sourceState: {
@@ -835,10 +882,10 @@ async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboar
           newsMode: news?.selection_mode ?? null,
           newsAsOf: news?.as_of ?? null,
           newsNextRefreshAt: news?.next_refresh_at ?? null,
-          newsStaleReason: news?.stale_reason ?? (newsResult.status === "rejected" ? friendlyDataError(newsResult.reason) : null),
+          newsStaleReason: news?.stale_reason ?? newsFailureReason,
           newsAiCallSuccess: typeof news?.ai_call_success === "boolean" ? news.ai_call_success : null,
           newsInputRows: typeof news?.input_row_count === "number" ? news.input_row_count : null,
-          announcementsSource: aggregate?.source ?? (announcementsResult.status === "rejected" ? null : "empty"),
+          announcementsSource: aggregate?.source ?? (announcementsFailureReason ? null : "empty"),
           owner: "Jason / Elva",
           nextAction: aiItems.length > 0
             ? "用 AI 精選項目串到推薦股票、公司頁與主題頁；官方公告若為空仍維持正式 empty state。"
@@ -2899,7 +2946,7 @@ async function DashboardContent({
       (value) => value === null || value.items.length === 0,
       "策略批次目前沒有可用紀錄。",
     )),
-    timedFetch("intel", FETCH_HARD_MS, loadMarketIntelDashboard()),
+    timedFetch("intel", FETCH_INTEL_MS, loadMarketIntelDashboard()),
     timedFetch("snapshot", FETCH_HARD_MS, getDashboardSnapshot()),
   ]);
 
