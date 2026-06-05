@@ -15360,6 +15360,27 @@ test("AI-REC-V3-DIAG-2: v3 API surfaces runDiagnostics and admin stale-running f
   );
 });
 
+test("AI-REC-V3-DIAG-3: read path keeps last usable cards while a newer run is running empty", async () => {
+  const { pickAiRecommendationV3RunForRead } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  const latestRunning = { runId: "new-running", status: "running", items: [] };
+  const previousComplete = { runId: "last-complete", status: "complete", items: [{ ticker: "2330" }] };
+  const olderFailed = { runId: "older-failed", status: "failed", items: [] };
+
+  assert.equal(
+    pickAiRecommendationV3RunForRead([latestRunning, previousComplete, olderFailed]).runId,
+    "last-complete",
+    "AI-REC-V3-DIAG-3: product GET must not blank the page while a fresh run is only running"
+  );
+
+  assert.equal(
+    pickAiRecommendationV3RunForRead([latestRunning, olderFailed]).runId,
+    "new-running",
+    "AI-REC-V3-DIAG-3: when no usable historical run exists, return latest row honestly"
+  );
+});
+
 // Force-exit teardown: tsx/esbuild service workers are not killed by node:test runner.
 // Without this, CI hangs 17+ minutes waiting for orphan esbuild processes to die.
 // =============================================================================

@@ -372,6 +372,28 @@ export function isV3RunningStale(status: AiRecommendationV3RunResult["status"], 
   return ageMs !== null && ageMs > V3_RUNNING_STALE_AFTER_MS;
 }
 
+export type V3RunReadCandidate = {
+  status: string;
+  items?: unknown;
+};
+
+function v3RunCandidateItemCount(row: V3RunReadCandidate): number {
+  return Array.isArray(row.items) ? row.items.length : 0;
+}
+
+function isReadableV3RunCandidate(row: V3RunReadCandidate): boolean {
+  return row.status !== "running" && v3RunCandidateItemCount(row) > 0;
+}
+
+export function pickAiRecommendationV3RunForRead<T extends V3RunReadCandidate>(rows: T[]): T | null {
+  const latest = rows[0];
+  if (!latest) return null;
+  if (isReadableV3RunCandidate(latest)) return latest;
+  return rows.find((row) => row.status === "complete" && v3RunCandidateItemCount(row) > 0)
+    ?? rows.find(isReadableV3RunCandidate)
+    ?? latest;
+}
+
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
     return _latestV3Cache;
@@ -492,8 +514,8 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       .from(aiRecommendationsRuns)
       .where(sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`)
       .orderBy(desc(aiRecommendationsRuns.generatedAt))
-      .limit(1);
-    const row = rows[0];
+      .limit(10);
+    const row = pickAiRecommendationV3RunForRead(rows);
     if (!row) return null;
     const result: AiRecommendationV3RunResult = {
       runId: row.runId,
