@@ -47,7 +47,10 @@ import { sanitizeBriefBody } from "./openalice-pipeline.js";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const STALE_AFTER_MS = 26 * 60 * 60 * 1000; // 26h — covers one full trading day
-const MAX_TOKENS_GENERATOR = 2_400;
+// Increased from 2400 to 6000 to accommodate gpt-5.5 reasoning tokens.
+// gpt-5.5 uses internal reasoning tokens (not visible in output) before generating content.
+// With a 7-section narrative brief, gpt-5.5 may use 2000-3000 reasoning tokens + 2000-3000 output.
+const MAX_TOKENS_GENERATOR = 6_000;
 const MAX_TOKENS_HALLUCINATION_CHECK = 600;
 const YAML_DIR_REL_TO_FILE = join(
   fileURLToPath(new URL(".", import.meta.url)),

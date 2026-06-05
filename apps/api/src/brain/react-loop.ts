@@ -734,7 +734,9 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
       callerModule: "brain_react",
       taskType: "react_reason",
       workspaceId: opts.workspaceId,
-      maxTokens: 512,
+      // gpt-5.5 needs more budget per ReAct step due to reasoning tokens.
+      // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
+      maxTokens: 2048,
       temperature: 0.1
     });
 

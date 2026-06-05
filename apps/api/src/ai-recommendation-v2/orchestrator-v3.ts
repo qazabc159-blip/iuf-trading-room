@@ -1581,7 +1581,11 @@ ${previousMarkdownForRepair}`
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
-      maxTokens: repairMarkdown ? 7000 : 5500,
+      // gpt-5.5 uses reasoning tokens internally before emitting output tokens.
+      // Increase budget to 10000/8000 to ensure synthesis is not truncated.
+      // gpt-4o-mini: reasoning_tokens=0, so old 5500/7000 was sufficient; these higher
+      // values are safe for both models (just cost more for gpt-5.5).
+      maxTokens: repairMarkdown ? 10000 : 8000,
       temperature: repairMarkdown ? 0.1 : 0.2,
       timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
     }
@@ -1785,7 +1789,9 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       callerModule: "ai_rec_v2",
       taskType: "react_reason",
       workspaceId: opts.workspaceId,
-      maxTokens: 1024,
+      // gpt-5.5 needs more budget per ReAct step (reasoning tokens).
+      // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
+      maxTokens: 2048,
       temperature: 0.1,
     });
 

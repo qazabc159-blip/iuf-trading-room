@@ -405,14 +405,21 @@ export async function callLlm(
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
 
-  // gpt-5.5 (and o-series) use max_completion_tokens instead of max_tokens.
-  const tokenLimitKey = USES_MAX_COMPLETION_TOKENS.has(modelKey) ? "max_completion_tokens" : "max_tokens";
+  // gpt-5.5 (and o-series reasoning models) have two API differences:
+  //   1. Use max_completion_tokens instead of max_tokens (sending max_tokens → HTTP 400)
+  //   2. Only support temperature=1 (sending any other value → HTTP 400)
+  // Both are handled transparently here so callers don't need to know the model family.
+  const isReasoningModel = USES_MAX_COMPLETION_TOKENS.has(modelKey);
+  const tokenLimitKey = isReasoningModel ? "max_completion_tokens" : "max_tokens";
   const requestBody: Record<string, unknown> = {
     model: modelKey,
     messages,
     [tokenLimitKey]: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    temperature: opts.temperature ?? DEFAULT_TEMPERATURE
   };
+  // Only add temperature for models that support it (non-reasoning family)
+  if (!isReasoningModel) {
+    requestBody["temperature"] = opts.temperature ?? DEFAULT_TEMPERATURE;
+  }
   if (opts.responseFormat === "json_object") {
     requestBody["response_format"] = { type: "json_object" };
   }

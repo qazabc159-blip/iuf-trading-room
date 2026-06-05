@@ -15993,7 +15993,7 @@ test("GPT55-UPGRADE-1: llm-gateway MODEL_PRICING contains gpt-5.5 entry", () => 
   );
 });
 
-test("GPT55-UPGRADE-2: llm-gateway uses max_completion_tokens for gpt-5.5 family models", () => {
+test("GPT55-UPGRADE-2: llm-gateway handles gpt-5.5 family API differences (max_completion_tokens, no temperature)", () => {
   const src = readFileSync(path.join(process.cwd(), "apps/api/src/llm/llm-gateway.ts"), "utf8");
   assert.ok(
     src.includes("USES_MAX_COMPLETION_TOKENS"),
@@ -16006,6 +16006,15 @@ test("GPT55-UPGRADE-2: llm-gateway uses max_completion_tokens for gpt-5.5 family
   assert.ok(
     src.includes("tokenLimitKey"),
     "GPT55-UPGRADE-2: tokenLimitKey variable must select correct token limit parameter per model"
+  );
+  assert.ok(
+    src.includes("isReasoningModel"),
+    "GPT55-UPGRADE-2: isReasoningModel flag must gate temperature omission for reasoning models"
+  );
+  assert.ok(
+    src.includes("Only add temperature for models that support it") ||
+    src.includes("!isReasoningModel"),
+    "GPT55-UPGRADE-2: temperature must be omitted for reasoning models (gpt-5.5 does not support temperature != 1)"
   );
 });
 
