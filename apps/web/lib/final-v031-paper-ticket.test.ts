@@ -500,6 +500,19 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiOhlcvSource).toContain("Weekly/monthly are derived from official daily bars instead of mock.");
   });
 
+  it("self-heals shallow trading-room K-line props with a no-store deep refetch", () => {
+    expect(klineChartSource).toContain("TRADING_ROOM_PRODUCT_DAILY_BARS = 720");
+    expect(klineChartSource).toContain("fetchTradingRoomDeepDailyBars");
+    expect(klineChartSource).toContain("tradingRoomDeepOhlcvProxyUrl");
+    expect(klineChartSource).toContain("/api/ui-final-v031/backend?path=");
+    expect(klineChartSource).toContain("iufDeepBackfill");
+    expect(klineChartSource).toContain('cache: "no-store"');
+    expect(klineChartSource).toContain('"x-iuf-kline-depth": "trading-room-deep-refetch"');
+    expect(klineChartSource).toContain("effectiveBars");
+    expect(klineChartSource).toContain("effectiveOfficialBars < TRADING_ROOM_PRODUCT_DAILY_BARS");
+    expect(klineChartSource).toContain("renderInsufficientAsCard = tradingRoomDailyDepthShort");
+  });
+
   it("keeps the full-market heatmap visible from verified representative tiles when TWSE industry rows are cold", () => {
     expect(homePageSource).toContain("function buildMarketWideRowsFromHeatmap");
     expect(homePageSource).toContain("owned_representative_aggregate");
