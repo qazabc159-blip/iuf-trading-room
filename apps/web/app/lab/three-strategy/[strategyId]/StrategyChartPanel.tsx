@@ -19,7 +19,7 @@
  *   - no 已驗證 / approved / 可上線
  */
 
-import type { LabStrategySnapshot } from "@/lib/api";
+import type { LabStrategySnapshot, LabStrategySnapshotSampleTrade } from "@/lib/api";
 
 // ── CSS ──────────────────────────────────────────────────────────────────────
 
@@ -447,10 +447,37 @@ function RobustnessPanel({ robustness }: { robustness: { horizonSweep: string; r
 
 // ── F. Sample Trades ──────────────────────────────────────────────────────────
 
-function SampleTradesSection({ entries }: { entries: { rebalanceDate: string; holdingDays: number; holdingCount: number; turnover: number; netReturn120bps: number; benchmarkReturn: number; excessReturn120bps: number; uiLabel_zh: string }[] }) {
+function isRealTradeEntry(entry: LabStrategySnapshotSampleTrade) {
+  return !/\bmock\b|\bdemo\b/i.test(entry.source);
+}
+
+function SampleTradesSection({ entries }: { entries: LabStrategySnapshotSampleTrade[] }) {
+  const realEntries = entries.filter(isRealTradeEntry);
+
+  if (realEntries.length === 0) {
+    return (
+      <div
+        style={{
+          border: "1px solid rgba(251,191,36,0.28)",
+          background: "rgba(251,191,36,0.06)",
+          padding: "14px 16px",
+          color: "#fbbf24",
+          fontSize: 12,
+          lineHeight: 1.65,
+        }}
+      >
+        <b>正式交易紀錄未接入</b>
+        <div style={{ color: "#b9c0cc", marginTop: 6 }}>
+          目前只有 mock_for_demo 示範資料，產品頁不顯示假交易表格。請等待 Athena / strategy snapshot
+          提供正式回測或 SIM observation 交易紀錄。
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="_chart-demo-banner">\u793a\u7bc4\u4ea4\u6613\uff08\u975e\u771f\u5be6\u6210\u4ea4\uff09</div>
+      <div className="_chart-demo-banner">正式交易紀錄</div>
       <div style={{ overflowX: "auto" }}>
         <table className="_chart-table">
           <thead>
@@ -460,8 +487,8 @@ function SampleTradesSection({ entries }: { entries: { rebalanceDate: string; ho
             </tr>
           </thead>
           <tbody>
-            {entries.map((e, i) => (
-              <tr key={i}>
+            {realEntries.map((e) => (
+              <tr key={`${e.rebalanceDate}-${e.exitDateApprox}-${e.source}`}>
                 <td style={{ color: "#888" }}>{e.rebalanceDate}</td>
                 <td>{e.holdingDays}d</td>
                 <td>{e.holdingCount}</td>
@@ -474,7 +501,7 @@ function SampleTradesSection({ entries }: { entries: { rebalanceDate: string; ho
           </tbody>
         </table>
       </div>
-      <div className="_chart-note">\u4f86\u6e90 / mock_for_demo (Athena snapshot_v0) \u00b7 \u975e\u771f\u5be6\u6210\u4ea4\u8a18\u9304</div>
+      <div className="_chart-note">來源 / strategy snapshot · 已排除 mock_for_demo 示範列</div>
     </div>
   );
 }
