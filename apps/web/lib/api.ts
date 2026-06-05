@@ -69,6 +69,7 @@ import type {
   TradePlan,
   TradePlanCreateInput
 } from "@iuf-trading-room/contracts";
+import { realtimeFreshnessMode } from "./realtime-freshness";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
   ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
@@ -1356,16 +1357,7 @@ export type RealtimeSnapshotResponse = {
 };
 
 function _stateToFreshnessMode(quote: CompanyRealtimeQuote): "live" | "intraday" | "stale" | "eod" {
-  if (quote.source === "twse_openapi_eod") return "eod";
-  if (quote.state === "BLOCKED" || quote.state === "NO_DATA") return "eod";
-  if (quote.source === "twse_intraday") return "intraday";
-  if (quote.source === "kgi-gateway") {
-    const ageMs = Date.now() - Date.parse(quote.updatedAt);
-    return quote.freshness === "fresh" && ageMs <= 2000 ? "live" : "stale";
-  }
-  if (quote.state === "LIVE") return "live";
-  if (quote.state === "STALE") return "stale";
-  return "eod";
+  return realtimeFreshnessMode(quote);
 }
 
 /**
