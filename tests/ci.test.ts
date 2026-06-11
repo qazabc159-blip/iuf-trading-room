@@ -15723,6 +15723,17 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
 // Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
 // when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
 
+test("MIS-INTRADAY-FALLBACK: realtime MIS fetch must fall back to bid/ask when z='-'", () => {
+  // MIS frequently returns z="-" mid-session even for actively traded stocks
+  // (verified live 2026-06-11 12:37: 2330 z="-", bid=2245). Without the bid/ask
+  // fallback the /quote/realtime route dropped to yesterday's EOD during market
+  // hours — the exact「盤中沒有即時行情」failure. The sweep cron always had this
+  // fallback; the inline fetch must keep parity.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /const lastPrice = parseNum\(msg\["z"\]\) \?\? bid \?\? ask;/);
+  assert.doesNotMatch(serverSource, /if \(!zRaw \|\| zRaw === "-" \|\| zRaw\.trim\(\) === ""\) return null;/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 
