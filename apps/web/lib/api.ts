@@ -2781,6 +2781,8 @@ export type LabStrategySnapshotHeadlineMetrics = {
   maxDrawdownNetPct?: number;
   maxDrawdownInternalExcessPct?: number;
   estimatedEntryTicketCount?: number;
+  totalRebalances?: number;
+  strictOosLast?: number;
   // Existing fields
   sharpeAnnualized: number;
   sortinoAnnualized: number;
@@ -2798,6 +2800,17 @@ export type LabStrategySnapshot = {
   displayName: string;
   displayName_zh: string;
   status: string;
+  asOfDateTaipei?: string;
+  commonWindowStart?: string;
+  commonWindowEnd?: string;
+  sourceWindowType?: string;
+  caveatTextZh?: string;
+  panelWindow?: {
+    start?: string;
+    end?: string;
+    distinctDates?: number;
+    rebalancePeriods?: number;
+  };
   // v46 operational state
   displayMode?: "paper" | "shadow" | "live" | "research_only";
   orderState?: "blocked" | "paper_allowed" | "live_allowed";

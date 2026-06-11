@@ -223,6 +223,8 @@ export type DailySmokeHistory = {
 // S1 pipeline — read-only observation endpoints
 
 export type S1SimStatus = {
+  simOnly: boolean;
+  prodWriteBlocked: boolean;
   asOf: string | null;
   todayTst: string | null;
   automaticScheduler: {
@@ -264,6 +266,7 @@ export type S1SimStatus = {
 export type S1BasketItem = {
   symbol: string;
   score: number | null;
+  price: number | null;
   shares: number | null;
   targetNotionalTwd: number | null;
   sizingNote: string | null;
@@ -272,6 +275,8 @@ export type S1BasketItem = {
 export type S1Basket = {
   found: boolean;
   date: string;
+  source: string | null;
+  capitalTwd: number | null;
   regime: string | null;
   exposureWeight: number | null;
   items: S1BasketItem[];
@@ -354,9 +359,11 @@ type S1BasketRaw = {
   signal_date?: string;
   regime?: string;
   exposure_weight?: number;
+  capital_twd?: number;
   basket?: Array<{
     symbol?: string;
     score_cont_liq?: number | null;
+    latest_price?: number | null;
     target_shares?: number | null;
     target_notional_twd?: number | null;
     sizing_note?: string | null;
@@ -369,6 +376,7 @@ type S1BasketResponseRaw = {
   sim_only?: boolean;
   prod_write_blocked?: boolean;
   date: string;
+  source?: string | null;
   found: boolean;
   basket: S1BasketRaw | null;
 };
@@ -501,6 +509,8 @@ export async function getS1SimStatus() {
   return {
     ok: true as const,
     data: {
+      simOnly: raw.sim_only === true,
+      prodWriteBlocked: raw.prod_write_blocked !== false,
       asOf: raw.as_of ?? null,
       todayTst: raw.today_tst ?? null,
       automaticScheduler: {
@@ -585,6 +595,8 @@ export async function getS1SimBasket(date: string) {
     data: {
       found: raw.found === true && basket !== null,
       date: basket?.signal_date ?? raw.date,
+      source: raw.source ?? null,
+      capitalTwd: basket?.capital_twd ?? null,
       regime: basket?.regime ?? null,
       exposureWeight: basket?.exposure_weight ?? null,
       generatedAtTst: basket?.generated_at_tst ?? null,
@@ -593,6 +605,7 @@ export async function getS1SimBasket(date: string) {
       items: (basket?.basket ?? []).map((item) => ({
         symbol: item.symbol ?? "--",
         score: item.score_cont_liq ?? null,
+        price: item.latest_price ?? null,
         shares: item.target_shares ?? null,
         targetNotionalTwd: item.target_notional_twd ?? null,
         sizingNote: item.sizing_note ?? null,

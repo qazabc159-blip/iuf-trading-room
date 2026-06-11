@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import styles from "../QuantStrategies.module.css";
-import { getQuantStrategy } from "../strategy-data";
+import { loadQuantStrategy } from "../live-strategy-data";
 import { StrategyDetailClient } from "./StrategyDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export default async function QuantStrategyDetailPage({
   params: Promise<{ strategyId: string }>;
 }) {
   const { strategyId } = await params;
-  const strategy = getQuantStrategy(strategyId);
+  const strategy = await loadQuantStrategy(strategyId);
   if (!strategy) notFound();
 
   return (
@@ -32,12 +32,12 @@ export default async function QuantStrategyDetailPage({
             <strong>{strategy.current.status}</strong>
           </div>
           <div className={styles.statusCell}>
-            <span>預估檔數</span>
+            <span>最新 basket</span>
             <strong>{strategy.holdings.length}</strong>
           </div>
           <div className={styles.statusCell}>
             <span>研究樣本</span>
-            <strong>{strategy.metrics.sampleCount}</strong>
+            <strong>{strategy.metrics.sampleCount ?? "--"}</strong>
           </div>
         </div>
       </div>
