@@ -47,6 +47,8 @@ export interface AiRecPerfResult {
   /** Date range in data */
   earliest_pick_date: string | null;
   latest_pick_date: string | null;
+  /** Excess-return benchmark ticker (0050 — companies_ohlcv has no index row). */
+  benchmark: string;
   computed_at: string;
 }
 
@@ -200,7 +202,10 @@ async function upsertPickRow(
       tp1          = EXCLUDED.tp1,
       tp2          = EXCLUDED.tp2,
       stop_loss    = EXCLUDED.stop_loss,
-      run_id       = EXCLUDED.run_id
+      run_id       = EXCLUDED.run_id,
+      -- re-upserting a pick invalidates its computed returns so the forward
+      -- drain recomputes them (e.g. after a benchmark or pick-price change)
+      ret_updated_at = NULL
   `);
 }
 
@@ -375,8 +380,12 @@ export async function updateForwardReturns(): Promise<{ updated: number; errors:
           getCloseNDaysAfter(typedDb, ticker, pick_date, 20),
         ]);
 
-        // TAIEX: try ticker '0000' first, then 'TAIEX'
-        const taiexTicker = "0000";
+        // Benchmark = 0050 (元大台灣50). companies_ohlcv has NO index row —
+        // tickers '0000'/'TAIEX' don't exist (verified on prod 6/11), which left
+        // every excess_* NULL and hit rates permanently empty. 0050 is the
+        // established benchmark across this product (quant-strategies sanctioned
+        // bundle reports benchmark0050ReturnPct), so excess is vs 0050.
+        const taiexTicker = "0050";
         const [taiexP0, taiexP1, taiexP5, taiexP20] = await Promise.all([
           getLatestCloseFromDb(typedDb, taiexTicker),
           getCloseNDaysAfter(typedDb, taiexTicker, pick_date, 1),
@@ -464,6 +473,7 @@ export async function getAiRecPerformance(opts: {
     by_bucket: [],
     earliest_pick_date: null,
     latest_pick_date: null,
+    benchmark: "0050",
     computed_at: new Date().toISOString(),
   };
 
@@ -572,6 +582,7 @@ export async function getAiRecPerformance(opts: {
       by_bucket: bucketStats,
       earliest_pick_date: o?.earliest_pick_date ?? null,
       latest_pick_date: o?.latest_pick_date ?? null,
+      benchmark: "0050",
       computed_at: new Date().toISOString(),
     };
   } catch (err) {
