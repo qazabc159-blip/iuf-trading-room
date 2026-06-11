@@ -16569,7 +16569,8 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, SIX_HOURS_FULL_INGEST_MS);
 
-  // KGI SIM daily smoke cron: 08:00-08:30 TST (00:00-00:30 UTC), polls every 15min.
+  // KGI SIM daily smoke cron: 08:25-08:55 TST (00:25-00:55 UTC), polls every 15min.
+  // Window starts after the EC2 gateway's 08:20 EventBridge boot (audit R5).
   // Window + idempotency guard inside runKgiSimDailySmokeSchedulerTick.
   // Steps: quote smoke + prod-broker audit (broker.* in 24h == 0) + trade smoke (dual-confirm gated).
   // Result: audit_logs action=kgi.sim.daily_smoke + ring buffer (GET .../daily-smoke-status).
