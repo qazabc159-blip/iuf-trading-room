@@ -15702,6 +15702,20 @@ test("S1-OBS-6: S1 observations are mirrored to audit_logs and status can recove
   assert.match(serverSource, /"s1_sim\.eod_generated"/);
 });
 
+test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit R4 fix)", () => {
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  // Weekly strategy: EOD must search a 7-day audit window for last Tuesday's
+  // orders, not just today's (which don't exist Wed–Mon).
+  assert.match(runnerSource, /readLatestS1ObservationAuditInWindow/);
+  assert.match(runnerSource, /taipeiDateStr\(-7\)/);
+  // Gateway reachable-but-empty must trigger the rebuild (KGI SIM session
+  // positions are ephemeral — empty is not "no positions").
+  assert.match(runnerSource, /gateway_empty_rebuilt_from_audit/);
+  // Rebuilt positions are marked to market from TWSE EOD closes.
+  assert.match(runnerSource, /mark_to_market/);
+});
+
 // =============================================================================
 // C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
 // =============================================================================
