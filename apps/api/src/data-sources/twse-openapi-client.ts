@@ -693,12 +693,53 @@ function todayTaipeiYYYYMMDD(): string {
  * source label: "twse_openapi"
  * staleAfterSec: 60
  */
+// Stale-while-revalidate state for the market overview. The primary upstream
+// (MI_5MINS_INDEX via mis.twse.com.tw) can take 25s+ from Railway cross-region;
+// with only a 60s cache, most user requests paid that latency and the homepage
+// KPI row timed out into「待資料」placeholders (6/11 intraday repro: both
+// /market/overview/kgi and /market/overview/twse > 30s).
+const OVERVIEW_SWR_MAX_AGE_MS = 15 * 60 * 1000;
+let _overviewLastGood: { result: TwseMarketOverviewResult; at: number } | null = null;
+let _overviewRefreshInflight: Promise<TwseMarketOverviewResult | null> | null = null;
+
+/** For test cleanup */
+export function _resetTwseOverviewSwr(): void {
+  _overviewLastGood = null;
+  _overviewRefreshInflight = null;
+}
+
 export async function getTwseMarketOverview(
   opts: { fetchOverride?: typeof fetch } = {}
 ): Promise<TwseMarketOverviewResult | null> {
   const CACHE_KEY = "twse:market:overview";
   const cached = getOverviewCached(CACHE_KEY);
   if (cached) return cached;
+
+  // Serve the last good snapshot instantly and refresh in the background.
+  // The 5-min pre-warm cron keeps this ≤5 min old during market hours; the
+  // result carries its own ts so the UI labels freshness honestly.
+  if (_overviewLastGood && Date.now() - _overviewLastGood.at <= OVERVIEW_SWR_MAX_AGE_MS) {
+    if (!_overviewRefreshInflight) {
+      _overviewRefreshInflight = _fetchTwseMarketOverviewUncached(opts)
+        .catch(() => null)
+        .finally(() => { _overviewRefreshInflight = null; });
+    }
+    return _overviewLastGood.result;
+  }
+
+  // No recent snapshot (cold boot / long outage) — block on the real fetch,
+  // deduped so concurrent requests share one upstream round-trip.
+  if (!_overviewRefreshInflight) {
+    _overviewRefreshInflight = _fetchTwseMarketOverviewUncached(opts)
+      .finally(() => { _overviewRefreshInflight = null; });
+  }
+  return _overviewRefreshInflight;
+}
+
+async function _fetchTwseMarketOverviewUncached(
+  opts: { fetchOverride?: typeof fetch } = {}
+): Promise<TwseMarketOverviewResult | null> {
+  const CACHE_KEY = "twse:market:overview";
 
   // Use fetch override for tests, or global fetch
   const doFetch = opts.fetchOverride ?? globalThis.fetch;
@@ -795,6 +836,7 @@ export async function getTwseMarketOverview(
   };
 
   setOverviewCache(CACHE_KEY, result);
+  _overviewLastGood = { result, at: Date.now() };
   // ── Save to LKG — persists across cache expiry and redeployments ──────────
   setLkgOverview(result);
   return result;
