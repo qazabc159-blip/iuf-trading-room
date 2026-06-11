@@ -12,6 +12,10 @@ export const COMPANY_AI_ANALYST_REQUIRED_SECTIONS = [
   "## 9. 資料來源與生成時間",
 ] as const;
 
+export const COMPANY_AI_ANALYST_MIN_NUMERIC_FACTS = 3;
+export const COMPANY_AI_ANALYST_MIN_SOURCE_MENTIONS = 3;
+export const COMPANY_AI_ANALYST_MAX_DATA_GAP_SENTENCES = 5;
+
 export function buildCompanyAiAnalystPrompt(ticker: string): string {
   const normalizedTicker = ticker.trim().toUpperCase();
 
@@ -25,6 +29,9 @@ export function buildCompanyAiAnalystPrompt(ticker: string): string {
     "- 必須照下列 9 個段落、同樣順序輸出，不可改名、不可省略。",
     "- 每段至少 2 個重點；缺資料時要說明已查來源、缺哪個欄位、影響哪個判斷，不可只寫「資料不足」。",
     "- 即使資料不足，也必須用可讀的產品語言完成該段：先說已確認的事，再說缺口，再說因此暫不下結論。",
+    `- 正式報告至少要包含 ${COMPANY_AI_ANALYST_MIN_NUMERIC_FACTS} 個可驗證數字，例如價格、漲跌幅、成交量、日期、營收或 EPS；沒有足夠數字就改成「觀察備忘錄」，不可裝成完整分析。`,
+    `- 正式報告至少要提到 ${COMPANY_AI_ANALYST_MIN_SOURCE_MENTIONS} 種資料來源類型；不可整篇只用泛稱「資料不足」。`,
+    `- 「資料不足、缺資料、尚未回傳、無法判斷」這類句子最多 ${COMPANY_AI_ANALYST_MAX_DATA_GAP_SENTENCES} 句，超過代表本次報告不合格，應重查資料後重寫。`,
     "- 每個關鍵判斷都要標出資料來源類型，例如即時行情、日K線、公司基本資料、AI 精選新聞、三大法人、融資融券、FinMind、KGI 唯讀。",
     "- 不可給保證獲利、必漲、勝率、重倉、All in 等語句。",
     "- 不可輸出內部推理、工具 JSON、run_id、token、工具 key、模板版本或工程除錯內容。",

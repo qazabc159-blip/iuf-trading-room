@@ -155,12 +155,12 @@ export default async function SubscriptionSettingsPage() {
                 </strong>
               </div>
               <p style={{ gridColumn: "1 / -1", margin: 0, color: "var(--fg-3, #8a93a3)" }}>
-                權限資料來自 production API。若付款系統尚未接上，頁面會清楚標示「價格待定」或「付款系統待接」。
+                權限資料來自 production API。若付款系統尚未接上，頁面會清楚標示「價格待設定」或「付款系統待接」。
               </p>
             </div>
           ) : (
             <p style={{ margin: 0, color: "#fbbf24", fontSize: 13, lineHeight: 1.7 }}>
-              暫時無法讀取權限 API；不會把未知權限顯示成已開啟。
+              暫時無法讀取權限 API；不會把未知權限顯示成已包含。
             </p>
           )}
         </section>

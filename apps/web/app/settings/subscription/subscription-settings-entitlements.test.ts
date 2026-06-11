@@ -26,7 +26,7 @@ describe("subscription entitlement wiring", () => {
   it("shows concrete tier boundaries before payment wiring exists", () => {
     expect(contractSource).toContain("usageLimits");
     expect(contractSource).toContain("onboardingNote");
-    expect(contractSource).toContain("價格待定");
+    expect(contractSource).toContain("價格待設定");
     expect(pageSource).toContain("方案邊界");
     expect(pageSource).toContain("tier.usageLimits.map");
     expect(pageSource).toContain("tier.onboardingNote");
@@ -39,6 +39,7 @@ describe("subscription entitlement wiring", () => {
     expect(contractSource).toContain("高級");
     expect(pageSource).toContain("訂閱與權限");
     expect(pageSource).toContain("目前帳號");
+    expect(pageSource).toContain("價格待設定");
     expect(pageSource).not.toMatch(/[�]|嚙|踐|蝣|銝|摰|瘝|甇|閮/);
     expect(contractSource).not.toMatch(/[�]|嚙|踐|蝣|銝|摰|瘝|甇|閮/);
   });
