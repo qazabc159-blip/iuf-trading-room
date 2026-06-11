@@ -10,7 +10,7 @@ import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lu
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
-import { getAiRecommendationsV3, getRecommendationsToday, type AiRecommendationV3Response, type RecommendationListResponse } from "@/lib/api";
+import { getAiRecommendationsV3, getAiRecPerformance, getRecommendationsToday, type AiRecommendationV3Response, type AiRecPerformance, type RecommendationListResponse } from "@/lib/api";
 import {
   buildRecommendationPrefillHref,
   handoffLabelForDirection,
@@ -580,10 +580,92 @@ function BucketSection({
   );
 }
 
+function formatPct(value: number | null, digits = 1): string {
+  if (value === null || !Number.isFinite(value)) return "--";
+  return `${(value * 100).toFixed(digits)}%`;
+}
+
+function formatSignedPct(value: number | null, digits = 2): string {
+  if (value === null || !Number.isFinite(value)) return "--";
+  const pct = value * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(digits)}%`;
+}
+
+/**
+ * 推薦績效成績單 — forward returns vs 0050, accumulated daily by the backend.
+ * Renders nothing for non-owner sessions (endpoint is Owner-only) and shows an
+ * explicit sample-accumulating state instead of pretty empty numbers.
+ */
+function PerfScorecard({ perf }: { perf: AiRecPerformance | null }) {
+  if (!perf || perf.total_picks === 0) return null;
+  const smallSample = perf.picks_with_ret_5d < 20;
+  const range = perf.earliest_pick_date && perf.latest_pick_date
+    ? `${perf.earliest_pick_date} ~ ${perf.latest_pick_date}`
+    : "--";
+
+  return (
+    <Panel
+      code="AI-PERF"
+      title="推薦績效追蹤"
+      right={<span style={{ font: "700 10.5px/1 var(--mono)", color: "var(--tac-fg-3)" }}>基準 0050 · 每日自動更新</span>}
+    >
+      <div className="_rec-perf-grid">
+        <div>
+          <span>隔日勝率</span>
+          <b>{formatPct(perf.overall_hit_rate_1d)}</b>
+          <i>{perf.picks_with_ret_1d} 筆樣本</i>
+        </div>
+        <div>
+          <span>5 日勝率</span>
+          <b>{formatPct(perf.overall_hit_rate_5d)}</b>
+          <i>{perf.picks_with_ret_5d} 筆樣本</i>
+        </div>
+        <div>
+          <span>5 日平均超額</span>
+          <b data-tone={perf.avg_excess_5d !== null && perf.avg_excess_5d >= 0 ? "ok" : "warn"}>{formatSignedPct(perf.avg_excess_5d)}</b>
+          <i>vs 0050</i>
+        </div>
+        <div>
+          <span>20 日勝率</span>
+          <b>{formatPct(perf.overall_hit_rate_20d)}</b>
+          <i>{perf.picks_with_ret_20d > 0 ? `${perf.picks_with_ret_20d} 筆樣本` : "樣本未滿 20 個交易日"}</i>
+        </div>
+      </div>
+      <p className="_rec-perf-note">
+        統計期間 {range}，共 {perf.total_picks} 筆推薦。勝率＝推薦後相對 0050 有超額報酬的比例。
+        {smallSample ? " 樣本仍在累積中，數字會隨時間趨於穩定，暫不適合作為結論。" : ""}
+        此為事後績效追蹤，非未來報酬保證。
+      </p>
+      <style>{`
+        ._rec-perf-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 10px;
+        }
+        ._rec-perf-grid > div {
+          display: grid;
+          gap: 4px;
+          border: 1px solid var(--tac-line);
+          border-radius: 8px;
+          padding: 12px 14px;
+          background: rgba(8, 11, 16, 0.42);
+        }
+        ._rec-perf-grid span { font: 700 10.5px/1.2 var(--sans-tc); color: var(--tac-fg-3); }
+        ._rec-perf-grid b { font: 850 19px/1.1 var(--mono); color: var(--tac-fg-0); }
+        ._rec-perf-grid b[data-tone="warn"] { color: var(--tw-dn-bright, #e63946); }
+        ._rec-perf-grid b[data-tone="ok"] { color: var(--tac-ok, #4ade80); }
+        ._rec-perf-grid i { font: 500 10px/1.3 var(--sans-tc); color: var(--tac-fg-3); font-style: normal; }
+        ._rec-perf-note { margin: 10px 0 0; font: 500 11px/1.6 var(--sans-tc); color: var(--tac-fg-2); }
+      `}</style>
+    </Panel>
+  );
+}
+
 export default async function AiRecommendationsPage() {
-  const [todayResult, v3Result] = await Promise.all([
+  const [todayResult, v3Result, perf] = await Promise.all([
     loadRecommendations(),
     loadRecommendationsV3(),
+    getAiRecPerformance(),
   ]);
   const { data, error } = todayResult;
   const items = data?.items ?? [];
@@ -620,6 +702,7 @@ export default async function AiRecommendationsPage() {
     >
       <MarketStateBanner />
       {v3MarketScores ? <MarketStateBadge scores={v3MarketScores} /> : <MarketStateBadgePlaceholder />}
+      <PerfScorecard perf={perf} />
       <style>{`
         ._rec-tabs {
           display: flex;
