@@ -56,7 +56,7 @@ const NAV: NavItem[] = [
     title: "量化策略",
     sub: "SIM-only",
     Icon: BarChart3,
-    activePaths: ["/quant-strategies", "/lab"],
+    activePaths: ["/quant-strategies"],
   },
 ];
 
