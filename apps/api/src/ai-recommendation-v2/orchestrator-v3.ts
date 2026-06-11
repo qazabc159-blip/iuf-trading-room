@@ -739,7 +739,11 @@ async function dispatchMarketToolV3(
 
 // ── Yang SOP system prompt (5-module strict) ──────────────────────────────────
 
-function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number): string {
+// Legacy fixed fallback list — only used when the quant candidate screen yields
+// too few names (B1: dynamic pool replaces this as the primary source).
+const V3_LEGACY_CANDIDATE_LINE = "2330（台積電）、2454（聯發科）、2317（鴻海）、2308（台達電）、3711（日月光投控）、3289（宜特）、3265（台星科）、3312（弘憶股）、2412（中華電）、3324（雙鴻）";
+
+function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number, candidatePoolBlock?: string): string {
   const riskOffContext = `
 === SYSTEM-PROVIDED risk_off_score (DETERMINISTIC — DO NOT OVERRIDE) ===
 系統已計算 programmatic risk_off_score = ${programmaticRiskOffScore}/6（基於可用市場資料）。
@@ -802,9 +806,7 @@ ${riskOffContext}
   連續 2 次 get_company_technical 回傳 null → 立即停止嘗試新聞中的候選，
   改為依序呼叫下方核心候選清單，直到累積 ${MIN_V3_TECHNICAL_CALLS} 個有效 lastPrice > 0 的回傳。
 
-  核心候選清單（有 OHLCV 歷史資料，優先使用）：
-  2330（台積電）、2454（聯發科）、2317（鴻海）、2308（台達電）、3711（日月光投控）、
-  3289（宜特）、3265（台星科）、3312（弘憶股）、2412（中華電）、3324（雙鴻）
+  ${candidatePoolBlock ?? `核心候選清單（固定後備）：\n  ${V3_LEGACY_CANDIDATE_LINE}`}
 
   若 STEP 2 新聞有 ticker 且 impact_tier ≠ LOW → 先嘗試那些 ticker
   若 2 次 null → 切換到核心候選清單，不要繼續浪費輪次在無資料的冷門股上
@@ -2893,9 +2895,34 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
   let detectedMarketState: AiRecMarketState | null = null;
   let detectedRiskOffScore: number | null = progScore;
 
+  // B1: quantitative candidate pool (5-day institutional net buy + EOD momentum)
+  // replaces the fixed large-cap list as the primary candidate source. Recorded as
+  // a round-0 trace entry so the sourcing of every run is reviewable — no black box.
+  let candidatePoolBlock: string | undefined;
+  try {
+    const { buildQuantCandidatePool, renderCandidatePoolBlock } = await import("./candidate-pool.js");
+    const pool = await buildQuantCandidatePool();
+    candidatePoolBlock = renderCandidatePoolBlock(pool, V3_LEGACY_CANDIDATE_LINE);
+    if (pool) {
+      trace.push({
+        round: 0,
+        thought: "量化掃盤候選池（規則式：5 日法人淨買超 + 前一交易日量價動能；非 LLM）",
+        toolName: "quant_candidate_screen",
+        toolInput: { sources: pool.sources, dataDate: pool.dataDate },
+        observation: {
+          candidates: pool.candidates,
+          fallbackNeeded: pool.fallbackNeeded,
+        },
+        tokensUsed: 0,
+      });
+    }
+  } catch (poolErr) {
+    console.warn("[v3-orchestrator] candidate pool unavailable (using legacy fallback list):", poolErr instanceof Error ? poolErr.message : poolErr);
+  }
+
   // Inject programmatic score into system prompt — LLM cannot override
   const messages: AiRecLlmMessage[] = [
-    { role: "system", content: buildV3SystemPrompt(dateStr, progScore) },
+    { role: "system", content: buildV3SystemPrompt(dateStr, progScore, candidatePoolBlock) },
     {
       role: "user",
       content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。
