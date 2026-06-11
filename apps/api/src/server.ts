@@ -4236,6 +4236,23 @@ type KgiGatewayQuoteAuthSummary = {
 };
 
 async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSummary> {
+  // EventBridge uptime guard — this raw fetch bypassed the client-level guard
+  // (#1062) and still burned its 4s timeout off-hours; /portfolio fired it ×4
+  // per load (Bruce re-measure 6/12: kgi/status 4.4s ×4).
+  {
+    const { isKgiGatewayScheduledOff } = await import("./broker/kgi-gateway-schedule.js");
+    if (isKgiGatewayScheduledOff()) {
+      return {
+        available: null,
+        state: "gateway_unreachable",
+        errorCode: "KGI_GATEWAY_UNREACHABLE",
+        subscribedTickCount: null,
+        kgiLoggedIn: null,
+        accountSet: null
+      };
+    }
+  }
+
   const gatewayUrl =
     process.env["KGI_GATEWAY_URL"] ??
     process.env["KGI_GATEWAY_BASE_URL"] ??
@@ -4244,6 +4261,10 @@ async function readKgiGatewayQuoteAuthSummary(): Promise<KgiGatewayQuoteAuthSumm
   const timer = setTimeout(() => controller.abort(), 4_000);
   try {
     const res = await fetch(`${gatewayUrl}/quote/status`, { method: "GET", signal: controller.signal });
+    {
+      const { noteKgiGatewayAlive } = await import("./broker/kgi-gateway-schedule.js");
+      noteKgiGatewayAlive();
+    }
     if (!res.ok) {
       return {
         available: null,
@@ -5116,32 +5137,53 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
 // buildS1PositionsSnapshot(): 盤中 KGI gateway live → 盤後/回空 audit rebuild +
 // TWSE EOD mark-to-market → degraded only when both are unavailable.
 // Read-only; SIM only; no order surface.
+// 30s response cache + inflight dedup: the trading room fires this endpoint
+// up to 4× per page load (fast shell + payload + client refresh + components,
+// Bruce 6/12 profile: 3.7-4.6s each), and the snapshot recomputes TWSE/TPEX
+// cross-region price maps every call. SIM positions can't change inside 30s.
+let _fautoCache: { body: Record<string, unknown>; at: number } | null = null;
+let _fautoInflight: Promise<Record<string, unknown>> | null = null;
+const FAUTO_CACHE_TTL_MS = 30_000;
+
 app.get("/api/v1/portfolio/f-auto", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
 
-  const { buildS1PositionsSnapshot, resolveS1SimCapitalTwd } = await import("./s1-sim-runner.js");
-  const [snapshot, capital] = await Promise.all([
-    buildS1PositionsSnapshot(),
-    resolveS1SimCapitalTwd(session.workspace.id),
-  ]);
+  if (_fautoCache && Date.now() - _fautoCache.at < FAUTO_CACHE_TTL_MS) {
+    return c.json({ ..._fautoCache.body, cache_hit: true });
+  }
 
-  return c.json({
-    sim_only: true,
-    prod_write_blocked: true,
-    capital_twd: capital.capitalTwd,
-    capital_source: capital.source,
-    positions: snapshot.positions,
-    positions_date: snapshot.positionsDate,
-    data_source: snapshot.dataSource,
-    total_market_value_twd: snapshot.totalMarketValueTwd,
-    total_unrealized_pnl_twd: snapshot.totalUnrealizedPnlTwd,
-    cash_residual_estimated_twd: snapshot.cashResidualTwd,
-    notes: snapshot.notes,
-    as_of: new Date().toISOString(),
-  });
+  if (!_fautoInflight) {
+    const workspaceId = session.workspace.id;
+    _fautoInflight = (async () => {
+      const { buildS1PositionsSnapshot, resolveS1SimCapitalTwd } = await import("./s1-sim-runner.js");
+      const [snapshot, capital] = await Promise.all([
+        buildS1PositionsSnapshot(),
+        resolveS1SimCapitalTwd(workspaceId),
+      ]);
+      const body: Record<string, unknown> = {
+        sim_only: true,
+        prod_write_blocked: true,
+        capital_twd: capital.capitalTwd,
+        capital_source: capital.source,
+        positions: snapshot.positions,
+        positions_date: snapshot.positionsDate,
+        data_source: snapshot.dataSource,
+        total_market_value_twd: snapshot.totalMarketValueTwd,
+        total_unrealized_pnl_twd: snapshot.totalUnrealizedPnlTwd,
+        cash_residual_estimated_twd: snapshot.cashResidualTwd,
+        notes: snapshot.notes,
+        as_of: new Date().toISOString(),
+      };
+      _fautoCache = { body, at: Date.now() };
+      return body;
+    })().finally(() => { _fautoInflight = null; });
+  }
+
+  const body = await _fautoInflight;
+  return c.json(body);
 });
 
 // GET /api/v1/internal/s1-sim/basket?date=YYYY-MM-DD — S1 basket (Owner only)
