@@ -11538,6 +11538,9 @@ app.get("/api/v1/breadth", async (c) => {
 // This replaces chain_position (per-stock Yahoo Finance labels) for heatmap grouping.
 // Cache TTL: 4 hours (industry changes rarely, only on listing/delisting events).
 let _twseIndustryMapCache: { map: Map<string, string>; expiresAt: number } | null = null;
+// Last healthy (both-sources) map. On 6/10 one listing source failed transiently and
+// the partial map (888 tickers vs ~1978) was cached for 4h → heatmap regression.
+let _twseIndustryMapLastGood: Map<string, string> | null = null;
 
 async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
   if (_twseIndustryMapCache && Date.now() < _twseIndustryMapCache.expiresAt) {
@@ -11552,10 +11555,23 @@ async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
     // TPEx first, TWSE overwrites (same dedup policy as bulk-seed)
     for (const c of tpex) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
     for (const c of twse) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
-    _twseIndustryMapCache = { map, expiresAt: Date.now() + 4 * 60 * 60 * 1000 };
+
+    const partial = twse.length === 0 || tpex.length === 0;
+    if (partial && _twseIndustryMapLastGood && _twseIndustryMapLastGood.size > map.size) {
+      // Degraded fetch — serve last-good and retry upstream soon instead of
+      // locking the partial map in for 4 hours.
+      console.warn(`[industry-map] partial fetch (twse=${twse.length} tpex=${tpex.length}, mapped=${map.size}) — serving last-good (${_twseIndustryMapLastGood.size}), retry in 5min`);
+      _twseIndustryMapCache = { map: _twseIndustryMapLastGood, expiresAt: Date.now() + 5 * 60 * 1000 };
+      return _twseIndustryMapLastGood;
+    }
+
+    if (!partial && map.size > 0) {
+      _twseIndustryMapLastGood = map;
+    }
+    _twseIndustryMapCache = { map, expiresAt: Date.now() + (partial ? 5 * 60 * 1000 : 4 * 60 * 60 * 1000) };
     return map;
   } catch {
-    return new Map();
+    return _twseIndustryMapLastGood ?? new Map();
   }
 }
 
