@@ -637,16 +637,40 @@ async function fetchTaiwanMarketIndexToday(
     return null;
   }
 
-  // Compute change from first row (opening = yesterday's close reference)
+  // Change must be computed against YESTERDAY's official close — NOT the day's
+  // first 5-min row. The old method measured intraday drift since 09:00 and fed
+  // a sign-flipped narrative into the daily brief (6/11 audit: 6/10 closed
+  // -3.31% but the brief claimed +3.31% / 多頭強勢). MIS tse_t00.tw carries the
+  // official previous close in field y.
   let change = 0;
   let changePct = 0;
-  const firstRow = rows[0];
-  if (Array.isArray(firstRow) && firstRow.length >= 2) {
-    const prevClose = parseFloat(firstRow[1].replace(/,/g, ""));
-    if (isFinite(prevClose) && prevClose > 0) {
-      change = Math.round((close - prevClose) * 100) / 100;
-      changePct = Math.round((change / prevClose) * 10000) / 100;
+  let prevClose: number | null = null;
+  try {
+    const misResp = await doFetch(
+      "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0",
+      { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(4000) }
+    );
+    if (misResp.ok) {
+      const misData = await misResp.json() as { msgArray?: Array<Record<string, string>> };
+      const y = parseFloat(String(misData.msgArray?.[0]?.["y"] ?? "").replace(/,/g, ""));
+      if (isFinite(y) && y > 0) prevClose = y;
     }
+  } catch {
+    // MIS unavailable — fall through to the intraday-drift fallback below
+  }
+  if (prevClose === null) {
+    const firstRow = rows[0];
+    if (Array.isArray(firstRow) && firstRow.length >= 2) {
+      const firstVal = parseFloat(firstRow[1].replace(/,/g, ""));
+      if (isFinite(firstVal) && firstVal > 0) {
+        prevClose = firstVal;
+        console.warn("[twse-openapi-client] MI_5MINS_INDEX: official prev close unavailable — change measured vs day's first row (intraday drift, may differ from the official daily change)");
+      }
+    }
+  }
+  if (prevClose !== null) {
+    change = Math.round((close - prevClose) * 100) / 100;
+    changePct = Math.round((change / prevClose) * 10000) / 100;
   }
 
   // Build ISO timestamp — market closes at 13:30 Taipei time (+08:00)
