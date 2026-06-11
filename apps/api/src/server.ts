@@ -18904,6 +18904,36 @@ app.get("/api/v1/admin/ai-rec/performance", async (c) => {
   return c.json(perf);
 });
 
+// POST /api/v1/admin/ai-rec/perf/backfill — Owner-only historical rebuild.
+// Rebuilds ai_rec_pick_snapshots from all complete v3 runs in DB (latest run per
+// Taipei date) and then fills forward returns. Zero LLM cost (price data only).
+// Errors are returned verbatim so write failures are diagnosable (audit B2:
+// total_picks=0 was silent because every failure path was fail-open).
+app.post("/api/v1/admin/ai-rec/perf/backfill", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const { backfillPickSnapshots, updateForwardReturns } = await import("./ai-rec-perf-store.js");
+  const backfill = await backfillPickSnapshots();
+
+  // Forward returns process in 50-row batches — loop until drained (capped).
+  let forwardUpdated = 0;
+  let forwardErrors = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await updateForwardReturns();
+    forwardUpdated += r.updated;
+    forwardErrors += r.errors;
+    if (r.updated === 0) break;
+  }
+
+  return c.json({
+    ok: backfill.picksFailed === 0 && backfill.errors.length === 0,
+    backfill,
+    forward: { updated: forwardUpdated, errors: forwardErrors },
+  });
+});
+
 // POST /api/v1/admin/ai-rec/snapshot — manual snapshot trigger (for today's v3 run)
 // Useful for backfilling: call after v3 refresh to force-write snapshot.
 app.post("/api/v1/admin/ai-rec/snapshot", async (c) => {

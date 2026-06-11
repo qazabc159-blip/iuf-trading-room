@@ -125,6 +125,93 @@ function todayTst(): string {
  * Uses UPSERT (ON CONFLICT DO UPDATE) — safe to call multiple times for same run.
  * Fails silently: pick snapshot failure must never crash the v3 run caller.
  */
+/** Minimal item shape shared by live results and DB-restored runs. */
+interface PickItemLike {
+  ticker?: string | null;
+  bucket?: string | null;
+  action?: string | null;
+  confidence?: number | null;
+  totalScore?: number | null;
+  entryPriceRange?: { low?: number | null; high?: number | null } | null;
+  entryZone?: { low?: number | null; high?: number | null } | null;
+  tp1?: number | null;
+  tp2?: number | null;
+  stopLoss?: number | null;
+  tp1Structured?: { price?: number | null } | null;
+  tp2Structured?: { price?: number | null } | null;
+  stopLossStructured?: { price?: number | null } | null;
+}
+
+type PerfDb = import("drizzle-orm/node-postgres").NodePgDatabase<Record<string, never>>;
+
+/** Upsert one pick row. Throws on failure — callers decide whether to swallow. */
+async function upsertPickRow(
+  db: PerfDb,
+  pickDate: string,
+  item: PickItemLike,
+  runId: string,
+  pickPrice: number | null
+): Promise<void> {
+  const { sql } = await import("drizzle-orm");
+  const bucket = item.bucket ?? "C";
+  const action = item.action ?? "資料不足暫不推薦";
+  const entryLow = item.entryPriceRange?.low ?? (item.entryZone?.low ?? null);
+  const entryHigh = item.entryPriceRange?.high ?? (item.entryZone?.high ?? null);
+  const tp1 = item.tp1 ?? (item.tp1Structured?.price ?? null);
+  const tp2 = item.tp2 ?? (item.tp2Structured?.price ?? null);
+  const stopLoss = item.stopLoss ?? (item.stopLossStructured?.price ?? null);
+
+  await db.execute(sql`
+    INSERT INTO ai_rec_pick_snapshots
+      (pick_date, ticker, bucket, action, confidence, total_score,
+       pick_price, entry_low, entry_high, tp1, tp2, stop_loss, run_id)
+    VALUES
+      (${pickDate}::date, ${item.ticker}, ${bucket}, ${action},
+       ${item.confidence ?? null}, ${item.totalScore ?? null},
+       ${pickPrice !== null ? pickPrice.toFixed(2) : null},
+       ${entryLow !== null && entryLow !== undefined ? Number(entryLow).toFixed(2) : null},
+       ${entryHigh !== null && entryHigh !== undefined ? Number(entryHigh).toFixed(2) : null},
+       ${tp1 !== null && tp1 !== undefined ? Number(tp1).toFixed(2) : null},
+       ${tp2 !== null && tp2 !== undefined ? Number(tp2).toFixed(2) : null},
+       ${stopLoss !== null && stopLoss !== undefined ? Number(stopLoss).toFixed(2) : null},
+       ${runId})
+    ON CONFLICT (pick_date, ticker)
+    DO UPDATE SET
+      bucket       = EXCLUDED.bucket,
+      action       = EXCLUDED.action,
+      confidence   = EXCLUDED.confidence,
+      total_score  = EXCLUDED.total_score,
+      pick_price   = EXCLUDED.pick_price,
+      entry_low    = EXCLUDED.entry_low,
+      entry_high   = EXCLUDED.entry_high,
+      tp1          = EXCLUDED.tp1,
+      tp2          = EXCLUDED.tp2,
+      stop_loss    = EXCLUDED.stop_loss,
+      run_id       = EXCLUDED.run_id
+  `);
+}
+
+/** Close price for ticker at the most recent trading day ≤ pickDate (historical backfill). */
+async function getCloseOnOrBefore(db: PerfDb, ticker: string, pickDate: string): Promise<number | null> {
+  try {
+    const { sql } = await import("drizzle-orm");
+    const rows = (await db.execute(sql`
+      SELECT o.close AS close
+      FROM companies_ohlcv o
+      INNER JOIN companies c ON c.id = o.company_id
+      WHERE c.ticker = ${ticker}
+        AND o.interval IN ('1d', 'day')
+        AND o.dt::date <= ${pickDate}::date
+      ORDER BY o.dt DESC
+      LIMIT 1
+    `)) as unknown as { rows: Array<{ close: string | null }> };
+    const v = parseFloat(rows.rows?.[0]?.close ?? "");
+    return isNaN(v) ? null : v;
+  } catch {
+    return null;
+  }
+}
+
 export async function snapshotV3Picks(result: AiRecommendationV3RunResult): Promise<void> {
   if (result.status !== "complete" && result.status !== "synthesis_format_error") return;
   if (!result.items || result.items.length === 0) return;
@@ -132,61 +219,92 @@ export async function snapshotV3Picks(result: AiRecommendationV3RunResult): Prom
   try {
     const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return;
-    const db = getDb();
+    const db = getDb() as unknown as PerfDb | null;
     if (!db) return;
 
     const pickDate = todayTst();
-    const { sql } = await import("drizzle-orm");
+    let written = 0;
+    let failed = 0;
 
     for (const item of result.items) {
       if (!item.ticker) continue;
-
-      // Resolve pick price from companies_ohlcv (fail-open: null if unavailable)
-      const pickPrice = await getLatestCloseFromDb(db as unknown as import("drizzle-orm/node-postgres").NodePgDatabase<Record<string, never>>, item.ticker);
-
-      const bucket = item.bucket ?? "C";
-      const action = item.action ?? "資料不足暫不推薦";
-      const entryLow = item.entryPriceRange?.low ?? (item.entryZone?.low ?? null);
-      const entryHigh = item.entryPriceRange?.high ?? (item.entryZone?.high ?? null);
-      const tp1 = item.tp1 ?? (item.tp1Structured?.price ?? null);
-      const tp2 = item.tp2 ?? (item.tp2Structured?.price ?? null);
-      const stopLoss = item.stopLoss ?? (item.stopLossStructured?.price ?? null);
-
-      await db.execute(sql`
-        INSERT INTO ai_rec_pick_snapshots
-          (pick_date, ticker, bucket, action, confidence, total_score,
-           pick_price, entry_low, entry_high, tp1, tp2, stop_loss, run_id)
-        VALUES
-          (${pickDate}::date, ${item.ticker}, ${bucket}, ${action},
-           ${item.confidence ?? null}, ${item.totalScore ?? null},
-           ${pickPrice !== null ? pickPrice.toFixed(2) : null},
-           ${entryLow !== null ? Number(entryLow).toFixed(2) : null},
-           ${entryHigh !== null ? Number(entryHigh).toFixed(2) : null},
-           ${tp1 !== null ? Number(tp1).toFixed(2) : null},
-           ${tp2 !== null ? Number(tp2).toFixed(2) : null},
-           ${stopLoss !== null ? Number(stopLoss).toFixed(2) : null},
-           ${result.runId})
-        ON CONFLICT (pick_date, ticker)
-        DO UPDATE SET
-          bucket       = EXCLUDED.bucket,
-          action       = EXCLUDED.action,
-          confidence   = EXCLUDED.confidence,
-          total_score  = EXCLUDED.total_score,
-          pick_price   = EXCLUDED.pick_price,
-          entry_low    = EXCLUDED.entry_low,
-          entry_high   = EXCLUDED.entry_high,
-          tp1          = EXCLUDED.tp1,
-          tp2          = EXCLUDED.tp2,
-          stop_loss    = EXCLUDED.stop_loss,
-          run_id       = EXCLUDED.run_id
-      `);
+      try {
+        // Resolve pick price from companies_ohlcv (fail-open: null if unavailable)
+        const pickPrice = await getLatestCloseFromDb(db, item.ticker);
+        await upsertPickRow(db, pickDate, item, result.runId, pickPrice);
+        written++;
+      } catch (itemErr) {
+        // Per-item isolation: one bad row must not abort the rest of the batch
+        // (the old single try/catch did exactly that — audit B2: total_picks=0).
+        failed++;
+        console.warn(`[ai-rec-perf] pick upsert failed ticker=${item.ticker}:`, itemErr instanceof Error ? itemErr.message : itemErr);
+      }
     }
 
-    console.info(`[ai-rec-perf] snapshot written: ${result.items.length} picks for ${pickDate}`);
+    console.info(`[ai-rec-perf] snapshot for ${pickDate}: written=${written} failed=${failed}`);
   } catch (err) {
     // Fail-open: snapshot failure must not propagate
     console.warn("[ai-rec-perf] snapshotV3Picks failed (non-fatal):", err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Historical backfill — rebuilds pick snapshots from ai_recommendations_runs
+ * (status=complete v3 runs, latest run per Taipei date). No LLM involved; price
+ * data comes from companies_ohlcv. Errors are RETURNED (not swallowed) so the
+ * admin caller can see exactly why a write failed.
+ */
+export async function backfillPickSnapshots(): Promise<{
+  runsSeen: number;
+  picksWritten: number;
+  picksFailed: number;
+  errors: string[];
+}> {
+  const out = { runsSeen: 0, picksWritten: 0, picksFailed: 0, errors: [] as string[] };
+
+  const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+  if (!isDatabaseMode()) {
+    out.errors.push("memory_mode");
+    return out;
+  }
+  const db = getDb() as unknown as PerfDb | null;
+  if (!db) {
+    out.errors.push("no_db");
+    return out;
+  }
+
+  const { sql } = await import("drizzle-orm");
+  const runs = (await db.execute(sql`
+    SELECT DISTINCT ON (((generated_at AT TIME ZONE 'Asia/Taipei')::date))
+      run_id,
+      items,
+      ((generated_at AT TIME ZONE 'Asia/Taipei')::date)::text AS pick_date
+    FROM ai_recommendations_runs
+    WHERE trigger LIKE '%:v3'
+      AND status = 'complete'
+      AND jsonb_array_length(items) > 0
+    ORDER BY ((generated_at AT TIME ZONE 'Asia/Taipei')::date), generated_at DESC
+  `)) as unknown as { rows: Array<{ run_id: string; items: unknown; pick_date: string }> };
+
+  for (const run of runs.rows ?? []) {
+    out.runsSeen++;
+    const items = Array.isArray(run.items) ? (run.items as PickItemLike[]) : [];
+    for (const item of items) {
+      if (!item.ticker) continue;
+      try {
+        const pickPrice = await getCloseOnOrBefore(db, item.ticker, run.pick_date);
+        await upsertPickRow(db, run.pick_date, item, run.run_id, pickPrice);
+        out.picksWritten++;
+      } catch (e) {
+        out.picksFailed++;
+        const msg = `${run.pick_date}/${item.ticker}: ${e instanceof Error ? e.message : String(e)}`;
+        if (out.errors.length < 5) out.errors.push(msg);
+      }
+    }
+  }
+
+  console.info(`[ai-rec-perf] backfill: runs=${out.runsSeen} written=${out.picksWritten} failed=${out.picksFailed}`);
+  return out;
 }
 
 // ── 2. updateForwardReturns ───────────────────────────────────────────────────
