@@ -299,10 +299,20 @@ async function quoteFetch(
   options: RequestInit,
   timeoutMs: number
 ): Promise<Response> {
+  // EventBridge uptime guard — see kgi-gateway-schedule.ts. Off-hours quote
+  // subscribe/tick attempts each burned a full timeout before the MIS/EOD
+  // fallback fired; pages stacked several of these per load (Bruce 6/11).
+  const { isKgiGatewayScheduledOff, noteKgiGatewayAlive, KGI_SCHEDULED_OFF_MESSAGE } = await import("./kgi-gateway-schedule.js");
+  if (isKgiGatewayScheduledOff()) {
+    throw new KgiQuoteUnreachableError(url, new Error(KGI_SCHEDULED_OFF_MESSAGE));
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    noteKgiGatewayAlive();
+    return response;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new KgiQuoteUnreachableError(url, new Error(`Timed out after ${timeoutMs}ms`));
