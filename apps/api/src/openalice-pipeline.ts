@@ -44,6 +44,7 @@ import {
   getTwseMarketOverview,
   getTwseIndustryHeatmap,
   getTwseLeaders,
+  isTwseIndexSnapshotConsistent,
 } from "./data-sources/twse-openapi-client.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -363,6 +364,17 @@ export type LiveMarketSnapshot = {
   };
 };
 
+function hasConsistentTaiexSnapshot(taiex: LiveMarketSnapshot["taiex"]): boolean {
+  return taiex.value !== null
+    && taiex.change !== null
+    && taiex.changePct !== null
+    && isTwseIndexSnapshotConsistent({
+      value: taiex.value,
+      change: taiex.change,
+      changePct: taiex.changePct,
+    });
+}
+
 /**
  * Collect live market numbers from TWSE OpenAPI + DB aggregate queries.
  * Never throws — all errors return null fields. DB queries require a workspace.
@@ -383,13 +395,16 @@ async function collectLiveMarketSnapshot(
   try {
     const overview = await getTwseMarketOverview();
     if (overview) {
-      snapshot.taiex = {
+      const taiexCandidate: LiveMarketSnapshot["taiex"] = {
         value: overview.taiex?.value ?? null,
         change: overview.taiex?.change ?? null,
         changePct: overview.taiex?.changePct ?? null,
         sourceState: overview._isLkg ? "lkg" : "live",
         asOf: overview.taiex?.ts ? overview.taiex.ts.slice(0, 10) : null,
       };
+      snapshot.taiex = hasConsistentTaiexSnapshot(taiexCandidate)
+        ? taiexCandidate
+        : { value: null, change: null, changePct: null, sourceState: "inconsistent_rejected", asOf: null };
     }
   } catch {
     // non-fatal
@@ -523,7 +538,7 @@ async function collectLiveMarketSnapshot(
 function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
   const lines: string[] = [];
 
-  if (snap.taiex.value !== null) {
+  if (hasConsistentTaiexSnapshot(snap.taiex)) {
     // 明示漲跌基準與正負號 — 6/11 audit: 大跌日簡報寫成 +3.31% 多頭強勢
     lines.push(`TAIEX: ${snap.taiex.value}（較前一交易日收盤 ${snap.taiex.change != null ? (snap.taiex.change >= 0 ? "+" : "") + snap.taiex.change : "n/a"} 點、${snap.taiex.changePct != null ? (snap.taiex.changePct >= 0 ? "+" : "") + snap.taiex.changePct + "%" : "n/a"}；負號=下跌，引用時不得改變方向）`);
     if (snap.taiex.asOf) lines.push(`  資料日期: ${snap.taiex.asOf} (${snap.taiex.sourceState ?? "unknown"})`);
@@ -568,7 +583,7 @@ function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
 
 function latestSnapshotDate(snap: LiveMarketSnapshot): string | null {
   const dates = [
-    snap.taiex.asOf,
+    hasConsistentTaiexSnapshot(snap.taiex) ? snap.taiex.asOf : null,
     snap.institutional.date,
     snap.margin.date,
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
@@ -580,8 +595,9 @@ export function buildMarketOverviewSourceEntryFromSnapshot(
   snap: LiveMarketSnapshot,
   staleThreshold: Date
 ): SourcePackEntry {
+  const taiexConsistent = hasConsistentTaiexSnapshot(snap.taiex);
   const availableBlocks = [
-    snap.taiex.value !== null,
+    taiexConsistent,
     snap.heatmapTop3.length > 0,
     snap.topGainers.length > 0 || snap.topLosers.length > 0,
     snap.institutional.date !== null,
@@ -594,7 +610,7 @@ export function buildMarketOverviewSourceEntryFromSnapshot(
       ? "EMPTY"
       : isStale || snap.taiex.sourceState === "lkg"
       ? "STALE"
-      : snap.taiex.value === null
+      : !taiexConsistent
       ? "DEGRADED"
       : "LIVE";
 
@@ -607,7 +623,7 @@ export function buildMarketOverviewSourceEntryFromSnapshot(
       availableBlocks === 0
         ? "live_market_snapshot_empty"
         : [
-            `taiex=${snap.taiex.sourceState ?? "missing"}`,
+            `taiex=${taiexConsistent ? snap.taiex.sourceState ?? "missing" : "inconsistent_rejected"}`,
             `heatmap=${snap.heatmapTop3.length}`,
             `leaders=${snap.topGainers.length + snap.topLosers.length}`,
             `institutional=${snap.institutional.date ?? "missing"}`,
@@ -618,10 +634,11 @@ export function buildMarketOverviewSourceEntryFromSnapshot(
         ? null
         : [
             {
-              taiexValue: snap.taiex.value,
-              taiexChangePct: snap.taiex.changePct,
-              taiexAsOf: snap.taiex.asOf,
-              taiexSourceState: snap.taiex.sourceState,
+              taiexValue: taiexConsistent ? snap.taiex.value : null,
+              taiexChange: taiexConsistent ? snap.taiex.change : null,
+              taiexChangePct: taiexConsistent ? snap.taiex.changePct : null,
+              taiexAsOf: taiexConsistent ? snap.taiex.asOf : null,
+              taiexSourceState: taiexConsistent ? snap.taiex.sourceState : "inconsistent_rejected",
               heatmapTop3: snap.heatmapTop3,
               topGainers: snap.topGainers,
               topLosers: snap.topLosers,

@@ -22,6 +22,8 @@ import {
   _resetStockDayAllCache,
   _resetTwseLeadersCache,
   _resetLkgOverviewCache,
+  _resetTwseOverviewSwr,
+  isTwseIndexSnapshotConsistent,
   type TwseMarketOverviewResult,
   type TwseHeatmapTile
 } from "../data-sources/twse-openapi-client.js";
@@ -56,6 +58,20 @@ function makeMiIndexResponse() {
       "漲跌": "-",
       "漲跌點數": "50.00",
       "漲跌百分比": "0.41",
+      "特殊處理註記": ""
+    }
+  ];
+}
+
+function makeSignedCommaMiIndexResponse() {
+  return [
+    {
+      "日期": "1150610",
+      "指數": "發行量加權股價指數",
+      "收盤指數": "43225.54",
+      "漲跌": "-",
+      "漲跌點數": "1,478.90",
+      "漲跌百分比": "-3.31",
       "特殊處理註記": ""
     }
   ];
@@ -209,6 +225,110 @@ test("T1b: getTwseMarketOverview falls back to MI_INDEX when MI_5MINS_INDEX fail
   assert.equal(r.taiex.change, 108.26, "fallback taiex.change from MI_INDEX");
   assert.equal(r.taiex.changePct, 0.26, "fallback taiex.changePct from MI_INDEX");
   assert.ok(r.taiex.ts.startsWith("2026-05-12"), `fallback ts must use MI_INDEX date: ${r.taiex.ts}`);
+});
+
+test("T1c: MI_INDEX parses comma point changes and already-signed percentages consistently", async () => {
+  _resetTwseOverviewCache();
+  _resetTwseOverviewSwr();
+  _resetLkgOverviewCache();
+
+  const mockFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      const body = { stat: "N/A", date: "20260611" };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body),
+        json: async () => body
+      } as unknown as Response;
+    }
+    if (url.includes("MI_INDEX")) {
+      const body = makeSignedCommaMiIndexResponse();
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body),
+        json: async () => body
+      } as unknown as Response;
+    }
+    return { ok: false, status: 404, headers: { get: () => null } as unknown as Headers } as unknown as Response;
+  }) as typeof fetch;
+
+  const result = await getTwseMarketOverview({ fetchOverride: mockFetch });
+
+  assert.ok(result);
+  assert.equal(result.taiex.value, 43225.54);
+  assert.equal(result.taiex.change, -1478.9);
+  assert.equal(result.taiex.changePct, -3.31);
+  assert.equal(isTwseIndexSnapshotConsistent(result.taiex), true);
+  assert.equal(
+    isTwseIndexSnapshotConsistent({ value: 43225.54, change: -1, changePct: 3.31 }),
+    false,
+    "the production contradictory tuple must be rejected"
+  );
+});
+
+test("T1d: an inconsistent LKG entry is evicted instead of being served", async () => {
+  _resetTwseOverviewCache();
+  _resetLkgOverviewCache();
+
+  const goodFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      const body = { stat: "N/A", date: "20260611" };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body),
+        json: async () => body
+      } as unknown as Response;
+    }
+    const body = makeSignedCommaMiIndexResponse();
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+      text: async () => JSON.stringify(body),
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const first = await getTwseMarketOverview({ fetchOverride: goodFetch });
+  assert.ok(first);
+
+  // Simulate a previously poisoned in-process reference. The LKG read gate must
+  // evict it even if every upstream is unavailable.
+  first.taiex.change = -1;
+  first.taiex.changePct = 3.31;
+  _resetTwseOverviewCache();
+
+  const unavailableFetch = (async (input: URL | RequestInfo): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("MI_5MINS_INDEX")) {
+      const body = { stat: "N/A", date: "20260611" };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (h: string) => h === "content-type" ? "application/json" : null } as unknown as Headers,
+        text: async () => JSON.stringify(body),
+        json: async () => body
+      } as unknown as Response;
+    }
+    return {
+      ok: false,
+      status: 503,
+      headers: { get: () => "application/json" } as unknown as Headers,
+      text: async () => "{}",
+      json: async () => ({})
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const fallback = await getTwseMarketOverview({ fetchOverride: unavailableFetch });
+  assert.equal(fallback, null);
 });
 
 // ── T2: getTwseIndustryHeatmap aggregation ────────────────────────────────────

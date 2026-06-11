@@ -373,6 +373,73 @@ export interface TwseMarketOverviewResult {
   _isLkg?: boolean;
 }
 
+const INDEX_CONSISTENCY_TOLERANCE_PCT = 0.15;
+
+function parseTwseNumber(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Market overview values are only usable when close, point change, and percent
+ * change describe the same previous close. This rejects malformed upstream
+ * parsing and poisoned cache entries before they reach product or LLM surfaces.
+ */
+export function isTwseIndexSnapshotConsistent(
+  snapshot: Pick<TwseIndexSnapshot, "value" | "change" | "changePct">,
+  tolerancePct = INDEX_CONSISTENCY_TOLERANCE_PCT
+): boolean {
+  const { value, change, changePct } = snapshot;
+  if (![value, change, changePct].every(Number.isFinite) || value <= 0) return false;
+  const previousClose = value - change;
+  if (!Number.isFinite(previousClose) || previousClose <= 0) return false;
+  const derivedChangePct = (change / previousClose) * 100;
+  return Math.abs(derivedChangePct - changePct) <= tolerancePct;
+}
+
+function isMarketOverviewConsistent(result: TwseMarketOverviewResult): boolean {
+  return isTwseIndexSnapshotConsistent(result.taiex)
+    && (result.otc === null || isTwseIndexSnapshotConsistent(result.otc));
+}
+
+function parseMiIndexTaiexRow(row: MiIndexRow): TwseIndexSnapshot | null {
+  const value = parseTwseNumber(row["收盤指數"]);
+  const pointChange = parseTwseNumber(row["漲跌點數"]);
+  if (value === null || value <= 0 || pointChange === null) return null;
+
+  const direction = row["漲跌"].trim() === "-"
+    ? -1
+    : row["漲跌"].trim() === "+"
+    ? 1
+    : pointChange < 0
+    ? -1
+    : 1;
+  const change = Math.round(direction * Math.abs(pointChange) * 100) / 100;
+  const previousClose = value - change;
+  if (previousClose <= 0) return null;
+
+  // Recompute from the official close and point change. The percentage field
+  // can already contain a sign, so applying the direction twice flips losses.
+  const changePct = Math.round((change / previousClose) * 10000) / 100;
+  const snapshot: TwseIndexSnapshot = {
+    value: Math.round(value * 100) / 100,
+    change,
+    changePct,
+    ts: rocDateToTaipeiTs(row["日期"])
+  };
+
+  if (!isTwseIndexSnapshotConsistent(snapshot)) return null;
+
+  const upstreamPct = parseTwseNumber(row["漲跌百分比"]);
+  if (upstreamPct !== null && Math.abs(Math.abs(upstreamPct) - Math.abs(changePct)) > INDEX_CONSISTENCY_TOLERANCE_PCT) {
+    console.warn(
+      `[twse-openapi-client] MI_INDEX percentage mismatch: upstream=${upstreamPct} derived=${changePct}`
+    );
+  }
+  return snapshot;
+}
+
 /** Output shape for industry heatmap tile */
 export interface TwseHeatmapTile {
   industry: string;
@@ -416,11 +483,11 @@ function rocDateToTaipeiTs(rocDate: string): string {
  * prevClose = close - change
  */
 function computeChangePct(closingPrice: string, change: string): number {
-  const close = parseFloat(closingPrice);
+  const close = parseTwseNumber(closingPrice);
   // TWSE Change field: "20.0000" (positive=up), "-0.0500" (negative=down)
   // TPEX Change field: "+0.94", "-0.08 " (with possible leading + and trailing spaces)
-  const chg = parseFloat(change.trim().replace(/^\+/, ""));
-  if (!isFinite(close) || !isFinite(chg) || (close - chg) === 0) return 0;
+  const chg = parseTwseNumber(change);
+  if (close === null || chg === null || (close - chg) === 0) return 0;
   const prevClose = close - chg;
   return Math.round((chg / prevClose) * 10000) / 100; // round to 2 decimal places
 }
@@ -438,21 +505,33 @@ function getOverviewCached(key: string): TwseMarketOverviewResult | null {
   const entry = _overviewCache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) { _overviewCache.delete(key); return null; }
+  if (!isMarketOverviewConsistent(entry.result)) {
+    _overviewCache.delete(key);
+    console.warn("[twse-openapi-client] rejected inconsistent market overview cache entry");
+    return null;
+  }
   return entry.result;
 }
 
 function setOverviewCache(key: string, result: TwseMarketOverviewResult): void {
+  if (!isMarketOverviewConsistent(result)) {
+    console.warn("[twse-openapi-client] refused to cache inconsistent market overview");
+    return;
+  }
   _overviewCache.set(key, { result, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_SECONDS * 1000 });
 }
 
 /** For test cleanup */
 export function _resetTwseOverviewCache(): void {
   _overviewCache.clear();
+  _overviewLastGood = null;
+  _overviewRefreshInflight = null;
 }
 
 // ── Last-known-good (LKG) cache for market overview ──────────────────────────
-// Survives across the 60s _overviewCache window. No TTL — if TWSE is down for
-// hours or across a redeploy, we return the last successful value tagged
+// Survives across the 60s _overviewCache window. It is process-local and is
+// intentionally cleared on redeploy. If TWSE is down within the same process,
+// we return the last successful value tagged
 // sourceState="lkg" so the frontend can show "昨日收盤" or "今日收盤" correctly.
 // A value is only served as LKG if it is at most LKG_MAX_AGE_MS old (48h).
 // This bridges weekends (Fri close → Mon morning), holidays, and TWSE downtime.
@@ -472,10 +551,19 @@ function getLkgOverview(): TwseMarketOverviewResult | null {
     _lkgOverview = null;
     return null;
   }
+  if (!isMarketOverviewConsistent(_lkgOverview.result)) {
+    _lkgOverview = null;
+    console.warn("[twse-openapi-client] rejected inconsistent LKG market overview");
+    return null;
+  }
   return _lkgOverview.result;
 }
 
 function setLkgOverview(result: TwseMarketOverviewResult): void {
+  if (!isMarketOverviewConsistent(result)) {
+    console.warn("[twse-openapi-client] refused to save inconsistent LKG market overview");
+    return;
+  }
   _lkgOverview = { result, savedAt: Date.now() };
 }
 
@@ -739,6 +827,11 @@ export async function getTwseMarketOverview(
   const cached = getOverviewCached(CACHE_KEY);
   if (cached) return cached;
 
+  if (_overviewLastGood && !isMarketOverviewConsistent(_overviewLastGood.result)) {
+    _overviewLastGood = null;
+    console.warn("[twse-openapi-client] rejected inconsistent SWR market overview");
+  }
+
   // Serve the last good snapshot instantly and refresh in the background.
   // The 5-min pre-warm cron keeps this ≤5 min old during market hours; the
   // result carries its own ts so the UI labels freshness honestly.
@@ -771,6 +864,10 @@ async function _fetchTwseMarketOverviewUncached(
   // ── Primary: MI_5MINS_INDEX (today's close — available immediately after 13:30) ──
   const todayStr = todayTaipeiYYYYMMDD();
   let taiex: TwseIndexSnapshot | null = await fetchTaiwanMarketIndexToday(todayStr, doFetch);
+  if (taiex && !isTwseIndexSnapshotConsistent(taiex)) {
+    console.warn("[twse-openapi-client] rejected inconsistent MI_5MINS_INDEX snapshot");
+    taiex = null;
+  }
 
   // ── Fallback: MI_INDEX (OpenAPI official, may be stale until next publish) ──────
   if (!taiex) {
@@ -787,16 +884,7 @@ async function _fetchTwseMarketOverviewUncached(
           if (Array.isArray(rows)) {
             const taiexRow = rows.find(r => r["指數"] === "発行量加権股価指数" || r["指數"] === "發行量加權股價指數");
             if (taiexRow) {
-              const value = parseFloat(taiexRow["收盤指數"]);
-              const chgSign = taiexRow["漲跌"] === "-" ? -1 : 1;
-              const change = chgSign * parseFloat(taiexRow["漲跌點數"]);
-              const changePct = chgSign * parseFloat(taiexRow["漲跌百分比"]);
-              taiex = {
-                value: Math.round(value * 100) / 100,
-                change: Math.round(change * 100) / 100,
-                changePct: Math.round(changePct * 100) / 100,
-                ts: rocDateToTaipeiTs(taiexRow["日期"])
-              };
+              taiex = parseMiIndexTaiexRow(taiexRow);
             }
           }
         }
@@ -814,16 +902,7 @@ async function _fetchTwseMarketOverviewUncached(
           if (Array.isArray(rows2)) {
             const taiexRow2 = rows2.find(r => r["指數"] === "發行量加權股價指數");
             if (taiexRow2) {
-              const value2 = parseFloat(taiexRow2["收盤指數"]);
-              const chgSign2 = taiexRow2["漲跌"] === "-" ? -1 : 1;
-              const change2 = chgSign2 * parseFloat(taiexRow2["漲跌點數"]);
-              const changePct2 = chgSign2 * parseFloat(taiexRow2["漲跌百分比"]);
-              taiex = {
-                value: Math.round(value2 * 100) / 100,
-                change: Math.round(change2 * 100) / 100,
-                changePct: Math.round(changePct2 * 100) / 100,
-                ts: rocDateToTaipeiTs(taiexRow2["日期"])
-              };
+              taiex = parseMiIndexTaiexRow(taiexRow2);
             }
           }
         }
@@ -861,7 +940,7 @@ async function _fetchTwseMarketOverviewUncached(
 
   setOverviewCache(CACHE_KEY, result);
   _overviewLastGood = { result, at: Date.now() };
-  // ── Save to LKG — persists across cache expiry and redeployments ──────────
+  // ── Save to process-local LKG across short upstream outages ───────────────
   setLkgOverview(result);
   return result;
 }

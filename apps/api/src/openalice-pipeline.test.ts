@@ -236,6 +236,33 @@ test("daily brief source pack market overview uses live market snapshot", () => 
   ]);
 });
 
+test("daily brief source pack rejects a contradictory TAIEX tuple", () => {
+  const entry = buildMarketOverviewSourceEntryFromSnapshot(
+    {
+      taiex: {
+        value: 43225.54,
+        change: -1,
+        changePct: 3.31,
+        sourceState: "live",
+        asOf: "2026-06-10",
+      },
+      heatmapTop3: [{ industry: "半導體", avgChangePct: -2.4, direction: "down" }],
+      topGainers: [],
+      topLosers: [],
+      institutional: { foreign: null, trust: null, dealer: null, date: null },
+      margin: { balanceChange: null, shortChange: null, date: null },
+    },
+    new Date("2026-06-01")
+  );
+
+  assert.equal(entry.status, "DEGRADED");
+  assert.match(entry.note ?? "", /taiex=inconsistent_rejected/);
+  assert.equal(entry.sampleRows?.[0]?.taiexValue, null);
+  assert.equal(entry.sampleRows?.[0]?.taiexChange, null);
+  assert.equal(entry.sampleRows?.[0]?.taiexChangePct, null);
+  assert.equal(entry.sampleRows?.[0]?.taiexSourceState, "inconsistent_rejected");
+});
+
 test("direct LLM daily brief payload attaches source trail to every section", () => {
   const headings = ["市場總覽", "AI 精選重點", "產業與主題", "風險觀察", "資料來源狀態"];
   const raw = JSON.stringify({
