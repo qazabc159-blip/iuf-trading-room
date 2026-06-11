@@ -2756,7 +2756,8 @@ export async function getLabThreeStrategySnapshot(): Promise<LabThreeStrategySna
 
 // ── Lab per-strategy snapshot (Stage 2 charts) ─────────────────────────────
 // GET /api/v1/lab/strategy/:strategyId/snapshot
-// Response envelope: { data: { schema, strategyId, snapshot: {...}, cache_hit, stale_reason, fetched_at } }
+// v47 contract: response body itself IS the envelope (no top-level "data" key):
+// { schema, strategyId, snapshot: {...}, cache_hit, stale_reason, fetched_at, source }
 // snapshot field = Athena snapshot_v0 data. Falls back to null (caller handles).
 
 export type LabStrategySnapshotEquityPoint = {
@@ -2873,10 +2874,11 @@ export async function getLabStrategySnapshot(
   strategyId: string,
 ): Promise<LabStrategySnapshot | null> {
   try {
-    const res = await request<LabStrategySnapshotApiResponse>(
+    // v47 contract: response is the envelope itself (schema/strategyId/snapshot/...),
+    // NOT wrapped in a top-level { data: ... } field. Use requestRaw, not request.
+    const payload = await requestRaw<LabStrategySnapshotApiResponse>(
       `/api/v1/lab/strategy/${encodeURIComponent(strategyId)}/snapshot`,
     );
-    const payload = res.data;
     if (!payload || !payload.snapshot) return null;
     return payload.snapshot;
   } catch {

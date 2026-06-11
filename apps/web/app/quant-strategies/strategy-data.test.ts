@@ -4,40 +4,77 @@ import type { LabStrategySnapshot } from "@/lib/api";
 import type { S1Basket, S1SimStatus } from "@/lib/fauto-sim-api";
 import { QUANT_STRATEGIES, hydrateQuantStrategy } from "./strategy-data";
 
+// Mirrors the real `snapshot` field returned by
+// GET /api/v1/lab/strategy/cont_liq_v36/snapshot (tr_strategy_snapshot_api_contract_v47),
+// trimmed to the fields hydrateQuantStrategy reads. Captured 2026-06-11 from prod.
 const snapshot = {
+  schema: "lab_tr_strategy_snapshot_v0",
   strategyId: "cont_liq_v36",
+  displayName: "Continuous Liquidity Relative Strength",
+  displayName_zh: "持續流動性 + 相對強弱",
   status: "RESEARCH_FORWARD_OBSERVATION",
+  asOfDateTaipei: "2026-05-13T16:30:00+08:00",
+  returnConventionVersion: "v47",
+  displayReturnMode: "common_window_excess",
+  sourceWindowType: "common_window_11mo",
   commonWindowStart: "2025-04-10",
   commonWindowEnd: "2026-03-06",
-  panelWindow: { rebalancePeriods: 13 },
-  spec: {},
+  commonWindowTradingDays: 223,
+  caveatTextZh: "歷史研究數字 — 不可外推為未來表現預期。",
+  panelWindow: { start: "2024-05-30", end: "2026-03-26", distinctDates: 487, rebalancePeriods: 13 },
+  spec: {
+    horizonDays: 20,
+    topN: 4,
+    regimeThreshold: 0.06,
+    scoreFormula: "z[volumeRatio5To20] + z[trailRet20d]",
+    specVersion: "v36_canonical",
+  },
   headlineMetrics: {
     strategyNetAbsoluteReturnPct: 400.89,
     benchmark0050ReturnPct: 95.25,
     excessVs0050Pp: 305.64,
+    hitRatePct: 0.9231,
+    maxDrawdownNetPct: -0.1051,
+    netAbsoluteReturnAfterCost: 7.5987,
+    netAbsoluteReturnAfterCostAnnualized: 2.1064,
     sharpeAnnualized: 3.027,
     sortinoAnnualized: 3.912,
     maxDrawdown: -0.1051,
-    maxDrawdownNetPct: -0.1051,
+    maxDrawdownDate: "2025-05-29",
     winRate: 0.8462,
     hitRate: 0.9231,
-    hitRatePct: 0.9231,
     averageHoldingDays: 20,
+    averagePositions: 4,
     totalRebalances: 13,
+    costBpsApplied: 120,
+    strictOosLast: 0.5027,
     robustness: {
-      horizonSweep: "PASS",
-      regimeBandSweep: "PASS",
-      costStressSweep: "PASS",
-      universeShrinkage: "PASS",
+      horizonSweep: "NEAR_PASS_v37",
+      regimeBandSweep: "FULL_PASS_v38",
+      costStressSweep: "PASS_AT_60_120_BPS_v39",
+      universeShrinkage: "PARTIAL_K_GE_50_REQUIRED_v40",
     },
   },
   equityCurve: {
-    points: [{ date: "2026-03-26", cumReturn: 2.2202, drawdown: 0 }],
+    frequency: "rebalance",
+    points: [
+      { date: "2024-05-30", cumReturn: 0.0138, drawdown: 0 },
+      { date: "2026-03-26", cumReturn: 2.2202, drawdown: 0 },
+    ],
   },
   monthlyReturns: {
-    bars: [{ yearMonth: "2026-03", monthReturn: 0.1278, tradeCount: 1 }],
+    frequency: "calendar_month",
+    bars: [
+      { yearMonth: "2024-05", monthReturn: 0.0138, tradeCount: 1 },
+      { yearMonth: "2026-03", monthReturn: 0.1278, tradeCount: 1 },
+    ],
   },
   sampleTrades: { entries: [] },
+  displayMode: "research_only",
+  orderState: "blocked",
+  brokerWriteAllowed: false,
+  realOrderAllowed: false,
+  registryChangeAllowed: false,
 } as unknown as LabStrategySnapshot;
 
 const status: S1SimStatus = {
@@ -120,8 +157,10 @@ describe("hydrateQuantStrategy", () => {
     expect(strategy.metrics.hitRatePct).toBeCloseTo(92.31);
     expect(strategy.metrics.maxDrawdownPct).toBeCloseTo(-10.51);
     expect(strategy.metrics.sampleCount).toBe(13);
-    expect(strategy.curve[0]?.value).toBeCloseTo(222.02);
-    expect(strategy.bars[0]?.value).toBeCloseTo(12.78);
+    expect(strategy.curve[0]?.value).toBeCloseTo(1.38);
+    expect(strategy.curve[1]?.value).toBeCloseTo(222.02);
+    expect(strategy.bars[0]?.value).toBeCloseTo(1.38);
+    expect(strategy.bars[1]?.value).toBeCloseTo(12.78);
     expect(strategy.holdings).toEqual([
       expect.objectContaining({
         symbol: "5701",
