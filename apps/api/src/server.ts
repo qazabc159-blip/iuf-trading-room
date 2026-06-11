@@ -17415,6 +17415,23 @@ function startSchedulers(workspaceSlug: string): void {
     }, 90_000);
   }
 
+  // THEME-REFRESH-CRON: daily server-side theme content refresh (17:30–18:30 TST
+  // weekdays). Replaces the dead OpenAlice-device dependency that froze the
+  // themes page at 2026-05-18. Window / once-per-day / attempt-cap guards live
+  // inside runThemeRefreshCronTick; per-run LLM cost is capped in theme-refresh.ts.
+  {
+    const THEME_REFRESH_TICK_MS = 5 * 60 * 1000;
+    ui(async () => {
+      try {
+        const { runThemeRefreshCronTick } = await import("./theme-refresh.js");
+        await runThemeRefreshCronTick();
+      } catch (e) {
+        console.error("[theme-refresh-cron] tick failed:", e instanceof Error ? e.message : e);
+      }
+    }, THEME_REFRESH_TICK_MS);
+    console.log("THEME-REFRESH-CRON (5min tick, fires 17:30-18:30 TST weekdays) started");
+  }
+
   // =============================================================================
   // B-TAG-2: EOD Portfolio Snapshot Cron (P0-12 Phase B)
   //
@@ -19381,6 +19398,33 @@ app.post("/api/v1/admin/content-drafts/cleanup-orphan", async (c) => {
 app.post("/api/v1/admin/themes/manual-update", async (c) => {
   const { handleAdminThemesManualUpdate } = await import("./admin-themes-manual-update.js");
   return handleAdminThemesManualUpdate(c);
+});
+
+// =============================================================================
+// ADMIN: themes/refresh — server-side LLM theme content refresh (Elva 2026-06-11)
+// Replaces the dead OpenAlice-device dependency: themes froze at 2026-05-18.
+// POST body: { themeKey?: string } — single theme by slug, or all themes.
+// Auth: Owner-only. Daily cron also fires this at 17:30-18:30 TST weekdays.
+// =============================================================================
+app.post("/api/v1/admin/themes/refresh", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const themeSlug = typeof body["themeKey"] === "string" && body["themeKey"].trim() ? body["themeKey"].trim() : undefined;
+  const { runThemeRefresh } = await import("./theme-refresh.js");
+  const result = await runThemeRefresh({ trigger: "manual", themeSlug });
+  return c.json({ ok: result.error === null, ...result });
+});
+
+app.get("/api/v1/admin/themes/refresh-status", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const { getThemeRefreshStatus } = await import("./theme-refresh.js");
+  return c.json(getThemeRefreshStatus());
 });
 
 
