@@ -26,6 +26,11 @@ Update 2026-05-19 07:50 TST:
 - Owner-session production scan found `/admin/events` renders the EventLog shell, but outbox diagnostics show `Outbox 待發 -1` because `/api/v1/admin/event-log/outbox/diag` returns `pendingCount=-1` and `fatalCount=-1`.
 - Chosen/current PR: normalize invalid EventLog outbox counts into an explicit degraded diagnostic state. Frontend will not display negative counts and will not fake them as zero; backend owner remains Jason/Elva.
 
+Update 2026-06-11 17:15 TST:
+- Latest base is `d122235b` (#1048). Production `/api/v1/market/overview/twse` was observed returning a contradictory TAIEX tuple: close `43225.54`, change `-1`, changePct `+3.31%`.
+- Root cause is confirmed in the `MI_INDEX` fallback parser: comma-formatted `1,478.90` was truncated to `1`, while the already-negative `-3.31` percentage was multiplied by the direction sign a second time.
+- Current P0 PR scope: parse comma numbers correctly, derive percentage from official close and point change, reject any tuple that cannot reconstruct the same previous close within 0.15 percentage points at parser/cache/SWR/LKG/source-pack boundaries, preserve #1044 SWR, deploy, and verify ten production reads plus regenerated brief input.
+
 ## Audit Rule
 
 這份 board 是今晚 P0 收斂的作戰地圖。沒有這份 board，不做大改；任何 UI 區塊只能是正式資料、明確 degraded/empty/pending state，或直接不顯示。不得用 mock/fake 冒充 live。
