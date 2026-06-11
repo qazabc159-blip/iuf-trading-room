@@ -498,6 +498,33 @@ export async function getDailySmokeHistory() {
   return apiFetch<DailySmokeHistory>("/api/v1/internal/kgi/sim/daily-smoke-status");
 }
 
+// ── F-AUTO 持倉（B3：交易室跨日可見） ─────────────────────────────────────────
+export type FAutoPortfolio = {
+  sim_only: true;
+  prod_write_blocked: true;
+  capital_twd: number;
+  capital_source: string;
+  positions: Array<{
+    symbol: string;
+    shares: number;
+    avg_cost: number;
+    last_price: number | null;
+    unrealized_pnl_twd: number | null;
+  }>;
+  positions_date: string;
+  data_source: string;
+  total_market_value_twd: number | null;
+  total_unrealized_pnl_twd: number | null;
+  cash_residual_estimated_twd: number;
+  notes: string[];
+  as_of: string;
+};
+
+/** GET /api/v1/portfolio/f-auto — S1/F-AUTO 當前持倉（盤中 gateway → audit 重建，Owner-only） */
+export async function getFAutoPortfolio() {
+  return apiFetch<FAutoPortfolio>("/api/v1/portfolio/f-auto");
+}
+
 /** GET /api/v1/internal/s1-sim/status — S1 pipeline summary (Owner-only) */
 export async function getS1SimStatus() {
   const result = await apiFetch<S1StatusRaw>("/api/v1/internal/s1-sim/status");

@@ -5109,6 +5109,40 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
   });
 });
 
+// GET /api/v1/portfolio/f-auto — S1/F-AUTO current holdings for the trading room (Owner)
+//
+// B3 (audit: F-AUTO 部位跨日不可見 / 模擬本金 待授權). Single source of truth via
+// buildS1PositionsSnapshot(): 盤中 KGI gateway live → 盤後/回空 audit rebuild +
+// TWSE EOD mark-to-market → degraded only when both are unavailable.
+// Read-only; SIM only; no order surface.
+app.get("/api/v1/portfolio/f-auto", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const { buildS1PositionsSnapshot, resolveS1SimCapitalTwd } = await import("./s1-sim-runner.js");
+  const [snapshot, capital] = await Promise.all([
+    buildS1PositionsSnapshot(),
+    resolveS1SimCapitalTwd(session.workspace.id),
+  ]);
+
+  return c.json({
+    sim_only: true,
+    prod_write_blocked: true,
+    capital_twd: capital.capitalTwd,
+    capital_source: capital.source,
+    positions: snapshot.positions,
+    positions_date: snapshot.positionsDate,
+    data_source: snapshot.dataSource,
+    total_market_value_twd: snapshot.totalMarketValueTwd,
+    total_unrealized_pnl_twd: snapshot.totalUnrealizedPnlTwd,
+    cash_residual_estimated_twd: snapshot.cashResidualTwd,
+    notes: snapshot.notes,
+    as_of: new Date().toISOString(),
+  });
+});
+
 // GET /api/v1/internal/s1-sim/basket?date=YYYY-MM-DD — S1 basket (Owner only)
 //
 // Returns the full S1Basket JSON for the requested date.
