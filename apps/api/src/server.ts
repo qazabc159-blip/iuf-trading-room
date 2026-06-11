@@ -9096,6 +9096,24 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     }
   }
 
+  // Helper: parse a TWSE ROC date ("1150609" compact or "115/06/09" slash) to ISO "2026-06-09".
+  // The EOD payload's trading date — TWSE OpenAPI lags: on the evening of a trading day it
+  // can still serve the PREVIOUS session. The UI must label prices with this date, never "today".
+  function _rocDateToIso(raw?: string | null): string | null {
+    const trimmed = String(raw ?? "").trim();
+    const slashParts = trimmed.split("/");
+    if (slashParts.length === 3) {
+      const year = parseInt(slashParts[0]!, 10) + 1911;
+      if (!Number.isFinite(year)) return null;
+      return `${year}-${slashParts[1]!.padStart(2, "0")}-${slashParts[2]!.padStart(2, "0")}`;
+    }
+    if (/^\d{7}$/.test(trimmed)) {
+      const year = parseInt(trimmed.slice(0, 3), 10) + 1911;
+      return `${year}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
+    }
+    return null;
+  }
+
   // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
   // Used when both KGI and MIS intraday are unavailable.
   async function _twseEodFallback(sym: string, blockReason?: string | null): Promise<{
@@ -9110,6 +9128,8 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     state: "STALE" | "NO_DATA";
     freshness: "stale" | "not-available";
     note: string;
+    /** ISO trading date of the EOD row (may be 1-2 sessions behind on TWSE publish lag). */
+    dataDate: string | null;
     marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
     referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   }> {
@@ -9118,7 +9138,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const rows = await getStockDayAllRows();
       const row = rows.find((r) => r.Code === sym);
       if (!row) {
-        return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+        return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
       }
       const parseEodNum = (value?: string | null) => {
         const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
@@ -9146,12 +9166,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         state: close !== null ? "STALE" : "NO_DATA",
         freshness: close !== null ? "stale" : "not-available",
         note: `twse_eod date=${row.Date ?? "unknown"}`,
+        dataDate: _rocDateToIso(row.Date),
         marketSession,
         referenceReason: _eodReferenceReason(blockReason),
       };
     } catch (e) {
       console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
-      return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+      return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
   }
 
@@ -9203,6 +9224,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         marketSession: fb.marketSession,
         referenceReason: fb.referenceReason,
         note: fb.note,
+        dataDate: fb.dataDate,
         updatedAt
       }
     });
@@ -9269,6 +9291,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           marketSession: fb.marketSession,
           referenceReason: fb.referenceReason,
           note: `kgi_subscribe_failed:${subscribeBlockReason} → ${fb.note}`,
+          dataDate: fb.dataDate,
           updatedAt
         }
       });
@@ -9383,6 +9406,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         marketSession: fb.marketSession,
         referenceReason: fb.referenceReason,
         note: `kgi_blocked:${blockedReason} → ${fb.note}`,
+        dataDate: fb.dataDate,
         updatedAt
       }
     });

@@ -252,20 +252,31 @@ async function loadQuoteKline(symbol: string): Promise<KlineState> {
   }
 }
 
+/** "2026-06-09" → "06/09"; null when the backend didn't supply a data date. */
+function eodDataDateLabel(realtime: CompanyRealtimeQuote): string | null {
+  const iso = realtime.dataDate;
+  if (!iso || iso.length < 10) return null;
+  return `${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
+}
+
 function realtimeSourceText(realtime: CompanyRealtimeQuote) {
   if (realtime.source === "kgi-gateway") return "KGI SIM 即時";
   if (realtime.source === "twse_intraday") return "TWSE MIS 盤中";
-  if (realtime.referenceReason === "pre_open_reference") return "盤前收盤參考";
-  if (realtime.referenceReason === "post_close_reference") return "盤後收盤參考";
-  if (realtime.referenceReason === "kgi_unavailable_eod_fallback") return "KGI 不可用，使用 TWSE 收盤參考";
-  return "TWSE 收盤參考";
+  // TWSE EOD can lag a session — label with the data's own trading date, never「今日」.
+  const d = eodDataDateLabel(realtime);
+  const dateSuffix = d ? `（${d} 收盤資料）` : "";
+  if (realtime.referenceReason === "pre_open_reference") return `盤前收盤參考${dateSuffix}`;
+  if (realtime.referenceReason === "post_close_reference") return `盤後收盤參考${dateSuffix}`;
+  if (realtime.referenceReason === "kgi_unavailable_eod_fallback") return `KGI 不可用，使用 TWSE 收盤參考${dateSuffix}`;
+  return `TWSE 收盤參考${dateSuffix}`;
 }
 
 function realtimeFreshnessText(realtime: CompanyRealtimeQuote) {
   if (realtime.freshness === "fresh") return "即時";
+  const d = eodDataDateLabel(realtime);
   if (realtime.referenceReason === "pre_open_reference") return "盤前參考";
   if (realtime.referenceReason === "post_close_reference") return "盤後參考";
-  if (realtime.freshness === "stale") return "收盤參考";
+  if (realtime.freshness === "stale") return d ? `${d} 收盤` : "收盤參考";
   return "無資料";
 }
 
@@ -320,9 +331,11 @@ function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null 
           <b className="tg">{sourceLabel}</b>
         </div>
       </div>
-      {realtime.note || realtime.reason ? (
+      {realtime.dataDate || realtime.note || realtime.reason ? (
         <div className="state-reason" style={{ marginTop: 12 }}>
-          {realtime.note ?? realtime.reason}
+          {eodDataDateLabel(realtime)
+            ? `顯示 TWSE ${eodDataDateLabel(realtime)} 收盤資料，非今日即時行情。`
+            : realtime.note ?? realtime.reason}
         </div>
       ) : null}
     </Panel>

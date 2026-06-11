@@ -1323,6 +1323,8 @@ export type CompanyRealtimeQuote = {
   reason?: string;
   source: "kgi-gateway" | "twse_intraday" | "twse_openapi_eod";
   note?: string;
+  /** ISO trading date of the underlying data when source is TWSE EOD (may lag 1-2 sessions). */
+  dataDate?: string | null;
   marketSession?: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
   referenceReason?: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   updatedAt: string;
