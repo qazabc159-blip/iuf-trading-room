@@ -504,9 +504,16 @@ function setHeatmapCache(key: string, tiles: TwseHeatmapTile[]): void {
   _heatmapCache.set(key, { tiles, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_SECONDS * 1000 });
 }
 
+// Last-good heatmap (24h): on 6/10 a transient TWSE/TPEX outage produced an empty
+// tile set that was then served (and cached) as a blank heatmap. Empty results are
+// never cached; the last non-empty computation is served instead.
+const HEATMAP_LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+let _heatmapLastGood: { tiles: TwseHeatmapTile[]; at: number } | null = null;
+
 /** For test cleanup */
 export function _resetTwseHeatmapCache(): void {
   _heatmapCache.clear();
+  _heatmapLastGood = null;
 }
 
 // ── MI_5MINS_INDEX today fetcher (TWSE main site) ────────────────────────────
@@ -887,6 +894,17 @@ export async function getTwseIndustryHeatmap(
   // Sort by |avgChangePct| descending (most active industries first)
   tiles.sort((a, b) => Math.abs(b.avgChangePct) - Math.abs(a.avgChangePct));
 
+  if (tiles.length === 0) {
+    // Transient upstream outage — serve last-good instead of a blank heatmap,
+    // and don't cache the empty result (next request retries upstream).
+    if (_heatmapLastGood && Date.now() - _heatmapLastGood.at <= HEATMAP_LAST_GOOD_MAX_AGE_MS) {
+      console.warn("[twse-openapi-client] getTwseIndustryHeatmap: empty result — serving last-good tiles");
+      return _heatmapLastGood.tiles;
+    }
+    return tiles;
+  }
+
+  _heatmapLastGood = { tiles, at: Date.now() };
   setHeatmapCache(CACHE_KEY, tiles);
   return tiles;
 }
