@@ -24,7 +24,8 @@ function accentColor(accent: QuantStrategy["accent"]) {
   return "#e2b85c";
 }
 
-function pct(value: number) {
+function pct(value: number | null) {
+  if (value == null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
@@ -199,7 +200,9 @@ function BasketLauncher({ strategy, color }: { strategy: QuantStrategy; color: s
       </div>
 
       <div className={styles.notice}>
-        預估可配置 {executable.length} / {strategy.holdings.length} 檔，名目金額約 {money(totalNotional)} TWD。實際下單 basket 會由 runner 重新依最新價格與流動性計算。
+        {strategy.holdings.length > 0
+          ? `依最新 S1 basket 預估可配置 ${executable.length} / ${strategy.holdings.length} 檔，名目金額約 ${money(totalNotional)} TWD。實際委託仍由 runner 依最新價格與流動性重算。`
+          : "目前讀不到最新 S1 basket，因此不顯示示意持股，也不開放送出資金設定。"}
       </div>
 
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "14px 0", color: "#cdd5df", fontSize: 13 }}>
@@ -231,6 +234,11 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
         <div className={styles.notice} style={{ marginBottom: 16 }}>
           <strong>S1 是目前唯一正式量化策略。</strong> 本頁的資金設定會接到後端 S1 runner；其他研究策略先不放進正式產品頁。
         </div>
+        <div className={styles.notice} style={{ marginBottom: 16 }}>
+          <strong>{strategy.current.dataState}</strong> / {strategy.current.sourceLabel}
+          {strategy.current.asOf ? ` / 最新 basket ${strategy.current.asOf}` : ""}
+          {strategy.current.researchWindow ? ` / 核准研究窗 ${strategy.current.researchWindow}` : ""}
+        </div>
 
         <section className={styles.band}>
           <h2>策略邏輯</h2>
@@ -248,28 +256,33 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
             <div className={styles.metric}><span>Sharpe</span><strong>{strategy.metrics.sharpe === null ? strategy.metrics.sharpeLabel ?? "NA" : strategy.metrics.sharpe.toFixed(2)}</strong></div>
             <div className={styles.metric}><span>最大回撤</span><strong>{pct(strategy.metrics.maxDrawdownPct)}</strong></div>
             <div className={styles.metric}><span>命中率</span><strong>{pct(strategy.metrics.hitRatePct)}</strong></div>
-            <div className={styles.metric}><span>樣本數</span><strong>{strategy.metrics.sampleCount}</strong></div>
+            <div className={styles.metric}><span>再平衡樣本</span><strong>{strategy.metrics.sampleCount ?? "--"}</strong></div>
           </div>
         </section>
 
         <section className={styles.band}>
           <h2>研究曲線</h2>
-          <div className={styles.chartPanel}>
-            <div className={styles.chartBox}><LineChart points={strategy.curve} color={color} /></div>
-            <div className={styles.chartBox}><BarChart points={strategy.bars} color={color} /></div>
-          </div>
+          {strategy.curve.length > 0 && strategy.bars.length > 0 ? (
+            <div className={styles.chartPanel}>
+              <div className={styles.chartBox}><LineChart points={strategy.curve} color={color} /></div>
+              <div className={styles.chartBox}><BarChart points={strategy.bars} color={color} /></div>
+            </div>
+          ) : (
+            <div className={styles.notice}>核准研究曲線目前無法讀取，這裡不使用前端示意資料補畫。</div>
+          )}
         </section>
 
         <section className={styles.band}>
           <h2>預估配置預覽</h2>
-          <div className={styles.holdingsScroll} tabIndex={0} aria-label="S1 preview holdings">
-            <table className={styles.holdings}>
+          {strategy.holdings.length > 0 ? (
+            <div className={styles.holdingsScroll} tabIndex={0} aria-label="S1 latest basket holdings">
+              <table className={styles.holdings}>
               <thead>
                 <tr>
                   <th scope="col">代號</th>
                   <th scope="col">名稱</th>
                   <th scope="col">權重</th>
-                  <th scope="col">參考價</th>
+                  <th scope="col">basket 價格</th>
                   <th scope="col">說明</th>
                 </tr>
               </thead>
@@ -284,8 +297,11 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.notice}>最新 S1 basket 尚未取得；不顯示固定大型股或示意價格。</div>
+          )}
         </section>
 
         <section className={styles.band}>

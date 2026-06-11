@@ -1,3 +1,6 @@
+import type { LabStrategySnapshot } from "@/lib/api";
+import type { S1Basket, S1SimStatus } from "@/lib/fauto-sim-api";
+
 export type StrategyHolding = {
   symbol: string;
   name?: string;
@@ -31,21 +34,24 @@ export type QuantStrategy = {
   riskControls: string[];
   caveats: string[];
   metrics: {
-    netReturnPct: number;
+    netReturnPct: number | null;
     benchmarkPct?: number;
     excessPct?: number;
     strictOosPct?: number;
     sharpe: number | null;
     sharpeLabel?: string;
-    maxDrawdownPct: number;
-    hitRatePct: number;
-    sampleCount: number;
+    maxDrawdownPct: number | null;
+    hitRatePct: number | null;
+    sampleCount: number | null;
   };
   current: {
-    asOf: string;
+    asOf: string | null;
     status: string;
     primaryReadout: string;
     secondaryReadout: string;
+    sourceLabel: string;
+    researchWindow: string | null;
+    dataState: "LIVE" | "PARTIAL" | "UNAVAILABLE";
   };
   holdings: StrategyHolding[];
   curve: StrategyCurvePoint[];
@@ -86,56 +92,133 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
       "今天若已錯過週二 08:30/09:00 視窗，新的資金設定會套用到下一次 S1 signal run，除非另開 owner-only catch-up。",
     ],
     metrics: {
-      netReturnPct: 400.89,
-      benchmarkPct: 95.25,
-      excessPct: 305.64,
-      sharpe: 3.03,
-      maxDrawdownPct: -10.51,
-      hitRatePct: 92.31,
-      sampleCount: 13,
+      netReturnPct: null,
+      sharpe: null,
+      sharpeLabel: "等待核准快照",
+      maxDrawdownPct: null,
+      hitRatePct: null,
+      sampleCount: null,
     },
     current: {
-      asOf: "2026-06-02",
-      status: "KGI SIM 自動送單已啟動；2026-06-02 送出 8 檔觀察單，下次為週二盤前訊號視窗",
-      primaryReadout: "資金配置會接到 S1 runner",
-      secondaryReadout: "只跑 SIM，不開 real order",
+      asOf: null,
+      status: "等待 S1 執行狀態",
+      primaryReadout: "等待後端資金與 basket",
+      secondaryReadout: "SIM-only，真單保持鎖定",
+      sourceLabel: "尚未取得後端資料",
+      researchWindow: null,
+      dataState: "UNAVAILABLE",
     },
-    holdings: [
-      { symbol: "2330", name: "台積電", weight: 0.125, price: 2355, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "2454", name: "聯發科", weight: 0.125, price: 1340, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "2317", name: "鴻海", weight: 0.125, price: 172, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "2382", name: "廣達", weight: 0.125, price: 285, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "3711", name: "日月光投控", weight: 0.125, price: 147, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "2308", name: "台達電", weight: 0.125, price: 390, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "3034", name: "聯詠", weight: 0.125, price: 515, note: "示意：實際 basket 由 runner 盤前重算" },
-      { symbol: "2603", name: "長榮", weight: 0.125, price: 210, note: "示意：實際 basket 由 runner 盤前重算" },
-    ],
-    curve: [
-      { date: "2025-08", value: 0, drawdown: 0 },
-      { date: "2025-09", value: 25.35, drawdown: 0 },
-      { date: "2025-10", value: 38.92, drawdown: 0 },
-      { date: "2025-11", value: 41.73, drawdown: -3.1 },
-      { date: "2025-12", value: 77.2, drawdown: 0 },
-      { date: "2026-01", value: 103.02, drawdown: 0 },
-      { date: "2026-02", value: 124.97, drawdown: 0 },
-      { date: "2026-03", value: 155.46, drawdown: 0 },
-      { date: "2026-04", value: 171.22, drawdown: -4.2 },
-      { date: "2026-05", value: 190.41, drawdown: -10.51 },
-    ],
-    bars: [
-      { date: "2025-09", value: 25.35 },
-      { date: "2025-10", value: 13.57 },
-      { date: "2025-11", value: 2.81 },
-      { date: "2025-12", value: 35.47 },
-      { date: "2026-01", value: 25.82 },
-      { date: "2026-02", value: 21.95 },
-      { date: "2026-03", value: 30.49 },
-      { date: "2026-04", value: 15.76 },
-      { date: "2026-05", value: -7.17 },
-    ],
+    holdings: [],
+    curve: [],
+    bars: [],
   },
 ];
 
-export function getQuantStrategy(strategyId: string): QuantStrategy | null {
-  return QUANT_STRATEGIES.find((strategy) => strategy.id === strategyId) ?? null;
+export type QuantStrategyLiveData = {
+  snapshot: LabStrategySnapshot | null;
+  status: S1SimStatus | null;
+  basket: S1Basket | null;
+};
+
+function percentFromFraction(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? null : value * 100;
+}
+
+function formatMoney(value: number | null | undefined) {
+  return value == null
+    ? "尚未取得資金設定"
+    : `${Math.round(value).toLocaleString("zh-TW")} TWD`;
+}
+
+function buildHoldings(basket: S1Basket | null, configuredCapitalTwd: number | null) {
+  if (!basket?.found || !configuredCapitalTwd || configuredCapitalTwd <= 0) return [];
+  return basket.items
+    .filter((item) => item.symbol !== "--" && item.price != null && item.price > 0)
+    .map((item) => ({
+      symbol: item.symbol,
+      weight: (item.targetNotionalTwd ?? 0) / configuredCapitalTwd,
+      price: item.price ?? 0,
+      note: [
+        item.shares == null ? null : `${item.shares.toLocaleString("zh-TW")} 股`,
+        item.score == null ? null : `策略分數 ${item.score.toFixed(2)}`,
+        item.sizingNote,
+      ].filter(Boolean).join(" / "),
+    }));
+}
+
+export function hydrateQuantStrategy(
+  strategy: QuantStrategy,
+  live: QuantStrategyLiveData,
+): QuantStrategy {
+  const snapshot = live.snapshot;
+  const status = live.status;
+  const basket = live.basket;
+  const metrics = snapshot?.headlineMetrics;
+  const hasResearch = Boolean(snapshot && metrics);
+  const hasOperations = Boolean(status && basket?.found);
+  const dataState = hasResearch && hasOperations ? "LIVE" : hasResearch || status ? "PARTIAL" : "UNAVAILABLE";
+  const basketDate = basket?.found ? basket.date : status?.lastSignalDate ?? null;
+  const regime = basket?.regime ?? status?.regime ?? null;
+  const exposureWeight = basket?.exposureWeight ?? status?.exposureWeight ?? null;
+  const basketSize = basket?.found ? basket.items.length : status?.latestBasketSize ?? null;
+  const researchStart = snapshot?.commonWindowStart ?? snapshot?.spec.commonWindowStart ?? null;
+  const researchEnd = snapshot?.commonWindowEnd ?? snapshot?.spec.commonWindowEnd ?? null;
+  const researchWindow = researchStart && researchEnd ? `${researchStart} 至 ${researchEnd}` : null;
+
+  return {
+    ...strategy,
+    basketSize: basketSize == null ? "等待最新 basket" : `最新 ${basketSize} 檔`,
+    maturity: snapshot?.status ?? strategy.maturity,
+    displayStatus: dataState === "UNAVAILABLE" ? "FAIL" : "WATCH",
+    metrics: {
+      netReturnPct: metrics?.strategyNetAbsoluteReturnPct ?? null,
+      benchmarkPct: metrics?.benchmark0050ReturnPct,
+      excessPct: metrics?.excessVs0050Pp,
+      strictOosPct: percentFromFraction(metrics?.strictOosLast) ?? undefined,
+      sharpe: metrics?.sharpeAnnualized ?? null,
+      sharpeLabel: metrics?.sharpeAnnualized == null ? "等待核准快照" : undefined,
+      maxDrawdownPct: percentFromFraction(metrics?.maxDrawdownNetPct ?? metrics?.maxDrawdown),
+      hitRatePct: percentFromFraction(metrics?.hitRatePct ?? metrics?.hitRate),
+      sampleCount: metrics?.totalRebalances ?? snapshot?.panelWindow?.rebalancePeriods ?? null,
+    },
+    current: {
+      asOf: basketDate,
+      status: basketDate
+        ? `最新 ${basketDate} basket：${regime ?? "態勢未標示"} / ${
+            exposureWeight == null ? "曝險未標示" : `${Math.round(exposureWeight * 100)}% 曝險`
+          } / ${basketSize ?? 0} 檔`
+        : "尚未產生可讀取的 S1 basket",
+      primaryReadout: `${formatMoney(status?.configuredCapitalTwd)} / ${
+        status?.capitalSource ?? "資金來源未標示"
+      }`,
+      secondaryReadout: status?.automaticScheduler.enabled
+        ? `自動排程已啟用；${status.automaticScheduler.signalWindowTst ?? "訊號視窗未標示"}`
+        : "自動排程未啟用；SIM-only，真單保持鎖定",
+      sourceLabel: [
+        hasResearch ? "核准研究快照" : null,
+        basket?.found ? `S1 basket (${basket.source ?? "後端"})` : null,
+        status ? "S1 執行狀態" : null,
+      ].filter(Boolean).join(" + ") || "尚未取得後端資料",
+      researchWindow,
+      dataState,
+    },
+    holdings: buildHoldings(basket, status?.configuredCapitalTwd ?? basket?.capitalTwd ?? null),
+    curve: (snapshot?.equityCurve.points ?? []).map((point) => ({
+      date: point.date,
+      value: point.cumReturn * 100,
+      drawdown: point.drawdown * 100,
+    })),
+    bars: (snapshot?.monthlyReturns.bars ?? []).map((bar) => ({
+      date: bar.yearMonth,
+      value: bar.monthReturn * 100,
+    })),
+  };
+}
+
+export function getQuantStrategy(
+  strategyId: string,
+  live?: QuantStrategyLiveData,
+): QuantStrategy | null {
+  const strategy = QUANT_STRATEGIES.find((item) => item.id === strategyId) ?? null;
+  return strategy && live ? hydrateQuantStrategy(strategy, live) : strategy;
 }

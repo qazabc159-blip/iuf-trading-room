@@ -4,7 +4,8 @@ import type { CSSProperties } from "react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import styles from "./QuantStrategies.module.css";
-import { QUANT_STRATEGIES, type DisplayStatus, type QuantStrategy, type StrategyCurvePoint } from "./strategy-data";
+import { loadQuantStrategies } from "./live-strategy-data";
+import type { DisplayStatus, QuantStrategy, StrategyCurvePoint } from "./strategy-data";
 import { QuantSubsPanel } from "./QuantSubsPanel";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,8 @@ function accentColor(accent: QuantStrategy["accent"]) {
   return "#e2b85c";
 }
 
-function pct(value: number) {
+function pct(value: number | null) {
+  if (value == null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
@@ -97,6 +99,7 @@ function MiniSpark({ points, color }: { points: StrategyCurvePoint[]; color: str
 
 function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
   const color = accentColor(strategy.accent);
+  const hasCurve = strategy.curve.length > 0;
 
   return (
     <article className={`${styles.card} ${styles.cardHoverable}`} style={{ "--accent": color } as CSSProperties}>
@@ -120,8 +123,8 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
           </div>
           <div className={styles.metric}>
             <span>SIM 資金</span>
-            <strong>可配置</strong>
-            <small className={styles.metricHint}>50,000 到 10,000,000 TWD，會接到後端 runner。</small>
+            <strong>{strategy.current.primaryReadout.split(" / ")[0]}</strong>
+            <small className={styles.metricHint}>{strategy.current.primaryReadout}</small>
           </div>
           <div className={styles.metric}>
             <span>命中率</span>
@@ -133,12 +136,21 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
           </div>
         </div>
 
-        <div className={styles.spark}>
-          <MiniSpark points={strategy.curve} color={color} />
-        </div>
+        {hasCurve ? (
+          <div className={styles.spark}>
+            <MiniSpark points={strategy.curve} color={color} />
+          </div>
+        ) : (
+          <div className={styles.notice}>核准研究曲線目前無法讀取，頁面不顯示示意數字。</div>
+        )}
 
         <div className={styles.notice} style={{ marginBottom: 12 }}>
           <ShieldCheck size={15} strokeWidth={1.9} /> SIM-only / real order disabled / KGI SIM observation.
+        </div>
+        <div className={styles.notice} style={{ marginBottom: 12 }}>
+          <strong>{strategy.current.dataState}</strong> / {strategy.current.sourceLabel}
+          {strategy.current.asOf ? ` / 最新 basket ${strategy.current.asOf}` : ""}
+          {strategy.current.researchWindow ? ` / 研究窗 ${strategy.current.researchWindow}` : ""}
         </div>
 
         <Link className={styles.cta} href={`/quant-strategies/${strategy.id}`}>
@@ -157,6 +169,7 @@ export default async function QuantStrategiesPage({
   const params = await searchParams;
   const tab = typeof params.tab === "string" ? params.tab : "strategies";
   const isSubsTab = tab === "subscriptions";
+  const strategies = isSubsTab ? [] : await loadQuantStrategies();
 
   return (
     <PageFrame
@@ -238,7 +251,7 @@ export default async function QuantStrategiesPage({
           </div>
           <div className="_qnt-grid-wrap">
             <div className={styles.grid}>
-              {QUANT_STRATEGIES.map((strategy) => (
+              {strategies.map((strategy) => (
                 <StrategyCard key={strategy.id} strategy={strategy} />
               ))}
             </div>
