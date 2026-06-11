@@ -276,7 +276,13 @@ export function CompanyHeroBar({
   const rtState = realtimeQuote?.state;
   const isLive = rtState === "LIVE";
   const isStale = rtState === "STALE";
-  const rtSource = realtimeQuote ? "即時報價" : quote?.source === "kgi" ? "今日收盤" : quote?.source === "finmind" ? "今日收盤" : null;
+  // EOD fallback data carries its own trading date (TWSE publish can lag a session) —
+  // label with that date instead of claiming「今日收盤」on yesterday's price.
+  const eodIso = realtimeQuote?.dataDate ?? null;
+  const eodDateLabel = eodIso && eodIso.length >= 10 ? `${eodIso.slice(5, 7)}/${eodIso.slice(8, 10)} 收盤` : null;
+  const rtSource = realtimeQuote
+    ? (isLive ? "即時報價" : eodDateLabel ?? "收盤參考")
+    : quote?.source === "kgi" || quote?.source === "finmind" ? "收盤資料" : null;
 
   // Compute canonical freshness_mode for FreshnessBadge
   const freshnessMode = realtimeQuote
@@ -321,7 +327,7 @@ export function CompanyHeroBar({
         {/* Meta line */}
         <div className="_co-hero-meta">
           {industryLabel(company.chainPosition)} / {themes || "尚無主題"} / 更新 {formatAsOf(asOf)}
-          {" / "}{isLive ? "即時" : rtSource ?? "今日收盤"}
+          {" / "}{isLive ? "即時" : rtSource ?? "收盤參考"}
           {!isLive && !isStale && <span style={{ marginLeft: 8, color: "rgba(200,148,63,0.7)", fontSize: 9.5 }}>加入觀察清單可看即時報價</span>}
         </div>
 
