@@ -139,11 +139,31 @@ function getConnectionSummary(data: KgiStatus): {
     };
   }
 
+  // EC2 gateway runs on an EventBridge schedule: weekdays 08:20–14:10 TST.
+  // Outside that window "no gateway" is the EXPECTED state — labelling it a red
+  // "未連線" made scheduled shutdowns look like incidents (audit 6/10 ops page).
+  if (isGatewayScheduledOff()) {
+    return {
+      badgeText: "排程關機中",
+      badgeClass: "_fauto-conn-badge-amber",
+      detail: "EC2 gateway 依排程平日 08:20 開機、14:10 關機；目前在關機時段，屬正常狀態，下個交易日早上自動恢復。Paper 模式不受影響。",
+    };
+  }
+
   return {
     badgeText: "未連線",
     badgeClass: "_fauto-conn-badge-red",
-    detail: "目前沒有可用的 KGI SIM gateway 狀態；Paper 模式仍不受影響。",
+    detail: "交易時段內沒有可用的 KGI SIM gateway 狀態 — 非排程關機，需檢查 EC2 與 gateway 服務。Paper 模式不受影響。",
   };
+}
+
+/** True when Taipei time is outside the gateway's weekday 08:20–14:10 run window. */
+function isGatewayScheduledOff(now = new Date()): boolean {
+  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const day = taipei.getUTCDay();
+  if (day === 0 || day === 6) return true;
+  const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+  return hhmm < 820 || hhmm >= 1410;
 }
 
 function ConnDot({ label, active }: { label: string; active: boolean }) {

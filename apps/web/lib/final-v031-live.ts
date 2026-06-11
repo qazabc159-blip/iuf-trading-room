@@ -174,8 +174,23 @@ function settledErrorLabel<T>(result: Settled<T>) {
   return reason instanceof Error ? reason.message : String(reason ?? "unknown_error");
 }
 
+// Strip publisher boilerplate tails from scraped headlines, e.g.
+// "...｜新聞快訊｜豐雲學堂 - sinotrade.com.tw" (6/10 audit: headline 帶來源站尾巴).
+function cleanHeadline(raw: string): string {
+  let text = raw.trim();
+  // Drop a trailing " - domain.tld" segment
+  text = text.replace(/\s+-\s+[\w.-]+\.(?:com|net|org|tw|cn|io)(?:\.\w+)?\s*$/i, "");
+  // Drop trailing ｜/| separated publisher segments (short, no sentence punctuation)
+  while (true) {
+    const m = text.match(/^(.*)[｜|]([^｜|]{1,16})$/);
+    if (!m || /[，。,.!?]/.test(m[2]!)) break;
+    text = m[1]!.trim();
+  }
+  return text.trim() || raw.trim();
+}
+
 function mapNewsItem(item: NewsAiItem, index: number) {
-  const title = item.headline || "市場訊息";
+  const title = cleanHeadline(item.headline || "市場訊息");
   const tag = item.tags?.[0] ?? item.impact_tier ?? "市場";
   return {
     symbol: item.ticker ?? "大盤",
@@ -399,11 +414,34 @@ function mapIdea(item: StrategyIdeasView["items"][number], index: number) {
     completeness: pct,
     signalCount: item.signalCount,
     latest: minutesAgoText(item.latestSignalAt),
-    reason: item.rationale.primaryReason || item.marketData.primaryReason,
+    reason: ideaReasonText(item.rationale.primaryReason || item.marketData.primaryReason),
     missing: item.quality.primaryReason,
     themes,
     delta: index % 3 === 0 ? "0.06" : index % 3 === 1 ? "0.03" : "0.00",
   };
+}
+
+// Backend primaryReason can be an engineering code (e.g. "fallback:higher_priority_unavailable") —
+// the 6/10 audit caught it rendered verbatim under「為什麼被選出」. Translate to product wording.
+function ideaReasonText(raw: string | null | undefined): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "候選理由待資料補齊。";
+  const labels: Record<string, string> = {
+    "fallback:higher_priority_stale": "即時報價暫時過期，已改用備援報價來源評估。",
+    "fallback:higher_priority_missing": "即時報價缺漏，已改用備援報價來源評估。",
+    "fallback:higher_priority_unavailable": "即時報價來源暫停，已改用備援報價來源評估。",
+    "fallback:no_fresh_quote": "目前沒有新鮮報價，暫以最近可用資料評估。",
+    "fallback:no_quote": "目前沒有可用報價，此候選僅供觀察。",
+    "stale:age_exceeded": "報價已超過新鮮度上限，評估僅供參考。",
+    "stale:missing_last": "缺少最新成交價，評估僅供參考。",
+    "stale:no_quote": "目前沒有可用報價，評估僅供參考。",
+    "stale:provider_unavailable": "報價供應來源暫停，評估僅供參考。",
+    "synthetic_source": "使用合成參考價，評估僅供參考。",
+    "non_live_source": "使用非即時資料來源評估。",
+    "provider_disconnected": "報價連線中斷，評估僅供參考。",
+    "missing_quote": "缺少報價資料，此候選僅供觀察。",
+  };
+  return labels[value] ?? value;
 }
 
 async function buildIdeasPayload() {
@@ -930,8 +968,20 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (val) val.textContent = String(value ?? "0");
   };
 
+  // Mirror of cleanHeadline — strip publisher tails like "｜新聞快訊｜豐雲學堂 - sinotrade.com.tw".
+  function clientCleanHeadline(raw) {
+    let text = String(raw || "").trim();
+    text = text.replace(/\s+-\s+[\w.-]+\.(?:com|net|org|tw|cn|io)(?:\.\w+)?\s*$/i, "");
+    while (true) {
+      const m = text.match(/^(.*)[｜|]([^｜|]{1,16})$/);
+      if (!m || /[，。,.!?]/.test(m[2])) break;
+      text = m[1].trim();
+    }
+    return text.trim() || String(raw || "").trim();
+  }
+
   function clientNewsItem(item, index) {
-    const title = item.headline || item.title || "正式市場訊息";
+    const title = clientCleanHeadline(item.headline || item.title || "正式市場訊息");
     const tag = (item.tags && item.tags[0]) || item.impact_tier || item.category || "市場";
     return {
       symbol: item.ticker || item.symbol || "市場",
@@ -968,6 +1018,29 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     };
   }
 
+  // Mirror of the server-side ideaReasonText — engineering reason codes must not
+  // surface under「為什麼被選出」(6/10 audit).
+  function clientIdeaReasonText(raw) {
+    const value = String(raw || "").trim();
+    if (!value) return "候選理由待資料補齊。";
+    const labels = {
+      "fallback:higher_priority_stale": "即時報價暫時過期，已改用備援報價來源評估。",
+      "fallback:higher_priority_missing": "即時報價缺漏，已改用備援報價來源評估。",
+      "fallback:higher_priority_unavailable": "即時報價來源暫停，已改用備援報價來源評估。",
+      "fallback:no_fresh_quote": "目前沒有新鮮報價，暫以最近可用資料評估。",
+      "fallback:no_quote": "目前沒有可用報價，此候選僅供觀察。",
+      "stale:age_exceeded": "報價已超過新鮮度上限，評估僅供參考。",
+      "stale:missing_last": "缺少最新成交價，評估僅供參考。",
+      "stale:no_quote": "目前沒有可用報價，評估僅供參考。",
+      "stale:provider_unavailable": "報價供應來源暫停，評估僅供參考。",
+      "synthetic_source": "使用合成參考價，評估僅供參考。",
+      "non_live_source": "使用非即時資料來源評估。",
+      "provider_disconnected": "報價連線中斷，評估僅供參考。",
+      "missing_quote": "缺少報價資料，此候選僅供觀察。"
+    };
+    return labels[value] || value;
+  }
+
   function clientMapIdea(item, index) {
     const themes = (item.topThemes || []).map((theme) => theme && theme.name).filter(Boolean);
     const decision = item.marketData?.decision || item.decision || "review";
@@ -991,7 +1064,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       completeness: pct,
       signalCount: item.signalCount || 0,
       latest: ago(item.latestSignalAt),
-      reason: item.rationale?.primaryReason || item.marketData?.primaryReason || "候選理由待資料補齊。",
+      reason: clientIdeaReasonText(item.rationale?.primaryReason || item.marketData?.primaryReason),
       missing: item.quality?.primaryReason || "",
       themes,
       delta: index % 3 === 0 ? "0.06" : index % 3 === 1 ? "0.03" : "0.00"

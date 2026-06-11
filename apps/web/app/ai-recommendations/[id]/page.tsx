@@ -40,6 +40,15 @@ function formatPrice(value: number | null) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
+// Product-grade UI rule: engineering strategy ids (cont_liq_v36 etc.) must not
+// reach the user — the sanctioned product name is S1 (audit 6/10 detail-page finding).
+function formatQuantSource(value: string | null | undefined) {
+  const raw = value?.trim();
+  if (!raw) return "策略來源待確認";
+  if (/cont[_-]?liq/i.test(raw) || /\bS1\b/i.test(raw)) return "S1 策略";
+  return raw.replace(/_/g, " ");
+}
+
 function qualityTone(value: QualityStatus) {
   if (value === "OK") return "ok";
   if (value === "MISSING") return "bad";
@@ -648,7 +657,7 @@ export default async function AiRecommendationDetailPage({
 
           <div className="_rec-detail-card">
             <span>量化來源</span>
-            <b>{rec.quant.strategySource}</b>
+            <b>{formatQuantSource(rec.quant.strategySource)}</b>
             <ul className="_rec-detail-risks">
               {rec.quant.reason.length > 0 ? rec.quant.reason.map((item) => <li key={item}>{item}</li>) : <li>-</li>}
             </ul>
