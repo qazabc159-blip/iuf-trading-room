@@ -9059,18 +9059,25 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const msg = data.msgArray[0];
       if (!msg) return null;
 
-      // z = current trade price; "-" means no data (closed / not traded)
-      const zRaw = msg["z"];
-      if (!zRaw || zRaw === "-" || zRaw.trim() === "") return null;
-      const lastPrice = Number(zRaw);
-      if (!isFinite(lastPrice) || lastPrice <= 0) return null;
-
       // Parse optional fields
       const parseNum = (s?: string) => {
         if (!s || s === "-" || s.trim() === "") return null;
         const n = Number(s.replace(/,/g, "").trim());
         return isFinite(n) && n > 0 ? n : null;
       };
+
+      // z = last trade price. MIS frequently returns z="-" when no tick printed
+      // in the current second even for actively traded stocks — fall back to best
+      // bid, then best ask (same handling as the MIS sweep cron). Returning null
+      // here mid-session dropped /quote/realtime all the way to yesterday's EOD
+      // (6/11 intraday repro: 2330 served twse_eod at 12:30 with MIS healthy).
+      // b = underscore-separated ask prices; a = bid prices (MIS convention reversed)
+      const bPrices = msg["b"]?.split("_").filter(Boolean);
+      const aPrices = msg["a"]?.split("_").filter(Boolean);
+      const bid = parseNum(bPrices?.[0]);
+      const ask = parseNum(aPrices?.[0]);
+      const lastPrice = parseNum(msg["z"]) ?? bid ?? ask;
+      if (lastPrice === null) return null;
 
       const open = parseNum(msg["o"]);
       const high = parseNum(msg["h"]);
@@ -9081,11 +9088,6 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           ? Math.round(((lastPrice - prevClose) / prevClose) * 10000) / 100
           : null;
       const volume = parseNum(msg["v"]); // accumulated trade volume (lots)
-      // b = underscore-separated ask prices; a = bid prices (MIS convention reversed)
-      const bPrices = msg["b"]?.split("_").filter(Boolean);
-      const aPrices = msg["a"]?.split("_").filter(Boolean);
-      const bid = parseNum(bPrices?.[0]);
-      const ask = parseNum(aPrices?.[0]);
       const tradeTime = msg["t"] ?? msg["%"] ?? "";
       const tradeDate = msg["d"] ?? "";
       if (!_isTwseLiveSessionNow() || !_isTodayMisTradeDate(tradeDate)) return null;
