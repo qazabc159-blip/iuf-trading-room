@@ -920,16 +920,32 @@ export async function runS1OrderSubmitTick(): Promise<void> {
  * Fetch KGI SIM positions, mark-to-market, write daily report.
  * Uses gateway /position endpoint. Falls back to order submit file if gateway unavailable.
  */
-export async function runS1EodReportTick(): Promise<void> {
+type S1PositionRow = {
+  symbol: string;
+  shares: number;
+  avg_cost: number;
+  last_price: number | null;
+  unrealized_pnl_twd: number | null;
+};
+
+export interface S1PositionsSnapshot {
+  positions: S1PositionRow[];
+  dataSource: string;
+  notes: string[];
+  /** Trading date the positions belong to (last rebalance Tuesday, or today). */
+  positionsDate: string;
+  cashResidualTwd: number;
+  totalUnrealizedPnlTwd: number | null;
+  totalMarketValueTwd: number | null;
+}
+
+/**
+ * Builds the current S1 holdings view. Shared by the daily EOD report and the
+ * trading-room portfolio endpoint (B3) — single source of truth for the
+ * gateway → audit-rebuild → order-file source chain (audit R4).
+ */
+export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   const todayTst = taipeiDateStr();
-
-  if (_eodLastFiredDate === todayTst) {
-    console.log("[s1-eod] already fired today, skipping");
-    return;
-  }
-  _eodLastFiredDate = todayTst;
-
-  console.log(`[s1-eod] START trading_date=${todayTst}`);
   const notes: string[] = [];
 
   // 0. Rebuild this week's positions from the durable audit log FIRST.
@@ -959,15 +975,7 @@ export async function runS1EodReportTick(): Promise<void> {
   }
   const entryBySymbol = new Map((basketForResidual?.basket ?? []).map((e) => [e.symbol, e]));
 
-  type PositionRow = {
-    symbol: string;
-    shares: number;
-    avg_cost: number;
-    last_price: number | null;
-    unrealized_pnl_twd: number | null;
-  };
-
-  const auditPositions: PositionRow[] = (latestOrdersAudit?.data.results ?? [])
+  const auditPositions: S1PositionRow[] = (latestOrdersAudit?.data.results ?? [])
     .filter((r) => r.status === "accepted")
     .map((r) => ({
       symbol: r.symbol,
@@ -982,7 +990,7 @@ export async function runS1EodReportTick(): Promise<void> {
   const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
   const client = new KgiGatewayClient({ gatewayBaseUrl: kgiGatewayUrl(), connectTimeoutMs: 10_000 });
 
-  let positions: PositionRow[] = [];
+  let positions: S1PositionRow[] = [];
   let dataSource = "kgi_gateway";
 
   try {
@@ -1072,6 +1080,33 @@ export async function runS1EodReportTick(): Promise<void> {
   } else {
     notes.push("basket_not_found: cash_residual is estimated as full capital");
   }
+
+  return {
+    positions,
+    dataSource,
+    notes,
+    positionsDate,
+    cashResidualTwd: cashResidual,
+    totalUnrealizedPnlTwd: totalUnrealized,
+    totalMarketValueTwd: totalMarketValue,
+  };
+}
+
+export async function runS1EodReportTick(): Promise<void> {
+  const todayTst = taipeiDateStr();
+
+  if (_eodLastFiredDate === todayTst) {
+    console.log("[s1-eod] already fired today, skipping");
+    return;
+  }
+  _eodLastFiredDate = todayTst;
+
+  console.log(`[s1-eod] START trading_date=${todayTst}`);
+  const snapshot = await buildS1PositionsSnapshot();
+  const { positions, dataSource, notes } = snapshot;
+  const totalUnrealized = snapshot.totalUnrealizedPnlTwd;
+  const totalMarketValue = snapshot.totalMarketValueTwd;
+  const cashResidual = snapshot.cashResidualTwd;
 
   // 2. Write JSON report
   const report: S1EodReport = {

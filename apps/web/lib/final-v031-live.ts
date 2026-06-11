@@ -35,6 +35,7 @@ import {
   type PaperOrderState,
   type PaperPortfolioPosition,
 } from "@/lib/paper-orders-api";
+import { getFAutoPortfolio, type FAutoPortfolio } from "@/lib/fauto-sim-api";
 
 export type FinalV031Screen = "market-intel" | "strategy-ideas" | "paper-trading-room";
 
@@ -576,6 +577,7 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
     fastShell: true,
     health: null,
     baseCapitalTWD: null,
+    fauto: null as FAutoPortfolio | null,
     selected: {
       symbol: selectedSymbol,
       name: selectedDefault?.name ?? selectedSymbol,
@@ -624,7 +626,7 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
 }
 
 async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
-  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.allSettled([
+  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult] = await Promise.allSettled([
     getPaperHealth(),
     getPaperPortfolioRaw(),
     listPaperFills(),
@@ -632,6 +634,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     getKgiPositions(),
     getKgiStatus(),
     getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 200, sort: "score" }),
+    getFAutoPortfolio(),
   ]);
 
   const health = okValue<PaperHealthState | null>(healthResult, null);
@@ -643,6 +646,9 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
   const kgiStatus = okValue<KgiStatusResponse | null>(kgiStatusResult, null);
+  // F-AUTO holdings (B3): cross-day S1 positions via gateway → audit rebuild chain
+  const fautoSettled = fautoResult.status === "fulfilled" ? fautoResult.value : null;
+  const fauto = fautoSettled && fautoSettled.ok ? fautoSettled.data : null;
   const ideas = ideasResult.status === "fulfilled" ? ideasResult.value.data : null;
   const mappedIdeas = ideas?.items?.map(mapIdea) ?? [];
   const prefill = options.paperPrefill ?? null;
@@ -720,6 +726,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     generatedAt: new Date().toISOString(),
     health,
     baseCapitalTWD,
+    fauto,
     selected: {
       symbol: selectedSymbol,
       name: company?.name ?? selectedSymbol,
@@ -1230,15 +1237,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/kgi/status")),
-      soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score"))
+      soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score")),
+      soft(apiGetRaw("/api/v1/portfolio/f-auto"))
     ]);
+    const fauto = fautoResult.ok ? fautoResult.data : null;
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
@@ -1293,6 +1302,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
+      fauto,
       selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
@@ -2442,7 +2452,41 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const posBody = $('.ltab[data-lt="positions"] tbody');
     if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+price(pos.symbol === selected.symbol ? selected.price : pos.avgCostPerShare)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.symbol === selected.symbol ? selected.price || 0 : pos.avgCostPerShare || 0))+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+esc(pos.fillCount)+' 筆</td></tr>').join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
-    if (kgiBody) kgiBody.innerHTML = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">讀取</span></td></tr>').join("") || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
+    if (kgiBody) {
+      const liveKgiRows = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">即時讀取</span></td></tr>').join("");
+      // B3: gateway session is ephemeral (EC2 stops 14:10) — when it has nothing,
+      // show the S1/F-AUTO holdings rebuilt from the durable audit chain instead
+      // of an empty table, with the data source labeled honestly.
+      const fautoRows = !liveKgiRows && live.fauto && (live.fauto.positions || []).length
+        ? (live.fauto.positions || []).map((pos) => {
+            const mv = pos.last_price !== null ? Number(pos.shares || 0) * Number(pos.last_price || 0) : null;
+            const srcLabel = live.fauto.data_source === "kgi_gateway" ? "即時讀取" : "重建(" + esc(String(live.fauto.positions_date || "").slice(5)) + " 委託)";
+            return '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.shares)+' 股</td><td class="r">'+(pos.avg_cost > 0 ? price(pos.avg_cost) : "—")+'</td><td class="r px">'+(pos.last_price !== null ? price(pos.last_price) : "—")+'</td><td class="r">'+(mv !== null ? n(mv) : "—")+'</td><td class="r pnl '+(Number(pos.unrealized_pnl_twd || 0) >= 0 ? "up" : "dn")+'">'+(pos.unrealized_pnl_twd !== null ? n(pos.unrealized_pnl_twd) : "—")+'</td><td><span class="src kgi">'+srcLabel+'</span></td></tr>';
+          }).join("")
+        : "";
+      kgiBody.innerHTML = liveKgiRows || fautoRows || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
+      const badgeKgiTab = $('.lhead .tb[data-lt="kgi"] .c');
+      if (badgeKgiTab && !liveKgiRows && fautoRows) badgeKgiTab.textContent = String((live.fauto.positions || []).length);
+    }
+    // B3: F-AUTO summary line under 部位/資金摘要 — capital, positions, MV, cash + source
+    (function renderFautoSummary() {
+      const summaryGrid = $("#summary-capital")?.closest("div[style*='grid-template-columns']");
+      if (!summaryGrid) return;
+      let line = $("#fauto-summary-line");
+      if (!live.fauto) { if (line) line.remove(); return; }
+      const f = live.fauto;
+      if (!line) {
+        line = document.createElement("div");
+        line.id = "fauto-summary-line";
+        line.style.cssText = "grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)";
+        summaryGrid.appendChild(line);
+      }
+      const mv = f.total_market_value_twd;
+      const srcText = f.data_source === "kgi_gateway" ? "KGI 即時" : "audit 重建（" + esc(String(f.positions_date || "")) + " 進場）";
+      line.innerHTML = 'F-AUTO 10M SIM　本金 <b style="color:var(--fg-1);font-weight:500">' + n(f.capital_twd) + '</b>　·　持倉 <b style="color:var(--fg-1);font-weight:500">' + String((f.positions || []).length) + '</b> 檔'
+        + (mv !== null ? '　·　市值 <b style="color:var(--fg-1);font-weight:500">' + n(mv) + '</b>' : '')
+        + '　·　現金 <b style="color:var(--fg-1);font-weight:500">' + n(f.cash_residual_estimated_twd) + '</b>　·　來源 ' + srcText;
+    })();
     hydrateKgiReadinessNote();
     const depth = $("#depth");
     if (depth) {
