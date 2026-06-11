@@ -132,7 +132,9 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         {state.status === "live" && (
           <span className="_ba-live-badge" style={{ marginLeft: 10 }}>
             <span className="_ba-live-ring" />
-            LIVE / {state.updatedAt}
+            {state.data.source === "twse_mis_intraday"
+              ? `盤中快照（約 5-20 秒）/ ${state.data.time ?? state.updatedAt}`
+              : `LIVE / ${state.updatedAt}`}
           </span>
         )}
         {state.status === "loading" && (

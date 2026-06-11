@@ -2865,6 +2865,10 @@ export {
 export interface KgiBidAskData {
   exchange?: string;
   symbol?: string;
+  /** "twse_mis_intraday" when served from the MIS 5-20s snapshot (KGI quote auth not enabled). */
+  source?: string;
+  /** MIS snapshot time (HH:mm:ss) when source is twse_mis_intraday. */
+  time?: string | null;
   bid_prices?: number[];
   bid_volumes?: number[];
   ask_prices?: number[];

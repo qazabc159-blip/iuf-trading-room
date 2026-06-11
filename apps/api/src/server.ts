@@ -5519,6 +5519,48 @@ app.get("/api/v1/kgi/quote/ticks", async (c) => {
   }
 });
 
+// MIS five-level book — KGI quote auth is not enabled on this broker tier, so
+// TWSE MIS is the de-facto five-level source (5–20s intraday snapshot).
+// MIS fields: b=五檔買價 a=五檔賣價 f=五檔買量 g=五檔賣量 (underscore-separated).
+// Queries tse_ + otc_ prefixes in one request; today-trade-date + session guards.
+async function _fetchMisFiveLevelBook(symbol: string): Promise<Record<string, unknown> | null> {
+  const hhmm = getTaipeiHHMM();
+  const day = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
+  if (day === 0 || day === 6 || hhmm < 900 || hhmm > 1335) return null;
+  if (!/^\d{4,6}[A-Z]?$/.test(symbol)) return null;
+  try {
+    const exCh = `tse_${symbol}.tw|otc_${symbol}.tw`;
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
+    const resp = await fetch(url, { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(4000) });
+    if (!resp.ok) return null;
+    const data = await resp.json() as { rtcode?: string; msgArray?: Array<Record<string, string>> };
+    if (data.rtcode !== "0000" || !data.msgArray?.length) return null;
+    const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+    const msg = data.msgArray.find((m) => (m["d"] ?? "") === todayYmd && Boolean(m["b"] || m["a"]));
+    if (!msg) return null;
+    const nums = (s?: string) =>
+      (s ?? "").split("_").filter(Boolean).map((x) => Number(x.replace(/,/g, ""))).filter((n) => isFinite(n) && n > 0);
+    const bid_prices = nums(msg["b"]).slice(0, 5);
+    const ask_prices = nums(msg["a"]).slice(0, 5);
+    const bid_volumes = nums(msg["f"]).slice(0, 5);
+    const ask_volumes = nums(msg["g"]).slice(0, 5);
+    if (bid_prices.length === 0 && ask_prices.length === 0) return null;
+    return {
+      symbol,
+      exchange: msg["ex"] ?? null,
+      bid_prices,
+      bid_volumes,
+      ask_prices,
+      ask_volumes,
+      source: "twse_mis_intraday",
+      time: msg["t"] ?? null,
+      tradeDate: msg["d"] ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/v1/kgi/quote/bidask?symbol=<S>
 app.get("/api/v1/kgi/quote/bidask", async (c) => {
   const symbol = c.req.query("symbol") ?? "";
@@ -5527,6 +5569,10 @@ app.get("/api/v1/kgi/quote/bidask", async (c) => {
     const result = await getKgiQuoteClient().getLatestBidAsk(symbol);
     return c.json({ data: result });
   } catch (err) {
+    // KGI five-level requires a quote-auth tier this account doesn't have —
+    // serve the MIS five-level snapshot instead of a permanent BLOCKED panel.
+    const mis = await _fetchMisFiveLevelBook(symbol);
+    if (mis) return c.json({ data: mis });
     return handleKgiQuoteError(c, err);
   }
 });
