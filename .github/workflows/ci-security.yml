@@ -39,7 +39,7 @@ jobs:
 
       - name: Run W6 no-real-order audit (Windows)
         if: runner.os == 'Windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $python = Get-Command python -ErrorAction SilentlyContinue
           if ($python) {
@@ -80,7 +80,7 @@ jobs:
 
       - name: Run secret regression check (Windows)
         if: runner.os == 'Windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $python = Get-Command python -ErrorAction SilentlyContinue
           if ($python) {

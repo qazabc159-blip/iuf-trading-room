@@ -374,8 +374,53 @@ const INTRADAY_RANGE_OPTIONS: ReadonlyArray<{ value: IntradayRangeKey; label: st
 ];
 
 const MIN_TREND_BARS = 12;
+const TRADING_ROOM_PRODUCT_DAILY_BARS = 720;
+const TRADING_ROOM_DEEP_BACKFILL_YEARS = 10;
 const COMPRESSED_INTRADAY_BASE_TIME = Math.floor(Date.UTC(2026, 0, 5, 1, 0, 0) / 1000);
 const TWSE_INTRADAY_MINUTES = 270;
+
+function officialDailyBarCount(items: OhlcvBar[]) {
+  return items.filter((bar) => (
+    bar.source !== "mock"
+    && typeof bar.close === "number"
+    && Number.isFinite(bar.close)
+    && bar.close > 0
+  )).length;
+}
+
+function tradingRoomDeepFromDate() {
+  const from = new Date();
+  from.setFullYear(from.getFullYear() - TRADING_ROOM_DEEP_BACKFILL_YEARS);
+  return from.toISOString().slice(0, 10);
+}
+
+function tradingRoomDeepOhlcvProxyUrl(symbol: string) {
+  const query = new URLSearchParams({
+    interval: "1d",
+    from: tradingRoomDeepFromDate(),
+    iufDeepBackfill: String(Date.now()),
+  });
+  const path = `/api/v1/companies/${encodeURIComponent(symbol.trim())}/ohlcv?${query.toString()}`;
+  return `/api/ui-final-v031/backend?path=${encodeURIComponent(path)}`;
+}
+
+async function fetchTradingRoomDeepDailyBars(symbol: string, signal: AbortSignal): Promise<OhlcvBar[]> {
+  const response = await fetch(tradingRoomDeepOhlcvProxyUrl(symbol), {
+    cache: "no-store",
+    credentials: "include",
+    signal,
+    headers: {
+      "x-iuf-kline-depth": "trading-room-deep-refetch",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`deep_ohlcv_${response.status}`);
+  }
+  const payload = (await response.json()) as { data?: OhlcvBar[] };
+  return Array.isArray(payload.data)
+    ? payload.data.filter((bar) => bar.source !== "mock")
+    : [];
+}
 
 function daysSince(dt: string): number {
   const now = Date.now();
@@ -1037,6 +1082,9 @@ export function OhlcvCandlestickChart({
   const [intradayRange, setIntradayRange] = useState<IntradayRangeKey>("1d");
   const [hoverBar, setHoverBar] = useState<ChartBar | null>(null);
   const [visibleRange, setVisibleRange] = useState<ChartLogicalRange | null>(null);
+  const [clientDailyBars, setClientDailyBars] = useState<OhlcvBar[] | null>(null);
+  const [deepRefetchState, setDeepRefetchState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [deepRefetchError, setDeepRefetchError] = useState<string | null>(null);
 
   // Indicator toggles — initialized from localStorage on first render
   const [indicators, setIndicators] = useState<IndicatorPrefs>(() => {
@@ -1064,6 +1112,55 @@ export function OhlcvCandlestickChart({
     });
   };
 
+  const incomingOfficialBars = useMemo(() => officialDailyBarCount(bars), [bars]);
+  const clientOfficialBars = useMemo(() => officialDailyBarCount(clientDailyBars ?? []), [clientDailyBars]);
+  const effectiveBars = useMemo(() => {
+    if (clientDailyBars && clientOfficialBars > incomingOfficialBars) return clientDailyBars;
+    return bars;
+  }, [bars, clientDailyBars, clientOfficialBars, incomingOfficialBars]);
+  const effectiveOfficialBars = useMemo(() => officialDailyBarCount(effectiveBars), [effectiveBars]);
+
+  useEffect(() => {
+    if (!compactTradingRoom) {
+      setClientDailyBars(null);
+      setDeepRefetchState("idle");
+      setDeepRefetchError(null);
+      return;
+    }
+
+    setClientDailyBars(null);
+    setDeepRefetchError(null);
+
+    if (incomingOfficialBars >= TRADING_ROOM_PRODUCT_DAILY_BARS) {
+      setDeepRefetchState("ready");
+      return;
+    }
+
+    const controller = new AbortController();
+    setDeepRefetchState("loading");
+
+    fetchTradingRoomDeepDailyBars(symbol, controller.signal)
+      .then((nextBars) => {
+        if (controller.signal.aborted) return;
+        const nextCount = officialDailyBarCount(nextBars);
+        if (nextCount >= Math.max(incomingOfficialBars, MIN_TREND_BARS)) {
+          setClientDailyBars(nextBars);
+          setDeepRefetchState(nextCount >= TRADING_ROOM_PRODUCT_DAILY_BARS ? "ready" : "failed");
+          setDeepRefetchError(nextCount >= TRADING_ROOM_PRODUCT_DAILY_BARS ? null : `deep_refetch_under_min:${nextCount}`);
+        } else {
+          setDeepRefetchState("failed");
+          setDeepRefetchError(`deep_refetch_empty:${nextCount}`);
+        }
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setDeepRefetchState("failed");
+        setDeepRefetchError(err instanceof Error ? err.message : "deep_refetch_failed");
+      });
+
+    return () => controller.abort();
+  }, [compactTradingRoom, incomingOfficialBars, symbol]);
+
   const activeMeta = ENABLED_INTERVALS.find((item) => item.value === interval);
   const isIntraday = activeMeta?.kind === "intraday";
   const chartHeight = compactTradingRoom ? 300 : isIntraday ? 460 : 440;
@@ -1076,8 +1173,8 @@ export function OhlcvCandlestickChart({
       const ranged = filterIntradayTradingDays(aggregated, intradayRange);
       return compressIntradayTimeline(ranged, minutes);
     }
-    return filterRange(aggregateDailyBars(bars, interval), range);
-  }, [bars, interval, intradayRange, kbarRows, range]);
+    return filterRange(aggregateDailyBars(effectiveBars, interval), range);
+  }, [effectiveBars, interval, intradayRange, kbarRows, range]);
   const chartViewportKey = useMemo(() => {
     // Keep the viewport key stable while live data appends new bars.
     // Otherwise every refresh changes length/last-dt and resets user pan/zoom.
@@ -1087,7 +1184,38 @@ export function OhlcvCandlestickChart({
       isIntraday ? intradayRange : range,
     ].join("|");
   }, [interval, intradayRange, isIntraday, range, symbol]);
-  const insufficientTrend = !isIntraday && chartBars.length > 0 && chartBars.length < MIN_TREND_BARS;
+  const tradingRoomDailyDepthShort = compactTradingRoom
+    && !isIntraday
+    && chartBars.length > 0
+    && effectiveOfficialBars < TRADING_ROOM_PRODUCT_DAILY_BARS;
+  const tradingRoomSparseDerivedInterval = compactTradingRoom
+    && !isIntraday
+    && interval !== "1d"
+    && chartBars.length > 0
+    && chartBars.length < MIN_TREND_BARS;
+  const insufficientTrend = !isIntraday
+    && chartBars.length > 0
+    && (chartBars.length < MIN_TREND_BARS || tradingRoomDailyDepthShort);
+  useEffect(() => {
+    if (isIntraday && chartBars.length === 0 && effectiveBars.length >= MIN_TREND_BARS) {
+      setInterval("1d");
+      setRange("all");
+      setHoverBar(null);
+    }
+  }, [chartBars.length, effectiveBars.length, isIntraday]);
+  useEffect(() => {
+    if (
+      compactTradingRoom &&
+      !isIntraday &&
+      interval !== "1d" &&
+      chartBars.length > 0 &&
+      chartBars.length < MIN_TREND_BARS
+    ) {
+      setInterval("1d");
+      setRange("all");
+      setHoverBar(null);
+    }
+  }, [chartBars.length, compactTradingRoom, effectiveBars.length, interval, isIntraday]);
   const selectedIntradayDates = useMemo(() => intradayDatesForRange(kbarRows, intradayRange), [intradayRange, kbarRows]);
   const intradayCoverage = useMemo(() => {
     if (!isIntraday) return null;
@@ -1202,7 +1330,7 @@ export function OhlcvCandlestickChart({
 
   // ── Lightweight-charts effect (candlestick + MA overlays) ──────────────────
   useEffect(() => {
-    if (!containerRef.current || !chartBars.length || insufficientTrend) return;
+    if (!containerRef.current || !chartBars.length) return;
 
     let chart: import("lightweight-charts").IChartApi | null = null;
     let ro: ResizeObserver | null = null;
@@ -1455,14 +1583,14 @@ export function OhlcvCandlestickChart({
       chart?.remove();
       chartRef.current = null;
     };
-  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, insufficientTrend, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
+  }, [activeIntradayMinutes, chartBars, chartHeight, chartViewportKey, interval, isIntraday, range, indicators.ma, indicators.plan, indicators.sr, indicators.vwap, maEnabled, maValues, planLevels, volumePriceLevels, vwapValues]);
 
   const badgeClass = isIntraday
     ? kbarState === "LIVE" ? "badge-green" : kbarState === "BLOCKED" ? "badge-red" : "badge-yellow"
-    : sourceBadgeClass(bars);
+    : sourceBadgeClass(effectiveBars);
   const badgeLabel = isIntraday
     ? kbarState === "LIVE" ? "FinMind 分K" : kbarState === "BLOCKED" ? "分K 無法顯示" : "分K 無資料"
-    : sourceBadgeLabel(bars);
+    : sourceBadgeLabel(effectiveBars);
   const lastBar = chartBars.at(-1);
   const firstBar = chartBars.at(0);
   const previousBar = chartBars.length >= 2 ? chartBars[chartBars.length - 2] : null;
@@ -1494,7 +1622,8 @@ export function OhlcvCandlestickChart({
   const dailyIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "daily");
   const intradayIntervals = ENABLED_INTERVALS.filter((item) => item.kind === "intraday");
 
-  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS && !insufficientTrend;
+  const renderInsufficientAsCard = tradingRoomDailyDepthShort || tradingRoomSparseDerivedInterval;
+  const showSubCharts = !compactTradingRoom && chartBars.length >= MIN_TREND_BARS;
   const compactIndicatorSignals = indicatorSignals.filter((signal) => {
     if (signal.key === "ma20" || signal.key === "ma60") return indicators.ma;
     if (signal.key === "vwap") return indicators.vwap;
@@ -1731,7 +1860,7 @@ export function OhlcvCandlestickChart({
         )}
       </div>
 
-      {chartBars.length > 0 && !insufficientTrend && (
+      {chartBars.length > 0 && (
         <div className="kline-viewport-tools" data-testid="kline-viewport-tools" aria-label="K 線視窗控制">
           <span className="label">視窗</span>
           <button type="button" onClick={() => zoomLogicalRange(0.72)} title="放大目前視窗，顯示更少 K 棒">
@@ -1821,14 +1950,32 @@ export function OhlcvCandlestickChart({
           <span className={stateToneClass(activeState)}>{stateLabel(activeState)}</span>{" "}
           {emptyReason}
         </div>
-      ) : insufficientTrend ? (
+      ) : renderInsufficientAsCard && insufficientTrend ? (
         <KlineInsufficientState
           bars={chartBars}
           intervalLabel={activeMeta?.label ?? "K 線"}
           sourceLabel={badgeLabel}
+          requiredBars={TRADING_ROOM_PRODUCT_DAILY_BARS}
+          depthState={deepRefetchState}
+          depthError={deepRefetchError}
         />
       ) : (
         <div className="kline-chart-shell">
+          {insufficientTrend && (
+            <div className="kline-density-strip is-sparse" data-testid="kline-backfill-warning">
+              <div>
+                <span>資料樣本</span>
+                <b>{chartBars.length.toLocaleString("zh-TW")}<small> / 最低 {MIN_TREND_BARS}</small></b>
+              </div>
+              <div>
+                <span>回補策略</span>
+                <b>已啟動<small>10 年日線 / 20 日分 K</small></b>
+              </div>
+              <p>
+                目前仍畫出已取得的真實 K 線；後端會略過過短快取並向 FinMind 補足歷史樣本，不用假資料補線。
+              </p>
+            </div>
+          )}
           <div className="kline-price-ribbon kline-readout-ribbon" aria-live="polite">
             <span>{hoverBar ? (isIntraday ? "游標分 K" : "游標 K") : (isIntraday ? "分 K 最新" : "最新收盤")}</span>
             <b className={`num ${toneClass(readoutChange)}`}>
@@ -1871,19 +2018,34 @@ function KlineInsufficientState({
   bars,
   intervalLabel,
   sourceLabel,
+  requiredBars,
+  depthState,
+  depthError,
 }: {
   bars: ChartBar[];
   intervalLabel: string;
   sourceLabel: string;
+  requiredBars: number;
+  depthState: "idle" | "loading" | "ready" | "failed";
+  depthError: string | null;
 }) {
   const latest = bars.at(-1);
+  const statusCopy =
+    depthState === "loading"
+      ? "正在重新抓取 10 年日 K，完成後會自動切回正式圖表。"
+      : depthState === "failed"
+        ? `深度回補仍未達產品門檻${depthError ? `（${depthError}）` : ""}，暫停畫趨勢圖避免誤導。`
+        : "目前資料深度不足，暫停畫趨勢圖避免誤導。";
   return (
     <div className="kline-insufficient">
       <div>
         <span className="badge badge-yellow">資料不足</span>
         <h4>目前只有 {bars.length.toLocaleString("zh-TW")} 根 {intervalLabel}，先顯示最近成交，不畫趨勢圖。</h4>
+        <p className="kline-depth-status">
+          產品門檻：至少 {requiredBars.toLocaleString("zh-TW")} 根正式日 K。{statusCopy}
+        </p>
         <p>
-          K 線圖至少需要 {MIN_TREND_BARS} 根資料才會畫完整趨勢，避免用少量資料誤導判讀。資料補齊後會自動切回正式圖表。
+          交易室會先抓 10 年正式日 K；未達門檻時只列出最近成交，不用少量資料畫趨勢。
         </p>
       </div>
       <div className="kline-insufficient-meta">

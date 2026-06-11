@@ -56,12 +56,27 @@ type FinalV031PayloadOptions = {
 
 type Settled<T> = PromiseSettledResult<T>;
 
+const TRADING_ROOM_OHLCV_LOOKBACK_YEARS = 10;
+
+function tradingRoomOhlcvFromDate(date = new Date()) {
+  const from = new Date(date);
+  from.setFullYear(from.getFullYear() - TRADING_ROOM_OHLCV_LOOKBACK_YEARS);
+  return from.toISOString().slice(0, 10);
+}
+
 function okValue<T>(result: Settled<T>, fallback: T): T {
   return result.status === "fulfilled" ? result.value : fallback;
 }
 
 function settledState(result: Settled<unknown>) {
   return result.status === "fulfilled" ? "live" : "blocked";
+}
+
+function shouldFetchRawKgiQuoteSnapshot(quote: { source?: string | null; state?: string | null; freshness?: string | null } | null | undefined) {
+  const source = String(quote?.source ?? "").toLowerCase();
+  const state = String(quote?.state ?? "").toUpperCase();
+  const freshness = String(quote?.freshness ?? "").toLowerCase();
+  return source === "kgi-gateway" && (state === "LIVE" || freshness === "fresh");
 }
 
 function sourceLabel(source?: string | null) {
@@ -431,6 +446,53 @@ function latestOhlcv(ohlcv: OhlcvBar[]) {
   return ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
 }
 
+function finiteNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function firstFiniteNumber(...values: unknown[]) {
+  for (const value of values) {
+    const n = finiteNumber(value);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function resolveTradingRoomQuoteSnapshot(
+  quote: Awaited<ReturnType<typeof getCompanyQuoteRealtime>> | null,
+  lastBar: OhlcvBar | null,
+  prevBar: OhlcvBar | null,
+  fallbackPrice: number | null,
+) {
+  const lastPrice = firstFiniteNumber(quote?.lastPrice, lastBar?.close, fallbackPrice);
+  const previous = firstFiniteNumber(
+    quote?.prevClose,
+    quote?.previousClose,
+    quote?.referencePrice,
+    quote?.yesterdayClose,
+    prevBar?.close,
+  );
+  const computedChange = lastPrice !== null && previous !== null
+    ? Number((lastPrice - previous).toFixed(2))
+    : null;
+  const computedChangePct = computedChange !== null && previous
+    ? Number(((computedChange / previous) * 100).toFixed(2))
+    : null;
+
+  return {
+    lastPrice,
+    open: firstFiniteNumber(quote?.open, lastBar?.open, lastPrice),
+    high: firstFiniteNumber(quote?.high, lastBar?.high, lastPrice),
+    low: firstFiniteNumber(quote?.low, lastBar?.low, lastPrice),
+    previous,
+    change: computedChange ?? firstFiniteNumber(quote?.change),
+    changePct: computedChangePct ?? firstFiniteNumber(quote?.changePct),
+    volume: firstFiniteNumber(quote?.volume, lastBar?.volume),
+  };
+}
+
 function paperPrefillSourceLabel(source: PaperPrefillHandoff["source"]) {
   if (source === "ai_recommendations") return "AI 推薦帶入";
   if (source === "strategy_home") return "首頁策略帶入";
@@ -542,24 +604,37 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const selectedPosition = portfolio.find((pos) => sameSymbol(pos.symbol, selectedSymbol)) ?? null;
   const selectedIdea = mappedIdeas.find((idea) => sameSymbol(idea.symbol, selectedSymbol)) ?? mappedIdeas[0] ?? null;
 
-  const [companyResult, quoteResult, bidAskResult, ticksResult] = await Promise.allSettled([
+  const [companyResult, quoteResult] = await Promise.allSettled([
     getCompanyByTicker(selectedSymbol),
     getCompanyQuoteRealtime(selectedSymbol),
-    getKgiBidAsk(selectedSymbol),
-    getKgiTicks(selectedSymbol, 16),
   ]);
   const company = okValue(companyResult, null);
   const quote = okValue(quoteResult, null);
-  const bidAsk = okValue(bidAskResult, null);
-  const ticks = okValue(ticksResult, null);
+  let bidAsk = null;
+  let ticks = null;
+  if (shouldFetchRawKgiQuoteSnapshot(quote)) {
+    const [bidAskResult, ticksResult] = await Promise.allSettled([
+      getKgiBidAsk(selectedSymbol),
+      getKgiTicks(selectedSymbol, 16),
+    ]);
+    bidAsk = okValue(bidAskResult, null);
+    ticks = okValue(ticksResult, null);
+  }
   const ohlcv = company
-    ? await getCompanyOhlcv(company.id, { interval: "1d" }).catch(() => [] as OhlcvBar[])
+    ? await getCompanyOhlcv(company.id, { interval: "1d", from: tradingRoomOhlcvFromDate() }).catch(() => [] as OhlcvBar[])
     : [];
   const lastBar = latestOhlcv(ohlcv);
-  const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
-  const previous = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2]?.close : null;
-  const change = lastPrice != null && previous != null ? lastPrice - previous : null;
-  const changePct = change != null && previous ? (change / previous) * 100 : null;
+  const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] ?? null : null;
+  const quoteSnapshot = resolveTradingRoomQuoteSnapshot(
+    quote,
+    lastBar,
+    prevBar,
+    selectedPosition?.avgCostPerShare ?? null,
+  );
+  const lastPrice = quoteSnapshot.lastPrice;
+  const previous = quoteSnapshot.previous;
+  const change = quoteSnapshot.change;
+  const changePct = quoteSnapshot.changePct;
 
   const defaultWatchlist = DEFAULT_TRADING_ROOM_WATCHLIST.map((item) => ({
     symbol: item.symbol,
@@ -604,14 +679,14 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       name: company?.name ?? selectedSymbol,
       sector: industryLabel(company?.chainPosition ?? selectedIdea?.sector ?? "台股"),
       price: lastPrice,
-      open: quote?.lastPrice ?? lastBar?.open ?? null,
-      high: lastBar?.high ?? null,
-      low: lastBar?.low ?? null,
+      open: quoteSnapshot.open,
+      high: quoteSnapshot.high,
+      low: quoteSnapshot.low,
       close: lastPrice,
       previous,
       change,
       changePct,
-      volume: quote?.volume ?? lastBar?.volume ?? null,
+      volume: quoteSnapshot.volume,
       quoteState: quote?.state ?? "NO_DATA",
     },
     watchlist,
@@ -723,6 +798,26 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
   const softState = (result) => result && result.ok ? "live" : "blocked";
+  function shouldFetchRawKgiQuote(quote) {
+    const source = String(quote?.source || "").toLowerCase();
+    const state = String(quote?.state || "").toUpperCase();
+    const freshness = String(quote?.freshness || "").toLowerCase();
+    return source === "kgi-gateway" && (state === "LIVE" || freshness === "fresh");
+  }
+  async function fetchRawKgiQuoteExtras(symbol, quote) {
+    if (!shouldFetchRawKgiQuote(quote)) {
+      return {
+        skipped:true,
+        bidAskResult:{ ok:true, data:null, skipped:true },
+        ticksResult:{ ok:true, data:{ ticks:[] }, skipped:true }
+      };
+    }
+    const [bidAskResult, ticksResult] = await Promise.all([
+      soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(symbol))),
+      soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(symbol) + "&limit=16"))
+    ]);
+    return { skipped:false, bidAskResult, ticksResult };
+  }
   const queryText = (value, max=80) => {
     const text = String(value || "").trim().replace(/[<>]/g, "");
     return text ? text.slice(0, max) : null;
@@ -765,7 +860,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (!key) return "未知產業";
     return industryLabels[key] || key;
   };
-  const sameSym = (left, right) => String(left || "").toUpperCase() === String(right || "").toUpperCase();
+  const sameSym = (left, right) => String(left || "").trim().toUpperCase() === String(right || "").trim().toUpperCase();
+  if (live.screen === "paper-trading-room") {
+    const seededSymbol = String(paperPrefill()?.symbol || live.selected?.symbol || "2330").trim().toUpperCase();
+    currentPaperSymbol = /^[0-9A-Z._-]{2,16}$/.test(seededSymbol) ? seededSymbol : "2330";
+  }
   const firstNumber = (value) => {
     const match = String(value || "").replace(/,/g, "").match(/\\d+(?:\\.\\d+)?/);
     return match ? Number(match[0]) : null;
@@ -1010,6 +1109,35 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return { screen:"strategy-ideas", generatedAt:view?.generatedAt || new Date().toISOString(), summary, items, selected:items[0] || null };
   }
 
+  function numVal(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  function firstNum() {
+    for (let i = 0; i < arguments.length; i++) {
+      const n = numVal(arguments[i]);
+      if (n !== null) return n;
+    }
+    return null;
+  }
+  function resolvePaperQuoteSnapshot(quote, lastBar, prevBar, fallbackPrice) {
+    const lastPrice = firstNum(quote?.lastPrice, lastBar?.close, fallbackPrice);
+    const previous = firstNum(quote?.prevClose, quote?.previousClose, quote?.referencePrice, quote?.yesterdayClose, prevBar?.close);
+    const computedChange = lastPrice !== null && previous !== null ? Number((lastPrice - previous).toFixed(2)) : null;
+    const computedPct = computedChange !== null && previous ? Number(((computedChange / previous) * 100).toFixed(2)) : null;
+    return {
+      lastPrice,
+      open: firstNum(quote?.open, lastBar?.open, lastPrice),
+      high: firstNum(quote?.high, lastBar?.high, lastPrice),
+      low: firstNum(quote?.low, lastBar?.low, lastPrice),
+      previous,
+      change: computedChange ?? firstNum(quote?.change),
+      changePct: computedPct ?? firstNum(quote?.changePct),
+      volume: firstNum(quote?.volume, lastBar?.volume)
+    };
+  }
+
   async function clientPaperPayload() {
     const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
@@ -1032,20 +1160,25 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const selectedIdea = ideas.find((idea) => sameSym(idea.symbol, selectedSymbol)) || ideas[0] || null;
     const companiesResult = await soft(apiGet("/api/v1/companies?ticker=" + encodeURIComponent(selectedSymbol)));
     const company = companiesResult.ok ? (companiesResult.data || [])[0] || null : null;
-    const [quoteResult, ohlcvResult, bidAskResult, ticksResult] = await Promise.all([
+    const ohlcvFrom = new Date();
+    ohlcvFrom.setFullYear(ohlcvFrom.getFullYear() - 10);
+    const ohlcvFromParam = ohlcvFrom.toISOString().slice(0, 10);
+    const [quoteResult, ohlcvResult] = await Promise.all([
       company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/quote/realtime")) : soft(Promise.resolve(null)),
-      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d")) : soft(Promise.resolve([])),
-      soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(selectedSymbol))),
-      soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(selectedSymbol) + "&limit=16"))
+      company ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(company.id) + "/ohlcv?interval=1d&from=" + encodeURIComponent(ohlcvFromParam))) : soft(Promise.resolve([])),
     ]);
     const ohlcv = ohlcvResult.ok ? ohlcvResult.data || [] : [];
     const lastBar = ohlcv.length ? ohlcv[ohlcv.length - 1] : null;
     const prevBar = ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
     const quote = quoteResult.ok ? quoteResult.data : null;
-    const lastPrice = quote?.lastPrice ?? lastBar?.close ?? selectedPosition?.avgCostPerShare ?? null;
-    const previous = prevBar?.close ?? null;
-    const change = lastPrice != null && previous != null ? Number(lastPrice) - Number(previous) : null;
-    const changePct = change != null && previous ? change / Number(previous) * 100 : null;
+    const rawQuoteExtras = await fetchRawKgiQuoteExtras(selectedSymbol, quote);
+    const bidAskResult = rawQuoteExtras.bidAskResult;
+    const ticksResult = rawQuoteExtras.ticksResult;
+    const quoteSnapshot = resolvePaperQuoteSnapshot(quote, lastBar, prevBar, selectedPosition?.avgCostPerShare ?? null);
+    const lastPrice = quoteSnapshot.lastPrice;
+    const previous = quoteSnapshot.previous;
+    const change = quoteSnapshot.change;
+    const changePct = quoteSnapshot.changePct;
     const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
     const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
     const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
@@ -1069,7 +1202,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
-      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quote?.lastPrice ?? lastBar?.open ?? null, high:lastBar?.high ?? null, low:lastBar?.low ?? null, close:lastPrice, previous, change, changePct, volume:quote?.volume ?? lastBar?.volume ?? null, quoteState:quote?.state || "NO_DATA" },
+      selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
       ideas,
       portfolio,
@@ -1496,10 +1629,37 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return '<div class="price"><span class="v">'+price(item.price)+'</span><span class="d '+tone+'">'+txt+'</span></div>';
   }
 
-  function latestTick(ticks) {
+  function normalizeTickSymbol(value) {
+    return String(value ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\.TW$/, "")
+      .replace(/[^0-9A-Z._-]/g, "");
+  }
+
+  function tickSymbolMatch(tick, symbol) {
+    if (!tick || typeof tick !== "object" || !symbol) return null;
+    const expected = normalizeTickSymbol(symbol);
+    const keys = ["symbol", "stockNo", "stockId", "stock_id", "code", "ticker", "ch"];
+    let sawSymbolField = false;
+    for (const key of keys) {
+      const raw = tick[key];
+      if (raw == null || raw === "") continue;
+      sawSymbolField = true;
+      if (normalizeTickSymbol(raw) === expected) return true;
+    }
+    return sawSymbolField ? false : null;
+  }
+
+  function latestTick(ticks, symbol, allowUnlabeled = true) {
     const arr = Array.isArray(ticks) ? ticks.filter(Boolean) : [];
     if (!arr.length) return null;
-    const scored = arr.map((tick, index) => {
+    const compatible = arr.filter((tick) => {
+      const match = tickSymbolMatch(tick, symbol);
+      return match === true || (allowUnlabeled && match === null);
+    });
+    if (!compatible.length) return null;
+    const scored = compatible.map((tick, index) => {
       const ts = Date.parse(tick._received_at || tick.datetime || tick.timestamp || tick.ts || "");
       return { tick, score: Number.isFinite(ts) ? ts : index };
     });
@@ -1672,25 +1832,54 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const quote = payload.quote || null;
     const bidAsk = payload.bidAsk || null;
     const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
-    const tick = latestTick(ticks);
-    const tickPrice = tickLastPrice(tick);
     const payloadPrice = payload.lastPrice != null ? Number(payload.lastPrice) : null;
     const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
-    const lastPrice = tickPrice ?? (Number.isFinite(payloadPrice) && payloadPrice > 0 ? payloadPrice : null) ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+    const authoritativePrice = (Number.isFinite(payloadPrice) && payloadPrice > 0 ? payloadPrice : null)
+      ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+    const tick = latestTick(ticks, symbol, authoritativePrice == null);
+    const tickPrice = tickLastPrice(tick);
+    const lastPrice = authoritativePrice ?? tickPrice;
     if (lastPrice == null && !bidAsk && !ticks.length) return;
-    const previous = live.selected?.previous ?? null;
-    const tickChange = tick?.price_chg ?? null;
-    const tickPct = tick?.pct_chg ?? null;
-    const change = payload.change != null ? Number(payload.change) : (tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null));
-    const changePct = payload.changePct != null ? Number(payload.changePct) : (tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null));
-    const nextSelected = Object.assign({}, live.selected || {}, {
+    const sameSelected = sameSym(live.selected?.symbol, symbol);
+    const previous = usableQuotePrice(
+      payload.prevClose
+      ?? quote?.prevClose
+      ?? quote?.previousClose
+      ?? quote?.referencePrice
+      ?? quote?.yesterdayClose
+      ?? (sameSelected ? live.selected?.previous : null)
+    );
+    const computedChange = previous != null && lastPrice != null ? Number((lastPrice - Number(previous)).toFixed(2)) : null;
+    const computedPct = computedChange != null && previous ? Number(((computedChange / Number(previous)) * 100).toFixed(2)) : null;
+    const payloadChange = payload.change != null ? Number(payload.change) : NaN;
+    const payloadPct = payload.changePct != null ? Number(payload.changePct) : NaN;
+    const tickChange = tick?.price_chg != null || tick?.change != null || tick?.changePrice != null
+      ? Number(tick?.price_chg ?? tick?.change ?? tick?.changePrice)
+      : NaN;
+    const tickPct = tick?.pct_chg != null || tick?.changePct != null || tick?.changePercent != null
+      ? Number(tick?.pct_chg ?? tick?.changePct ?? tick?.changePercent)
+      : NaN;
+    const liveChange = sameSelected ? live.selected?.change : null;
+    const livePct = sameSelected ? live.selected?.changePct : null;
+    const change = computedChange
+      ?? (Number.isFinite(payloadChange) ? payloadChange : null)
+      ?? (Number.isFinite(tickChange) ? tickChange : null)
+      ?? liveChange
+      ?? null;
+    const changePct = computedPct
+      ?? (Number.isFinite(payloadPct) ? payloadPct : null)
+      ?? (Number.isFinite(tickPct) ? tickPct : null)
+      ?? livePct
+      ?? null;
+    const nextSelected = Object.assign({}, sameSelected ? (live.selected || {}) : {}, {
       symbol,
-      price: lastPrice ?? live.selected?.price ?? null,
-      close: lastPrice ?? live.selected?.close ?? null,
-      open: tick?.open ?? live.selected?.open ?? null,
-      high: tick?.high ?? live.selected?.high ?? null,
-      low: tick?.low ?? live.selected?.low ?? null,
-      volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+      price: lastPrice ?? (sameSelected ? live.selected?.price : null) ?? null,
+      close: lastPrice ?? (sameSelected ? live.selected?.close : null) ?? null,
+      previous,
+      open: quote?.open ?? tick?.open ?? (sameSelected ? live.selected?.open : null),
+      high: quote?.high ?? tick?.high ?? (sameSelected ? live.selected?.high : null),
+      low: quote?.low ?? tick?.low ?? (sameSelected ? live.selected?.low : null),
+      volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? (sameSelected ? live.selected?.volume : null),
       bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
       ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
       change,
@@ -1763,8 +1952,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const chg = selected.change;
     const pct = selected.changePct;
     const tone = chg == null ? "flat" : Number(chg) >= 0 ? "up" : "dn";
+    const sameSelected = sameSym(live.selected?.symbol, selected.symbol);
     live = Object.assign({}, live, {
-      selected: Object.assign({}, live.selected || {}, selected),
+      selected: Object.assign({}, sameSelected ? (live.selected || {}) : {}, selected),
       bidAsk: bidAsk !== undefined ? bidAsk : live.bidAsk,
       ticks: ticks !== undefined ? ticks : live.ticks,
     });
@@ -1832,47 +2022,69 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     paperQuotePulseBusy = true;
     try {
       const companyId = live._companyId || null;
-      const [quoteResult, bidAskResult, ticksResult] = await Promise.all([
-        companyId ? soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime")) : soft(Promise.resolve(null)),
-        soft(apiGet("/api/v1/kgi/quote/bidask?symbol=" + encodeURIComponent(symbol))),
-        soft(apiGet("/api/v1/kgi/quote/ticks?symbol=" + encodeURIComponent(symbol) + "&limit=16"))
-      ]);
+      const quoteResult = companyId
+        ? await soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"))
+        : { ok:true, data:null };
       if (!sameSym(symbol, paperPulseSymbol())) return;
       const quote = quoteResult.ok ? quoteResult.data : null;
+      const rawQuoteExtras = await fetchRawKgiQuoteExtras(symbol, quote);
+      const bidAskResult = rawQuoteExtras.bidAskResult;
+      const ticksResult = rawQuoteExtras.ticksResult;
       const bidAsk = bidAskResult.ok ? bidAskResult.data : null;
       const ticksData = ticksResult.ok ? ticksResult.data : null;
       const ticks = ticksData?.ticks || [];
       const hasUsableResponse = Boolean(quote || bidAsk || ticksData);
-      const hasFailedResponse = !quoteResult.ok || !bidAskResult.ok || !ticksResult.ok;
+      const hasFailedResponse = !quoteResult.ok || (!rawQuoteExtras.skipped && (!bidAskResult.ok || !ticksResult.ok));
       if (!hasUsableResponse && hasFailedResponse) {
         paperQuotePulseBlockedUntil = Date.now() + 15000;
         updatePaperQuoteQualityBadge("blocked", { degraded: true });
         return;
       }
       paperQuotePulseBlockedUntil = 0;
-      const tick = latestTick(ticks);
-      const tickPrice = tickLastPrice(tick);
       const quotePrice = quote?.lastPrice != null ? Number(quote.lastPrice) : null;
-      const lastPrice = tickPrice ?? (Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null);
+      const authoritativePrice = Number.isFinite(quotePrice) && quotePrice > 0 ? quotePrice : null;
+      const tick = latestTick(ticks, symbol, authoritativePrice == null);
+      const tickPrice = tickLastPrice(tick);
+      const lastPrice = authoritativePrice ?? tickPrice;
       if (lastPrice == null && !bidAsk && !ticks.length) return;
-      const previous = live.selected?.previous ?? null;
-      const tickChange = tick?.price_chg ?? null;
-      const tickPct = tick?.pct_chg ?? null;
-      const change = tickChange != null ? Number(tickChange) : (previous && lastPrice != null ? lastPrice - Number(previous) : live.selected?.change ?? null);
-      const changePct = tickPct != null ? Number(tickPct) : (previous && change != null ? (change / Number(previous)) * 100 : live.selected?.changePct ?? null);
-      const nextSelected = Object.assign({}, live.selected || {}, {
+      const sameSelected = sameSym(live.selected?.symbol, symbol);
+      const previous = usableQuotePrice(
+        quote?.prevClose
+        ?? quote?.previousClose
+        ?? quote?.referencePrice
+        ?? quote?.yesterdayClose
+        ?? (sameSelected ? live.selected?.previous : null)
+      );
+      const computedChange = previous != null && lastPrice != null ? Number((lastPrice - Number(previous)).toFixed(2)) : null;
+      const computedPct = computedChange != null && previous ? Number(((computedChange / Number(previous)) * 100).toFixed(2)) : null;
+      const tickChange = tick?.price_chg != null || tick?.change != null || tick?.changePrice != null
+        ? Number(tick?.price_chg ?? tick?.change ?? tick?.changePrice)
+        : NaN;
+      const tickPct = tick?.pct_chg != null || tick?.changePct != null || tick?.changePercent != null
+        ? Number(tick?.pct_chg ?? tick?.changePct ?? tick?.changePercent)
+        : NaN;
+      const change = computedChange
+        ?? (Number.isFinite(tickChange) ? tickChange : null)
+        ?? (sameSelected ? live.selected?.change : null)
+        ?? null;
+      const changePct = computedPct
+        ?? (Number.isFinite(tickPct) ? tickPct : null)
+        ?? (sameSelected ? live.selected?.changePct : null)
+        ?? null;
+      const nextSelected = Object.assign({}, sameSelected ? (live.selected || {}) : {}, {
         symbol,
-        price: lastPrice ?? live.selected?.price ?? null,
-        close: lastPrice ?? live.selected?.close ?? null,
-        open: tick?.open ?? live.selected?.open ?? null,
-        high: tick?.high ?? live.selected?.high ?? null,
-        low: tick?.low ?? live.selected?.low ?? null,
-        volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? live.selected?.volume ?? null,
+        price: lastPrice ?? (sameSelected ? live.selected?.price : null) ?? null,
+        close: lastPrice ?? (sameSelected ? live.selected?.close : null) ?? null,
+        previous,
+        open: quote?.open ?? tick?.open ?? (sameSelected ? live.selected?.open : null),
+        high: quote?.high ?? tick?.high ?? (sameSelected ? live.selected?.high : null),
+        low: quote?.low ?? tick?.low ?? (sameSelected ? live.selected?.low : null),
+        volume: quote?.volume ?? tick?.total_volume ?? tick?.volume ?? (sameSelected ? live.selected?.volume : null),
         bid: quote?.bid ?? bidAsk?.bid_prices?.[0] ?? null,
         ask: quote?.ask ?? bidAsk?.ask_prices?.[0] ?? null,
         change,
         changePct,
-        quoteState: quote?.state ?? (ticks.length ? "LIVE" : live.selected?.quoteState ?? "NO_DATA"),
+        quoteState: quote?.state ?? (ticks.length ? "LIVE" : (sameSelected ? live.selected?.quoteState : null) ?? "NO_DATA"),
       });
       applyPaperQuotePulse(nextSelected, bidAsk, ticks);
       updatePaperQuoteQualityBadge("fallback", {
@@ -1933,7 +2145,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       auth ? "行情：" + (auth.available ? "可訂閱" : esc(auth.errorCode || auth.state || "不可用")) : null,
       "庫存：" + positions.length + " 筆",
     ].filter(Boolean);
-    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI READ-ONLY</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
+    note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI 唯讀</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
   }
 
   function applyPaperPrefill(selected) {
@@ -2181,14 +2393,14 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
     const capitalTWD = live.baseCapitalTWD;
     const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
-    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "AUTH REQUIRED";
+    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "待授權";
     const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
     // expose to updPreview() in vendor HTML
     window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
     if (capitalReady) {
       delete window.__IUF_TICKET_LOCK_REASON__;
     } else {
-      window.__IUF_TICKET_LOCK_REASON__ = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+      window.__IUF_TICKET_LOCK_REASON__ = "需要 Owner 登入才能預覽 / 送出紙上單";
     }
     const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
     try {
@@ -2202,7 +2414,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
-      if (blockedLabel) blockedLabel.textContent = "\u9700\u8981 owner session \u624d\u80fd\u9810\u89bd / \u9001\u51fa\u7d19\u4e0a\u55ae";
+      if (blockedLabel) blockedLabel.textContent = "需要 Owner 登入才能預覽 / 送出紙上單";
       const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
     }
     if (kgiSubmit && !capitalReady) {
@@ -2211,7 +2423,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       kgiSubmit.setAttribute("aria-disabled", "true");
       kgiSubmit.dataset.blocked = "owner_session_required";
       const kgiBlockedLabel = getKgiSubmitLabel();
-      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "\u9700\u8981 owner session";
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "需要 Owner 登入";
     }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();

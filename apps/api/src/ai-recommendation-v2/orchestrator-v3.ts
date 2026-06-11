@@ -33,7 +33,97 @@ import {
   getCompanyTechnical,
   getInstitutionalFlow,
   getNewsTop10,
+  getCompanyFundamentals,
+  getSupplyChain,
+  getCompanyNews,
 } from "../tools/market-data-tools.js";
+
+type CompanyFundamentalsObservation = Awaited<ReturnType<typeof getCompanyFundamentals>>;
+type SupplyChainObservation = Awaited<ReturnType<typeof getSupplyChain>>;
+type CompanyNewsObservation = Awaited<ReturnType<typeof getCompanyNews>>;
+
+const DEFAULT_AI_REC_MODEL = "gpt-4o-mini";
+const DEFAULT_AI_REC_FALLBACK_MODEL = "gpt-4o";
+const AI_REC_FALLBACK_COMPLETION_TOKEN_CAPS: Array<[RegExp, number]> = [
+  [/^gpt-4o(?:$|-)/i, 16000],
+  [/^gpt-4\.1(?:$|-)/i, 32000],
+  [/^gpt-4(?:$|-)/i, 8000],
+];
+
+type AiRecLlmMessage = { role: "system" | "user" | "assistant"; content: string };
+type AiRecLlmOptions = {
+  modelKey: string;
+  callerModule: string;
+  taskType: string;
+  workspaceId?: string | null;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+  responseFormat?: "json_object" | "json_schema";
+  responseSchema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
+};
+type AiRecLlmResult = {
+  content: string;
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  costUsd: number;
+  callId: string | null;
+  modelKey: string;
+  usedModelFallback: boolean;
+};
+
+export function resolveAiRecPrimaryModel(): string {
+  return process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"] ?? DEFAULT_AI_REC_MODEL;
+}
+
+export function resolveAiRecFallbackModel(primaryModel: string): string | null {
+  const configured = process.env["OPENAI_MODEL_AI_REC_FALLBACK"]?.trim();
+  const fallback = configured && configured.length > 0 ? configured : DEFAULT_AI_REC_FALLBACK_MODEL;
+  if (fallback === primaryModel) return null;
+  return fallback;
+}
+
+export function capAiRecFallbackMaxTokensForModel(
+  modelKey: string,
+  requestedMaxTokens: number | undefined
+): number | undefined {
+  if (requestedMaxTokens === undefined) return undefined;
+  const cap = AI_REC_FALLBACK_COMPLETION_TOKEN_CAPS.find(([pattern]) => pattern.test(modelKey))?.[1];
+  return cap === undefined ? requestedMaxTokens : Math.min(requestedMaxTokens, cap);
+}
+
+async function callAiRecLlmWithFallback(
+  messages: AiRecLlmMessage[],
+  opts: AiRecLlmOptions
+): Promise<AiRecLlmResult | null> {
+  const { callLlm } = await import("../llm/llm-gateway.js");
+  const primary = opts.modelKey;
+  const first = await callLlm(messages, opts);
+  if (first) return { ...first, modelKey: primary, usedModelFallback: false };
+
+  const fallback = resolveAiRecFallbackModel(primary);
+  if (!fallback) return null;
+
+  console.warn(
+    `[v3-orchestrator] model ${primary} returned no content for ${opts.taskType}; retrying with fallback ${fallback}`
+  );
+  const fallbackMaxTokens = capAiRecFallbackMaxTokensForModel(fallback, opts.maxTokens);
+  if (fallbackMaxTokens !== opts.maxTokens) {
+    console.warn(
+      `[v3-orchestrator] capped fallback ${fallback} maxTokens from ${opts.maxTokens} to ${fallbackMaxTokens} for ${opts.taskType}`
+    );
+  }
+  const retry = await callLlm(messages, {
+    ...opts,
+    modelKey: fallback,
+    maxTokens: fallbackMaxTokens,
+    taskType: `${opts.taskType}_model_fallback`,
+  });
+  return retry ? { ...retry, modelKey: fallback, usedModelFallback: true } : null;
+}
 
 export type AiStockRecommendationV3Card = AiStockRecommendationV2 & {
   entry?: string;
@@ -186,7 +276,7 @@ export interface AiRecommendationV3RunOptions {
 
 export interface AiRecommendationV3RunResult {
   runId: string;
-  status: "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools" | "synthesis_format_error";
+  status: "running" | "complete" | "failed" | "budget_exceeded" | "market_risk_off" | "insufficient_tools" | "synthesis_format_error";
   generatedAt: string;
   items: AiStockRecommendationV2[];
   reactTrace: unknown[];
@@ -232,21 +322,163 @@ export interface AiRecommendationV3SourceState {
 let _latestV3Cache: AiRecommendationV3RunResult | null = null;
 let _latestV3CacheExpiresAt = 0;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
-// Yang PR-A product gate: v3 must surface at least 5 backed cards or remain
-// non-complete. C bucket / high-risk-exclusion cards count as backed cards
-// when verified tool data is weak; do not silently pass a thin 2-item run.
+// Yang PR-A product gate: v3 must surface at least 5 actionable backed cards
+// or remain non-complete. C bucket / high-risk-exclusion cards are useful as
+// an exclusion list, but they are not recommendations and must not turn the
+// product surface green.
 const MIN_V3_RECOMMENDATION_ITEMS = 5;
 // Max items the deterministic fallback will produce (independent of MIN threshold).
 // This keeps the fallback producing a useful set even when MIN is low.
 const MAX_V3_FALLBACK_ITEMS = 5;
 const MIN_V3_TECHNICAL_CALLS = 5;
+const V3_MULTIDIM_PREFETCH_CANDIDATES = 8;
+const V3_COMPANY_NEWS_PREFETCH_CANDIDATES = 3;
+const V3_BUCKET_A_PLUS_MIN_SCORE = 85;
+const V3_BUCKET_A_MIN_SCORE = 75;
+const V3_BUCKET_B_MIN_SCORE = 65;
 
-/** Count only complete items (isIncomplete !== true) against the minimum threshold */
-function completeItemCount(items: AiStockRecommendationV2[]): number {
-  return items.filter(i => !i.isIncomplete).length;
+function bucketFromTotalScoreV3(score: number | null | undefined): AiRecBucket | null {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  if (score >= V3_BUCKET_A_PLUS_MIN_SCORE) return "A+";
+  if (score >= V3_BUCKET_A_MIN_SCORE) return "A";
+  if (score >= V3_BUCKET_B_MIN_SCORE) return "B";
+  return "C";
 }
-const V3_SYNTHESIS_TIMEOUT_MS = 75_000;
-const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 90_000;
+
+function normalizeBucketByScoreV3(bucket: AiRecBucket, score: number | null | undefined): AiRecBucket {
+  return bucketFromTotalScoreV3(score) ?? bucket;
+}
+
+function isActionableRecommendationItem(item: AiStockRecommendationV2): boolean {
+  if (item.isIncomplete) return false;
+  if (item.bucket === "C") return false;
+  if (item.action === "高風險排除") return false;
+  if ((item.totalScore ?? 0) < V3_BUCKET_B_MIN_SCORE) return false;
+  return true;
+}
+
+/** Count only actionable, complete recommendation items against the minimum threshold */
+function completeItemCount(items: AiStockRecommendationV2[]): number {
+  return items.filter(isActionableRecommendationItem).length;
+}
+// gpt-5.5 (reasoning model) synthesis over the candidate set takes 75–90s+ —
+// the old 75s/90s timeout aborted it exactly at the limit (FETCH_ERROR,
+// completionTokens=0 → empty content → deterministic fallback). Reasoning models
+// need generous headroom; fast models finish well under these and are unaffected.
+const V3_SYNTHESIS_TIMEOUT_MS = 240_000;
+const V3_SYNTHESIS_RETRY_TIMEOUT_MS = 300_000;
+export const V3_RUNNING_STALE_AFTER_MS = 45 * 60 * 1000;
+
+export function getV3RunAgeMs(generatedAt: string, nowMs = Date.now()): number | null {
+  const startedMs = Date.parse(generatedAt);
+  if (!Number.isFinite(startedMs)) return null;
+  return Math.max(0, nowMs - startedMs);
+}
+
+export function isV3RunningStale(status: AiRecommendationV3RunResult["status"], generatedAt: string, nowMs = Date.now()): boolean {
+  if (status !== "running") return false;
+  const ageMs = getV3RunAgeMs(generatedAt, nowMs);
+  return ageMs !== null && ageMs > V3_RUNNING_STALE_AFTER_MS;
+}
+
+/** Taipei calendar date (YYYY-MM-DD) for a given epoch ms. */
+export function taipeiDateOf(nowMs = Date.now()): string {
+  return new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Daily cron fire window: 08:30–09:15 TST weekdays (pre-market, after EC2 gateway 08:20 start). */
+export function isV3CronWindowAt(nowMs = Date.now()): boolean {
+  const taipei = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const day = taipei.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+  return hhmm >= 830 && hhmm <= 915;
+}
+
+/**
+ * Marks v3 rows stuck in status="running" older than minAgeMs as failed.
+ * A run that crashes mid-loop (e.g. LLMBudgetExceeded) used to leave its row
+ * "running" forever, which the read path then skipped for days.
+ */
+export async function failStaleV3RunningRows(opts: { minAgeMs: number; reason: string }): Promise<number> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return 0;
+    const db = getDb();
+    if (!db) return 0;
+    const { sql, and, eq, lt } = await import("drizzle-orm");
+    const cutoff = new Date(Date.now() - opts.minAgeMs);
+    const rows = await db
+      .update(aiRecommendationsRuns)
+      .set({ status: "failed", finalReportMarkdown: opts.reason, completedAt: new Date() })
+      .where(and(
+        sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        eq(aiRecommendationsRuns.status, "running"),
+        lt(aiRecommendationsRuns.generatedAt, cutoff)
+      ))
+      .returning({ id: aiRecommendationsRuns.id });
+    if (rows.length > 0) {
+      console.warn(`[ai-rec-v3] marked ${rows.length} stuck running run(s) as failed: ${opts.reason}`);
+    }
+    return rows.length;
+  } catch (e) {
+    console.warn("[ai-rec-v3] failStaleV3RunningRows failed:", e instanceof Error ? e.message : e);
+    return 0;
+  }
+}
+
+/**
+ * True if any v3 run row (any status) exists for the given Taipei calendar date.
+ * Boot-fire guard: on 6/5 every deploy boot-fired a fresh v3 run, and a dozen
+ * deploys in one day burned the whole LLM daily budget.
+ */
+export async function hasV3RunForTaipeiDate(dateStr: string): Promise<boolean> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return false;
+    const db = getDb();
+    if (!db) return false;
+    const { sql, and, gte, lt } = await import("drizzle-orm");
+    const dayStart = new Date(`${dateStr}T00:00:00+08:00`);
+    if (!Number.isFinite(dayStart.getTime())) return false;
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const rows = await db
+      .select({ id: aiRecommendationsRuns.id })
+      .from(aiRecommendationsRuns)
+      .where(and(
+        sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        gte(aiRecommendationsRuns.generatedAt, dayStart),
+        lt(aiRecommendationsRuns.generatedAt, dayEnd)
+      ))
+      .limit(1);
+    return rows.length > 0;
+  } catch (e) {
+    console.warn("[ai-rec-v3] hasV3RunForTaipeiDate failed:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+export type V3RunReadCandidate = {
+  status: string;
+  items?: unknown;
+};
+
+function v3RunCandidateItemCount(row: V3RunReadCandidate): number {
+  return Array.isArray(row.items) ? row.items.length : 0;
+}
+
+function isReadableV3RunCandidate(row: V3RunReadCandidate): boolean {
+  return row.status !== "running" && v3RunCandidateItemCount(row) > 0;
+}
+
+export function pickAiRecommendationV3RunForRead<T extends V3RunReadCandidate>(rows: T[]): T | null {
+  const latest = rows[0];
+  if (!latest) return null;
+  if (isReadableV3RunCandidate(latest)) return latest;
+  return rows.find((row) => row.status === "complete" && v3RunCandidateItemCount(row) > 0)
+    ?? rows.find(isReadableV3RunCandidate)
+    ?? latest;
+}
 
 export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
   if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
@@ -368,8 +600,8 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       .from(aiRecommendationsRuns)
       .where(sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`)
       .orderBy(desc(aiRecommendationsRuns.generatedAt))
-      .limit(1);
-    const row = rows[0];
+      .limit(10);
+    const row = pickAiRecommendationV3RunForRead(rows);
     if (!row) return null;
     const result: AiRecommendationV3RunResult = {
       runId: row.runId,
@@ -452,6 +684,9 @@ const TOOL_WHITELIST_V3 = [
   "get_company_technical",
   "get_institutional_flow",
   "get_news_top10",
+  "get_company_fundamentals",
+  "get_supply_chain",
+  "get_company_news",
 ] as const;
 
 // ── dispatchTool ──────────────────────────────────────────────────────────────
@@ -481,6 +716,21 @@ async function dispatchMarketToolV3(
       }
       case "get_news_top10":
         return getNewsTop10();
+      case "get_company_fundamentals": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getCompanyFundamentals(inp.ticker);
+      }
+      case "get_supply_chain": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getSupplyChain(inp.ticker);
+      }
+      case "get_company_news": {
+        const inp = input as { ticker?: string } | null;
+        if (!inp?.ticker) return { error: "ticker_required" };
+        return getCompanyNews(inp.ticker);
+      }
       default:
         throw new Error(`TOOL_NOT_FOUND: ${toolName} not in v3 whitelist`);
     }
@@ -495,16 +745,28 @@ function buildV3SystemPrompt(dateStr: string, programmaticRiskOffScore: number):
 系統已計算 programmatic risk_off_score = ${programmaticRiskOffScore}/6（基於可用市場資料）。
 ${programmaticRiskOffScore >= 3
   ? `risk_off_score >= 3 → 你必須回傳 RISK_OFF_SKIP，不推薦任何新倉。`
-  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦（A+/A/B/C bucket）。
+  : `risk_off_score < 3 → 你必須完整執行 STEP 2-5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔可行動推薦（A+/A/B bucket）。
 你不可自行判斷 risk-off 並 skip STEP 2-5。即使大盤單日跌 0.5%-1%，也必須繼續分析。
 若輸出推薦數 < ${MIN_V3_RECOMMENDATION_ITEMS}，系統會自動 reject 並標記 insufficient_tools / synthesis_format_error。`}
 === END SYSTEM CONTEXT ===
 `;
 
-  return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 5-module 框架執行推薦分析。
+  return `你是 IUF 台股操盤師 AI，嚴格按楊董 SOP 6-module 框架執行多維度整合選股分析。
 今天是 ${dateStr}（台北時間）。
 ${riskOffContext}
 你有以下工具可用：${TOOL_WHITELIST_V3.join(", ")}
+
+【重要】工具說明：
+- get_market_overview：TAIEX 指數 + 量能 + 大盤狀態
+- get_sector_rotation：類股輪動，按 avgChangePct 排序
+- get_company_technical：個股技術面 (lastPrice/RSI/MA20/MA60/volumeRatio)
+- get_institutional_flow：個股三大法人 30 日淨買賣
+- get_news_top10：AI 精選市場新聞 10 則 (含 impact_tier/why_matters/tags)
+- get_company_fundamentals：個股基本面 (月營收 YoY/MoM、EPS、毛利率、PER/PBR)
+- get_supply_chain：個股產業鏈定位 (chainPosition/beneficiaryTier/上下游/主題)
+- get_company_news：個股專屬新聞 (FinMind experimental，空 items 屬正常)
+
+【美股隔夜/VIX/DXY/10Y/WTI：未接入。S1-S5 資料缺失，fail-open score=0，禁止幻覺推論美股訊號。】
 
 ---
 [STEP 1] 市場狀態（前置條件 — 必須最先執行）
@@ -516,12 +778,16 @@ ${riskOffContext}
   ★★ CRITICAL: 系統 programmatic risk_off_score = ${programmaticRiskOffScore}。
   ${programmaticRiskOffScore >= 3
     ? "risk_off_score >= 3 → 你必須在第一輪 toolName=null，thought 包含「RISK_OFF_SKIP」。"
-    : `risk_off_score < 3 → 你絕對不可 RISK_OFF_SKIP。必須執行完整 STEP 2-5。
+    : `risk_off_score < 3 → 你絕對不可 RISK_OFF_SKIP。必須執行完整 STEP 2-6。
   若 event日（FOMC/CPI/法說 T-2~T+1 或振幅>2*ATR20）→ 市場狀態設 event，倉位倍率 0.5，但仍推薦。`}
 
 [STEP 2] 主題穿透（risk_off_score < 3 時強制執行）
   callTool(get_news_top10) 識別當前強勢主題
+    → 新聞中每個 item 帶有 ticker、impact_tier（HIGH/MID/LOW）、why_matters、tags
+    → 優先關注 impact_tier=HIGH 或 MID 的 ticker
+    → 排除 impact_tier=LOW 且 tags 只含「市場新聞」的非主題性新聞
   callTool(get_sector_rotation) 找資金流入板塊
+    → sectors 按 avgChangePct 排序，取前 5 名板塊作為題材優先過濾
   根據楊董 4 層產業鏈框架定位標的：
     第一層龍頭（8分）| 第二層系統/模組（14分）| 第三層關鍵零件（16分）| 材料/設備（20分）
   排除「已 price in」：法人連5日大量買超且股價20日漲>30% 的公司直接跳過
@@ -529,16 +795,64 @@ ${riskOffContext}
 [STEP 3] 個股 7 sub-score（每候選股 0-100 合計）
   ★★ 必須至少呼叫 get_company_technical ${MIN_V3_TECHNICAL_CALLS} 次（不同 ticker）。
   每個推薦標的都需要 get_company_technical 工具支撐，否則視為未驗證無效。
-  若 STEP 2 的新聞或板塊資料沒有可用候選，禁止亂猜冷門代碼；請依序檢查這組核心候選：
-  2330、2454、2317、2308、2412、3711、3707、2882、2881、6505。
-  - 主題位置 /20（依 STEP 2 產業鏈層位判定）
-  - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0）
-  - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0）
-  - 融資/借券/擁擠 /15（融資5日降溫 → 滿；持平 → 8；5日增>12%且股價漲>15% → 扣分至0）
-  - 相對強弱量能 /10（RS20>0且突破量>1.3均量 → 滿；RS正但量不足 → 5；RS負 → 0）
-  - 技術結構 /20（BOS+OB/FVG+OTE重疊3項以上 → 滿；2項 → 12；1項 → 6；無 → 0）
-  - 估值/事件 /5（法說/除息/注意股等加減分）
+
+  ★★★ 技術資料空值處理（極重要，嚴格遵守）：
+  當 get_company_technical 回傳 lastPrice=null（代表 DB 中無此股的 OHLCV 資料），
+  該 ticker 視為「無法評分」，不得用 0 填寫評分，也不得列入推薦卡片。
+  連續 2 次 get_company_technical 回傳 null → 立即停止嘗試新聞中的候選，
+  改為依序呼叫下方核心候選清單，直到累積 ${MIN_V3_TECHNICAL_CALLS} 個有效 lastPrice > 0 的回傳。
+
+  核心候選清單（有 OHLCV 歷史資料，優先使用）：
+  2330（台積電）、2454（聯發科）、2317（鴻海）、2308（台達電）、3711（日月光投控）、
+  3289（宜特）、3265（台星科）、3312（弘憶股）、2412（中華電）、3324（雙鴻）
+
+  若 STEP 2 新聞有 ticker 且 impact_tier ≠ LOW → 先嘗試那些 ticker
+  若 2 次 null → 切換到核心候選清單，不要繼續浪費輪次在無資料的冷門股上
+
+  - 主題位置 /20（依 STEP 2 產業鏈層位判定；無法確認產業鏈位置 → 8 分，不要猜）
+  - 營收/財報 /15（近3月YoY正且至少2月加速 → 滿分；只1月加速 → 8分；負成長 → 0；無資料 → 8）
+  - 法人/ETF /15（5日外資+投信同向淨買超/20均量 > 0.5 → 滿；單向 → 8；流出 → 0；無資料 → 8）
+  - 融資/借券/擁擠 /15（融資5日降溫 → 滿；持平 → 8；5日增>12%且股價漲>15% → 扣分至0；無資料 → 8）
+  - 相對強弱量能 /10（RS20>0且突破量>1.3均量 → 滿；RS正但量不足 → 5；RS負 → 0；用 volumeRatio20d 與 changePct 判斷）
+  - 技術結構 /20（aboveMa20+aboveMa60 同時 true + rsi14 45-75 → 14分以上；部分符合 → 按比例）
+  - 估值/事件 /5（法說/除息/注意股等加減分；無事件 → 3）
   totalScore = 7個分數相加，最大100
+  ★★★ 嚴禁在任何 sub-score 填寫 0 除非有明確負面訊號；「無資料」應填預設值而非 0
+
+[STEP 3.5] 基本面驗證（強制執行，提升「營收/財報」sub-score 精準度）
+  ★★ 對 STEP 3 有效技術資料的標的，各呼叫一次 callTool(get_company_fundamentals)。
+  重點讀取：
+  → monthlyRevenue[0..2]：最近 3 月的 yoy 值 — 判斷是 accelerating / positive / negative
+  → epsLatestQuarter：最近一季 EPS（>0 為正成長）
+  → grossMarginPct / operatingMarginPct：毛利率趨勢
+  → per / pbr：估值水位（PER < 15 視為便宜；PER > 30 視為貴）
+  ★★ dataAvailable=false 時：此標的財務面資料不可用，revenue sub-score 維持預設 8，
+     不得編造任何財務數字。
+  ★★ 基本面資料必須用於修正「營收/財報」分數（最大 ±5 分調整）：
+     revenueYoyTrend=accelerating → +4；positive → +2；negative → -4；unavailable → 0
+     EPS > 0 → +2；EPS < 0 → -2；無資料 → 0
+
+[STEP 3.6] 產業鏈定位（強制執行，提升「主題位置」sub-score 精準度）
+  ★★ 對 STEP 3 有效技術資料的標的，各呼叫一次 callTool(get_supply_chain)。
+  重點讀取：
+  → chainPosition：供應鏈層位（"CoAP_Chip"/"EMS"/"Material" 等）
+  → beneficiaryTier："Core"(核心受益)/Direct/Indirect/Observation
+  → themes：關聯投資主題（name + lifecycle，Expansion 最強）
+  → suppliers/customers/peers：上下游關聯股（可輔助判斷受益傳導）
+  ★★ dataAvailable=false 時：chainPosition 不明，theme sub-score 維持預設 8，不得猜測。
+  ★★ beneficiaryTier 與楊董 4 層框架對應：
+     Core ≈ 第一層龍頭（20分上限）；Direct ≈ 第二/三層（14-16分）；
+     Indirect ≈ 第三/四層（10-14分）；Observation ≈ 觀察（8分）
+  ★★ themes[0].lifecycle=Expansion → theme sub-score 可給到滿分；Crowded → -4
+
+[STEP 3.7] 個股催化劑（選擇性執行，補充最重要的 2-3 個候選標的）
+  對 STEP 3 最高分的前 3 個候選標的，各呼叫一次 callTool(get_company_news)。
+  重點讀取：
+  → state="live" + items：有個股專屬新聞 → 找法說/重大合約/除息/併購/AI 訂單等催化劑
+  → state="empty"：此標的今日無個股新聞（正常，標注在 synthesis 中）
+  → state="unavailable"：FinMind token 問題，此維度暫缺，分析時誠實標注
+  ★★ items 有法說 / 重大合約 / 除息 / 轉機消息 → valuation/事件 sub-score +2 至 +5
+  ★★ 禁止幻覺：state="empty"/"unavailable" 時，不得編造任何個股新聞。
 
 [STEP 4] Bucket assign（依 totalScore）
   totalScore >= 85 → A+ 今日首選（0.8% NAV）
@@ -546,8 +860,9 @@ ${riskOffContext}
   65–74 → B 等回檔（0.4% NAV）
   < 65 → C 高風險排除（不開新倉）
 
-[STEP 5] 每檔輸出（C bucket 也必須輸出，但標示高風險排除）
-  ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B/C 卡片（否則系統拒絕此次分析）。
+[STEP 5] 每檔輸出（A+/A/B 才算推薦；C bucket 是排除名單）
+  ★★ 最終輸出必須包含 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B 推薦卡片（否則系統拒絕此次分析）。
+  ★★ C bucket 可以輸出，但只能標示高風險排除 / 不開新倉，不可拿來湊推薦數。
   ★★ PARSER 格式規則（必須遵守，否則解析失敗）：
      - 每檔 heading 必須是「## XXXX 公司名」（兩個#，空格，4位數ticker，空格，中文名）
      - 不得用 ###、#### 或 **ticker** bold heading
@@ -561,6 +876,7 @@ ${riskOffContext}
   R值：(TP1-進場中點)/(進場中點-SL)
   信心：0.0-1.0
   ★★ 必加欄位「一句話理由」：≤80 字白話中文，說明為什麼現在可以買（給操盤師 5 秒快速判斷用）
+  ★★★ 「一句話理由」必須同時引用 2 個以上維度（技術+法人、或技術+基本面、或基本面+產業鏈）
 
 ---
 回應格式（每輪 JSON，無 markdown 包裝）：
@@ -568,8 +884,11 @@ ${riskOffContext}
 
 規則：
 - 先完成 STEP 1（market overview），再 STEP 2（news+sector），再 STEP 3（技術/法人個股，≥5次）
-- 至少執行7輪工具呼叫再給最終答案（1次overview + 1次news + 1次sector + 5次company_technical）
-- 最終答案時 toolName=null，thought 包含完整分析摘要
+- 接著 STEP 3.5（基本面，每個候選各一次），STEP 3.6（產業鏈，每個候選各一次），STEP 3.7（個股新聞，前3個）
+- 至少執行 13 輪工具呼叫再給最終答案：
+    1次overview + 1次news + 1次sector + 5次technical + 3次fundamentals + 3次supply_chain
+  （company_news 若能多叫更好，但不是硬性最低門檻）
+- 最終答案時 toolName=null，thought 包含完整多維度分析摘要
 - ★★ 禁止在 risk_off_score < 3 時使用 RISK_OFF_SKIP（系統已驗證，LLM 不可 override）`;
 }
 
@@ -577,52 +896,385 @@ ${riskOffContext}
 // Product policy: reports/spec/ai_recommendation_theme_penetration_sop_v1.md
 
 function buildV3SynthesisPrompt(traceText: string, dateStr: string, programmaticRiskOffScore: number): string {
-  return `你是 IUF 台股操盤師 AI，請根據以下 ReAct 分析過程，輸出符合楊董 SOP 的個股推薦報告（${dateStr}）。
+  return `你是 IUF 台股操盤師 AI。根據以下 ReAct 分析過程，輸出符合楊董 SOP 的深度個股推薦報告（${dateStr}）。
 
 === HARD GATE ===
 system_programmatic_risk_off_score = ${programmaticRiskOffScore}/6
 ${programmaticRiskOffScore >= 3
   ? "只有在這個分數 >= 3 時，才可以輸出 RISK_OFF_FINAL_SKIP 並不推薦新倉。"
-  : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B/C 卡片；資料弱的標 C「高風險排除」，不要整份報告跳過。`}
+  : `這個分數 < 3，所以 RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止。即使大盤偏弱，也要依據已查到的個股資料輸出至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動卡片；C「高風險排除」只能放在排除名單，不可拿來湊推薦數。`}
 === END HARD GATE ===
 
-## 分析過程
+=== 深度分析要求（CRITICAL — 違反視同輸出失敗）===
+【每檔股票必須具備「該股專屬」的 thesis — 嚴禁套版】
+
+A. 「為什麼買」欄位每一點都必須引用 trace 中該股的具體數據（多維度整合，至少引用2個維度）：
+   - 技術結構：「收盤 XXX，突破月線 YYY，量 Z 萬張為近 20 日均量 A 倍」（取自 get_company_technical）
+   - 法人買賣：「外資連續 X 日買超 Y 張，佔流通籌碼 Z%」（取自 get_institutional_flow 或 trace）
+   - 基本面：「月營收 YoY X% 連續加速 / 最近季 EPS X 元 / 毛利率 X%」（取自 get_company_fundamentals trace）
+   - 產業鏈定位：「供應鏈定位 [chainPosition]，屬楊董第N層 [beneficiaryTier] 受益股，主題 [theme] lifecycle=[lifecycle]」（取自 get_supply_chain trace）
+   - 個股催化劑：「個股新聞 [具體標題/事件]，為本週近期催化劑」（取自 get_company_news 或 get_news_top10 trace）
+   - 可辨別的數字就填數字；trace 中沒有對應數字就說「依 trace 基本面資料暫缺，維持預設分」而不是捏造數字
+
+B. 「為什麼買」絕對禁止的套版句（會被自動檢測為 FAIL）：
+   ❌ 「技術面良好」/ 「指標偏多」/ 「籌碼面穩定」/ 「市場認可」
+   ❌ 「在台股當前環境下具有相對優勢」（無差異化，每股都能用）
+   ❌ 把另一檔股票的新聞/法人數字直接搬來用（跨股複製）
+   ❌ dataAvailable=false 時仍編造 EPS / 月營收數字（禁止幻覺）
+   ✅ 正確示例（技術+法人+基本面）：「外資連 3 日買超 1.2 萬張 + 月營收 YoY +15% 加速 + 月線多頭排列突破頸線 XXX」
+   ✅ 正確示例（技術+產業鏈+催化劑）：「供應鏈定位 CoAP_Chip 第三層，AI 伺服器主題 Expansion 期，上週法說釋利多，技術面 W 底突破 XXX」
+   ✅ 正確示例（基本面缺資料時）：「技術面頸線 XXX 突破量縮回測 + 外資連 5 日淨買；基本面 FinMind 資料暫缺，維持預設分」
+
+C. 「一句話理由」必須包含：[具體數字或事件] + [當下時機性] + [至少2個不同維度]
+   ❌ 「具備長線投資價值」/ 「短期動能強勁」— 不具體，每股都能用
+   ❌ 只引用技術面（RSI/均線）— 必須搭配法人 or 基本面 or 產業鏈 or 個股新聞
+   ✅ 「月營收 YoY+22% 連加速 3 月 + 外資買超 + AI 伺服器族群，技術面突破月線 XXX」
+   ✅ 「供應鏈第三層 CoAP 直接受益，上季 EPS X 元年增 Y%，法人連買，技術頸線突破待確認」
+
+D. 跨股禁令：每支股票的理由必須互不相同。若 trace 顯示數檔股票都在同一族群，
+   理由仍要區分各自的「本週新聞催化劑」或「具體技術位置」或「基本面差異」，不允許理由字字相同。
+
+E. 美股隔夜/VIX/DXY：【未接入，不得在分析中編造美股隔夜訊號。如有相關判斷，應明確標注「美股資料未接入，僅依台股內部訊號判斷」。】
+
+F. ORCHESTRATOR-PREFETCH 強制資料：trace 中若出現「[ORCHESTRATOR PREFETCH]」步驟，
+   那是後端已對候選股程式化補抓的基本面/產業鏈/個股新聞資料，可信度等同 tool observation。
+   每檔輸出的 reason/source/subScores 必須使用這些資料：
+   - dataAvailable=true 時，revenue/margin/theme 不得停留在無資料預設分（revenue=8、margin=8、theme=10/8）。
+   - dataAvailable=false 時，必須明寫「資料暫缺，維持預設分」，禁止補腦財務數字或產業鏈位置。
+   - sourceTrail 會保留 get_company_fundamentals / get_supply_chain / get_company_news，請在理由中對應引用。
+=== END 深度分析要求 ===
+
+## 分析過程（以下為 ReAct trace，包含真實市場工具回傳數據）
 ${traceText}
 
 ---
-請為每支股票卡（A+/A/B/C 都可以，C 代表高風險排除、不開新倉）輸出以下嚴格格式：
+## 輸出格式（CRITICAL — 必須嚴格遵守）
 
-## [ticker] [公司名稱]
-- 分類: [A+今日首選 | A可觀察布局 | B等回檔 | C高風險排除]
-- 總分: [0-100整數]
-- 市場狀態: [risk_off | event | trend | range]
-- 主題位置分: [0-20]
-- 營收財報分: [0-15]
-- 法人ETF分: [0-15]
-- 融資借券分: [0-15]
-- 相對強弱量能分: [0-10]
-- 技術結構分: [0-20]
-- 估值事件分: [0-5]
-- 進場區: [低-高，例如 870-890]
-- 進場理由: [OTE 0.618-0.705 / 突破後回測不破 / 其他]
-- TP1: [具體價格]
-- TP1理由: [前波高/整數關等]
-- TP2: [具體價格]
-- TP2理由: [月線上緣/年線等]
-- 停損: [具體價格]
-- ATR倍數: [0.5]
-- R值: [計算值]
-- 信心: [0.0-1.0]
-- 為什麼買: [具體bull thesis，至少2點，以分號分隔]
-- 一句話理由: [≤80字白話中文，說明為什麼現在可以買這支，給操盤師快速判斷用]
-- 為什麼不買: [具體bear case/風險，至少2點]
-- NAV比重: [0.8% | 0.6% | 0.4% | 0%]
-- 市場倍率: [1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0]
+輸出必須是一個有效的 JSON 陣列，不得有任何 markdown 包裝（不要加 \`\`\`json ... \`\`\`，不要加說明文字）。
+陣列中每個元素代表一支股票（A+/A/B 才算推薦；C 代表高風險排除、不開新倉）。
 
-推薦 A+/A/B/C 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。C 分類必須標示高風險排除 / 不開新倉，但仍算一張真實資料卡。
-只有 system_programmatic_risk_off_score >= 3 時，才可只輸出純文字「RISK_OFF_FINAL_SKIP」後接一行說明原因，不推薦任何股票，不要輸出任何 ## 股票 heading。
-當 system_programmatic_risk_off_score < 3 時，RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 禁用；請用 C bucket 表達風險，而不是整份跳過。
-使用真實市場資料（來自 ReAct trace），不要捏造數字。`;
+每個元素的 JSON 結構如下（所有欄位必填，不得省略）：
+{
+  "ticker": "4位數字代碼，例如2330",
+  "companyName": "中文公司名稱",
+  "action": "A+今日首選 | A可觀察布局 | B等回檔 | C高風險排除",
+  "totalScore": 整數0-100,
+  "marketState": "risk_off | event | trend | range",
+  "subScores": {
+    "theme": 整數0-20,
+    "revenue": 整數0-15,
+    "institutional": 整數0-15,
+    "margin": 整數0-15,
+    "rs": 整數0-10,
+    "technical": 整數0-20,
+    "valuation": 整數0-5
+  },
+  "entryLow": 數字（進場區低點，根據 lastPrice 計算，例如 lastPrice*0.98）,
+  "entryHigh": 數字（進場區高點，例如 lastPrice*1.01）,
+  "entryReason": "OTE 0.618-0.705 / 突破後回測不破 / 具體技術事件",
+  "tp1": 數字（TP1 具體價格）,
+  "tp1Reason": "前波高/整數關/具體技術位",
+  "tp2": 數字（TP2 具體價格）,
+  "tp2Reason": "月線上緣/年線/具體技術位",
+  "stopLoss": 數字（停損具體價格）,
+  "atrMultiple": 0.5,
+  "rRatio": 數字（計算值）,
+  "confidence": 數字0.0-1.0,
+  "navPct": 數字（A+=0.008, A=0.006, B=0.004, C=0）,
+  "marketMultiplier": 數字（1.0 | 0.9 | 0.7 | 0.6 | 0.5 | 0.4 | 0.3 | 0）,
+  "whyBuy": ["bull thesis 第1點（含具體數字/事件）", "bull thesis 第2點（含具體數字/事件）"],
+  "whyNotBuy": ["bear case 第1點（具體風險）", "bear case 第2點（具體風險）"],
+  "oneLineReason": "≤80字，含具體數字/事件+當下時機性，每支股票必須與其他股票不同"
+}
+
+規則：
+- 推薦 A+/A/B 的股票，至少 ${MIN_V3_RECOMMENDATION_ITEMS} 檔。
+- C 分類只作為排除名單，不算推薦卡（可以包含在陣列中但 action 必須是「C高風險排除」）。
+- 只有 system_programmatic_risk_off_score >= 3 時，才可輸出空陣列 [] 並在 JSON 外加一行說明（但通常 risk_off >= 3 已在系統層攔截）。
+- 當 system_programmatic_risk_off_score < 3 時，禁止輸出空陣列。
+- 使用真實市場資料（來自 ReAct trace），不要捏造數字。
+
+=== 分數填寫規則（CRITICAL）===
+1. 只為 get_company_technical 回傳 lastPrice > 0 的標的輸出股票卡。lastPrice=null 的代表 DB 無資料，不得輸出該 ticker。
+2. 各 sub-score 「無資料」預設值：theme=10、revenue=8、institutional=8、margin=8、rs=5、technical=10、valuation=3。
+   → 絕對不可因為「工具查不到」就把所有欄位填 0 — 0 代表有明確負面訊號（如融資大增、RS 轉負），不代表資料缺失。
+3. confidence：有 lastPrice 資料 → 不得低於 0.4；無任何技術資料 → 不得輸出該 ticker。
+4. entryLow/entryHigh/tp1/tp2/stopLoss：必須根據 lastPrice 計算實際數值。不得填寫 null 或 0 作為佔位符。
+5. oneLineReason：必須具體說明「為什麼現在、為什麼這支股票」，不得用「風險高但值得觀察」這類套話。
+6. 分數閾值（A+ >= 85, A = 75-84, B = 65-74, C < 65）必須嚴格遵守。totalScore 與 action 不能矛盾。
+=== END 分數填寫規則 ===`;
+}
+
+// ── JSON Schema v3 — strict structured output definition ─────────────────────────────────────
+//
+// Used with OpenAI json_schema mode (strict=true). OpenAI guarantees the response matches
+// this schema exactly — no markdown wrapping, no missing fields, no format surprises.
+//
+// OpenAI strict mode constraints:
+//   - Root must be type:"object" (cannot be a top-level array)
+//   - Every key must appear in `required`
+//   - `additionalProperties: false` at every level
+//
+// We wrap the stock array in { items: [...] } so the root is an object.
+// parseV3JsonSynthesis() already handles the {items:[...]} wrapper.
+
+const V3_SYNTHESIS_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  required: ["items"],
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        required: [
+          "ticker", "companyName", "action", "totalScore", "marketState",
+          "subScores", "entryLow", "entryHigh", "entryReason",
+          "tp1", "tp1Reason", "tp2", "tp2Reason", "stopLoss",
+          "atrMultiple", "rRatio", "confidence", "navPct", "marketMultiplier",
+          "whyBuy", "whyNotBuy", "oneLineReason"
+        ],
+        additionalProperties: false,
+        properties: {
+          ticker:           { type: "string" },
+          companyName:      { type: "string" },
+          action:           { type: "string", enum: ["A+今日首選", "A可觀察布局", "B等回檔", "C高風險排除"] },
+          totalScore:       { type: "number" },
+          marketState:      { type: "string", enum: ["risk_off", "event", "trend", "range"] },
+          subScores: {
+            type: "object",
+            required: ["theme", "revenue", "institutional", "margin", "rs", "technical", "valuation"],
+            additionalProperties: false,
+            properties: {
+              theme:         { type: "number" },
+              revenue:       { type: "number" },
+              institutional: { type: "number" },
+              margin:        { type: "number" },
+              rs:            { type: "number" },
+              technical:     { type: "number" },
+              valuation:     { type: "number" },
+            },
+          },
+          entryLow:         { type: "number" },
+          entryHigh:        { type: "number" },
+          entryReason:      { type: "string" },
+          tp1:              { type: "number" },
+          tp1Reason:        { type: "string" },
+          tp2:              { type: "number" },
+          tp2Reason:        { type: "string" },
+          stopLoss:         { type: "number" },
+          atrMultiple:      { type: "number" },
+          rRatio:           { type: "number" },
+          confidence:       { type: "number" },
+          navPct:           { type: "number" },
+          marketMultiplier: { type: "number" },
+          whyBuy:           { type: "array", items: { type: "string" } },
+          whyNotBuy:        { type: "array", items: { type: "string" } },
+          oneLineReason:    { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+// ── JSON parser v3 (primary — replaces fragile markdown parser for structured output) ──────────
+//
+// When synthesis is called with responseFormat:"json_schema", gpt-5.5 returns a schema-guaranteed
+// JSON object with an "items" array. This parser converts that array into AiStockRecommendationV2[].
+// The markdown parser below is retained as fallback for non-JSON model responses.
+
+interface V3JsonStockItem {
+  ticker?: unknown;
+  companyName?: unknown;
+  action?: unknown;
+  totalScore?: unknown;
+  marketState?: unknown;
+  subScores?: unknown;
+  entryLow?: unknown;
+  entryHigh?: unknown;
+  entryReason?: unknown;
+  tp1?: unknown;
+  tp1Reason?: unknown;
+  tp2?: unknown;
+  tp2Reason?: unknown;
+  stopLoss?: unknown;
+  atrMultiple?: unknown;
+  rRatio?: unknown;
+  confidence?: unknown;
+  navPct?: unknown;
+  marketMultiplier?: unknown;
+  whyBuy?: unknown;
+  whyNotBuy?: unknown;
+  oneLineReason?: unknown;
+}
+
+/**
+ * Parse a JSON array of stock items (from structured output) into AiStockRecommendationV2[].
+ * Returns [] if the content is not a valid JSON array or has no parseable items.
+ * Falls through silently — caller will use markdown parser as fallback.
+ */
+export function parseV3JsonSynthesis(
+  content: string,
+  dateStr: string
+): AiStockRecommendationV2[] {
+  if (!content || !content.trim()) return [];
+
+  // Strip possible markdown code fences (defensive — json_object mode shouldn't add them,
+  // but some model versions wrap anyway)
+  const stripped = content.trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    // Not valid JSON — fall through to markdown parser
+    return [];
+  }
+
+  // Support both top-level array and {items: [...]} wrapper
+  const rawArr: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : (Array.isArray((parsed as Record<string, unknown>)?.["items"])
+      ? (parsed as Record<string, unknown>)["items"] as unknown[]
+      : []);
+
+  if (rawArr.length === 0) return [];
+
+  const yearTickerRe = /^(201\d|202[0-9]|203[0-5])$/;
+  const results: AiStockRecommendationV2[] = [];
+
+  for (const rawItem of rawArr) {
+    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) continue;
+    const item = rawItem as V3JsonStockItem;
+
+    const ticker = typeof item.ticker === "string" ? item.ticker.trim() : null;
+    if (!ticker || !/^\d{4,6}[A-Z]?$/.test(ticker) || yearTickerRe.test(ticker)) continue;
+
+    // Parse action → bucket
+    const actionRaw = typeof item.action === "string" ? item.action : "";
+    const bucketResult = parseBucket(actionRaw);
+
+    // Company name
+    const companyName = typeof item.companyName === "string" && item.companyName.trim()
+      ? item.companyName.trim()
+      : (CORE_COMPANY_NAMES[ticker] ?? ticker);
+    const canonicalName = CORE_COMPANY_NAMES[ticker] ?? companyName;
+
+    // Market state
+    const marketState = parseMarketStateV3(
+      typeof item.marketState === "string" ? item.marketState : "trend"
+    );
+
+    // Total score
+    const totalScoreRaw = toFiniteNumber(item.totalScore);
+    const totalScore = totalScoreRaw !== null ? Math.round(clampNumber(totalScoreRaw, 0, 100)) : null;
+
+    // Sub-scores
+    const ss = item.subScores && typeof item.subScores === "object" && !Array.isArray(item.subScores)
+      ? item.subScores as Record<string, unknown>
+      : {};
+    const subScores = {
+      theme: Math.round(clampNumber(toFiniteNumber(ss["theme"]) ?? 10, 0, 20)),
+      revenue: Math.round(clampNumber(toFiniteNumber(ss["revenue"]) ?? 8, 0, 15)),
+      institutional: Math.round(clampNumber(toFiniteNumber(ss["institutional"]) ?? 8, 0, 15)),
+      margin: Math.round(clampNumber(toFiniteNumber(ss["margin"]) ?? 8, 0, 15)),
+      rs: Math.round(clampNumber(toFiniteNumber(ss["rs"]) ?? 5, 0, 10)),
+      technical: Math.round(clampNumber(toFiniteNumber(ss["technical"]) ?? 10, 0, 20)),
+      valuation: Math.round(clampNumber(toFiniteNumber(ss["valuation"]) ?? 3, 0, 5)),
+    };
+
+    // Entry zone
+    const entryLow = toFiniteNumber(item.entryLow);
+    const entryHigh = toFiniteNumber(item.entryHigh);
+    const entryReason = typeof item.entryReason === "string" ? item.entryReason : "";
+
+    // Targets
+    const tp1 = toFiniteNumber(item.tp1);
+    const tp1Reason = typeof item.tp1Reason === "string" ? item.tp1Reason : "";
+    const tp2 = toFiniteNumber(item.tp2);
+    const tp2Reason = typeof item.tp2Reason === "string" ? item.tp2Reason : "";
+    const slPrice = toFiniteNumber(item.stopLoss);
+    const slAtrMultiple = toFiniteNumber(item.atrMultiple) ?? 0.5;
+    const rRatio = toFiniteNumber(item.rRatio);
+
+    // Position
+    const confidence = toFiniteNumber(item.confidence) ?? (
+      bucketResult.bucket === "A+" ? 0.85 : bucketResult.bucket === "A" ? 0.70 : 0.55
+    );
+    const navPct = toFiniteNumber(item.navPct) ?? (
+      bucketResult.bucket === "A+" ? 0.008 : bucketResult.bucket === "A" ? 0.006 : 0.004
+    );
+    const marketMultiplier = toFiniteNumber(item.marketMultiplier) ?? 1.0;
+
+    // Why buy / not buy
+    const whyBuyArr = Array.isArray(item.whyBuy)
+      ? (item.whyBuy as unknown[]).map(s => String(s ?? "").trim()).filter(s => s.length > 2)
+      : (typeof item.whyBuy === "string" ? item.whyBuy.split(/[;；]/).map(s => s.trim()).filter(Boolean) : []);
+    const whyNotBuyArr = Array.isArray(item.whyNotBuy)
+      ? (item.whyNotBuy as unknown[]).map(s => String(s ?? "").trim()).filter(s => s.length > 2)
+      : (typeof item.whyNotBuy === "string" ? item.whyNotBuy.split(/[;；]/).map(s => s.trim()).filter(Boolean) : []);
+
+    // One-line reason
+    const oneLineReason = typeof item.oneLineReason === "string"
+      ? item.oneLineReason.trim().slice(0, 80)
+      : undefined;
+
+    // Computed total from sub-scores if not provided
+    const computedTotal = subScores.theme + subScores.revenue + subScores.institutional +
+      subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
+
+    const rec: AiStockRecommendationV2 = {
+      id: randomUUID(),
+      ticker,
+      companyName: canonicalName,
+      action: bucketResult.action,
+      date: dateStr,
+      confidence: clampNumber(confidence, 0, 1),
+      rationale: oneLineReason ?? whyBuyArr.join("; ") ?? "",
+      entryPriceRange: (entryLow !== null || entryHigh !== null)
+        ? { low: entryLow, high: entryHigh }
+        : null,
+      tp1,
+      tp2,
+      stopLoss: slPrice,
+      aiGenerated: true,
+      source: "brain_react_v2",
+      marketState,
+      marketScores: undefined,
+      subScores,
+      totalScore: totalScore ?? computedTotal,
+      bucket: bucketResult.bucket,
+      entryZone: (entryLow !== null || entryHigh !== null) ? {
+        low: entryLow,
+        high: entryHigh,
+        reason: entryReason || undefined,
+      } : undefined,
+      tp1Structured: tp1 !== null ? { price: tp1, reason: tp1Reason || undefined } : undefined,
+      tp2Structured: tp2 !== null ? { price: tp2, reason: tp2Reason || undefined } : undefined,
+      stopLossStructured: slPrice !== null ? {
+        price: slPrice,
+        atr_multiple: slAtrMultiple,
+      } : undefined,
+      r_ratio: rRatio ?? undefined,
+      position_sizing: {
+        nav_pct: clampNumber(navPct, 0, 1),
+        market_multiplier: clampNumber(marketMultiplier, 0, 2),
+      },
+      why_buy: whyBuyArr.length > 0 ? whyBuyArr : undefined,
+      why_not_buy: whyNotBuyArr.length > 0 ? whyNotBuyArr : undefined,
+      whyBuyBrief: oneLineReason ?? buildWhyBuyBrief(whyBuyArr.length > 0 ? whyBuyArr : undefined),
+    };
+
+    if (!results.some(r => r.ticker === ticker)) {
+      results.push(rec);
+    }
+  }
+
+  return results;
 }
 
 // ── Markdown parser v3 ────────────────────────────────────────────────────────
@@ -918,6 +1570,385 @@ function technicalFallbackRank(obs: TechnicalObservationForFallback): number {
   return clampNumber(score, 0, 100);
 }
 
+interface V3MultiDimPrefetchStats {
+  candidateTickers: string[];
+  fundamentalsCalls: number;
+  supplyChainCalls: number;
+  companyNewsCalls: number;
+  appendedSteps: number;
+}
+
+function emptyV3MultiDimPrefetchStats(): V3MultiDimPrefetchStats {
+  return {
+    candidateTickers: [],
+    fundamentalsCalls: 0,
+    supplyChainCalls: 0,
+    companyNewsCalls: 0,
+    appendedSteps: 0,
+  };
+}
+
+function traceHasTickerToolObservation(
+  trace: V3ReActStep[],
+  toolName: string,
+  ticker: string
+): boolean {
+  return trace.some((step) => {
+    if (step.toolName !== toolName) return false;
+    const input = traceRecord(step.toolInput);
+    const obs = traceRecord(step.observation);
+    return input?.["ticker"] === ticker || obs?.["ticker"] === ticker;
+  });
+}
+
+function nextTraceRound(trace: V3ReActStep[]): number {
+  const maxRound = trace.reduce((max, step) => Math.max(max, step.round), 0);
+  return maxRound + 1;
+}
+
+export function extractV3MultiDimPrefetchCandidatesFromTrace(
+  trace: V3ReActStep[],
+  limit = V3_MULTIDIM_PREFETCH_CANDIDATES
+): TechnicalObservationForFallback[] {
+  const byTicker = new Map<string, TechnicalObservationForFallback>();
+  for (const step of trace) {
+    const obs = extractTechnicalObservationForFallback(step);
+    if (!obs) continue;
+    if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
+  }
+
+  return Array.from(byTicker.values())
+    .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
+    .sort((a, b) =>
+      b.rank - a.rank ||
+      (b.obs.changePct ?? -999) - (a.obs.changePct ?? -999) ||
+      a.obs.ticker.localeCompare(b.obs.ticker)
+    )
+    .slice(0, limit)
+    .map(({ obs }) => obs);
+}
+
+async function appendProgrammaticToolStep(
+  trace: V3ReActStep[],
+  toolName: "get_company_fundamentals" | "get_supply_chain" | "get_company_news",
+  ticker: string,
+  workspaceId?: string | null
+): Promise<void> {
+  let observation: unknown;
+  try {
+    observation = await dispatchMarketToolV3(toolName, { ticker }, workspaceId);
+  } catch (err) {
+    observation = { ticker, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  trace.push({
+    round: nextTraceRound(trace),
+    thought: `[ORCHESTRATOR PREFETCH] deterministic ${toolName} for ${ticker} before synthesis.`,
+    toolName,
+    toolInput: { ticker },
+    observation,
+    tokensUsed: 0,
+  });
+}
+
+async function ensureV3MultiDimPrefetchBeforeSynthesis(
+  trace: V3ReActStep[],
+  workspaceId?: string | null
+): Promise<V3MultiDimPrefetchStats> {
+  const candidates = extractV3MultiDimPrefetchCandidatesFromTrace(trace);
+  const stats = emptyV3MultiDimPrefetchStats();
+  stats.candidateTickers = candidates.map((candidate) => candidate.ticker);
+  if (candidates.length === 0) return stats;
+
+  for (const candidate of candidates) {
+    if (traceHasTickerToolObservation(trace, "get_company_fundamentals", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_company_fundamentals", candidate.ticker, workspaceId);
+    stats.fundamentalsCalls++;
+    stats.appendedSteps++;
+  }
+
+  for (const candidate of candidates) {
+    if (traceHasTickerToolObservation(trace, "get_supply_chain", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_supply_chain", candidate.ticker, workspaceId);
+    stats.supplyChainCalls++;
+    stats.appendedSteps++;
+  }
+
+  for (const candidate of candidates.slice(0, V3_COMPANY_NEWS_PREFETCH_CANDIDATES)) {
+    if (traceHasTickerToolObservation(trace, "get_company_news", candidate.ticker)) continue;
+    await appendProgrammaticToolStep(trace, "get_company_news", candidate.ticker, workspaceId);
+    stats.companyNewsCalls++;
+    stats.appendedSteps++;
+  }
+
+  console.info(
+    `[v3-orchestrator] deterministic multidim prefetch: candidates=${stats.candidateTickers.join(",") || "(none)"}, ` +
+    `fundamentals=${stats.fundamentalsCalls}, supply_chain=${stats.supplyChainCalls}, company_news=${stats.companyNewsCalls}`
+  );
+  return stats;
+}
+
+function getFundamentalsTraceByTicker(trace: V3ReActStep[]): Map<string, CompanyFundamentalsObservation> {
+  const byTicker = new Map<string, CompanyFundamentalsObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_company_fundamentals") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as CompanyFundamentalsObservation);
+  }
+  return byTicker;
+}
+
+function getSupplyChainTraceByTicker(trace: V3ReActStep[]): Map<string, SupplyChainObservation> {
+  const byTicker = new Map<string, SupplyChainObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_supply_chain") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as SupplyChainObservation);
+  }
+  return byTicker;
+}
+
+function getCompanyNewsTraceByTicker(trace: V3ReActStep[]): Map<string, CompanyNewsObservation> {
+  const byTicker = new Map<string, CompanyNewsObservation>();
+  for (const step of trace) {
+    if (step.toolName !== "get_company_news") continue;
+    const obs = traceRecord(step.observation);
+    const ticker = typeof obs?.["ticker"] === "string" ? obs["ticker"] as string : null;
+    if (!ticker) continue;
+    byTicker.set(ticker, obs as unknown as CompanyNewsObservation);
+  }
+  return byTicker;
+}
+
+export function scoreV3RevenueFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number {
+  if (!fundamentals?.dataAvailable) return 8;
+  let score = 8;
+  switch (fundamentals.revenueYoyTrend) {
+    case "accelerating":
+      score += 4;
+      break;
+    case "positive":
+      score += 2;
+      break;
+    case "decelerating":
+      score -= 1;
+      break;
+    case "negative":
+      score -= 4;
+      break;
+  }
+
+  const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+  const latestYoy = monthlyRevenue
+    .map((month) => month.yoy)
+    .find((value): value is number => value !== null);
+  if (latestYoy !== undefined) {
+    if (latestYoy >= 20) score += 2;
+    else if (latestYoy > 0) score += 1;
+    else if (latestYoy < 0) score -= 3;
+  }
+
+  const eps = toFiniteNumber(fundamentals.epsLatestQuarter);
+  if (eps !== null) {
+    if (eps > 0) score += 2;
+    else if (eps < 0) score -= 2;
+  }
+
+  return Math.round(clampNumber(score, 0, 15));
+}
+
+export function scoreV3MarginFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number {
+  if (!fundamentals?.dataAvailable) return 8;
+  const gross = toFiniteNumber(fundamentals.grossMarginPct);
+  const operating = toFiniteNumber(fundamentals.operatingMarginPct);
+  const eps = toFiniteNumber(fundamentals.epsLatestQuarter);
+  const hasMarginData = gross !== null || operating !== null || eps !== null;
+  if (!hasMarginData) return 8;
+
+  let score = 8;
+  if (gross !== null) {
+    if (gross >= 50) score += 4;
+    else if (gross >= 35) score += 3;
+    else if (gross >= 20) score += 2;
+    else if (gross > 0) score += 1;
+    else score -= 2;
+  }
+
+  if (operating !== null) {
+    if (operating >= 25) score += 3;
+    else if (operating >= 15) score += 2;
+    else if (operating > 0) score += 1;
+    else score -= 3;
+  }
+
+  if (eps !== null) {
+    if (eps > 0) score += 1;
+    else if (eps < 0) score -= 2;
+  }
+
+  return Math.round(clampNumber(score, 0, 15));
+}
+
+function scoreV3ValuationFromFundamentals(fundamentals: CompanyFundamentalsObservation | null | undefined): number | null {
+  const per = toFiniteNumber(fundamentals?.per);
+  if (!fundamentals?.dataAvailable || per === null) return null;
+  if (per <= 0) return 3;
+  if (per < 15) return 5;
+  if (per <= 25) return 4;
+  if (per <= 35) return 3;
+  if (per <= 50) return 2;
+  return 1;
+}
+
+export function scoreV3ThemeFromSupplyChain(
+  supplyChain: SupplyChainObservation | null | undefined,
+  fallbackScore = 10
+): number {
+  if (!supplyChain?.dataAvailable) return Math.round(clampNumber(fallbackScore, 0, 20));
+
+  const tier = String(supplyChain.beneficiaryTier ?? "").toLowerCase();
+  let score = tier === "core" ? 18
+    : tier === "direct" ? 15
+    : tier === "indirect" ? 12
+    : tier === "observation" ? 9
+    : 10;
+
+  if (supplyChain.chainPosition) score += 1;
+
+  const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+  const lifecycles = themes.map((theme) => theme.lifecycle.toLowerCase());
+  if (lifecycles.some((lifecycle) => lifecycle.includes("expansion"))) score += 2;
+  if (lifecycles.some((lifecycle) => lifecycle.includes("growth"))) score += 1;
+  if (lifecycles.some((lifecycle) => lifecycle.includes("crowded"))) score -= 4;
+
+  return Math.round(clampNumber(score, 0, 20));
+}
+
+function buildV3MultiDimBullets(
+  fundamentals: CompanyFundamentalsObservation | null | undefined,
+  supplyChain: SupplyChainObservation | null | undefined,
+  companyNews: CompanyNewsObservation | null | undefined
+): { whyBuy: string[]; whyNotBuy: string[] } {
+  const whyBuy: string[] = [];
+  const whyNotBuy: string[] = [];
+
+  if (fundamentals) {
+    if (fundamentals.dataAvailable) {
+      const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+      const latestRevenue = monthlyRevenue[0];
+      const yoyText = latestRevenue && latestRevenue.yoy !== null && latestRevenue.yoy !== undefined
+        ? `${latestRevenue.month}月營收YoY ${latestRevenue.yoy}%`
+        : `月營收趨勢 ${fundamentals.revenueYoyTrend}`;
+      whyBuy.push(
+        `基本面已驗證：${yoyText}，EPS ${fundamentals.epsLatestQuarter ?? "n/a"}，毛利率 ${fundamentals.grossMarginPct ?? "n/a"}%，PER ${fundamentals.per ?? "n/a"}。`
+      );
+    } else {
+      whyNotBuy.push(`基本面資料暫缺：FinMind ${fundamentals.reason}，revenue/margin 維持預設分。`);
+    }
+  }
+
+  if (supplyChain) {
+    if (supplyChain.dataAvailable) {
+      const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+      const themeText = themes
+        .slice(0, 2)
+        .map((theme) => `${theme.name}/${theme.lifecycle}`)
+        .join(", ") || "未標主題";
+      whyBuy.push(
+        `產業鏈已驗證：定位 ${supplyChain.chainPosition ?? "未標"}，受益層級 ${supplyChain.beneficiaryTier ?? "未標"}，主題 ${themeText}。`
+      );
+    } else {
+      whyNotBuy.push("產業鏈資料暫缺：company_graph_db 尚無定位，theme 分數維持保守。");
+    }
+  }
+
+  if (companyNews) {
+    if (companyNews.state === "live" && companyNews.items[0]) {
+      whyBuy.push(`個股新聞催化：${companyNews.items[0].date}「${companyNews.items[0].title.slice(0, 60)}」。`);
+    } else if (companyNews.state === "empty") {
+      whyNotBuy.push("個股新聞：FinMind experimental 今日空陣列，未加入額外事件加分。");
+    } else if (companyNews.state === "unavailable") {
+      whyNotBuy.push("個股新聞：FinMind experimental 暫不可用，禁止補腦催化劑。");
+    }
+  }
+
+  return { whyBuy, whyNotBuy };
+}
+
+function mergeUniqueText(first: string[] | undefined, second: string[]): string[] {
+  const merged: string[] = [];
+  for (const value of [...(first ?? []), ...second]) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (merged.some((existing) => existing === trimmed)) continue;
+    merged.push(trimmed);
+  }
+  return merged;
+}
+
+export function applyDeterministicMultiDimScoresToItems(
+  items: AiStockRecommendationV2[],
+  trace: V3ReActStep[]
+): AiStockRecommendationV2[] {
+  const fundamentalsByTicker = getFundamentalsTraceByTicker(trace);
+  const supplyChainByTicker = getSupplyChainTraceByTicker(trace);
+  const companyNewsByTicker = getCompanyNewsTraceByTicker(trace);
+
+  return items.map((item) => {
+    const fundamentals = fundamentalsByTicker.get(item.ticker);
+    const supplyChain = supplyChainByTicker.get(item.ticker);
+    const companyNews = companyNewsByTicker.get(item.ticker);
+    const existing = item.subScores ?? {
+      theme: 10,
+      revenue: 8,
+      institutional: 8,
+      margin: 8,
+      rs: 5,
+      technical: 10,
+      valuation: 3,
+    };
+
+    const subScores = {
+      theme: supplyChain
+        ? scoreV3ThemeFromSupplyChain(supplyChain, existing.theme ?? 10)
+        : existing.theme ?? 10,
+      revenue: fundamentals
+        ? scoreV3RevenueFromFundamentals(fundamentals)
+        : existing.revenue ?? 8,
+      institutional: existing.institutional ?? 8,
+      margin: fundamentals
+        ? scoreV3MarginFromFundamentals(fundamentals)
+        : existing.margin ?? 8,
+      rs: existing.rs ?? 5,
+      technical: existing.technical ?? 10,
+      valuation: scoreV3ValuationFromFundamentals(fundamentals) ?? existing.valuation ?? 3,
+    };
+    const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
+      subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
+    const currentBucket = item.bucket ?? parseBucket(item.action ?? "").bucket;
+    const bucket = normalizeBucketByScoreV3(currentBucket, totalScore);
+    const action = bucket === currentBucket ? item.action : parseBucket(bucket).action;
+    const bullets = buildV3MultiDimBullets(fundamentals, supplyChain, companyNews);
+    const why_buy = mergeUniqueText(item.why_buy, bullets.whyBuy).slice(0, 6);
+    const why_not_buy = mergeUniqueText(item.why_not_buy, bullets.whyNotBuy).slice(0, 6);
+
+    return {
+      ...item,
+      action,
+      subScores,
+      totalScore,
+      bucket,
+      why_buy: why_buy.length > 0 ? why_buy : item.why_buy,
+      why_not_buy: why_not_buy.length > 0 ? why_not_buy : item.why_not_buy,
+      whyBuyBrief: item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy),
+    };
+  });
+}
+
 // ── V3 quality helpers ────────────────────────────────────────────────────────
 
 /**
@@ -1030,7 +2061,7 @@ export function buildDeterministicFallbackItemsFromTrace(
     if (!byTicker.has(obs.ticker)) byTicker.set(obs.ticker, obs);
   }
 
-  return Array.from(byTicker.values())
+  const fallbackItems: AiStockRecommendationV2[] = Array.from(byTicker.values())
     .map((obs) => ({ obs, rank: technicalFallbackRank(obs) }))
     .sort((a, b) =>
       b.rank - a.rank ||
@@ -1061,7 +2092,9 @@ export function buildDeterministicFallbackItemsFromTrace(
       const totalScore = subScores.theme + subScores.revenue + subScores.institutional +
         subScores.margin + subScores.rs + subScores.technical + subScores.valuation;
       const bucket: AiRecBucket =
-        totalScore >= 82 ? "A+" : totalScore >= 75 ? "A" : totalScore >= 60 ? "B" : "C";
+        totalScore >= V3_BUCKET_A_PLUS_MIN_SCORE ? "A+" :
+        totalScore >= V3_BUCKET_A_MIN_SCORE ? "A" :
+        totalScore >= V3_BUCKET_B_MIN_SCORE ? "B" : "C";
       const action: AiStockRecommendationV2["action"] =
         bucket === "A+" ? "今日首選" :
         bucket === "A" ? "可觀察布局（研究參考）" :
@@ -1128,8 +2161,11 @@ export function buildDeterministicFallbackItemsFromTrace(
           "This is a deterministic fallback because the LLM did not return enough structured picks.",
           "Treat as research candidates until the full AI narrative is healthy.",
         ],
+        sourceTrail: buildSourceTrailForTicker(trace, obs.ticker),
       };
     });
+
+  return applyDeterministicMultiDimScoresToItems(fallbackItems, trace);
 }
 
 /**
@@ -1326,12 +2362,17 @@ export function parseAiReportToRecommendationsV3(
     const rationale = cleanedRationaleLines.join("; ") ||
       whyBuy.join("; ") ||
       block.slice(0, 200).replace(/\n/g, " ").trim();
+    const finalTotalScore = totalScore ?? computedTotal ?? undefined;
+    const finalBucket = normalizeBucketByScoreV3(bucketResult.bucket, finalTotalScore);
+    const finalAction = finalBucket === bucketResult.bucket
+      ? bucketResult.action
+      : parseBucket(finalBucket).action;
 
     const rec: AiStockRecommendationV2 = {
       id: randomUUID(),
       ticker,
       companyName,
-      action: bucketResult.action,
+      action: finalAction,
       date: dateStr,
       confidence: confidence ?? defaultConfidence,
       rationale,
@@ -1347,8 +2388,8 @@ export function parseAiReportToRecommendationsV3(
       marketState,
       marketScores: undefined, // Set at run level, not per-stock
       subScores,
-      totalScore: totalScore ?? computedTotal ?? undefined,
-      bucket: bucketResult.bucket,
+      totalScore: finalTotalScore,
+      bucket: finalBucket,
       entryZone: (entryLow !== null || entryHigh !== null) ? {
         low: entryLow,
         high: entryHigh,
@@ -1399,7 +2440,8 @@ export function enrichV3Items(
   items: AiStockRecommendationV2[],
   trace: V3ReActStep[]
 ): AiStockRecommendationV3Card[] {
-  const withFlag = applyIncompleteFlag(items);
+  const withDeterministicScores = applyDeterministicMultiDimScoresToItems(items, trace);
+  const withFlag = applyIncompleteFlag(withDeterministicScores);
   return withFlag.map(item => withV3ContractAliases({
     ...item,
     sourceTrail: buildSourceTrailForTicker(trace, item.ticker),
@@ -1461,10 +2503,89 @@ function parseMarketStepV3(raw: string): {
 
 // ── synthesize v3 report ──────────────────────────────────────────────────────
 
+function stringifyForTrace(value: unknown, limit: number): string {
+  try {
+    return JSON.stringify(value).slice(0, limit);
+  } catch {
+    return String(value).slice(0, limit);
+  }
+}
+
+function formatTraceObservationForSynthesis(step: {
+  toolName: string | null;
+  observation: unknown;
+}): string {
+  const obs = traceRecord(step.observation);
+  if (!obs) return stringifyForTrace(step.observation, 600);
+
+  if (step.toolName === "get_company_fundamentals") {
+    const fundamentals = obs as unknown as CompanyFundamentalsObservation;
+    const monthlyRevenue = Array.isArray(fundamentals.monthlyRevenue) ? fundamentals.monthlyRevenue : [];
+    return stringifyForTrace({
+      ticker: fundamentals.ticker,
+      source: fundamentals.source,
+      dataAvailable: fundamentals.dataAvailable,
+      reason: fundamentals.reason,
+      revenueYoyTrend: fundamentals.revenueYoyTrend,
+      monthlyRevenue: monthlyRevenue.slice(0, 3),
+      latestQuarterDate: fundamentals.latestQuarterDate,
+      epsLatestQuarter: fundamentals.epsLatestQuarter,
+      grossMarginPct: fundamentals.grossMarginPct,
+      operatingMarginPct: fundamentals.operatingMarginPct,
+      per: fundamentals.per,
+      pbr: fundamentals.pbr,
+      dividendYield: fundamentals.dividendYield,
+      deterministicScores: {
+        revenue: scoreV3RevenueFromFundamentals(fundamentals),
+        margin: scoreV3MarginFromFundamentals(fundamentals),
+        valuation: scoreV3ValuationFromFundamentals(fundamentals) ?? 3,
+      },
+    }, 1400);
+  }
+
+  if (step.toolName === "get_supply_chain") {
+    const supplyChain = obs as unknown as SupplyChainObservation;
+    const themes = Array.isArray(supplyChain.themes) ? supplyChain.themes : [];
+    const suppliers = Array.isArray(supplyChain.suppliers) ? supplyChain.suppliers : [];
+    const customers = Array.isArray(supplyChain.customers) ? supplyChain.customers : [];
+    const peers = Array.isArray(supplyChain.peers) ? supplyChain.peers : [];
+    return stringifyForTrace({
+      ticker: supplyChain.ticker,
+      source: supplyChain.source,
+      dataAvailable: supplyChain.dataAvailable,
+      chainPosition: supplyChain.chainPosition,
+      beneficiaryTier: supplyChain.beneficiaryTier,
+      themes: themes.slice(0, 4),
+      suppliers: suppliers.slice(0, 3),
+      customers: customers.slice(0, 3),
+      peers: peers.slice(0, 3),
+      deterministicThemeScore: scoreV3ThemeFromSupplyChain(supplyChain),
+    }, 1400);
+  }
+
+  if (step.toolName === "get_company_news") {
+    const companyNews = obs as unknown as CompanyNewsObservation;
+    const items = Array.isArray(companyNews.items) ? companyNews.items : [];
+    return stringifyForTrace({
+      ticker: companyNews.ticker,
+      source: companyNews.source,
+      state: companyNews.state,
+      itemCount: companyNews.itemCount,
+      asOf: companyNews.asOf,
+      note: companyNews.note,
+      items: items.slice(0, 3),
+    }, 1000);
+  }
+
+  return stringifyForTrace(step.observation, 600);
+}
+
 interface V3SynthesisAttempt {
   markdown: string;
   totalTokens: number;
   costUsd: number;
+  /** Raw content from LLM (first 2000 chars) — for diagnostic even when parser fails. */
+  rawContentPreview: string;
 }
 
 interface V3ParsedSynthesis {
@@ -1474,6 +2595,8 @@ interface V3ParsedSynthesis {
   costUsd: number;
   retryUsed: boolean;
   initialItemCount: number;
+  /** First 2000 chars of the raw synthesis LLM content — for diagnostic even when parser fails. */
+  rawSynthesisPreview: string;
 }
 
 async function synthesizeReportV3(
@@ -1483,9 +2606,8 @@ async function synthesizeReportV3(
   programmaticRiskOffScore: number,
   repairMarkdown?: string
 ): Promise<V3SynthesisAttempt> {
-  const { callLlm } = await import("../llm/llm-gateway.js");
   const traceText = trace
-    .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${JSON.stringify(s.observation).slice(0, 600)}`)
+    .map(s => `Round ${s.round}:\n思考: ${s.thought}\n工具: ${s.toolName ?? "(Final Answer)"}\n結果: ${formatTraceObservationForSynthesis(s)}`)
     .join("\n\n");
   const rejectedRiskOffRepair = repairMarkdown?.includes("RISK_OFF_FINAL_SKIP") === true;
   const previousMarkdownForRepair = rejectedRiskOffRepair
@@ -1497,33 +2619,54 @@ Do not reuse that skip answer. Ignore the rejected skip text and write stock sec
     ? `${buildV3SynthesisPrompt(traceText, dateStr, programmaticRiskOffScore)}
 
 ---
-FORMAT_REPAIR_REQUIRED:
+JSON_REPAIR_REQUIRED:
 The previous synthesis output did not parse into at least ${MIN_V3_RECOMMENDATION_ITEMS} recommendation items.
-Rewrite the recommendation sections only, preserving the same factual basis from the trace.
-If the previous output was RISK_OFF_FINAL_SKIP, that answer is rejected for this repair pass unless system_programmatic_risk_off_score >= 3. RISK_OFF_FINAL_SKIP and RISK_OFF_SKIP are forbidden here when the score is < 3; use C bucket when the verified data is weak.
-CRITICAL PARSER RULES:
-1. Every stock section MUST start with exactly "## XXXX 公司名" (two hashes, space, 4-digit ticker, space, Chinese name).
-2. Do NOT use ### or #### headings for stocks. Do NOT use bold-only (**2330**) headings for stocks.
-3. Do NOT output any heading containing "risk-off" or "市場" — only stock ticker headings are parsed.
-4. Do NOT use markdown tables — use bullet list format (- 欄位: 值) exclusively.
-5. Include ${MIN_V3_RECOMMENDATION_ITEMS} to 8 stocks. C bucket is allowed when the verified data is weak; label it clearly instead of dropping the stock.
+You MUST output a valid JSON array (no markdown wrappers, no explanation text — just the JSON array).
+Rewrite using the same factual basis from the trace. RISK_OFF_FINAL_SKIP is forbidden when system_programmatic_risk_off_score < 3.
+CRITICAL JSON RULES:
+1. Output MUST be a JSON array: [{...}, {...}, ...]
+2. Each object MUST have all required fields: ticker, companyName, action, totalScore, marketState, subScores, entryLow, entryHigh, tp1, tp2, stopLoss, confidence, whyBuy (array), whyNotBuy (array), oneLineReason
+3. Include at least ${MIN_V3_RECOMMENDATION_ITEMS} items with action "A+今日首選", "A可觀察布局", or "B等回檔".
+4. Score thresholds: A+ >= 85, A = 75-84, B = 65-74, C < 65. totalScore must match action.
+5. All price fields (entryLow, entryHigh, tp1, tp2, stopLoss) must be real numbers from lastPrice data.
 
-Previous markdown:
+Previous output (for reference — do NOT copy format if it was wrong):
 ${previousMarkdownForRepair}`
     : buildV3SynthesisPrompt(traceText, dateStr, programmaticRiskOffScore);
 
-  const llmResult = await callLlm(
+  const llmResult = await callAiRecLlmWithFallback(
     [
-      { role: "system", content: "你是 IUF 台股操盤師 AI，輸出嚴格格式的推薦報告。" },
+      {
+        role: "system",
+        content: "你是 IUF 台股操盤師 AI。你必須輸出一個純 JSON 陣列（不要有任何 markdown 包裝），每個元素代表一支股票的完整分析。"
+      },
       { role: "user", content: userPrompt },
     ],
     {
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: repairMarkdown ? "synthesis_format_retry" : "synthesis",
-      maxTokens: repairMarkdown ? 7000 : 5500,
-      temperature: repairMarkdown ? 0.1 : 0.2,
+      // gpt-5.5 / o-series are REASONING models: reasoning tokens count against
+      // max_completion_tokens BEFORE any answer text is emitted. 8000 gets fully
+      // consumed by reasoning → empty content → "(LLM unavailable)" → 0 items.
+      // Reasoning models need a far larger budget; gpt-4o-mini keeps the old value.
+      maxTokens: /^(gpt-5|o1|o3)/.test(model)
+        ? (repairMarkdown ? 32000 : 28000)
+        : (repairMarkdown ? 10000 : 8000),
+      temperature: /^(gpt-5|o1|o3)/.test(model) ? undefined : (repairMarkdown ? 0.1 : 0.2),
       timeoutMs: repairMarkdown ? V3_SYNTHESIS_RETRY_TIMEOUT_MS : V3_SYNTHESIS_TIMEOUT_MS,
+      // ★ json_schema STRICT mode — OpenAI guarantees output matches V3_SYNTHESIS_JSON_SCHEMA.
+      // This is the definitive fix for the markdown parser returning 0 items.
+      // json_object (previous) was "loose" mode — valid JSON but no structure guarantee.
+      // json_schema strict=true forces the exact fields, types, and array shape → parser cannot fail.
+      // If the model rejects the schema (HTTP 400), callAiRecLlmWithFallback returns null
+      // and the retry path will attempt with json_object as a safety net.
+      responseFormat: "json_schema",
+      responseSchema: {
+        name: "v3_stock_recommendations",
+        strict: true,
+        schema: V3_SYNTHESIS_JSON_SCHEMA,
+      },
     }
   );
 
@@ -1532,10 +2675,14 @@ ${previousMarkdownForRepair}`
   // Problem: the 43-char sentinel passes `report.trim().length > 0` retry guard
   // → repair prompt receives garbage as "previous markdown" → retry also fails.
   // Fix: empty string so retry guard `!isLlmNullReport(report)` correctly skips.
+  const rawContent = llmResult?.content ?? "";
   return {
-    markdown: llmResult?.content ?? "",
+    markdown: rawContent,
     totalTokens: llmResult?.usage.totalTokens ?? 0,
     costUsd: llmResult?.costUsd ?? 0,
+    // ★ Diagnostic: first 2000 chars of raw synthesis content — Elva can see exactly what
+    // gpt-5.5 returned even when the parser fails (surfaced in parserDiagnostic on GET response).
+    rawContentPreview: rawContent.slice(0, 2000),
   };
 }
 
@@ -1548,20 +2695,43 @@ async function synthesizeAndParseReportV3(
 ): Promise<V3ParsedSynthesis> {
   const first = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore);
   let report = first.markdown;
-  let items = enrichV3Items(parseAiReportToRecommendationsV3(report, dateStr), trace);
-  const initialItemCount = completeItemCount(items);
   let totalTokens = first.totalTokens;
   let costUsd = first.costUsd;
   let retryUsed = false;
+
+  // ★ Diagnostic: capture raw synthesis preview from the first attempt.
+  // With json_schema strict mode this IS the structured JSON — parser should never fail.
+  // If it does, Elva can read rawSynthesisPreview directly to see what gpt-5.5 returned.
+  const rawSynthesisPreview = first.rawContentPreview;
+
+  // ── Primary: JSON parser (structured output from json_schema strict mode) ──────────
+  // With json_schema strict=true, gpt-5.5 returns a schema-guaranteed JSON object
+  // with shape {items: [...]}. parseV3JsonSynthesis() handles both array and {items:[...]} wrapper.
+  // parseV3JsonSynthesis() returns [] only if content is completely unparseable JSON — extremely
+  // unlikely with strict mode; we still fall through to markdown parser as last-resort safety net.
+  let items = enrichV3Items(parseV3JsonSynthesis(report, dateStr), trace);
+  const usedJsonParser = items.length > 0;
+
+  if (!usedJsonParser) {
+    // ── Secondary: markdown parser (safety net — should not fire with json_schema strict mode) ─
+    console.warn("[v3-synthesis] JSON parse returned 0 items after json_schema strict mode — falling back to markdown parser (unexpected)");
+    items = enrichV3Items(parseAiReportToRecommendationsV3(report, dateStr), trace);
+  } else {
+    console.info(`[v3-synthesis] JSON parser succeeded (json_schema strict mode): ${items.length} items parsed`);
+  }
+
+  const initialItemCount = completeItemCount(items);
 
   // ★ FIX #742: detect LLM null response (empty string after fix above)
   const reportIsEmpty = report.trim().length === 0;
 
   if (completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS) {
-    const headingCandidates = Array.from(
-      report.matchAll(/^(?:#{1,6}\s+.*|\d+\.\s+\d{4,6}.*|\*\*\d{4,6}.*)$/gm),
-      match => match[0]!.slice(0, 160)
-    ).slice(0, 8);
+    const headingCandidates = usedJsonParser
+      ? [] // JSON mode — no markdown headings to report
+      : Array.from(
+          report.matchAll(/^(?:#{1,6}\s+.*|\d+\.\s+\d{4,6}.*|\*\*\d{4,6}.*)$/gm),
+          match => match[0]!.slice(0, 160)
+        ).slice(0, 8);
     console.warn("[v3-synthesis] parser_under_min_items", JSON.stringify({
       initialItemCount,
       totalItems: items.length,
@@ -1569,7 +2739,9 @@ async function synthesizeAndParseReportV3(
       reportLength: report.length,
       allowRetry,
       llmReturnedNull: reportIsEmpty,
+      usedJsonParser,
       headingCandidates,
+      rawSynthesisPreview,
       reportPreview: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(0, 800),
       reportTail: reportIsEmpty ? "(synthesis unavailable - LLM returned null)" : report.slice(-800),
     }));
@@ -1580,10 +2752,14 @@ async function synthesizeAndParseReportV3(
   // ★ FIX #742: strict > so tie (0 vs 0) keeps original.
   if (allowRetry && completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS) {
     const retrySeed = reportIsEmpty
-      ? "LLM_NULL_OR_TIMEOUT_RETRY: first synthesis returned no markdown. Re-read the trace observations and produce fresh stock sections now."
+      ? "LLM_NULL_OR_TIMEOUT_RETRY: first synthesis returned no JSON. Re-read the trace observations and produce a fresh JSON array now."
       : report;
     const retry = await synthesizeReportV3(trace, dateStr, model, programmaticRiskOffScore, retrySeed);
-    const retryItems = enrichV3Items(parseAiReportToRecommendationsV3(retry.markdown, dateStr), trace);
+    // Try JSON parser first on retry, then markdown
+    let retryItems = enrichV3Items(parseV3JsonSynthesis(retry.markdown, dateStr), trace);
+    if (retryItems.length === 0) {
+      retryItems = enrichV3Items(parseAiReportToRecommendationsV3(retry.markdown, dateStr), trace);
+    }
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
     retryUsed = true;
@@ -1594,7 +2770,7 @@ async function synthesizeAndParseReportV3(
     }
   }
 
-  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount };
+  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount, rawSynthesisPreview };
 }
 
 // ── Core runAiRecommendationV3 ────────────────────────────────────────────────
@@ -1616,11 +2792,61 @@ export async function runAiRecommendationV3(
   const trigger = opts.trigger ?? "manual_refresh";
   const dateStr = opts.dateStr ?? todayTst();
   const generatedAt = new Date().toISOString();
-  const model = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
-  const maxRounds = Math.min(opts.maxRounds ?? 12, 15);
-  const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
+  // Per-feature model override: OPENAI_MODEL_AI_REC takes priority over global OPENAI_MODEL.
+  // This allows upgrading AI rec to gpt-5.5 without touching global env (which would
+  // also upgrade high-frequency cheap tasks like news-top10).
+  const model = resolveAiRecPrimaryModel();
 
   await persistV3RunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger, model });
+
+  try {
+    return await runAiRecommendationV3Body({ opts, runId, dbRowId, trigger, dateStr, generatedAt, model });
+  } catch (err) {
+    // An error thrown mid-run (e.g. LLMBudgetExceeded inside the ReAct loop) used to
+    // leave the persisted row status="running" forever — the read path then skipped it
+    // and the product showed nothing for days. Persist a terminal status before rethrow.
+    const message = err instanceof Error ? err.message : String(err);
+    const status: AiRecommendationV3RunResult["status"] =
+      err instanceof Error && err.name === "LLMBudgetExceeded" ? "budget_exceeded" : "failed";
+    try {
+      await finalizeV3Run({
+        runId,
+        status,
+        generatedAt,
+        items: [],
+        reactTrace: [],
+        finalReportMarkdown: `(run aborted: ${message})`,
+        totalCostUsd: 0,
+        totalTokens: 0,
+        marketState: null,
+        marketRiskOffScore: null,
+        programmaticRiskOff: null,
+        synthesisRetryUsed: false,
+        synthesisFallbackUsed: false,
+        dbRowId,
+        scoreBreakdown: computeScoreBreakdown([]),
+      }, model, opts.workspaceId);
+    } catch {
+      // best-effort — the original error is what the caller needs to see
+    }
+    throw err;
+  }
+}
+
+async function runAiRecommendationV3Body(ctx: {
+  opts: AiRecommendationV3RunOptions;
+  runId: string;
+  dbRowId: string;
+  trigger: AiRecTrigger;
+  dateStr: string;
+  generatedAt: string;
+  model: string;
+}): Promise<AiRecommendationV3RunResult> {
+  const { opts, runId, dbRowId, trigger, dateStr, generatedAt, model } = ctx;
+  // Raised 12→18 (cap 15→22): multi-dimension forcing needs extra rounds for
+  // get_company_fundamentals + get_supply_chain calls on top candidates.
+  const maxRounds = Math.min(opts.maxRounds ?? 18, 22);
+  const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
 
   // ── F1: Programmatic risk_off_score (before firing LLM) ──────────────────
   const programmaticRiskOff = await computeProgrammaticRiskOffScore();
@@ -1661,9 +2887,6 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
     return finalizeV3Run(result, model, opts.workspaceId);
   }
 
-  const { callLlm } = await import("../llm/llm-gateway.js");
-  type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
-
   const trace: V3ReActStep[] = [];
   let totalTokens = 0;
   let totalCostUsd = 0;
@@ -1671,12 +2894,12 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
   let detectedRiskOffScore: number | null = progScore;
 
   // Inject programmatic score into system prompt — LLM cannot override
-  const messages: LlmMessage[] = [
+  const messages: AiRecLlmMessage[] = [
     { role: "system", content: buildV3SystemPrompt(dateStr, progScore) },
     {
       role: "user",
       content: `請開始楊董 SOP 5-module 分析，日期 ${dateStr}。
-系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦。
+系統已確認 programmatic risk_off_score = ${progScore}/6 < 3，你必須完整執行 STEP 1→5，輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動推薦。
 先執行 STEP 1: callTool(get_market_overview)。`,
     },
   ];
@@ -1690,6 +2913,9 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items: AiStockRecommendationV2[] = [];
       let synthesisRetryUsed = false;
       if (trace.length > 0) {
+        if (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS) {
+          await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId);
+        }
         const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, false);
         totalTokens += synthesis.totalTokens;
         totalCostUsd += synthesis.costUsd;
@@ -1717,13 +2943,16 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       return finalizeV3Run(result, model, opts.workspaceId);
     }
 
-    const llmResult = await callLlm(messages, {
+    const llmResult = await callAiRecLlmWithFallback(messages, {
       modelKey: model,
       callerModule: "ai_rec_v2",
       taskType: "react_reason",
       workspaceId: opts.workspaceId,
-      maxTokens: 1024,
-      temperature: 0.1,
+      // gpt-5.5 / o-series reasoning models burn 2048 entirely on reasoning →
+      // no JSON answer emitted → loop fails. Give reasoning models a large per-step
+      // budget; gpt-4o-mini (reasoning_tokens=0) keeps the small 2048.
+      maxTokens: /^(gpt-5|o1|o3)/.test(model) ? 16000 : 2048,
+      temperature: /^(gpt-5|o1|o3)/.test(model) ? undefined : 0.1,
     });
 
     if (!llmResult) {
@@ -1839,7 +3068,24 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
         observation: null,
         tokensUsed: llmResult.usage.totalTokens,
       });
-      const allowSynthesisRetry = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS || round >= maxRounds - 1;
+
+      if (companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS && round < maxRounds - 1) {
+        console.warn(`[v3-orchestrator] round ${round}: final answer before enough technical calls (${companyTechnicalCallCount}/${MIN_V3_TECHNICAL_CALLS}) — forcing continuation`);
+        messages.push({ role: "assistant", content: raw });
+        messages.push({
+          role: "user",
+          content: `[SYSTEM REJECTION] 分析不足：get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+請先補齊 STEP 3 技術候選；系統會在 synthesis 前自動對候選股補抓 get_company_fundamentals / get_supply_chain / get_company_news，不需要你用 final answer 代替工具資料。`,
+        });
+        continue; // continue loop
+      }
+
+      const prefetchStats = companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS
+        ? await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId)
+        : emptyV3MultiDimPrefetchStats();
+      const allowSynthesisRetry =
+        companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS ||
+        round >= maxRounds - 1;
       const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, allowSynthesisRetry);
       totalTokens += synthesis.totalTokens;
       totalCostUsd += synthesis.costUsd;
@@ -1847,6 +3093,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
       let items = synthesis.items;
       let synthesisFallbackUsed = false;
       if (
+        round >= maxRounds - 1 &&
         completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS &&
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         progScore < 3
@@ -1856,7 +3103,7 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
           dateStr,
           detectedMarketState ?? "trend"
         );
-        if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
+        if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
           console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
           items = fallbackItems;
           synthesisFallbackUsed = true;
@@ -1870,7 +3117,8 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       // F3: Validate minimum items and tool call count (only complete items count)
       const completeCount = completeItemCount(items);
       const insufficientItems = completeCount < MIN_V3_RECOMMENDATION_ITEMS;
-      const insufficientTools = companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
+      const insufficientTools =
+        companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
       const unresolvedSynthesisFormatError =
         companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
         synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
@@ -1882,8 +3130,9 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
         messages.push({ role: "assistant", content: raw });
         messages.push({
           role: "user",
-          content: `[SYSTEM REJECTION] 分析不足：完整評分推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}，不計缺 sub-score 的卡），get_company_technical 呼叫次數=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
-請繼續分析更多候選標的，callTool(get_company_technical) 取得更多個股技術資料，確保每張卡 7 個 sub-score 都填寫，並補充更多 A/A+/B/C bucket 卡片。`,
+          content: `[SYSTEM REJECTION] 分析不足：可行動 A+/A/B 推薦股數=${completeCount}（需 ≥${MIN_V3_RECOMMENDATION_ITEMS}），get_company_technical=${companyTechnicalCallCount}（需 ≥${MIN_V3_TECHNICAL_CALLS}）。
+系統已在 synthesis 前 deterministic prefetch 多維度資料：候選=${prefetchStats.candidateTickers.join(",") || "none"}，新增 fundamentals=${prefetchStats.fundamentalsCalls}、supply_chain=${prefetchStats.supplyChainCalls}、company_news=${prefetchStats.companyNewsCalls}。
+請基於已提供的 trace 重新輸出 ≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B；C bucket 只能作為排除名單。`,
         });
         continue; // continue loop
       }
@@ -1963,6 +3212,9 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
   }
 
   // Max rounds reached — synthesize with what we have
+  if (companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS) {
+    await ensureV3MultiDimPrefetchBeforeSynthesis(trace, opts.workspaceId);
+  }
   const synthesis = await synthesizeAndParseReportV3(trace, dateStr, model, progScore, true);
   totalTokens += synthesis.totalTokens;
   totalCostUsd += synthesis.costUsd;
@@ -1979,7 +3231,7 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       dateStr,
       detectedMarketState ?? "trend"
     );
-    if (fallbackItems.length >= MIN_V3_RECOMMENDATION_ITEMS) {
+    if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
       console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with completeItems=${completeItemCount(items)}/${items.length} after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
       items = fallbackItems;
       synthesisFallbackUsed = true;

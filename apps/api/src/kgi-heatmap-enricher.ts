@@ -236,13 +236,13 @@ export function enrichHeatmapTiles(
     // Honest: only fires during 08:55-14:35 window when MIS cron is running.
     const misEntry = misCache?.get(symbol);
     if (misEntry && misEntry.tradeDateYmd === todayYmd) {
-      // Derive change from MIS last vs EOD prevClose (best-effort)
-      const twseForChange = twseMap.get(symbol);
-      const prevClose = twseForChange
-        ? twseForChange.price - (twseForChange.change ?? 0)
-        : null;
-      const change = prevClose && prevClose > 0
-        ? Math.round((misEntry.last - prevClose) * 100) / 100
+      // Derive change from MIS's OWN changePct so change/changePct can never mix
+      // trading days. Deriving prevClose from the TWSE EOD row produced
+      // sign-contradicting tiles on 6/10 (change=+85 vs changePct=-7.15) because
+      // TWSE EOD publish lags a session and its prevClose belonged to 6/8.
+      const pctDenominator = misEntry.changePct !== null ? 1 + misEntry.changePct / 100 : null;
+      const change = pctDenominator !== null && pctDenominator > 1e-6
+        ? Math.round((misEntry.last - misEntry.last / pctDenominator) * 100) / 100
         : null;
 
       misIntradayTileCount++;

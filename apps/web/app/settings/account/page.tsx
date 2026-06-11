@@ -1,19 +1,9 @@
 "use client";
 
-/**
- * /settings/account — 帳號設定
- *
- * Currently exposes: change password form.
- * POST /api/v1/auth/change-password (PR #476)
- *   Body: { currentPassword, newPassword }
- *   Errors: INVALID_CURRENT_PASSWORD | WEAK_NEW_PASSWORD
- *
- * On success: countdown 3s → auto-logout → redirect /login
- */
-
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
 import { apiChangePassword, apiLogout } from "@/lib/auth-client";
 
 const MIN_PW_LENGTH = 12;
@@ -22,15 +12,15 @@ function changePasswordErrorMessage(error: string): string {
   switch (error) {
     case "INVALID_CURRENT_PASSWORD":
     case "invalid_current_password":
-      return "目前密碼不正確，請重新輸入。";
+      return "目前密碼不正確，請重新確認後再送出。";
     case "WEAK_NEW_PASSWORD":
     case "weak_new_password":
-      return `新密碼強度不足，請使用至少 ${MIN_PW_LENGTH} 個字元，包含大小寫字母與數字。`;
+      return `新密碼至少需要 ${MIN_PW_LENGTH} 個字元，並建議混合大小寫、數字與符號。`;
     case "network_error":
       return "連線失敗，請稍後再試。";
     default:
-      if (error.startsWith("server_error_")) return "伺服器暫時無法完成請求，請稍後再試。";
-      return "操作失敗，請稍後再試。";
+      if (error.startsWith("server_error_")) return "伺服器暫時無法處理密碼變更，請稍後再試。";
+      return "密碼變更失敗，請重新確認輸入內容。";
   }
 }
 
@@ -52,6 +42,7 @@ function PasswordInput({
   hint?: string;
 }) {
   const [show, setShow] = useState(false);
+
   return (
     <div style={{ marginBottom: 18 }}>
       <label
@@ -59,10 +50,8 @@ function PasswordInput({
         style={{
           display: "block",
           fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: "0.07em",
+          fontWeight: 800,
           color: "var(--fg-3, #888)",
-          textTransform: "uppercase",
           marginBottom: 6,
         }}
       >
@@ -84,10 +73,10 @@ function PasswordInput({
             color: "var(--fg-1, #ddd)",
             fontFamily: "var(--mono, monospace)",
             fontSize: 13,
-            padding: "9px 40px 9px 12px",
+            padding: "10px 42px 10px 12px",
             outline: "none",
             boxSizing: "border-box",
-            opacity: disabled ? 0.5 : 1,
+            opacity: disabled ? 0.55 : 1,
           }}
         />
         <button
@@ -112,11 +101,7 @@ function PasswordInput({
           {show ? <EyeOff size={15} strokeWidth={1.8} /> : <Eye size={15} strokeWidth={1.8} />}
         </button>
       </div>
-      {hint && (
-        <div style={{ fontSize: 11, color: "var(--fg-3, #666)", marginTop: 4 }}>
-          {hint}
-        </div>
-      )}
+      {hint && <div style={{ fontSize: 11, color: "var(--fg-3, #666)", marginTop: 5 }}>{hint}</div>}
     </div>
   );
 }
@@ -135,7 +120,6 @@ export default function AccountSettingsPage() {
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [countdown, setCountdown] = useState(3);
 
-  // Countdown + auto-logout after success
   useEffect(() => {
     if (submitState.status !== "success") return;
     if (countdown <= 0) {
@@ -153,20 +137,16 @@ export default function AccountSettingsPage() {
       e.preventDefault();
       setSubmitState({ status: "idle" });
 
-      // Client-side validation
       if (!current.trim()) {
         setSubmitState({ status: "error", message: "請輸入目前密碼。" });
         return;
       }
       if (next.length < MIN_PW_LENGTH) {
-        setSubmitState({
-          status: "error",
-          message: `新密碼至少需要 ${MIN_PW_LENGTH} 個字元。`,
-        });
+        setSubmitState({ status: "error", message: `新密碼至少需要 ${MIN_PW_LENGTH} 個字元。` });
         return;
       }
       if (next !== confirm) {
-        setSubmitState({ status: "error", message: "新密碼與確認密碼不相符。" });
+        setSubmitState({ status: "error", message: "兩次輸入的新密碼不一致。" });
         return;
       }
 
@@ -177,10 +157,7 @@ export default function AccountSettingsPage() {
         setSubmitState({ status: "success" });
         setCountdown(3);
       } else {
-        setSubmitState({
-          status: "error",
-          message: changePasswordErrorMessage(result.error),
-        });
+        setSubmitState({ status: "error", message: changePasswordErrorMessage(result.error) });
       }
     },
     [current, next, confirm],
@@ -197,186 +174,121 @@ export default function AccountSettingsPage() {
         alignItems: "flex-start",
         justifyContent: "center",
         padding: "60px 16px",
+        color: "var(--fg-1, #ddd)",
       }}
     >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 440,
-        }}
-      >
-        {/* Page header */}
-        <div style={{ marginBottom: 32 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 6,
-            }}
-          >
-            <KeyRound
-              size={18}
-              strokeWidth={1.6}
-              style={{ color: "var(--accent, #c8943f)" }}
-            />
-            <h1
-              className="ascii-head"
-              style={{ margin: 0, fontSize: 16 }}
-            >
-              <span className="ascii-head-bracket">帳號設定</span>
-            </h1>
-          </div>
-          <p
-            style={{
-              fontSize: 12,
-              color: "var(--fg-3, #888)",
-              margin: 0,
-              marginLeft: 28,
-            }}
-          >
-            管理密碼與帳號安全
-          </p>
-        </div>
+      <div style={{ width: "100%", maxWidth: 460 }}>
+        <Link href="/settings" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
+          返回設定中心
+        </Link>
 
-        {/* Panel */}
-        <div className="panel hud-frame" style={{ padding: "24px 26px" }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              color: "var(--accent, #c8943f)",
-              textTransform: "uppercase",
-              marginBottom: 20,
-              borderBottom: "1px solid var(--border, #333)",
-              paddingBottom: 10,
-            }}
-          >
-            變更密碼
-          </div>
-
-          {/* Success state */}
-          {submitState.status === "success" && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                padding: "14px 16px",
-                border: "1px solid rgba(80,200,140,0.35)",
-                borderRadius: 2,
-                background: "rgba(80,200,140,0.06)",
-                marginBottom: 20,
-              }}
-            >
-              <CheckCircle2
-                size={16}
-                strokeWidth={1.8}
-                style={{ color: "#50c88c", flexShrink: 0, marginTop: 1 }}
-              />
-              <div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "#50c88c",
-                    fontWeight: 600,
-                    marginBottom: 4,
-                  }}
-                >
-                  密碼已更新，請重新登入
-                </div>
-                <div style={{ fontSize: 12, color: "var(--fg-3, #888)" }}>
-                  {countdown > 0
-                    ? `${countdown} 秒後自動登出…`
-                    : "正在登出…"}
-                </div>
-              </div>
+        <header style={{ margin: "24px 0 30px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <KeyRound size={18} strokeWidth={1.7} style={{ color: "var(--accent, #c8943f)" }} />
+            <div>
+              <div style={{ color: "var(--accent, #c8943f)", fontSize: 11, fontWeight: 900 }}>ACCOUNT</div>
+              <h1 style={{ margin: "4px 0 0", fontSize: 24 }}>帳號與安全</h1>
             </div>
-          )}
+          </div>
+          <p style={{ color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.7 }}>
+            這裡只處理 IUF 登入密碼。券商 SIM 憑證不會在瀏覽器頁面輸入或保存，請走安全環境設定。
+          </p>
+        </header>
 
-          {/* Error state */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            border: "1px solid rgba(200,148,63,0.22)",
+            background: "linear-gradient(180deg, rgba(18,18,18,0.96), rgba(8,8,8,0.98))",
+            padding: 24,
+          }}
+        >
+          <PasswordInput
+            id="current-password"
+            label="目前密碼"
+            value={current}
+            onChange={setCurrent}
+            disabled={busy}
+            autoComplete="current-password"
+          />
+          <PasswordInput
+            id="new-password"
+            label="新密碼"
+            value={next}
+            onChange={setNext}
+            disabled={busy}
+            autoComplete="new-password"
+            hint={`至少 ${MIN_PW_LENGTH} 個字元，建議混合大小寫、數字與符號。`}
+          />
+          <PasswordInput
+            id="confirm-password"
+            label="再次輸入新密碼"
+            value={confirm}
+            onChange={setConfirm}
+            disabled={busy}
+            autoComplete="new-password"
+          />
+
           {submitState.status === "error" && (
             <div
+              role="alert"
               style={{
                 display: "flex",
+                gap: 8,
                 alignItems: "flex-start",
-                gap: 10,
-                padding: "12px 14px",
-                border: "1px solid rgba(220,80,80,0.35)",
-                borderRadius: 2,
-                background: "rgba(220,80,80,0.06)",
-                marginBottom: 20,
+                color: "#f87171",
+                background: "rgba(248,113,113,0.08)",
+                border: "1px solid rgba(248,113,113,0.28)",
+                padding: 12,
                 fontSize: 13,
-                color: "#dc5050",
+                lineHeight: 1.55,
+                marginBottom: 16,
               }}
             >
-              <AlertCircle
-                size={15}
-                strokeWidth={1.8}
-                style={{ flexShrink: 0, marginTop: 1 }}
-              />
-              {submitState.message}
+              <AlertCircle size={16} strokeWidth={1.8} />
+              <span>{submitState.message}</span>
             </div>
           )}
 
-          <form onSubmit={(e) => void handleSubmit(e)} noValidate>
-            <PasswordInput
-              id="current-password"
-              label="目前密碼"
-              value={current}
-              onChange={setCurrent}
-              disabled={busy}
-              autoComplete="current-password"
-            />
-            <PasswordInput
-              id="new-password"
-              label="新密碼"
-              value={next}
-              onChange={setNext}
-              disabled={busy}
-              autoComplete="new-password"
-              hint={`至少 ${MIN_PW_LENGTH} 個字元`}
-            />
-            <PasswordInput
-              id="confirm-password"
-              label="確認新密碼"
-              value={confirm}
-              onChange={setConfirm}
-              disabled={busy}
-              autoComplete="new-password"
-            />
-
-            <button
-              type="submit"
-              disabled={busy}
+          {submitState.status === "success" && (
+            <div
+              role="status"
               style={{
-                width: "100%",
-                padding: "10px 0",
-                background:
-                  busy
-                    ? "rgba(200,148,63,0.3)"
-                    : "rgba(200,148,63,0.15)",
-                border: "1px solid var(--accent, #c8943f)",
-                borderRadius: 2,
-                color: busy ? "var(--fg-3, #888)" : "var(--accent, #c8943f)",
-                fontFamily: "var(--mono, monospace)",
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+                color: "#34d399",
+                background: "rgba(52,211,153,0.08)",
+                border: "1px solid rgba(52,211,153,0.28)",
+                padding: 12,
                 fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                cursor: busy ? "not-allowed" : "pointer",
-                transition: "background 0.15s, color 0.15s",
-                marginTop: 4,
+                lineHeight: 1.55,
+                marginBottom: 16,
               }}
             >
-              {submitState.status === "submitting"
-                ? "送出中…"
-                : submitState.status === "success"
-                ? "已更新"
-                : "更新密碼"}
-            </button>
-          </form>
-        </div>
+              <CheckCircle2 size={16} strokeWidth={1.8} />
+              <span>密碼已更新，{countdown} 秒後會登出，請用新密碼重新登入。</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            style={{
+              width: "100%",
+              border: "1px solid rgba(200,148,63,0.55)",
+              background: "rgba(200,148,63,0.16)",
+              color: "var(--accent, #c8943f)",
+              padding: "11px 14px",
+              fontSize: 13,
+              fontWeight: 900,
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {submitState.status === "submitting" ? "更新中..." : "更新密碼"}
+          </button>
+        </form>
       </div>
     </main>
   );

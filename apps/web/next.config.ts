@@ -17,6 +17,13 @@ const nextConfig: NextConfig = {
         destination: "/quant-strategies",
         statusCode: 301,
       },
+      // 2026-06-11 楊董裁定：lab legacy 全節點下架，只保留正式 /quant-strategies。
+      // 頁面原始碼已刪除；此 redirect 涵蓋 /lab/three-strategy/* 與舊 bundle 深連結。
+      {
+        source: "/lab/:path*",
+        destination: "/quant-strategies",
+        statusCode: 301,
+      },
       {
         source: "/event-log",
         destination: "/admin/events",

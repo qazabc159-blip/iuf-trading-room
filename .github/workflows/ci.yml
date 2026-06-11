@@ -120,8 +120,8 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter @iuf-trading-room/qa-playwright exec playwright install chromium
 
-      - name: Start PR web app for Playwright
-        if: github.event_name == 'pull_request'
+      - name: Start PR web app for Playwright (Windows)
+        if: github.event_name == 'pull_request' && runner.os == 'Windows'
         shell: powershell
         run: |
           $pnpm = "pnpm.cmd"
@@ -144,6 +144,23 @@ jobs:
             }
           }
           throw "PR web app did not become ready on port 3300"
+
+      - name: Start PR web app for Playwright (Linux)
+        if: github.event_name == 'pull_request' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          pnpm --filter @iuf-trading-room/web exec next dev -p 3300 > next-playwright.log 2>&1 &
+          for i in {1..90}; do
+            status="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3300/market-intel || true)"
+            if [ "$status" -ge 200 ] && [ "$status" -lt 500 ]; then
+              echo "PR web app ready on http://127.0.0.1:3300"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PR web app did not become ready on port 3300"
+          tail -120 next-playwright.log || true
+          exit 1
 
       - name: Market Intel smoke
         run: pnpm qa:playwright:smoke

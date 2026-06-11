@@ -55,8 +55,22 @@ export interface LlmCallOptions {
   /**
    * Ask Chat Completions to return a JSON object. Intended for strict
    * selector/parser callsites; other callers keep the default text behavior.
+   *
+   * - "json_object": instructs the model to return valid JSON (all models)
+   * - "json_schema": strict JSON schema mode (gpt-4o-2024-08-06+, gpt-5 family)
+   *   When using "json_schema", supply `responseSchema` with the schema definition.
+   *   Falls back to "json_object" if schema is not provided.
    */
-  responseFormat?: "json_object";
+  responseFormat?: "json_object" | "json_schema";
+  /**
+   * JSON Schema definition for strict structured output (used when responseFormat="json_schema").
+   * Shape: { name: string; strict: boolean; schema: Record<string, unknown> }
+   */
+  responseSchema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
 }
 
 export interface LlmCallResult {
@@ -97,7 +111,10 @@ const DEFAULT_TIMEOUT_MS = 25_000;
 export function getDailyBudgetUsd(): number {
   const env = process.env["LLM_DAILY_BUDGET_USD"];
   const parsed = env ? parseFloat(env) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5.0; // $5/day default
+  // $10/day (Yang approved raise 2026-06-11; was $5). Runaway-burn protection lives
+  // upstream: per-run costCapUsd, once-daily v3 cron with bounded retries, and a
+  // boot-fire guard that skips when today already has a run.
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10.0;
 }
 
 /** Daily quota limit (call count). Matches openai-quota-guard default. */
@@ -116,8 +133,18 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "gpt-4o":                  { input: 2.500, output: 10.000 },
   "gpt-4.1":                 { input: 2.000, output: 8.000 },
   "claude-3-haiku-20240307": { input: 0.250, output: 1.250 },
-  "gpt-5.4-mini":            { input: 0.150, output: 0.600 }
+  "gpt-5.4-mini":            { input: 0.150, output: 0.600 },
+  // gpt-5.5: deep-reasoning model for AI rec + brief ($5/$30 per 1M input/output, 1M context window).
+  // Per-feature override via OPENAI_MODEL_AI_REC / OPENAI_MODEL_BRIEF env vars.
+  // NOTE: uses max_completion_tokens instead of max_tokens — handled in callLlm().
+  "gpt-5.5":                 { input: 5.000, output: 30.000 }
 };
+
+/**
+ * Models that require max_completion_tokens instead of max_tokens (OpenAI o-series + gpt-5 family).
+ * Sending max_tokens to these models returns HTTP 400 unsupported_parameter.
+ */
+const USES_MAX_COMPLETION_TOKENS = new Set(["gpt-5.5", "o1", "o1-mini", "o1-preview", "o3", "o3-mini"]);
 
 export function estimateCostUsd(
   modelKey: string,
@@ -395,13 +422,35 @@ export async function callLlm(
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
 
+  // gpt-5.5 (and o-series reasoning models) have two API differences:
+  //   1. Use max_completion_tokens instead of max_tokens (sending max_tokens → HTTP 400)
+  //   2. Only support temperature=1 (sending any other value → HTTP 400)
+  // Both are handled transparently here so callers don't need to know the model family.
+  const isReasoningModel = USES_MAX_COMPLETION_TOKENS.has(modelKey);
+  const tokenLimitKey = isReasoningModel ? "max_completion_tokens" : "max_tokens";
   const requestBody: Record<string, unknown> = {
     model: modelKey,
     messages,
-    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
-    temperature: opts.temperature ?? DEFAULT_TEMPERATURE
+    [tokenLimitKey]: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   };
-  if (opts.responseFormat === "json_object") {
+  // Only add temperature for models that support it (non-reasoning family)
+  if (!isReasoningModel) {
+    requestBody["temperature"] = opts.temperature ?? DEFAULT_TEMPERATURE;
+  }
+  if (opts.responseFormat === "json_schema" && opts.responseSchema) {
+    // Strict JSON schema mode — gpt-4o-2024-08-06+ and gpt-5 family support this.
+    // If the model rejects it, the outer catch will return null and the caller
+    // can retry with json_object fallback.
+    requestBody["response_format"] = {
+      type: "json_schema",
+      json_schema: {
+        name: opts.responseSchema.name,
+        strict: opts.responseSchema.strict ?? true,
+        schema: opts.responseSchema.schema,
+      },
+    };
+  } else if (opts.responseFormat === "json_object" || opts.responseFormat === "json_schema") {
+    // json_schema without schema definition → fall back to json_object
     requestBody["response_format"] = { type: "json_object" };
   }
 

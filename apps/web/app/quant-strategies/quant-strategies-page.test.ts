@@ -17,7 +17,8 @@ describe("quant strategies S1-only product surface", () => {
   it("keeps the page honest about SIM-only execution", () => {
     expect(pageSource).toContain("SIM-only guard");
     expect(pageSource).toContain("不會開啟真實委託");
-    expect(pageSource).toContain("F-AUTO 觀察面板");
+    expect(pageSource).toContain("F-AUTO 觀察面板：Owner 後台");
+    expect(pageSource).not.toContain('href="/ops/f-auto"');
     expect(pageSource).not.toContain("LAB SANCTIONED SNAPSHOT");
     expect(pageSource).not.toContain("MAIN execution rank buffer");
     expect(pageSource).not.toContain("Continuous liquidity RS");

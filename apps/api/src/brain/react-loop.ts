@@ -82,7 +82,9 @@ const HARD_MAX_ROUNDS = 10;
 const HARD_MAX_COST_USD = 5.0;
 const DEFAULT_MAX_ROUNDS = 5;
 const DEFAULT_COST_CAP_USD = 1.0;
-const LOOP_MODEL_KEY = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
+// Per-feature model override: OPENAI_MODEL_AI_REC takes priority for Brain ReAct loops
+// used by AI recommendation. Falls back to OPENAI_MODEL then gpt-4o-mini.
+const LOOP_MODEL_KEY = process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 export const COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION = "company_ai_analyst_report_v1";
 const COMPANY_AI_ANALYST_TEMPLATE_MARKER = `TEMPLATE_VERSION: ${COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION}`;
 
@@ -732,7 +734,9 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
       callerModule: "brain_react",
       taskType: "react_reason",
       workspaceId: opts.workspaceId,
-      maxTokens: 512,
+      // gpt-5.5 needs more budget per ReAct step due to reasoning tokens.
+      // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
+      maxTokens: 2048,
       temperature: 0.1
     });
 

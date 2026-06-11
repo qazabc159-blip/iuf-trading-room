@@ -172,7 +172,8 @@ export default async function QuantStrategiesPage({
           gap: 8px;
           margin-bottom: 16px;
         }
-        ._qnt-tabs a {
+        ._qnt-tabs a,
+        ._qnt-tabs span {
           min-height: 36px;
           display: inline-flex;
           align-items: center;
@@ -184,6 +185,11 @@ export default async function QuantStrategiesPage({
           background: rgba(8, 11, 16, 0.52);
           font: 800 11px/1 var(--mono);
           text-decoration: none;
+        }
+        ._qnt-tabs span {
+          cursor: default;
+          color: var(--tac-fg-3);
+          border-style: dashed;
         }
         ._qnt-tabs a:hover {
           color: var(--tac-fg-0);
@@ -218,7 +224,7 @@ export default async function QuantStrategiesPage({
         <Link href="/quant-strategies?tab=subscriptions" data-active={isSubsTab ? "true" : "false"}>
           資金配置紀錄
         </Link>
-        <Link href="/ops/f-auto">F-AUTO 觀察面板</Link>
+        <span>F-AUTO 觀察面板：Owner 後台</span>
       </div>
 
       {isSubsTab ? (

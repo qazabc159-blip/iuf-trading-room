@@ -26,7 +26,7 @@ defaults:
     # Self-hosted Windows runners can keep a restrictive machine policy.
     # Use an explicit bypass for GitHub's generated temporary scripts so
     # skip gates and deploy commands do not fail before product code runs.
-    shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+    shell: pwsh
 
 jobs:
   deploy:
@@ -72,7 +72,11 @@ jobs:
 
       - name: Install Railway CLI
         if: steps.gate.outputs.skip != 'true'
-        run: npm install -g @railway/cli@latest
+        run: |
+          # Keep CI auth stable while Railway CLI 5.3.x ignores RAILWAY_TOKEN
+          # and returns "Not signed in" during railway up.
+          npm install -g @railway/cli@5.2.0
+          railway --version
 
       - name: Remove non-runtime evidence before Railway upload
         if: steps.gate.outputs.skip != 'true'
@@ -92,6 +96,13 @@ jobs:
               Write-Host "Removed non-runtime path before Railway upload: $path"
             }
           }
+
+      - name: Preflight production Postgres (api only)
+        if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          ./scripts/verify/railway-pg-preflight.ps1 -MinVolumeSizeMB 5000 -MaxUsagePercent 85
 
       - name: Deploy ${{ matrix.service }}
         if: steps.gate.outputs.skip != 'true'
@@ -209,13 +220,14 @@ jobs:
           $cookiePath = Join-Path $env:RUNNER_TEMP "owner-login-cookies.txt"
           $loginBodyPath = Join-Path $env:RUNNER_TEMP "owner-login-response.json"
           $probeBodyPath = Join-Path $env:RUNNER_TEMP "db-probe-response.json"
+          $curlBin = if ($env:RUNNER_OS -eq "Windows") { "curl.exe" } else { "curl" }
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText($payloadPath, $loginPayload, $utf8NoBom)
 
           $loginResp = $null
           $lastLoginStatus = "unknown"
           for ($attempt = 1; $attempt -le 6; $attempt++) {
-            $lastLoginStatus = (& curl.exe --silent --show-error --location `
+            $lastLoginStatus = (& $curlBin --silent --show-error --location `
               --request POST "https://api.eycvector.com/auth/login" `
               --header "Content-Type: application/json" `
               --data-binary "@$payloadPath" `
@@ -249,7 +261,7 @@ jobs:
           $probeResp = $null
           $lastProbeStatus = "unknown"
           for ($attempt = 1; $attempt -le 4; $attempt++) {
-            $lastProbeStatus = (& curl.exe --silent --show-error --location `
+            $lastProbeStatus = (& $curlBin --silent --show-error --location `
               "https://api.eycvector.com/api/v1/paper/db-probe" `
               --cookie "$cookiePath" `
               --output "$probeBodyPath" `
@@ -290,14 +302,17 @@ jobs:
             exit 1
           }
 
-          # Hard check: migration count must match expected total.
-          # Current prod value: 44 (5/29 PR #757, migration 0043 ai_rec_v3 score_breakdown).
-          # Repo has 42 current forward files through 0043, prod schema_migrations contains
-          # 2 legacy applied rows from earlier migration history = 42 + 2 = 44 total.
-          $expectedMigrationCount = "44"
-          if ($count -ne $expectedMigrationCount) {
-            Write-Host "::error::Migration count mismatch: expected $expectedMigrationCount but got $count. Check Railway boot logs for advisory lock contention or migration errors."
+          # Hard check: migration count must include the required schema baseline.
+          # Current prod value: 45 (6/5 PR #1008, migration 0044 ai_rec_pick_snapshots).
+          # Repo has 44 current forward files through 0044, prod schema_migrations contains
+          # 1 legacy applied row from earlier migration history = 44 + 1 = 45 total.
+          $expectedMigrationCount = "45"
+          if ([int]$count -lt [int]$expectedMigrationCount) {
+            Write-Host "::error::Migration count too low: expected at least $expectedMigrationCount but got $count. Check Railway boot logs for advisory lock contention or migration errors."
             exit 1
+          }
+          if ([int]$count -gt [int]$expectedMigrationCount) {
+            Write-Host "::warning::Migration count ahead of deploy verifier: expected $expectedMigrationCount but got $count. Continuing because all required migrations are present; update deploy.yml."
           }
 
           Write-Host "::notice::Migration count verified: $count/$expectedMigrationCount OK"

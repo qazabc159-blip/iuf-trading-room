@@ -27,6 +27,7 @@ import type {
   MarketDataConsumerSummary,
   MarketDataDecisionSummary,
   MarketDataDecisionSummaryItem,
+  MyEntitlements,
   Order,
   OrderCancelInput,
   OrderCreateInput,
@@ -68,6 +69,7 @@ import type {
   TradePlan,
   TradePlanCreateInput
 } from "@iuf-trading-room/contracts";
+import { realtimeFreshnessMode } from "./realtime-freshness";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
   ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3001");
@@ -181,6 +183,10 @@ export async function getSession() {
   return request<AppSession>("/api/v1/session");
 }
 
+export async function getMyEntitlements() {
+  return request<MyEntitlements>("/api/v1/entitlements/me");
+}
+
 export type RecommendationListResponse = {
   date: string;
   generatedAt: string;
@@ -234,6 +240,7 @@ export type AiRecommendationV3Item = {
   } | null;
   totalScore?: number | null;
   bucket?: "A+" | "A" | "B" | "C" | null;
+  action?: string | null;
   entryZone?: {
     low?: number | null;
     high?: number | null;
@@ -349,6 +356,17 @@ export async function createTheme(input: ThemeCreateInput) {
 
 export async function getCompanies() {
   return request<Company[]>("/api/v1/companies");
+}
+
+export type CompanyRegistryRow = Pick<Company, "id" | "ticker" | "name" | "market" | "chainPosition" | "beneficiaryTier" | "updatedAt"> & {
+  notes?: string | null;
+};
+
+export async function getCompaniesLite(params?: { limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request<CompanyRegistryRow[]>(`/api/v1/companies/lite${qs ? `?${qs}` : ""}`);
 }
 
 export async function createCompany(input: CompanyCreateInput) {
@@ -1288,6 +1306,15 @@ export async function getKgiQuoteStatus() {
 export type CompanyRealtimeQuote = {
   symbol: string;
   lastPrice: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  prevClose?: number | null;
+  previousClose?: number | null;
+  referencePrice?: number | null;
+  yesterdayClose?: number | null;
+  change?: number | null;
+  changePct?: number | null;
   bid: number | null;
   ask: number | null;
   volume: number | null;
@@ -1296,6 +1323,8 @@ export type CompanyRealtimeQuote = {
   reason?: string;
   source: "kgi-gateway" | "twse_intraday" | "twse_openapi_eod";
   note?: string;
+  /** ISO trading date of the underlying data when source is TWSE EOD (may lag 1-2 sessions). */
+  dataDate?: string | null;
   marketSession?: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
   referenceReason?: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   updatedAt: string;
@@ -1308,6 +1337,89 @@ export async function getCompanyQuoteRealtime(companyId: string): Promise<Compan
   } catch {
     return null;
   }
+}
+
+// ── Realtime Snapshot Multi (PARTIAL — canonical shape, fan-out stub) ──────────
+// PARTIAL: 等 Jason 補 GET /api/v1/realtime/snapshot?symbols=... 後端端點。
+// 目前 fan-out 至 /api/v1/companies/:id/quote/realtime（per-symbol），
+// 之後後端上線後只需換成 single-call；前端 hook API 不變。
+//
+// freshness_mode canonical 語義（給 UI 層消費）：
+//   live     — KGI 即時 (<= 2s)
+//   intraday — TWSE MIS 盤中近即時
+//   stale    — age > 2s（風控界線：不可假裝 live）
+//   eod      — 昨收 / 盤後 / 資料不可用
+export type RealtimeSnapshotItem = {
+  symbol: string;
+  lastPrice: number | null;
+  bid: number | null;
+  ask: number | null;
+  volume: number | null;
+  freshness_mode: "live" | "intraday" | "stale" | "eod";
+  freshness_ms: number;
+  source: string;
+  updatedAt: string;
+};
+
+export type RealtimeSnapshotResponse = {
+  items: RealtimeSnapshotItem[];
+  /** PARTIAL — backend endpoint not yet deployed; fan-out via per-symbol route */
+  _stub: true;
+};
+
+function _stateToFreshnessMode(quote: CompanyRealtimeQuote): "live" | "intraday" | "stale" | "eod" {
+  return realtimeFreshnessMode(quote);
+}
+
+/**
+ * getRealtimeSnapshotMulti — 批次取得多個 symbol 的 canonical 報價快照。
+ *
+ * PARTIAL: 此函式目前 fan-out 至 per-symbol realtime endpoint。
+ * 後端 GET /api/v1/realtime/snapshot?symbols=... 上線後，切換實作即可。
+ * 呼叫方不需改動。
+ */
+export async function getRealtimeSnapshotMulti(
+  symbols: string[],
+): Promise<RealtimeSnapshotResponse> {
+  const results = await Promise.allSettled(
+    symbols.map((sym) => getCompanyQuoteRealtime(sym)),
+  );
+
+  const items: RealtimeSnapshotItem[] = [];
+  for (let i = 0; i < symbols.length; i++) {
+    const r = results[i];
+    const sym = symbols[i];
+    if (r.status === "fulfilled" && r.value) {
+      const q = r.value;
+      const nowMs = Date.now();
+      items.push({
+        symbol: sym,
+        lastPrice: q.lastPrice,
+        bid: q.bid,
+        ask: q.ask,
+        volume: q.volume,
+        freshness_mode: _stateToFreshnessMode(q),
+        freshness_ms: q.updatedAt ? Math.max(0, nowMs - Date.parse(q.updatedAt)) : -1,
+        source: q.source,
+        updatedAt: q.updatedAt,
+      });
+    } else {
+      // fetch 失敗 → eod fallback（不假裝有資料）
+      items.push({
+        symbol: sym,
+        lastPrice: null,
+        bid: null,
+        ask: null,
+        volume: null,
+        freshness_mode: "eod",
+        freshness_ms: -1,
+        source: "unavailable",
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  return { items, _stub: true };
 }
 
 // ── Dashboard Snapshot (PR #326 — 6-panel aggregation, 30s cache) ─────────────

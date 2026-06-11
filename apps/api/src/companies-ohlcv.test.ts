@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  aggregateDailyOhlcvBars,
   generateMockOhlcv,
   getCompanyOhlcv,
   getCompanyOhlcvBulk
@@ -139,4 +140,65 @@ test("T8: getCompanyOhlcvBulk returns keyed map for all requested ids", async ()
     assert.ok(Array.isArray(result[id]), `Entry for ${id} should be an array`);
     assert.ok(result[id]!.length > 0, `Entry for ${id} should have bars`);
   }
+});
+
+test("T9: aggregateDailyOhlcvBars derives weekly OHLCV from daily bars", () => {
+  const daily = [
+    { dt: "2026-06-01", open: 100, high: 110, low: 96, close: 108, volume: 1000, source: "tej" as const },
+    { dt: "2026-06-02", open: 108, high: 112, low: 104, close: 106, volume: 2000, source: "tej" as const },
+    { dt: "2026-06-05", open: 106, high: 109, low: 101, close: 103, volume: 3000, source: "tej" as const },
+    { dt: "2026-06-08", open: 103, high: 107, low: 98, close: 105, volume: 4000, source: "tej" as const }
+  ];
+
+  const weekly = aggregateDailyOhlcvBars(daily, "1w");
+
+  assert.equal(weekly.length, 2);
+  assert.deepEqual(weekly[0], {
+    dt: "2026-06-01",
+    open: 100,
+    high: 112,
+    low: 96,
+    close: 103,
+    volume: 6000,
+    source: "tej"
+  });
+  assert.deepEqual(weekly[1], {
+    dt: "2026-06-08",
+    open: 103,
+    high: 107,
+    low: 98,
+    close: 105,
+    volume: 4000,
+    source: "tej"
+  });
+});
+
+test("T10: aggregateDailyOhlcvBars derives monthly OHLCV from daily bars", () => {
+  const daily = [
+    { dt: "2026-05-29", open: 90, high: 95, low: 88, close: 94, volume: 500, source: "tej" as const },
+    { dt: "2026-06-01", open: 94, high: 101, low: 93, close: 100, volume: 700, source: "tej" as const },
+    { dt: "2026-06-30", open: 100, high: 106, low: 97, close: 102, volume: 900, source: "tej" as const }
+  ];
+
+  const monthly = aggregateDailyOhlcvBars(daily, "1m");
+
+  assert.equal(monthly.length, 2);
+  assert.deepEqual(monthly[0], {
+    dt: "2026-05-01",
+    open: 90,
+    high: 95,
+    low: 88,
+    close: 94,
+    volume: 500,
+    source: "tej"
+  });
+  assert.deepEqual(monthly[1], {
+    dt: "2026-06-01",
+    open: 94,
+    high: 106,
+    low: 93,
+    close: 102,
+    volume: 1600,
+    source: "tej"
+  });
 });

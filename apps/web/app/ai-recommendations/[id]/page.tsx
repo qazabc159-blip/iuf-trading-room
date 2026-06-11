@@ -61,10 +61,10 @@ function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
 
 function safeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("404") || message.includes("not_found")) return "找不到這筆推薦，可能已被新的 Orchestrator 版本替換。";
-  if (message.includes("403") || message.includes("forbidden_role")) return "Owner session 才能讀取 AI 推薦詳情。";
+  if (message.includes("404") || message.includes("not_found")) return "找不到這筆推薦，可能已被新的 AI 推薦版本替換。";
+  if (message.includes("403") || message.includes("forbidden_role")) return "此帳號方案尚未開啟 AI 推薦詳情，請到訂閱/權限頁確認。";
   if (message.includes("401") || message.includes("unauthenticated")) return "登入狀態已失效，請重新整理後再試。";
-  return "Recommendation Orchestrator 暫時無法回傳這筆詳情。";
+  return "AI 推薦服務暫時無法回傳這筆詳情。";
 }
 
 async function loadRecommendation(id: string): Promise<{
@@ -158,11 +158,11 @@ function ReasonSection({ title, items }: { title: string; items: string[] }) {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <PageFrame code="AI-D" title="AI 推薦詳情" sub="Recommendation Orchestrator">
+    <PageFrame code="AI-D" title="AI 推薦詳情" sub="今日投研助理">
       <Panel code="AI-D" title="讀取失敗" right={<Link href="/ai-recommendations">回推薦列表</Link>}>
         <div className="_rec-detail-empty">
           <b>{message}</b>
-          <p>這裡不會用假資料補畫面；等 Orchestrator 回來後再顯示完整推薦。</p>
+          <p>這裡不會用假資料補畫面；等 AI 推薦服務恢復後再顯示完整推薦。</p>
         </div>
       </Panel>
       <style>{`
@@ -209,7 +209,7 @@ export default async function AiRecommendationDetailPage({
   const generatedAtLabel = formatRecommendationTimestamp(rec.generatedAt);
 
   return (
-    <PageFrame code="AI-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / Recommendation Orchestrator">
+    <PageFrame code="AI-D" title={`${rec.ticker} ${rec.companyName}`} sub="AI 推薦詳情 / 今日投研助理">
       <style>{`
         ._rec-detail-nav {
           display: flex;
@@ -587,7 +587,7 @@ export default async function AiRecommendationDetailPage({
                 <span>{rec.direction}</span>
                 <span>{rec.timeHorizon}</span>
               </div>
-              <p>所有欄位只呈現 Orchestrator 回傳內容；缺資料直接顯示空值或同步中，不用假數字補畫面。</p>
+              <p>所有欄位只呈現 AI 推薦服務回傳內容；缺資料直接顯示空值或同步中，不用假數字補畫面。</p>
             </div>
             <span className="_rec-detail-gate" data-tone={gateTone(rec.quant.gateStatus)}>
               {rec.quant.gateStatus}

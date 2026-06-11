@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ReactRunResult, ReactTraceStep } from "./AiAnalystReportPanel";
+import { assessCompanyAiReportQuality } from "./aiAnalystReportQuality";
 import {
   buildCompanyAiAnalystPrompt,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
@@ -70,10 +71,12 @@ describe("Company AI analyst prompt contract", () => {
   it("forces honest degraded wording instead of invented facts", () => {
     const prompt = buildCompanyAiAnalystPrompt("2317");
     expect(prompt).toContain("缺資料時要說明已查來源、缺哪個欄位、影響哪個判斷");
+    expect(prompt).toContain("即使資料不足，也必須用可讀的產品語言完成該段");
     expect(prompt).toContain("不可猜測");
     expect(prompt).toContain("不可給保證獲利");
     expect(prompt).toContain("不是下單建議");
     expect(prompt).toContain("不可輸出 get_company_technical");
+    expect(prompt).toContain("不要複述本段規則、禁止詞或工具名稱");
   });
 });
 
@@ -177,6 +180,70 @@ describe("Complete state", () => {
   it("report_md is present and non-empty", () => {
     expect(completedResult.report_md).toBeTruthy();
     expect(completedResult.report_md!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Company AI analyst report quality gate", () => {
+  it("allows a customer-facing report without engineering internals", () => {
+    const report = [
+      "## 1. 公司概況與定位",
+      "台積電仍是全球先進製程與高階封裝的核心供應商。",
+      "## 2. 今日/最近資料狀態",
+      "近期行情與新聞資料可用，但仍需搭配法人與量價確認。",
+      "## 3. 近期事件與新聞",
+      "重大訊息與產業新聞需確認日期與來源。",
+      "## 4. 技術結構",
+      "日 K 線與均線可用於判斷趨勢，但不代表下單建議。",
+      "## 5. 籌碼與法人",
+      "法人資料若延遲，需明確標示來源狀態。",
+      "## 6. 主題與產業鏈位置",
+      "公司位於 AI 伺服器與半導體供應鏈關鍵位置。",
+      "## 7. 主要風險",
+      "價格波動、事件延遲與資料缺口都需要列入風險。",
+      "## 8. AI 結論與觀察等級",
+      "觀察等級：中性觀察；這不是下單建議。",
+      "## 9. 資料來源與生成時間",
+      "資料來源：行情、日 K 線、新聞與公司基本資料。",
+    ].join("\n\n");
+
+    expect(assessCompanyAiReportQuality(report)).toEqual({
+      ok: true,
+      reason: "ok",
+      blockedTerms: [],
+    });
+  });
+
+  it("blocks reports that leak tool names and placeholder reasons", () => {
+    const report = [
+      "資料不足：本次工具觀察來源為 get_market_overview / get_news_top10。",
+      "品質問題 too_short, generic_data_gap_reason, generic_placeholder_line。",
+      "run_id=abc prompt_tokens=123 completion_tokens=0",
+    ].join("\n");
+
+    const quality = assessCompanyAiReportQuality(report);
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("engineering_leak");
+    expect(quality.blockedTerms.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("blocks reports that do not complete the fixed nine-section structure", () => {
+    const report = [
+      "## 1. 公司概況與定位",
+      "台積電仍是先進製程供應商。",
+      "## 2. 今日/最近資料狀態",
+      "行情資料可用。",
+    ].join("\n\n");
+
+    const quality = assessCompanyAiReportQuality(report);
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("missing_sections");
+    expect(quality.blockedTerms).toContain("## 9. 資料來源與生成時間");
+  });
+
+  it("blocks quality-protected placeholder reports instead of treating them as formal research", () => {
+    const quality = assessCompanyAiReportQuality("品質保護版：資料不足，僅提供保守分析版。");
+    expect(quality.ok).toBe(false);
+    expect(quality.reason).toBe("quality_protected");
   });
 });
 

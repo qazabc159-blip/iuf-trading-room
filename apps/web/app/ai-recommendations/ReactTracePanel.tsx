@@ -36,12 +36,14 @@ function stepSummary(step: ReActStep): string {
   return "-";
 }
 
-function argsDisplay(args: Record<string, unknown> | null | undefined): string {
-  if (!args) return "";
-  const parts = Object.entries(args)
-    .slice(0, 4)
-    .map(([key, value]) => `${key}=${JSON.stringify(value)}`);
-  return parts.join(", ");
+function toolDisplayName(tool: string): string {
+  const normalized = tool.toLowerCase();
+  if (normalized.includes("technical") || normalized.includes("kbar") || normalized.includes("ohlcv")) return "技術與量價";
+  if (normalized.includes("news") || normalized.includes("announcement")) return "新聞與公告";
+  if (normalized.includes("market")) return "大盤狀態";
+  if (normalized.includes("institution") || normalized.includes("chip")) return "籌碼資料";
+  if (normalized.includes("company")) return "公司資料";
+  return "資料檢查";
 }
 
 export function ReactTracePanel({
@@ -54,7 +56,7 @@ export function ReactTracePanel({
   const hasSteps = Boolean(steps?.length);
   const roundLabel =
     round_current != null && round_max != null
-      ? `round ${round_current}/${round_max}`
+      ? `第 ${round_current}/${round_max} 輪`
       : null;
 
   return (
@@ -188,7 +190,7 @@ export function ReactTracePanel({
 
       <details className="_rtp-wrap">
         <summary className="_rtp-summary">
-          AI 推理軌跡
+          AI 分析依據
           {roundLabel && <span className="_rtp-badge">{roundLabel}</span>}
           {is_running && (
             <span className="_rtp-badge" style={{ borderColor: "rgba(200,148,63,0.28)" }}>
@@ -197,7 +199,7 @@ export function ReactTracePanel({
           )}
           {over_budget && (
             <span className="_rtp-badge" style={{ borderColor: "rgba(230,57,70,0.34)", color: "#e63946", background: "rgba(230,57,70,0.06)" }}>
-              成本上限
+              分析上限
             </span>
           )}
         </summary>
@@ -219,14 +221,9 @@ export function ReactTracePanel({
                   <div className="_rtp-tools">
                     {step.tool_calls.map((toolCall, index) => (
                       <div key={index} className="_rtp-tool-row">
-                        <span className="_rtp-tool-name">callTool({toolCall.tool})</span>
-                        {toolCall.args && (
-                          <span className="_rtp-tool-args">
-                            {argsDisplay(toolCall.args)}
-                          </span>
-                        )}
+                        <span className="_rtp-tool-name">資料檢查：{toolDisplayName(toolCall.tool)}</span>
                         {toolCall.result && (
-                          <span className="_rtp-tool-result">結果：{toolCall.result}</span>
+                          <span className="_rtp-tool-result">觀察：{toolCall.result}</span>
                         )}
                       </div>
                     ))}
@@ -244,7 +241,7 @@ export function ReactTracePanel({
                   </span>
                 </div>
                 <p className="_rtp-empty-step">
-                  {is_running ? "等待本輪推理輸出" : "等待 v3 推理 trace 接入"}
+                  {is_running ? "等待本輪分析輸出" : "等待 AI 分析依據回傳"}
                 </p>
               </div>
             ))
@@ -253,7 +250,7 @@ export function ReactTracePanel({
           {is_running && (
             <div className="_rtp-placeholder-row">
               <span className="_rtp-spinner" aria-hidden="true" />
-              AI 正在推理{roundLabel ? ` (${roundLabel})` : ""}
+              AI 正在分析{roundLabel ? ` (${roundLabel})` : ""}
             </div>
           )}
 
@@ -262,7 +259,7 @@ export function ReactTracePanel({
               className="_rtp-placeholder-row"
               style={{ color: "#e63946" }}
             >
-              已達本次推理成本上限，系統會停止追加 tool call。
+              已達本次分析上限，系統會停止追加資料檢查。
             </div>
           )}
         </div>

@@ -3,14 +3,11 @@ import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   BarChart3,
-  Brain,
   Building2,
-  GitFork,
   LineChart,
   Newspaper,
   Sparkles,
   Target,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,9 +27,11 @@ import {
   getOpsSnapshot,
   getKgiQuoteStatus,
   getStrategyIdeas,
+  getRecommendationsToday,
   getTwseMarketHeatmap,
   getTwseMarketOverview,
   listStrategyRuns,
+  type RecommendationListResponse,
   type CompanyAnnouncement,
   type DashboardSnapshot,
   type FinMindDatasetStatus,
@@ -278,6 +277,8 @@ const FETCH_SOFT_MS = 3000; // 3s soft budget – ops/brief/paper/broker/ideas/r
 const FETCH_HARD_MS = 5000; // 5s hard budget – finmind/intel(TWSE crawl)/snapshot
 const FETCH_MARKET_MS = 15000; // 15s – TWSE EOD can be slow on cold cache; backend now 3s internal timeout + 5min cache
 const KGI_MARKET_ENDPOINT_MS = 3500;
+const FETCH_INTEL_MS = 12000;
+const INTEL_SOURCE_MS = 7000;
 const PUBLIC_MARKET_ENDPOINT_MS = 10000; // 10s – backend 3s timeout + dedup cache; generous for Railway→TWSE cold path
 
 function withTimeout<T>(
@@ -315,7 +316,12 @@ async function timedFetch<T>(
 
 // ── Detect timeout sentinel ───────────────────────────────────────────────────
 function isTimeoutSentinel(value: unknown): value is { _timeout: string } {
-  return typeof value === "object" && value !== null && "_timeout" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "_timeout" in value &&
+    typeof (value as { _timeout?: unknown })._timeout === "string"
+  );
 }
 
 function todayTaipeiDate() {
@@ -809,25 +815,65 @@ async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboar
     },
     async () => {
       const [newsResult, announcementsResult] = await Promise.allSettled([
-        getNewsTop10(),
-        getMarketIntelAnnouncements({
-          days: ANNOUNCEMENT_DAYS,
-          limit: MAX_INTEL_ROWS,
-          scope: "market",
-        }),
+        withTimeout(getNewsTop10(), INTEL_SOURCE_MS, "market_intel_news"),
+        withTimeout(
+          getMarketIntelAnnouncements({
+            days: ANNOUNCEMENT_DAYS,
+            limit: MAX_INTEL_ROWS,
+            scope: "market",
+          }),
+          INTEL_SOURCE_MS,
+          "market_intel_announcements",
+        ),
       ]);
-      if (newsResult.status === "rejected" && announcementsResult.status === "rejected") {
-        throw newsResult.reason;
+      const newsTimeoutLabel =
+        newsResult.status === "fulfilled" && isTimeoutSentinel(newsResult.value)
+          ? newsResult.value._timeout
+          : null;
+      const announcementsTimeoutLabel =
+        announcementsResult.status === "fulfilled" && isTimeoutSentinel(announcementsResult.value)
+          ? announcementsResult.value._timeout
+          : null;
+      const newsTimedOut = newsTimeoutLabel !== null;
+      const announcementsTimedOut = announcementsTimeoutLabel !== null;
+      const newsFailed = newsResult.status === "rejected" || newsTimedOut;
+      const announcementsFailed = announcementsResult.status === "rejected" || announcementsTimedOut;
+      if (newsFailed && announcementsFailed) {
+        if (newsResult.status === "rejected") {
+          throw newsResult.reason;
+        }
+        if (newsTimeoutLabel) {
+          throw new Error(newsTimeoutLabel);
+        }
+        throw new Error("market_intel_unavailable");
       }
-      const news = newsResult.status === "fulfilled" ? newsResult.value.data : null;
-      const aggregate = announcementsResult.status === "fulfilled" ? announcementsResult.value.data : null;
+      const news =
+        newsResult.status === "fulfilled" && !isTimeoutSentinel(newsResult.value)
+          ? newsResult.value.data
+          : null;
+      const aggregate =
+        announcementsResult.status === "fulfilled" && !isTimeoutSentinel(announcementsResult.value)
+          ? announcementsResult.value.data
+          : null;
+      const newsFailureReason =
+        newsResult.status === "rejected"
+          ? friendlyDataError(newsResult.reason)
+          : newsTimeoutLabel
+            ? newsTimeoutLabel
+            : null;
+      const announcementsFailureReason =
+        announcementsResult.status === "rejected"
+          ? friendlyDataError(announcementsResult.reason)
+          : announcementsTimeoutLabel
+            ? announcementsTimeoutLabel
+            : null;
       const aiItems = news?.items.map(aiNewsToIntelItem) ?? [];
       const officialItems = aggregate?.items.map(officialAnnouncementToIntelItem) ?? [];
       const items = [...aiItems, ...officialItems].slice(0, MAX_INTEL_ROWS);
       return {
         items,
         selected: aggregate?.selected ?? [],
-        failures: aggregate?.failures ?? 0,
+        failures: (aggregate?.failures ?? 0) + (newsFailureReason ? 1 : 0) + (announcementsFailureReason ? 1 : 0),
         aiSelectedCount: aiItems.length,
         officialCount: officialItems.length,
         sourceState: {
@@ -836,10 +882,10 @@ async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboar
           newsMode: news?.selection_mode ?? null,
           newsAsOf: news?.as_of ?? null,
           newsNextRefreshAt: news?.next_refresh_at ?? null,
-          newsStaleReason: news?.stale_reason ?? (newsResult.status === "rejected" ? friendlyDataError(newsResult.reason) : null),
+          newsStaleReason: news?.stale_reason ?? newsFailureReason,
           newsAiCallSuccess: typeof news?.ai_call_success === "boolean" ? news.ai_call_success : null,
           newsInputRows: typeof news?.input_row_count === "number" ? news.input_row_count : null,
-          announcementsSource: aggregate?.source ?? (announcementsResult.status === "rejected" ? null : "empty"),
+          announcementsSource: aggregate?.source ?? (announcementsFailureReason ? null : "empty"),
           owner: "Jason / Elva",
           nextAction: aiItems.length > 0
             ? "用 AI 精選項目串到推薦股票、公司頁與主題頁；官方公告若為空仍維持正式 empty state。"
@@ -1143,6 +1189,54 @@ function buildTwseIndustryRows(feed: LoadState<RealtimeMarketDashboard | null>):
   return (loadStateData(feed)?.twseHeatmap?.data ?? [])
     .filter((item) => item.industry && Number.isFinite(item.avgChangePct))
     .sort((left, right) => right.stockCount - left.stockCount);
+}
+
+function buildMarketWideRowsFromHeatmap(heatmap: HeatTile[]): TwseIndustryHeatmapTile[] {
+  const byIndustry = new Map<string, {
+    industry: string;
+    weightedPct: number;
+    weight: number;
+    gainerCount: number;
+    loserCount: number;
+    flatCount: number;
+    stockCount: number;
+  }>();
+
+  for (const tile of heatmap) {
+    if (tile.placeholder) continue;
+    if (typeof tile.pct !== "number" || !Number.isFinite(tile.pct)) continue;
+    const industry = heatmapSectorLabel(heatmapSectorName(tile));
+    const weight = Math.max(1, Number.isFinite(tile.weight) ? tile.weight : 1);
+    const current = byIndustry.get(industry) ?? {
+      industry,
+      weightedPct: 0,
+      weight: 0,
+      gainerCount: 0,
+      loserCount: 0,
+      flatCount: 0,
+      stockCount: 0,
+    };
+    current.weight += weight;
+    current.weightedPct += tile.pct * weight;
+    current.stockCount += 1;
+    if (tile.pct > 0.05) current.gainerCount += 1;
+    else if (tile.pct < -0.05) current.loserCount += 1;
+    else current.flatCount += 1;
+    byIndustry.set(industry, current);
+  }
+
+  return [...byIndustry.values()]
+    .map((row) => ({
+      industry: row.industry,
+      avgChangePct: row.weight > 0 ? Math.round((row.weightedPct / row.weight) * 100) / 100 : 0,
+      gainerCount: row.gainerCount,
+      loserCount: row.loserCount,
+      flatCount: row.flatCount,
+      stockCount: row.stockCount,
+      source: "owned_representative_aggregate",
+    }))
+    .filter((row) => row.stockCount > 0)
+    .sort((left, right) => right.stockCount - left.stockCount || Math.abs(right.avgChangePct) - Math.abs(left.avgChangePct));
 }
 
 function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): MarketIndexDisplay {
@@ -1602,25 +1696,12 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
     Icon: LucideIcon;
     active?: boolean;
   }> = [
-    { href: "/", title: "戰情台", sub: "盤勢與任務", Icon: Target, active: true },
-    { href: "/market-intel", title: "市場情報", sub: "重大訊息", Icon: Newspaper },
-    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦引擎", Icon: Sparkles },
-    { href: "/portfolio", title: "交易室", sub: "委託與部位", Icon: LineChart },
-    { href: "/companies", title: "公司 / 主題", sub: "公司圖譜", Icon: Building2 },
+    { href: "/", title: "戰情台", sub: "今日總覽", Icon: Target, active: true },
+    { href: "/market-intel", title: "市場情報", sub: "AI 精選", Icon: Newspaper },
+    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦股票", Icon: Sparkles },
+    { href: "/portfolio", title: "交易室", sub: "Paper / SIM", Icon: LineChart },
+    { href: "/companies", title: "公司 / 主題", sub: "公司雷達", Icon: Building2 },
     { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
-  ];
-  const adminNav: Array<{
-    href: string;
-    title: string;
-    sub: string;
-    Icon: LucideIcon;
-  }> = [
-    { href: "/admin/brain/llm", title: "Brain", sub: "LLM 費用", Icon: Brain },
-    { href: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork },
-    { href: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart },
-    { href: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench },
-    { href: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles },
-    { href: "/admin/strategies", title: "Strategies", sub: "Lab 策略狀態", Icon: BarChart3 },
   ];
   return (
     <aside className="tac-sidebar">
@@ -1628,13 +1709,13 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
         <div className="tac-brand-row">
           <div className="tac-logo">I<span /></div>
           <div>
-            <div className="tac-brand-kicker">IUF · 戰情台</div>
-            <div className="tac-brand-version">v3.0 · TACTICAL</div>
+            <div className="tac-brand-kicker">IUF Trading Room</div>
+            <div className="tac-brand-version">v3.0 · Tactical</div>
           </div>
         </div>
         <strong>台股 AI 交易戰情室</strong>
         <small>操作員 · IUF-01</small>
-        <div className="tac-mode"><span />觀察模式 / 風控守門</div>
+        <div className="tac-mode"><span />Paper / SIM 模式 · Real Order 停用</div>
       </div>
       <nav className="tac-nav">
         {nav.map((item) => {
@@ -1653,30 +1734,11 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
           );
         })}
       </nav>
-      <div className="tac-sidebar-section-head" aria-label="OpenAlice 管理">
-        <span>OpenAlice</span>
-      </div>
-      <nav className="tac-nav tac-nav-admin" aria-label="OpenAlice 管理導覽">
-        {adminNav.map((item) => {
-          const Icon = item.Icon;
-          return (
-            <Link href={item.href} key={item.href}>
-              <span className="tac-nav-icon" aria-hidden="true">
-                <Icon size={17} strokeWidth={1.9} />
-              </span>
-              <div>
-                <b>{item.title}</b>
-                <small>{item.sub}</small>
-              </div>
-            </Link>
-          );
-        })}
-      </nav>
       <div className="tac-sidebar-radar">
         <span className="tac-mini-radar" />
         <div>
           <small>MARKET · INTEL</small>
-          <b>{liveCount} 項可用 / {alertCount} 件提醒</b>
+          <b>{liveCount} 項資料健康 / {alertCount} 件提醒</b>
         </div>
       </div>
       <div className="tac-sidebar-clock">
@@ -2147,6 +2209,10 @@ function RealtimeHeatmapPanel({
   // If KGI is off-hours or the representative feed is still cold, never render a partial core heatmap.
   const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
   const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
+  const derivedFullMarketRows = fullMarketRows.length > 0
+    ? fullMarketRows
+    : buildMarketWideRowsFromHeatmap(displayHeatmap.length > 0 ? displayHeatmap : heatmap);
+  const wideRowsUseRepresentativeAggregate = fullMarketRows.length === 0 && derivedFullMarketRows.length > 0;
   const sourceLabel = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
     : activeMode === "core"
@@ -2157,6 +2223,7 @@ function RealtimeHeatmapPanel({
     : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
 
   const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
+  const wideSourceLabel = wideRowsUseRepresentativeAggregate ? "自有代表股聚合" : displaySourceLabel;
 
   // When KGI is off-hours or the representative feed is cold, force-show the full market view.
   const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
@@ -2185,10 +2252,10 @@ function RealtimeHeatmapPanel({
       </div>
       {effectiveMode === "all" ? (
         <MarketWideHeatmap
-          rows={fullMarketRows}
+          rows={derivedFullMarketRows}
           updatedAt={updatedAt}
-          sourceLabel={displaySourceLabel}
-          marketState={fullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
+          sourceLabel={wideSourceLabel}
+          marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
           reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
         />
       ) : (
@@ -2380,6 +2447,103 @@ function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboar
         </div>
       ))}
     </div>
+  );
+}
+
+function recommendationActionState(action: string | null | undefined): DashboardState {
+  if (action === "今日首選" || action === "可觀察布局（研究參考）") return "LIVE";
+  if (action === "等回檔") return "REVIEW";
+  if (action === "高風險排除" || action === "資料不足暫不推薦") return "BLOCKED";
+  return "EMPTY";
+}
+
+function recommendationPrimaryReason(item: RecommendationListResponse["items"][number]) {
+  const candidates = [
+    item.reasons?.technical?.[0],
+    item.reasons?.news?.[0],
+    item.reasons?.theme?.[0],
+    item.reasons?.quant?.[0],
+    item.reasons?.chip?.[0],
+    item.reasons?.macro?.[0],
+  ];
+  const reason = candidates.find((value) => value && value.trim().length > 0);
+  return reason ? cleanNarrativeText(reason) : "推薦理由待回補；前端不補示意內容。";
+}
+
+function recommendationPlanSummary(item: RecommendationListResponse["items"][number]) {
+  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
+  const tp2 = item.targets?.find((target) => target.label === "TP2")?.price ?? null;
+  const stop = item.invalidation?.price ?? null;
+  return [
+    item.entryZone?.primary ? `進場 ${item.entryZone.primary}` : null,
+    stop ? `停損 ${formatPrice(stop)}` : item.invalidation?.rule ? `停損 ${cleanNarrativeText(item.invalidation.rule).slice(0, 18)}` : null,
+    tp1 ? `TP1 ${formatPrice(tp1)}` : null,
+    tp2 ? `TP2 ${formatPrice(tp2)}` : null,
+  ].filter(Boolean).join(" · ") || "交易計畫待回補";
+}
+
+function recommendationTradeHref(item: RecommendationListResponse["items"][number]) {
+  const params = new URLSearchParams();
+  params.set("symbol", item.ticker);
+  params.set("prefill", "true");
+  params.set("from_rec", item.recommendationId);
+  params.set("side", item.direction === "偏空" ? "sell" : "buy");
+  if (item.entryZone?.primary) params.set("entry", item.entryZone.primary);
+  if (item.invalidation?.price) params.set("stop", String(item.invalidation.price));
+  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
+  if (tp1) params.set("tp", String(tp1));
+  return `/portfolio?${params.toString()}`;
+}
+
+function AiRecommendationActionPanel({ recommendations }: { recommendations: LoadState<RecommendationListResponse> }) {
+  const rows = recommendations.state === "LIVE" && !recommendations.data._mock
+    ? recommendations.data.items.slice(0, 5)
+    : [];
+  const panelState: DashboardState = rows.length > 0
+    ? "LIVE"
+    : recommendations.state === "BLOCKED"
+      ? "BLOCKED"
+      : "EMPTY";
+  const sourceLine = recommendations.state === "LIVE"
+    ? `生成 ${formatDateTime(recommendations.data.generatedAt)} · ${formatNumber(recommendations.data.count)} 檔`
+    : recommendations.reason;
+  const emptyReason = recommendations.state === "LIVE"
+    ? recommendations.data._mock
+      ? "API 標記為 mock，首頁已拒絕顯示。"
+      : "正式推薦清單目前為空；等待下一次 AI 推薦生成。"
+    : recommendations.reason;
+
+  return (
+    <Panel
+      eyebrow="AI RECOMMENDATIONS"
+      title="今日 AI 推薦行動板"
+      sub="只顯示正式推薦 API 回傳；不以策略候選或假資料冒充推薦"
+      right={<StatusChip state={panelState} label={rows.length > 0 ? `${rows.length} 檔` : "待回補"} />}
+    >
+      {rows.length > 0 ? (
+        <>
+          <div className="tac-strategy-table tac-ai-recs-table" data-testid="homepage-ai-recommendations">
+            <div><span>代號</span><span>公司 / 主要理由</span><span>分類</span><span>計畫</span><span>動作</span></div>
+            {rows.map((item) => (
+              <Link href={recommendationTradeHref(item)} key={item.recommendationId}>
+                <b>{item.ticker}</b>
+                <span><strong>{item.companyName}</strong><small>{recommendationPrimaryReason(item)}</small></span>
+                <small>{item.action}<br />信心 {Math.round(item.confidence * 100)}%</small>
+                <small>{recommendationPlanSummary(item)}</small>
+                <StatusChip state={recommendationActionState(item.action)} label="進交易室" compact />
+              </Link>
+            ))}
+          </div>
+          <div className="tac-brief-quality">
+            來源：GET /api/v1/recommendations/today · {sourceLine} · 點任一檔會帶入交易室紙上預覽。
+          </div>
+        </>
+      ) : (
+        <div className="tac-empty-line">
+          今日 AI 推薦尚未形成正式清單。來源：GET /api/v1/recommendations/today。{emptyReason}
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -2736,6 +2900,7 @@ async function DashboardContent({
     briefResult,
     paperResult,
     brokerResult,
+    recommendationsResult,
     ideasResult,
     runsResult,
     intelResult,
@@ -2760,6 +2925,13 @@ async function DashboardContent({
     timedFetch("brief", FETCH_SOFT_MS, loadDailyBriefDashboard()),
     timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
     timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
+    timedFetch("recommendations", FETCH_SOFT_MS, load(
+      "AI recommendations",
+      { date: todayTaipeiDate(), generatedAt: now, count: 0, items: [] } as RecommendationListResponse,
+      async () => await getRecommendationsToday(),
+      (value) => value._mock === true || value.items.length === 0,
+      "今日 AI 推薦尚未回傳正式清單。",
+    )),
     timedFetch("ideas", FETCH_SOFT_MS, load(
       "Strategy ideas",
       null,
@@ -2774,7 +2946,7 @@ async function DashboardContent({
       (value) => value === null || value.items.length === 0,
       "策略批次目前沒有可用紀錄。",
     )),
-    timedFetch("intel", FETCH_HARD_MS, loadMarketIntelDashboard()),
+    timedFetch("intel", FETCH_INTEL_MS, loadMarketIntelDashboard()),
     timedFetch("snapshot", FETCH_HARD_MS, getDashboardSnapshot()),
   ]);
 
@@ -2856,6 +3028,13 @@ async function DashboardContent({
     if (isTimeoutSentinel(v)) return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
+  const recommendations = (() => {
+    const emptyRecommendations: RecommendationListResponse = { date: todayTaipeiDate(), generatedAt: updatedAt, count: 0, items: [] };
+    if (recommendationsResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: "載入失敗" };
+    const v = recommendationsResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
   const ideas = (() => {
     if (ideasResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
     const v = ideasResult.value;
@@ -2916,6 +3095,10 @@ async function DashboardContent({
             <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
+          <section className="tac-two-grid tac-action-grid">
+            <AiRecommendationActionPanel recommendations={recommendations} />
+            <StrategyPanel ideas={ideas} />
+          </section>
           <section className="tac-two-grid tac-fresh-heat">
             <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
             <FreshnessPanel sources={sources} />
@@ -2926,11 +3109,11 @@ async function DashboardContent({
           </section>
           <section className="tac-two-grid tac-paper-grid">
             <PaperPanel paper={paper} broker={broker} />
-            <StrategyPanel ideas={ideas} />
+            <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
           </section>
           <section className="tac-two-grid tac-bottom-grid">
-            <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
             <DataReadinessPanel sources={sources} />
+            <DataGapPanel sources={sources} />
           </section>
         </div>
       </main>

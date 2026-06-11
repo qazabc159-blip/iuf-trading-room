@@ -710,6 +710,7 @@ export async function runDatasetBackfill(params: {
   to: string;
   workspaceSlug: string;
   batchSize?: number;
+  symbols?: string[];
 }): Promise<DatasetBackfillResult> {
   const t0 = Date.now();
   const { dataset, from, to, workspaceSlug } = params;
@@ -754,14 +755,18 @@ export async function runDatasetBackfill(params: {
     return baseResult("skipped", { skipReason: "no_tickers_in_workspace" });
   }
 
-  const batchSize = params.batchSize ?? 50;
+  const requestedSymbols = Array.from(
+    new Set((params.symbols ?? []).map((s) => s.trim()).filter((s) => /^\d{4}$/.test(s)))
+  );
+  const batchSize = params.batchSize ?? Math.max(50, requestedSymbols.length);
   const tickerBatch = tickers.length > batchSize
     ? [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker)).slice(0, batchSize)
     : tickers;
 
   console.log(
     `[finmind-backfill] START dataset=${dataset} from=${from} to=${to} ` +
-    `tickers=${tickerBatch.length} workspace=${workspaceSlug}`
+    `tickers=${requestedSymbols.length > 0 ? requestedSymbols.length : tickerBatch.length} ` +
+    `workspace=${workspaceSlug} symbols=${requestedSymbols.length > 0 ? requestedSymbols.join(",") : "auto"}`
   );
 
   try {
@@ -784,10 +789,15 @@ export async function runDatasetBackfill(params: {
       `);
       const allCompanies = ((companyRows as { rows?: Record<string, unknown>[] })?.rows
         ?? (Array.isArray(companyRows) ? companyRows : []) as Record<string, unknown>[]) as Record<string, unknown>[];
-      const ohlcvTickers = allCompanies
+      const allOhlcvTickers = allCompanies
         .map((r) => ({ companyId: String(r.id ?? ""), ticker: String(r.ticker ?? ""), workspaceId }))
-        .filter((r) => /^\d{4}$/.test(r.ticker))
-        .slice(0, batchSize);
+        .filter((r) => r.companyId && /^\d{4}$/.test(r.ticker));
+      const ohlcvTickers = requestedSymbols.length > 0
+        ? requestedSymbols
+            .map((symbol) => allOhlcvTickers.find((row) => row.ticker === symbol))
+            .filter((row): row is { companyId: string; ticker: string; workspaceId: string } => !!row)
+            .slice(0, batchSize)
+        : allOhlcvTickers.slice(0, batchSize);
 
       // Import runOhlcvFinmindSync dynamically to avoid circular dep
       const { runOhlcvFinmindSync } = await import("./ohlcv-finmind-sync.js");

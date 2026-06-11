@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import type { BeneficiaryTier, Company } from "@iuf-trading-room/contracts";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { getCompanies } from "@/lib/api";
+import { getCompanies, getCompaniesLite, type CompanyRegistryRow } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { industryLabel } from "@/lib/industry-i18n";
 import { ThemesRadarTab } from "./ThemesRadarTab";
@@ -16,7 +16,7 @@ import { CompanyGraphTab } from "./CompanyGraphTab";
 const PAGE_SIZE = 50;
 type SortField = "ticker" | "name" | "chainPosition" | "beneficiaryTier";
 type SortDir = "asc" | "desc";
-type RegistryState = "LOADING" | "LIVE" | "EMPTY" | "BLOCKED";
+type RegistryState = "LOADING" | "LIVE" | "DEGRADED" | "EMPTY" | "BLOCKED";
 
 const tierRank: Record<BeneficiaryTier, number> = { Core: 0, Direct: 1, Indirect: 2, Observation: 3 };
 const tierLabel: Record<BeneficiaryTier, string> = {
@@ -32,6 +32,21 @@ const tierBadge: Record<BeneficiaryTier, string> = {
   Observation: "badge",
 };
 
+type DataMode = "lite" | "full-fallback" | "none";
+
+function toRegistryRowsFromFull(companies: Company[]): CompanyRegistryRow[] {
+  return companies.map((company) => ({
+    id: company.id,
+    ticker: company.ticker,
+    name: company.name,
+    market: company.market,
+    chainPosition: company.chainPosition,
+    beneficiaryTier: company.beneficiaryTier,
+    updatedAt: company.updatedAt,
+    notes: company.notes ?? null,
+  }));
+}
+
 function formatTime(value: string | null) {
   if (!value) return "--";
   const date = new Date(value);
@@ -45,13 +60,14 @@ function sortArrowChar(field: SortField, sortField: SortField, sortDir: SortDir)
 }
 
 function friendlyError(error: unknown): string {
-  return friendlyDataError(error, "公司資料暫時無法讀取。");
+  return friendlyDataError(error, "公司主檔暫時無法讀取。");
 }
 
 function registryLabel(state: RegistryState) {
   if (state === "LIVE") return "正常";
+  if (state === "DEGRADED") return "降級可用";
   if (state === "EMPTY") return "無資料";
-  if (state === "LOADING") return "載入中";
+  if (state === "LOADING") return "讀取中";
   return "暫停";
 }
 
@@ -63,7 +79,7 @@ function registryTone(state: RegistryState) {
 
 function registryBadge(state: RegistryState) {
   if (state === "LIVE") return "badge-green";
-  if (state === "EMPTY") return "badge-yellow";
+  if (state === "DEGRADED" || state === "EMPTY") return "badge-yellow";
   if (state === "LOADING") return "badge-blue";
   return "badge-red";
 }
@@ -102,9 +118,11 @@ export default function CompaniesPage() {
     router.push(`/companies?${params.toString()}`);
   };
 
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<CompanyRegistryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<DataMode>("none");
   const [search, setSearch] = useState("");
   const [filterChain, setFilterChain] = useState("");
   const [filterTier, setFilterTier] = useState("");
@@ -115,19 +133,51 @@ export default function CompaniesPage() {
   const [rawTotal, setRawTotal] = useState(0);
 
   useEffect(() => {
-    getCompanies()
-      .then((response) => {
-        setFetchedAt(new Date().toISOString());
+    let active = true;
+
+    async function loadCompanies() {
+      setLoading(true);
+      setError(null);
+      setFallbackNotice(null);
+
+      try {
+        const response = await getCompaniesLite({ limit: 2500 });
+        if (!active) return;
         const raw = response.data;
-        setRawTotal(raw.length);
         const unique = Array.from(new Map(raw.map((company) => [company.ticker, company])).values());
-        setCompanies(unique);
-      })
-      .catch((caught) => {
         setFetchedAt(new Date().toISOString());
-        setError(friendlyError(caught));
-      })
-      .finally(() => setLoading(false));
+        setRawTotal(raw.length);
+        setCompanies(unique);
+        setDataMode("lite");
+      } catch (primaryError) {
+        try {
+          const response = await getCompanies();
+          if (!active) return;
+          const raw = toRegistryRowsFromFull(response.data);
+          const unique = Array.from(new Map(raw.map((company) => [company.ticker, company])).values());
+          setFetchedAt(new Date().toISOString());
+          setRawTotal(raw.length);
+          setCompanies(unique);
+          setDataMode("full-fallback");
+          setFallbackNotice(`公司 Lite 主檔暫時不可用，已改用完整公司主檔備援。原始狀態：${friendlyError(primaryError)}`);
+        } catch (fallbackError) {
+          if (!active) return;
+          setFetchedAt(new Date().toISOString());
+          setCompanies([]);
+          setRawTotal(0);
+          setDataMode("none");
+          setError(`${friendlyError(primaryError)} 完整公司主檔備援也失敗：${friendlyError(fallbackError)}`);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadCompanies();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const chainPositions = useMemo(
@@ -157,7 +207,7 @@ export default function CompaniesPage() {
         } else if (sortField === "chainPosition") {
           cmp = industryLabel(a.chainPosition).localeCompare(industryLabel(b.chainPosition), "zh-TW");
         } else {
-          cmp = (a[sortField] ?? "").localeCompare(b[sortField] ?? "");
+          cmp = (a[sortField] ?? "").localeCompare(b[sortField] ?? "", "zh-TW", { numeric: true });
         }
         return sortDir === "asc" ? cmp : -cmp;
       });
@@ -179,7 +229,15 @@ export default function CompaniesPage() {
   const twseCount = companies.filter((company) => company.market === "TWSE").length;
   const tpexCount = companies.filter((company) => company.market === "TPEX" || company.market === "TPEx").length;
   const coreCount = companies.filter((company) => company.beneficiaryTier === "Core").length;
-  const state: RegistryState = loading ? "LOADING" : error ? "BLOCKED" : companies.length === 0 ? "EMPTY" : "LIVE";
+  const state: RegistryState = loading
+    ? "LOADING"
+    : error
+      ? "BLOCKED"
+      : companies.length === 0
+        ? "EMPTY"
+        : fallbackNotice
+          ? "DEGRADED"
+          : "LIVE";
   const metric = (value: number) => loading ? "--" : error ? "--" : value.toLocaleString("zh-TW");
   const duplicateRows = Math.max(0, rawTotal - companies.length);
 
@@ -219,26 +277,9 @@ export default function CompaniesPage() {
           border-color: rgba(200,148,63,0.35);
           color: var(--night-ink);
         }
-        ._co-v2-stub {
-          padding: 48px 24px;
-          text-align: center;
-          color: var(--night-mid);
-          font-size: 14px;
-        }
-        ._co-v2-badge {
-          display: inline-block;
-          border: 1px solid rgba(220,228,240,0.16);
-          border-radius: 999px;
-          padding: 4px 12px;
-          font-family: var(--mono);
-          font-size: 11px;
-          margin-top: 10px;
-          color: var(--night-soft);
-        }
       `}</style>
 
-      {/* Tab bar */}
-      <div className="_co-tabs" role="tablist" aria-label="公司板子頁">
+      <div className="_co-tabs" role="tablist" aria-label="公司板切換">
         {(["companies", "themes", "sectors", "graph"] as CompanyTab[]).map((tab) => (
           <button
             key={tab}
@@ -254,49 +295,55 @@ export default function CompaniesPage() {
         ))}
       </div>
 
-      {/* KPI bar — always visible */}
       <div className="parity-kpi-bar">
-          <div className="parity-kpi-cell">
-            <span className="parity-kpi-label">狀態</span>
-            <span className={`parity-kpi-value ${state === "LIVE" ? "ok" : state === "LOADING" ? "warn" : state === "BLOCKED" ? "bad" : "dim"}`}>{registryLabel(state)}</span>
-            <span className="parity-kpi-sub">公司資料庫</span>
-          </div>
-          <div className="parity-kpi-cell">
-            <span className="parity-kpi-label">總公司數</span>
-            <span className="parity-kpi-value">{rawTotal}</span>
-            <span className="parity-kpi-sub">台股公司池</span>
-          </div>
-          <div className="parity-kpi-cell">
-            <span className="parity-kpi-label">篩選結果</span>
-            <span className="parity-kpi-value ok">{activeTab === "companies" ? filtered.length : companies.length}</span>
-            <span className="parity-kpi-sub">符合條件</span>
-          </div>
-          <div className="parity-kpi-cell">
-            <span className="parity-kpi-label">頁次</span>
-            <span className="parity-kpi-value">{activeTab === "companies" ? totalPages : "-"}</span>
-            <span className="parity-kpi-sub">共 {activeTab === "companies" ? totalPages : "-"} 頁</span>
-          </div>
-          <div className="parity-kpi-cell">
-            <span className="parity-kpi-label">更新</span>
-            <span className="parity-kpi-value" style={{ fontSize: 12 }}>{formatTime(fetchedAt)}</span>
-            <span className="parity-kpi-sub">資料時間</span>
-          </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">狀態</span>
+          <span className={`parity-kpi-value ${registryTone(state)}`}>{registryLabel(state)}</span>
+          <span className="parity-kpi-sub">
+            {dataMode === "full-fallback" ? "完整主檔備援" : "公司資料庫"}
+          </span>
         </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">總公司數</span>
+          <span className="parity-kpi-value">{metric(companies.length)}</span>
+          <span className="parity-kpi-sub">台股公司池</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">篩選結果</span>
+          <span className="parity-kpi-value ok">{activeTab === "companies" ? filtered.length.toLocaleString("zh-TW") : companies.length.toLocaleString("zh-TW")}</span>
+          <span className="parity-kpi-sub">符合條件</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">頁次</span>
+          <span className="parity-kpi-value">{activeTab === "companies" ? totalPages : "-"}</span>
+          <span className="parity-kpi-sub">共 {activeTab === "companies" ? totalPages : "-"} 頁</span>
+        </div>
+        <div className="parity-kpi-cell">
+          <span className="parity-kpi-label">更新</span>
+          <span className="parity-kpi-value" style={{ fontSize: 12 }}>{formatTime(fetchedAt)}</span>
+          <span className="parity-kpi-sub">資料時間</span>
+        </div>
+      </div>
 
-      {/* Tab 1: 公司搜尋 */}
       {activeTab === "companies" && (
         <Panel
           code="CO-REG"
           title="公司主檔"
           sub="代號 / 公司名 / 產業鏈位置 / 受惠層級"
-          right={state === "LIVE" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
+          right={state === "LIVE" || state === "DEGRADED" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
         >
           <div className="source-line">
             <span className={`badge ${registryBadge(state)}`}>{registryLabel(state)}</span>
-            <span className="tg soft">來源：公司主檔</span>
+            <span className="tg soft">來源：{dataMode === "full-fallback" ? "完整公司主檔" : "公司主檔 Lite"}</span>
             <span className="tg soft">更新 {formatTime(fetchedAt)}</span>
-            {error && <span className="tg soft">處理：公司資料管線。細節：{error}</span>}
+            <span className="tg soft">上市 {metric(twseCount)} / 上櫃 {metric(tpexCount)} / 核心 {metric(coreCount)}</span>
           </div>
+
+          {fallbackNotice && (
+            <div className="terminal-note" style={{ marginBottom: 12 }}>
+              降級可用：{fallbackNotice}
+            </div>
+          )}
 
           <div className="company-filter-row">
             <input
@@ -332,7 +379,7 @@ export default function CompaniesPage() {
           {!loading && !error && duplicateRows > 0 && (
             <div className="terminal-note" style={{ marginBottom: 12 }}>
               去重提示：公司主檔目前讀到 {rawTotal.toLocaleString("zh-TW")} 列，前端先以代號顯示 {companies.length.toLocaleString("zh-TW")} 檔。
-              已隱藏 {duplicateRows.toLocaleString("zh-TW")} 列重複主檔；正式資料庫去重仍待資料庫稽核與備份閘門。
+              另有 {duplicateRows.toLocaleString("zh-TW")} 列同代號資料，仍由資料庫去重流程審核，不在正式產品混列。
             </div>
           )}
 
@@ -363,7 +410,7 @@ export default function CompaniesPage() {
               </div>
 
               {pageSlice.length === 0 && (
-                <div className="terminal-note">沒有符合目前篩選條件的公司。</div>
+                <div className="terminal-note">沒有符合篩選條件的公司。</div>
               )}
 
               {pageSlice.map((company) => (
@@ -409,28 +456,25 @@ export default function CompaniesPage() {
         </Panel>
       )}
 
-      {/* Tab 2: 主題雷達 */}
       {activeTab === "themes" && (
-        <Panel code="CO-THEMES" title="主題雷達" sub="熱門主題 token cluster — 點選跳轉主題詳頁">
+        <Panel code="CO-THEMES" title="主題雷達" sub="題材 token cluster 與公司主題關聯">
           <ThemesRadarTab />
         </Panel>
       )}
 
-      {/* Tab 3: 產業鏈 */}
       {activeTab === "sectors" && (
         <Panel
           code="CO-SECTOR"
           title="產業鏈"
-          sub="依產業鏈分類瀏覽公司"
-          right={state === "LIVE" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
+          sub="依產業鏈分類檢視公司"
+          right={state === "LIVE" || state === "DEGRADED" ? `${companies.length.toLocaleString("zh-TW")} 檔` : registryLabel(state)}
         >
-          <SectorTab companies={companies} loading={loading} />
+          <SectorTab companies={companies as unknown as Company[]} loading={loading} />
         </Panel>
       )}
 
-      {/* Tab 4: 公司圖譜 */}
       {activeTab === "graph" && (
-        <Panel code="CO-GRAPH" title="公司圖譜" sub="My-TW-Coverage 關係資料 / 搜尋 / 熱點">
+        <Panel code="CO-GRAPH" title="公司圖譜" sub="My-TW-Coverage 關係資料 / 搜尋 / 圖譜">
           <CompanyGraphTab />
         </Panel>
       )}

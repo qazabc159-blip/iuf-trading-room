@@ -212,6 +212,131 @@ import {
   type ThemeManualUpdateResult,
 } from "../apps/api/src/admin-themes-manual-update.ts";
 
+test("DB-POOL-1: production DB client must not serialize the whole app through one connection", () => {
+  const src = readFileSync("packages/db/src/client.ts", "utf8");
+  assert.ok(
+    src.includes("getDatabasePoolMax"),
+    "DB-POOL-1: DB pool size must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes("process.env.DATABASE_POOL_MAX"),
+    "DB-POOL-1: production must allow DATABASE_POOL_MAX override"
+  );
+  assert.doesNotMatch(
+    src,
+    /max:\s*1\b/,
+    "DB-POOL-1: postgres pool max must not be hard-coded to 1 because ingest/backfill can starve auth/login"
+  );
+  assert.match(
+    src,
+    /Math\.max\(\s*10\s*,\s*Math\.min\(raw,\s*20\)\s*\)/,
+    "DB-POOL-1: production must clamp DATABASE_POOL_MAX to at least 10 so stale env cannot starve auth/login"
+  );
+  assert.ok(
+    src.includes("DATABASE_CONNECT_TIMEOUT_SECONDS"),
+    "DB-POOL-1: production DB connections need a bounded timeout so auth/login does not hang indefinitely"
+  );
+  assert.match(
+    src,
+    /if\s*\(!Number\.isFinite\(raw\)\)\s*return\s+15/,
+    "DB-POOL-1: default connect timeout must be long enough for Railway private-network cold starts"
+  );
+  assert.match(
+    src,
+    /connect_timeout:\s*getDatabaseConnectTimeoutSeconds\(\)/,
+    "DB-POOL-1: postgres client must use the bounded connect timeout"
+  );
+});
+
+test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {
+  const src = readFileSync("scripts/start-api-railway.mjs", "utf8");
+  assert.ok(
+    src.includes("const migrationRequired = true"),
+    "RAILWAY-BOOT-1: Railway API startup must always fail closed when migrations fail"
+  );
+  assert.match(
+    src,
+    /Math\.max\(\s*120_000\s*,\s*Math\.min\(rawMigrationTimeoutMs,\s*10\s*\*\s*60_000\)\s*\)/,
+    "RAILWAY-BOOT-1: stale Railway env must not shrink migration timeout below 120 seconds"
+  );
+  assert.match(
+    src,
+    /refusing to start because production database mode requires migrations/,
+    "RAILWAY-BOOT-1: degraded API boot must refuse to serve product data when migration fails"
+  );
+  assert.doesNotMatch(
+    src,
+    /const migrationRequired\s*=\s*process\.env\.RAILWAY_MIGRATION_REQUIRED\s*===\s*"1"\s*;/,
+    "RAILWAY-BOOT-1: production DB startup must not depend only on an opt-in env var"
+  );
+  assert.ok(
+    src.includes("refusing to start because production database mode requires migrations"),
+    "RAILWAY-BOOT-1: failure reason must make the product-data safety gate explicit"
+  );
+});
+
+test("SCHEDULER-BOOT-1: DB-heavy schedulers must not starve auth and K-line reads at production boot", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes("function getSchedulerStartupDelayMs") && src.includes("SCHEDULER_STARTUP_DELAY_MS"),
+    "SCHEDULER-BOOT-1: scheduler boot delay must be centralized and configurable"
+  );
+  assert.ok(
+    src.includes('process.env.NODE_ENV === "production" ? 180_000 : 0'),
+    "SCHEDULER-BOOT-1: production database mode must default to a 180s scheduler warm-up delay"
+  );
+  assert.ok(
+    src.includes("const launchBackgroundSchedulers = async () =>") &&
+      src.includes("startSchedulers(schedulerWorkspace)") &&
+      src.includes("startOutboxPoller()"),
+    "SCHEDULER-BOOT-1: scheduler/outbox launch must be grouped behind the warm-up gate"
+  );
+  assert.match(
+    src,
+    /setTimeout\(\(\)\s*=>\s*\{\s*void launchBackgroundSchedulers\(\)\.catch/s,
+    "SCHEDULER-BOOT-1: production boot must schedule background launch instead of starting it inline"
+  );
+});
+
+test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB failures", () => {
+  const authStoreSrc = readFileSync("apps/api/src/auth-store.ts", "utf8");
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  const loginBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function loginWithPassword"),
+    authStoreSrc.indexOf("// ── register with invite")
+  );
+  const getUserBlock = authStoreSrc.slice(
+    authStoreSrc.indexOf("export async function getUserById"),
+    authStoreSrc.indexOf("// ── issue an invite code")
+  );
+
+  assert.ok(
+    authStoreSrc.includes("const authUserColumns") && authStoreSrc.includes("const authWorkspaceColumns"),
+    "AUTH-LOGIN-1: auth must use explicit user/workspace column allow-lists, not full schema selects"
+  );
+  assert.ok(
+    loginBlock.includes("select(authUserColumns)") && getUserBlock.includes("select(authUserColumns)"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(users) full-row reads"
+  );
+  assert.ok(
+    loginBlock.includes("selectAuthWorkspace") && getUserBlock.includes("selectAuthWorkspace"),
+    "AUTH-LOGIN-1: login and session hydration must avoid db.select().from(workspaces) full-row reads"
+  );
+  assert.doesNotMatch(
+    loginBlock + getUserBlock,
+    /select\(\)\.from\((users|workspaces)\)/,
+    "AUTH-LOGIN-1: auth login path must not be vulnerable to non-essential prod schema drift"
+  );
+  assert.ok(
+    serverSrc.includes("AUTH_LOGIN_DB_ERROR") && serverSrc.includes("[auth/login] database login failed"),
+    "AUTH-LOGIN-1: login route must expose sanitized deploy diagnostics for DB login failures"
+  );
+  assert.ok(
+    serverSrc.includes("serializeOperationalError") && serverSrc.includes("sanitizeOperationalErrorMessage"),
+    "AUTH-LOGIN-1: auth DB failure logs must include sanitized cause/code details for Railway diagnosis"
+  );
+});
+
 test("signal schema applies expected defaults", () => {
   const parsed = signalCreateInputSchema.parse({
     category: "industry",
@@ -12025,6 +12150,29 @@ test("EL-OUTBOX-4: getOutboxDiag returns zero counts in non-DB mode", async () =
   assert.equal(diag.isPollerRunning, false, "EL-OUTBOX-4: poller must not be running after stop");
 });
 
+test("EL-OUTBOX-4b: outbox poller must be low-priority and boot-safe", () => {
+  const source = readFileSync("apps/api/src/events/event-log-outbox.ts", "utf8");
+  assert.match(
+    source,
+    /const POLLER_INITIAL_DELAY_MS = 120_000/,
+    "EL-OUTBOX-4b: outbox poller must not compete with auth/login during API boot"
+  );
+  assert.match(
+    source,
+    /const POLLER_INTERVAL_MS = 5_000/,
+    "EL-OUTBOX-4b: outbox poller must not hammer the DB at sub-second cadence"
+  );
+  assert.ok(
+    source.includes("_pollBackoffUntil") && source.includes("_pollInFlight"),
+    "EL-OUTBOX-4b: outbox poller needs in-flight and failure-backoff guards"
+  );
+  assert.doesNotMatch(
+    source,
+    /FOR UPDATE SKIP LOCKED/,
+    "EL-OUTBOX-4b: outbox poller must not use the lock query that repeatedly failed in Railway"
+  );
+});
+
 test("EL-OUTBOX-5: sequential appendEventWithOutbox produces strictly increasing seq numbers", async () => {
   const { appendEventWithOutbox } = await import("../apps/api/src/events/event-log-outbox.js");
   const { _resetEventLogStoreForTests } = await import("../apps/api/src/events/event-log-store.js");
@@ -13268,6 +13416,43 @@ test("AI-REC-V3-4: bucket assignment logic A+/A/B/C by totalScore thresholds", a
   assert.equal(b!.action, "等回檔", "AI-REC-V3-4: B action must be 等回檔");
 });
 
+test("AI-REC-V3-BUCKET-CONSISTENCY-1: score below 65 cannot stay in B bucket", async () => {
+  const { parseAiReportToRecommendationsV3 } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const markdown = `## 1444 力麗
+- 分類: B等回檔
+- 總分: 60
+- 市場狀態: trend
+- 主題位置分: 15
+- 營收財報分: 8
+- 法人ETF分: 8
+- 融資借券分: 8
+- 相對強弱量能分: 5
+- 技術結構分: 10
+- 估值事件分: 3
+- 進場區: 6.8-7.5
+- 進場理由: OTE 0.618-0.705
+- TP1: 8
+- TP1理由: 前波高
+- TP2: 9
+- TP2理由: 月線上緣
+- 停損: 6
+- ATR倍數: 0.5
+- R值: 0.4
+- 信心: 0.4
+- 為什麼買: 成交量放大但分數仍低於可操作門檻。
+- 為什麼不買: 總分低於65，不可標成可操作B卡。
+- NAV比重: 0.4%
+- 市場倍率: 0.6
+`;
+
+  const items = parseAiReportToRecommendationsV3(markdown, "2026-06-05");
+  assert.equal(items.length, 1, "AI-REC-V3-BUCKET-CONSISTENCY-1: sample must parse one item");
+  assert.equal(items[0]!.bucket, "C", "AI-REC-V3-BUCKET-CONSISTENCY-1: score 60 must be downgraded to C");
+});
+
 test("AI-REC-V3-5: entry/TP/SL fields parsed from structured markdown with R-ratio and why_buy/why_not_buy", async () => {
   const { parseAiReportToRecommendationsV3 } = await import(
     "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
@@ -13449,6 +13634,155 @@ test("AI-REC-V3-6: deterministic fallback builds 5 real-backed items from verifi
   assert.ok(items.every((item: any) => item.rationale.includes("Deterministic fallback")), "AI-REC-V3-6: rationale must disclose fallback path");
 });
 
+test("AI-REC-V3-MULTIDIM-PREFETCH-1: deterministic prefetch candidates come from valid technical observations", async () => {
+  const { extractV3MultiDimPrefetchCandidatesFromTrace } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const technicalStep = (round: number, ticker: string, lastPrice: number, changePct: number) => ({
+    round,
+    thought: `check ${ticker}`,
+    toolName: "get_company_technical",
+    toolInput: { ticker },
+    observation: {
+      ticker,
+      companyName: ticker,
+      lastPrice,
+      changePct,
+      rsi14: 55,
+      ma20: lastPrice * 0.98,
+      ma60: lastPrice * 0.92,
+      volumeRatio20d: 1,
+      aboveMa20: true,
+      aboveMa60: true,
+      source: "finmind_ohlcv",
+    },
+    tokensUsed: 10,
+  });
+
+  const candidates = extractV3MultiDimPrefetchCandidatesFromTrace([
+    technicalStep(1, "2330", 1000, 1),
+    technicalStep(2, "2454", 1200, 4),
+    technicalStep(3, "9999", 0, 20),
+  ], 2);
+
+  assert.deepEqual(
+    candidates.map((candidate: any) => candidate.ticker),
+    ["2454", "2330"],
+    "AI-REC-V3-MULTIDIM-PREFETCH-1: candidates must be ranked valid lastPrice>0 technical observations"
+  );
+});
+
+test("AI-REC-V3-MULTIDIM-PREFETCH-2: deterministic fundamentals and supply-chain scores override default 8s", async () => {
+  const { applyDeterministicMultiDimScoresToItems, enrichV3Items } = await import(
+    "../apps/api/src/ai-recommendation-v2/orchestrator-v3.js" as any
+  );
+
+  const baseItem = {
+    id: "rec-2330",
+    ticker: "2330",
+    companyName: "台積電",
+    action: "等回檔",
+    date: "2026-06-06",
+    confidence: 0.7,
+    rationale: "seed",
+    entryPriceRange: { low: 980, high: 1010 },
+    tp1: 1060,
+    tp2: 1120,
+    stopLoss: 940,
+    aiGenerated: true,
+    source: "brain_react_v2",
+    marketState: "trend",
+    subScores: {
+      theme: 10,
+      revenue: 8,
+      institutional: 8,
+      margin: 8,
+      rs: 6,
+      technical: 14,
+      valuation: 3,
+    },
+    totalScore: 57,
+    bucket: "C",
+    why_buy: ["技術面站上月線"],
+    why_not_buy: ["測試風險"],
+  };
+
+  const trace = [
+    {
+      round: 1,
+      thought: "technical",
+      toolName: "get_company_technical",
+      toolInput: { ticker: "2330" },
+      observation: { ticker: "2330", lastPrice: 1000, source: "finmind_ohlcv" },
+      tokensUsed: 10,
+    },
+    {
+      round: 2,
+      thought: "[ORCHESTRATOR PREFETCH] fundamentals",
+      toolName: "get_company_fundamentals",
+      toolInput: { ticker: "2330" },
+      observation: {
+        ticker: "2330",
+        monthlyRevenue: [
+          { month: "2026-05", revenue: 1000, yoy: 25, mom: 3 },
+          { month: "2026-04", revenue: 970, yoy: 18, mom: 1 },
+        ],
+        revenueYoyTrend: "accelerating",
+        latestQuarterDate: "2026-Q1",
+        epsLatestQuarter: 12.3,
+        grossMarginPct: 58,
+        operatingMarginPct: 42,
+        per: 28,
+        pbr: 6,
+        dividendYield: 1.2,
+        dataAvailable: true,
+        reason: "ok",
+        source: "finmind",
+      },
+      tokensUsed: 0,
+    },
+    {
+      round: 3,
+      thought: "[ORCHESTRATOR PREFETCH] supply chain",
+      toolName: "get_supply_chain",
+      toolInput: { ticker: "2330" },
+      observation: {
+        ticker: "2330",
+        chainPosition: "CoAP_Chip",
+        beneficiaryTier: "Core",
+        themes: [{ name: "AI Server", lifecycle: "Expansion" }],
+        suppliers: [],
+        customers: [],
+        peers: [],
+        dataAvailable: true,
+        source: "company_graph_db",
+      },
+      tokensUsed: 0,
+    },
+  ];
+
+  const [scored] = applyDeterministicMultiDimScoresToItems([baseItem], trace);
+  assert.notEqual(scored.subScores.revenue, 8, "AI-REC-V3-MULTIDIM-PREFETCH-2: revenue must not stay default when fundamentals are available");
+  assert.notEqual(scored.subScores.margin, 8, "AI-REC-V3-MULTIDIM-PREFETCH-2: margin must not stay default when fundamentals are available");
+  assert.ok(scored.subScores.theme > 10, "AI-REC-V3-MULTIDIM-PREFETCH-2: theme must reflect supply-chain tier/lifecycle");
+  assert.equal(
+    scored.totalScore,
+    Object.values(scored.subScores).reduce((sum: any, value: any) => sum + value, 0),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: totalScore must be recomputed from deterministic subScores"
+  );
+
+  const [enriched] = enrichV3Items([baseItem], trace);
+  assert.ok(
+    enriched.sourceTrail.some((entry: any) => entry.toolName === "get_company_fundamentals"),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: sourceTrail must include fundamentals"
+  );
+  assert.ok(
+    enriched.sourceTrail.some((entry: any) => entry.toolName === "get_supply_chain"),
+    "AI-REC-V3-MULTIDIM-PREFETCH-2: sourceTrail must include supply_chain"
+  );
+});
+
 // =============================================================================
 // AI-REC-V3-RISK-OFF: Deterministic risk_off_score + F3 enforcement (2026-05-18)
 // Lane: strategy backend (Jason). Files: ai-recommendation-v2/orchestrator-v3.ts
@@ -13489,7 +13823,11 @@ test("AI-REC-V3-RISK-OFF-2: buildV3SystemPrompt contains programmatic risk_off_s
   assert.ok(src.includes("DO NOT OVERRIDE"), "AI-REC-V3-RISK-OFF-2: prompt must say DO NOT OVERRIDE");
   // F3: minimum tool call rules
   assert.ok(src.includes("MIN_V3_TECHNICAL_CALLS = 5"), "AI-REC-V3-RISK-OFF-2: prompt must require 5 get_company_technical calls through the shared minimum constant");
-  assert.ok(src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔推薦"), "AI-REC-V3-RISK-OFF-2: prompt must require >=5 recommendations through the shared minimum constant");
+  assert.ok(
+    src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔真實資料支撐的 A+/A/B 推薦卡片") ||
+      src.includes("≥${MIN_V3_RECOMMENDATION_ITEMS} 檔 A+/A/B 可行動推薦"),
+    "AI-REC-V3-RISK-OFF-2: prompt must require >=5 A+/A/B actionable recommendations through the shared minimum constant"
+  );
   // Orchestrator must intercept LLM RISK_OFF_SKIP when progScore < 3
   assert.ok(src.includes("LLM_RISK_OFF_REJECTED"), "AI-REC-V3-RISK-OFF-2: orchestrator must intercept LLM risk-off when progScore < 3");
   assert.ok(src.includes("companyTechnicalCallCount"), "AI-REC-V3-RISK-OFF-2: orchestrator must track get_company_technical call count");
@@ -13912,6 +14250,65 @@ test("MARKET-INTEL-P0-GATE-1: announcements API exposes sourceState", async () =
   assert.ok(source.includes("sourceState"), "MARKET-INTEL-P0-GATE-1: announcements response must expose sourceState");
   assert.ok(source.includes("no_official_market_announcements"), "MARKET-INTEL-P0-GATE-1: official empty state reason must be explicit");
   assert.ok(source.includes("officialOnly"), "MARKET-INTEL-P0-GATE-1: market-scope official-only behavior must be visible to frontend");
+});
+
+test("COMPANY-ANN-P0-GATE-1: company announcements are cache-first before TWSE live fallback", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile("apps/api/src/server.ts", "utf8");
+
+  const companyRouteStart = source.indexOf('app.get("/api/v1/companies/:id/announcements"');
+  const legacyRouteStart = source.indexOf('app.get("/api/v1/internal/legacy/companies/:id/announcements"');
+
+  assert.ok(companyRouteStart >= 0, "COMPANY-ANN-P0-GATE-1: formal company announcements route must exist");
+  assert.ok(legacyRouteStart > companyRouteStart, "COMPANY-ANN-P0-GATE-1: old direct-TWSE route must only live behind internal legacy path");
+
+  const routeBlock = source.slice(companyRouteStart, legacyRouteStart);
+  assert.ok(routeBlock.includes("tw_announcements_cache"), "COMPANY-ANN-P0-GATE-1: route must read official tw_announcements cache first");
+  assert.ok(routeBlock.includes("FROM tw_announcements"), "COMPANY-ANN-P0-GATE-1: route must query persisted official announcement cache");
+  assert.ok(routeBlock.includes("/rwd/zh/IIH/company/events"), "COMPANY-ANN-P0-GATE-1: route must use official TWSE IIH single-company event source");
+  assert.ok(routeBlock.includes("twse_iih_company_events"), "COMPANY-ANN-P0-GATE-1: route must expose TWSE IIH company events source");
+  assert.ok(routeBlock.includes("fetchAllTwseMaterialAnnouncements"), "COMPANY-ANN-P0-GATE-1: route must use maintained TWSE t187ap11_L fallback chain");
+  assert.ok(
+    routeBlock.indexOf("twse_iih_company_events") < routeBlock.indexOf("fetchAllTwseMaterialAnnouncements"),
+    "COMPANY-ANN-P0-GATE-1: single-company official source must run before broad market fallback"
+  );
+  assert.equal(routeBlock.includes("getMaterialAnnouncements(stockId"), false, "COMPANY-ANN-P0-GATE-1: product route must not directly call deprecated per-ticker TWSE fetch");
+});
+
+test("COMPANY-ANN-DETAIL-UI-1: company announcements expand official URL details even without body", async () => {
+  const fs = await import("node:fs/promises");
+  const timeline = await fs.readFile("apps/web/app/companies/[symbol]/AnnouncementsPanel.tsx", "utf8");
+  const fullProfile = await fs.readFile("apps/web/app/companies/[symbol]/FullProfilePanels.tsx", "utf8");
+
+  for (const [label, source] of [["timeline", timeline], ["full-profile", fullProfile]] as const) {
+    assert.ok(
+      source.includes("body || item.url || item.source"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must treat official URLs/source metadata as expandable detail`
+    );
+    assert.ok(
+      source.includes("開啟正式公告"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must expose a formal announcement CTA`
+    );
+    assert.ok(
+      source.includes("官方來源未提供完整內文"),
+      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must render a useful detail state when TWSE omits body text`
+    );
+  }
+});
+
+test("TRADING-ROOM-QUOTE-STREAM-1: quote stream is symbol-safe and computes change from prev close", async () => {
+  const fs = await import("node:fs/promises");
+  const stream = await fs.readFile("apps/web/app/api/ui-final-v031/quote-stream/route.ts", "utf8");
+  const live = await fs.readFile("apps/web/lib/final-v031-live.ts", "utf8");
+
+  assert.ok(stream.includes("function tickSymbolMatch"), "TRADING-ROOM-QUOTE-STREAM-1: SSE route must reject mismatched KGI ticks");
+  assert.ok(stream.includes("latestTick(ticks, symbol, quotePrice === null)"), "TRADING-ROOM-QUOTE-STREAM-1: SSE route must not let unlabeled ticks override company quote prices");
+  assert.ok(stream.includes("prevClose"), "TRADING-ROOM-QUOTE-STREAM-1: SSE payload must carry previous close for deterministic change math");
+  assert.ok(stream.includes("degraded: !quoteResult.ok || lastPrice == null"), "TRADING-ROOM-QUOTE-STREAM-1: quote must not be marked degraded only because bid/ask or ticks are temporarily unavailable");
+
+  assert.ok(live.includes("function tickSymbolMatch"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must reject mismatched KGI ticks");
+  assert.ok(live.includes("sameSelected ? (live.selected || {}) : {}"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must not inherit previous stock selected state after symbol switch");
+  assert.ok(live.includes("payload.prevClose"), "TRADING-ROOM-QUOTE-STREAM-1: browser merge must prefer payload/company prev close over stale selected previous");
 });
 
 // =============================================================================
@@ -14396,12 +14793,16 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-4: orchestrator-v3.ts maxTokens is >= 5000 for
   const src = await import("fs").then(fs =>
     fs.readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8")
   );
-  const match = src.match(/maxTokens:\s*repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)/);
-  assert.ok(match, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: synthesizeReportV3 must have maxTokens pattern");
-  const repairTokens = parseInt(match![1]!, 10);
-  const normalTokens = parseInt(match![2]!, 10);
+  const match = src.match(/maxTokens:\s*\/\^\(gpt-5\|o1\|o3\)\/\.test\(model\)\s*\?\s*\(repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)\)\s*:\s*\(repairMarkdown\s*\?\s*(\d+)\s*:\s*(\d+)\)/s);
+  assert.ok(match, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: synthesizeReportV3 must have reasoning/non-reasoning maxTokens pattern");
+  const reasoningRepairTokens = parseInt(match![1]!, 10);
+  const reasoningNormalTokens = parseInt(match![2]!, 10);
+  const repairTokens = parseInt(match![3]!, 10);
+  const normalTokens = parseInt(match![4]!, 10);
   assert.ok(normalTokens >= 5000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: normal maxTokens must be >= 5000 for 5-stock report, got ${normalTokens}`);
   assert.ok(repairTokens >= 6000, `AI-REC-V3-FORMAT-ROOT-CAUSE-4: repair maxTokens must be >= 6000, got ${repairTokens}`);
+  assert.ok(reasoningNormalTokens >= normalTokens, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: reasoning model normal budget must be at least non-reasoning budget");
+  assert.ok(reasoningRepairTokens >= repairTokens, "AI-REC-V3-FORMAT-ROOT-CAUSE-4: reasoning model repair budget must be at least non-reasoning budget");
 });
 
 test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP sentinel not markdown heading", async () => {
@@ -14411,7 +14812,7 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-5: synthesis prompt uses RISK_OFF_FINAL_SKIP s
   assert.ok(src.includes("RISK_OFF_FINAL_SKIP"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: prompt must define RISK_OFF_FINAL_SKIP sentinel");
   assert.ok(src.includes("hasStockHeadings"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must check hasStockHeadings before treating risk-off as skip");
   assert.ok(src.includes("isExplicitSkip"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: parser must use isExplicitSkip guard instead of broad regex");
-  assert.ok(src.includes("CRITICAL PARSER RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL PARSER RULES block");
+  assert.ok(src.includes("CRITICAL JSON RULES"), "AI-REC-V3-FORMAT-ROOT-CAUSE-5: repair prompt must have CRITICAL JSON RULES block");
 });
 
 test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when programmatic score is below 3", async () => {
@@ -14427,12 +14828,14 @@ test("AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis gate forbids risk-off skip when p
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: repair pass must reject invalid risk-off skip text"
   );
   assert.ok(
-    src.includes("RISK_OFF_FINAL_SKIP / RISK_OFF_SKIP 完全禁止"),
+    src.includes("RISK_OFF_FINAL_SKIP is forbidden when system_programmatic_risk_off_score < 3"),
     "AI-REC-V3-FORMAT-ROOT-CAUSE-6: prompt must forbid skip sentinels when score < 3"
   );
   assert.ok(
-    src.includes("推薦 A+/A/B/C 的股票"),
-    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis must allow C bucket high-risk exclusion cards to satisfy the five-card gate without fake buy signals"
+    src.includes("Include at least ${MIN_V3_RECOMMENDATION_ITEMS} items") &&
+      src.includes("Score thresholds: A+ >= 85, A = 75-84, B = 65-74, C < 65") &&
+      src.includes("totalScore must match action"),
+    "AI-REC-V3-FORMAT-ROOT-CAUSE-6: synthesis JSON repair must require five actionable score-consistent cards"
   );
 });
 
@@ -14578,6 +14981,24 @@ test("TRADING-ROOM-4GAP-1: ohlcvQuerySchema in server.ts includes 5m/15m/60m + N
   assert.ok(
     src.includes("intradayIntervals"),
     "TRADING-ROOM-4GAP-1: intradayIntervals Set must gate intraday requests"
+  );
+});
+
+test("TRADING-ROOM-KLINE-ALIAS-1: OHLCV route accepts product timeframe aliases", async () => {
+  const src = await import("fs").then((fs) =>
+    fs.readFileSync("apps/api/src/server.ts", "utf8")
+  );
+  assert.ok(
+    src.includes("function normalizeOhlcvQuery") && src.includes("raw.interval ?? raw.timeframe ?? raw.freq"),
+    "TRADING-ROOM-KLINE-ALIAS-1: OHLCV route must accept timeframe/freq aliases, not only interval"
+  );
+  assert.ok(
+    src.includes('value === "1mo"') && src.includes('return "1m"'),
+    "TRADING-ROOM-KLINE-ALIAS-1: product timeframe=1mo must normalize to stored monthly interval=1m"
+  );
+  assert.ok(
+    src.includes("ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery"),
+    "TRADING-ROOM-KLINE-ALIAS-1: bulk OHLCV route must share the same alias normalization"
   );
 });
 
@@ -14922,6 +15343,49 @@ test("BULK-SEED-5: bulk-seed fetches from both TWSE and TPEx OpenAPI URLs", () =
   );
 });
 
+test("BULK-SEED-6: ticker resolution read-throughs missing official companies", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const resolveBlock = src.slice(
+    src.indexOf("async function resolveCompany"),
+    src.indexOf("async function requireOpenAliceDevice")
+  );
+
+  assert.ok(
+    resolveBlock.includes("ensureCompanyFromOfficialUniverse"),
+    "BULK-SEED-6: resolveCompany must discover missing TW tickers from official company universe"
+  );
+  assert.ok(
+    src.includes("Official company master read-through"),
+    "BULK-SEED-6: auto-created company rows must be attributed to official TWSE/TPEx source"
+  );
+  assert.ok(
+    src.includes("OFFICIAL_COMPANY_TICKER_PATTERN"),
+    "BULK-SEED-6: read-through must be restricted to valid Taiwan ticker-like symbols"
+  );
+});
+
+test("BULK-SEED-7: official read-through re-reads after duplicate insert races", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const helperBlock = src.slice(
+    src.indexOf("async function ensureCompanyFromOfficialUniverse"),
+    src.indexOf('app.post("/api/v1/admin/companies/bulk-seed"')
+  );
+
+  assert.ok(
+    helperBlock.includes("repo.createCompany"),
+    "BULK-SEED-7: read-through must create the missing official company master row"
+  );
+  assert.ok(
+    helperBlock.includes("repo.listCompanies"),
+    "BULK-SEED-7: read-through must re-read after create conflicts so concurrent searches do not false-404"
+  );
+  assert.doesNotMatch(
+    helperBlock,
+    /mock|fake|demo/i,
+    "BULK-SEED-7: official read-through must not create fake/demo company rows"
+  );
+});
+
 // ── AI-REC-V3-CRON (daily scheduler — PR feat/api-ai-rec-v3-daily-cron) ────
 // Verifies the v3 daily cron infrastructure is correctly wired in server.ts
 // and orchestrator-v3.ts. No LLM calls; pure source-code assertions.
@@ -14942,18 +15406,20 @@ test("AI-REC-V3-CRON-1: _runAiRecV3Cron shared function exists and sets cron sta
   );
 });
 
-test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 24h interval and boot-fire", () => {
+test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 5-min tick, retry cap and guarded boot-fire", () => {
   const src = readFileSync("apps/api/src/server.ts", "utf8");
   assert.ok(
     src.includes("AI-REC-V3-CRON"),
     "AI-REC-V3-CRON-2: startSchedulers must contain AI-REC-V3-CRON block comment"
   );
+  // The old 24h tick + 45-min window meant the cron almost never fired (6/5–6/10
+  // dead-cron bug). The tick must be much shorter than the window.
   assert.ok(
-    src.includes("AI_REC_V3_CRON_INTERVAL_MS") && src.includes("24 * 60 * 60 * 1000"),
-    "AI-REC-V3-CRON-2: v3 cron must use 24h interval"
+    src.includes("AI_REC_V3_CRON_TICK_MS = 5 * 60 * 1000"),
+    "AI-REC-V3-CRON-2: v3 cron must tick every 5 minutes (not 24h)"
   );
   assert.ok(
-    src.includes("isAiRecV3CronWindow"),
+    src.includes("isV3CronWindowAt"),
     "AI-REC-V3-CRON-2: v3 cron must have a window guard function"
   );
   assert.ok(
@@ -14961,8 +15427,17 @@ test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 24h 
     "AI-REC-V3-CRON-2: v3 cron must have a boot-fire setTimeout at 90s"
   );
   assert.ok(
-    src.includes("_aiRecV3LastCronFireDate"),
-    "AI-REC-V3-CRON-2: v3 cron must have a once-per-day date guard"
+    src.includes("_aiRecV3CronSuccessDate") && src.includes("AI_REC_V3_MAX_ATTEMPTS_PER_DAY"),
+    "AI-REC-V3-CRON-2: v3 cron must have a per-day success guard with bounded failure retries"
+  );
+  // Boot-fire on every deploy burned the whole daily LLM budget on 6/5 — must check DB first.
+  assert.ok(
+    src.includes("hasV3RunForTaipeiDate"),
+    "AI-REC-V3-CRON-2: boot-fire must skip when today already has a v3 run"
+  );
+  assert.ok(
+    src.includes("failStaleV3RunningRows"),
+    "AI-REC-V3-CRON-2: cron must sweep stuck running rows before firing"
   );
 });
 
@@ -14986,6 +15461,83 @@ test("AI-REC-V3-CRON-3: AiRecTrigger type includes cron_daily and manual refresh
   assert.ok(
     serverSrc.includes("cron_last_fired_at: _aiRecV3CronLastFiredAt"),
     "AI-REC-V3-CRON-3: status endpoint must surface cron_last_fired_at from shared module var"
+  );
+});
+
+test("AI-REC-V3-CRON-4: v3 refresh gives the rejection loop enough rounds to replace weak candidates", () => {
+  const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  const cronFnIdx = serverSrc.indexOf("async function _runAiRecV3Cron");
+  assert.ok(cronFnIdx !== -1, "AI-REC-V3-CRON-4: shared v3 cron function must exist");
+  const cronFn = serverSrc.slice(cronFnIdx, cronFnIdx + 1200);
+  assert.ok(
+    cronFn.includes("maxRounds: 15"),
+    "AI-REC-V3-CRON-4: v3 cron/manual refresh must allow 15 rounds so five-card gate can replace one weak C-bucket ticker"
+  );
+});
+
+test("AI-REC-V3-CRON-5: deterministic fallback is last resort after rounds are exhausted", () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  const f3Idx = src.indexOf("F3: Final answer validation");
+  assert.ok(f3Idx !== -1, "AI-REC-V3-CRON-5: F3 final-answer validation block must exist");
+  const finalAnswerIdx = src.indexOf("if (!step.toolName)", f3Idx);
+  assert.ok(finalAnswerIdx !== -1, "AI-REC-V3-CRON-5: final-answer branch must exist after F3 validation marker");
+  const finalAnswerBlock = src.slice(finalAnswerIdx, finalAnswerIdx + 4500);
+  const fallbackIdx = finalAnswerBlock.indexOf("buildDeterministicFallbackItemsFromTrace");
+  const guardIdx = finalAnswerBlock.indexOf("round >= maxRounds - 1");
+  const continueIdx = finalAnswerBlock.indexOf("continue; // continue loop");
+  assert.ok(fallbackIdx !== -1, "AI-REC-V3-CRON-5: final-answer branch must still have deterministic last resort");
+  assert.ok(guardIdx !== -1 && guardIdx < fallbackIdx, "AI-REC-V3-CRON-5: fallback must be guarded by round >= maxRounds - 1");
+  assert.ok(continueIdx !== -1, "AI-REC-V3-CRON-5: insufficient output must continue while rounds remain");
+});
+
+test("AI-REC-V3-DIAG-1: v3 exposes stale running diagnostics helpers", async () => {
+  const src = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  assert.ok(
+    src.includes('status: "running" | "complete"'),
+    "AI-REC-V3-DIAG-1: run result status type must include persisted DB running rows"
+  );
+  assert.ok(
+    src.includes("export const V3_RUNNING_STALE_AFTER_MS"),
+    "AI-REC-V3-DIAG-1: stale threshold must be exported for API diagnostics"
+  );
+  const { getV3RunAgeMs, isV3RunningStale, V3_RUNNING_STALE_AFTER_MS } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const nowMs = Date.parse("2026-06-05T12:00:00.000Z");
+  assert.equal(getV3RunAgeMs("2026-06-05T11:59:00.000Z", nowMs), 60_000);
+  assert.equal(isV3RunningStale("complete", "2026-06-05T10:00:00.000Z", nowMs), false);
+  assert.equal(isV3RunningStale("running", new Date(nowMs - V3_RUNNING_STALE_AFTER_MS - 1).toISOString(), nowMs), true);
+});
+
+test("AI-REC-V3-DIAG-2: v3 API surfaces runDiagnostics and admin stale-running fields", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(src.includes("runDiagnostics"), "AI-REC-V3-DIAG-2: public v3 GET must expose runDiagnostics");
+  assert.ok(src.includes("staleRunning"), "AI-REC-V3-DIAG-2: public v3 GET must expose staleRunning");
+  assert.ok(src.includes("latest_run_age_ms"), "AI-REC-V3-DIAG-2: admin status must expose latest_run_age_ms");
+  assert.ok(src.includes("latest_stale_running"), "AI-REC-V3-DIAG-2: admin status must expose latest_stale_running");
+  assert.ok(
+    src.includes("Latest AI recommendation v3 run is still running past the expected window"),
+    "AI-REC-V3-DIAG-2: stale running diagnostic must explain the operator action"
+  );
+});
+
+test("AI-REC-V3-DIAG-3: read path keeps last usable cards while a newer run is running empty", async () => {
+  const { pickAiRecommendationV3RunForRead } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+
+  const latestRunning = { runId: "new-running", status: "running", items: [] };
+  const previousComplete = { runId: "last-complete", status: "complete", items: [{ ticker: "2330" }] };
+  const olderFailed = { runId: "older-failed", status: "failed", items: [] };
+
+  assert.equal(
+    pickAiRecommendationV3RunForRead([latestRunning, previousComplete, olderFailed]).runId,
+    "last-complete",
+    "AI-REC-V3-DIAG-3: product GET must not blank the page while a fresh run is only running"
+  );
+
+  assert.equal(
+    pickAiRecommendationV3RunForRead([latestRunning, olderFailed]).runId,
+    "new-running",
+    "AI-REC-V3-DIAG-3: when no usable historical run exists, return latest row honestly"
   );
 });
 
@@ -15452,8 +16004,10 @@ test("TWSE-MIS-7: cron z='-' fallback — server.ts uses bid as proxy when z is 
 test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
   // Handles "1150602" compact format: first 3 chars = ROC year, next 2 = month, next 2 = day
-  assert.match(source, /\/\^\d\{7\}\$\/.test\(raw\)/);
-  assert.match(source, /const rocYear = parseInt\(raw\.slice\(0, 3\)/);
+  assert.ok(source.includes("/^\\d{7}$/.test(raw)"));
+  assert.ok(source.includes("const rocYear = parseInt(raw.slice(0, 3), 10)"));
+  assert.ok(source.includes("const mm = raw.slice(3, 5)"));
+  assert.ok(source.includes("const dd = raw.slice(5, 7)"));
 });
 
 test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB companies LIMIT 200", () => {
@@ -15469,6 +16023,656 @@ test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB compani
   // Within the cron function, HEATMAP_CORE_SYMBOLS reference should appear
   const cronBody = source.slice(misCronIdx, misCronIdx + 2000);
   assert.ok(cronBody.includes('HEATMAP_CORE_SYMBOLS'), 'TWSE-MIS-9: cron must use HEATMAP_CORE_SYMBOLS');
+});
+
+// =============================================================================
+// MIS-UNIVERSE: MIS full-universe sweep (Tier B) logic tests (MIS-UNIVERSE-1..5)
+// =============================================================================
+//
+// Tests for the _runMisFullSweepSlice design decisions:
+//   - Universe ticker validation
+//   - Exchange prefix resolution (tse/otc)
+//   - Thin stock bid-fallback (vol=0 allowed, bid/ask is enough)
+//   - Sweep pointer wrap-around semantics
+//   - Scheduler description string includes MIS-FULL-UNIVERSE-SWEEP
+
+test("MIS-UNIVERSE-1: universe ticker filter accepts valid 4-6 digit codes, rejects others", () => {
+  // Inline the filter used in _refreshMisUniverseCache
+  const tickerFilter = (t: string) => /^\d{4,6}$/.test(t);
+  const valid = ["2330", "0050", "00878", "3008", "6669", "910861"];
+  const invalid = ["TSMC", "2330A", "99", "ABC", "", "  ", "2330 ", "00"];
+  for (const t of valid) {
+    assert.ok(tickerFilter(t), `MIS-UNIVERSE-1: "${t}" should be accepted`);
+  }
+  for (const t of invalid) {
+    assert.ok(!tickerFilter(t), `MIS-UNIVERSE-1: "${t}" should be rejected`);
+  }
+});
+
+test("MIS-UNIVERSE-2: exchange prefix resolves correctly for all market types", () => {
+  function _misSwpExPrefix(market: string): "tse" | "otc" {
+    const m = market.trim().toUpperCase();
+    if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+      return "otc";
+    }
+    return "tse";
+  }
+  const cases: Array<{ market: string; expected: "tse" | "otc" }> = [
+    { market: "TWSE", expected: "tse" },
+    { market: "上市", expected: "tse" },
+    { market: "TPEX", expected: "otc" },
+    { market: "TWO", expected: "otc" },
+    { market: "TW_EMERGING", expected: "otc" },
+    { market: "上櫃", expected: "otc" },
+    { market: "OTHER", expected: "tse" },
+    { market: "OTC", expected: "otc" },
+  ];
+  for (const c of cases) {
+    assert.equal(_misSwpExPrefix(c.market), c.expected,
+      `MIS-UNIVERSE-2: market="${c.market}" → prefix must be "${c.expected}"`);
+  }
+});
+
+test("MIS-UNIVERSE-3: thin stock (vol=0) with valid bid accepted; no last price rejected", () => {
+  // In Tier B sweep, vol=0 is allowed — thin stocks with bid/ask get a reference price.
+  // Only requirement: last (=zNum ?? bidNum ?? askNum) must be > 0.
+  function _misSwpParseNum(s?: string): number | null {
+    if (!s || s === "-" || s.trim() === "") return null;
+    const n = Number(s.replace(/,/g, "").trim());
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  // Case 1: thin stock — z="-", vol="0", but bid=45.00 → should produce last=45.00
+  const zNum1 = _misSwpParseNum("-");
+  const bidNum1 = _misSwpParseNum("45.00");
+  const vol1 = _misSwpParseNum("0");
+  const last1 = zNum1 ?? bidNum1 ?? null;
+  assert.equal(last1, 45, "MIS-UNIVERSE-3: thin stock bid=45.00, z=dash → last must be 45");
+  assert.equal(vol1, null, "MIS-UNIVERSE-3: vol=0 parses as null (not positive), but is allowed");
+  assert.ok(last1 !== null && last1 > 0, "MIS-UNIVERSE-3: thin stock with bid should produce valid last");
+
+  // Case 2: no bid, no ask, z="-" → should be skipped
+  const zNum2 = _misSwpParseNum("-");
+  const bidNum2 = _misSwpParseNum("-");
+  const askNum2 = _misSwpParseNum("");
+  const last2 = zNum2 ?? bidNum2 ?? askNum2;
+  assert.equal(last2, null, "MIS-UNIVERSE-3: no bid/ask/z → last must be null → stock skipped");
+});
+
+test("MIS-UNIVERSE-4: sweep pointer wraps at universe end and round counter increments", () => {
+  // Simulate the sweep pointer wrap logic
+  let idx = 0;
+  let roundsCompleted = 0;
+  let injectedThisRound = 0;
+  const BATCH = 50;
+  const total = 130; // simulate small universe
+  const universe = Array.from({ length: total }, (_, i) => ({ ticker: String(1000 + i), market: "TWSE" }));
+
+  function nextSlice() {
+    if (idx >= total) {
+      idx = 0;
+      roundsCompleted++;
+      injectedThisRound = 0; // reset
+    }
+    const slice = universe.slice(idx, idx + BATCH);
+    idx += BATCH;
+    return slice;
+  }
+
+  // First pass: 3 slices (50+50+30=130)
+  const s1 = nextSlice(); assert.equal(s1.length, 50, "MIS-UNIVERSE-4: slice 1 must be 50");
+  const s2 = nextSlice(); assert.equal(s2.length, 50, "MIS-UNIVERSE-4: slice 2 must be 50");
+  const s3 = nextSlice(); assert.equal(s3.length, 30, "MIS-UNIVERSE-4: slice 3 (tail) must be 30");
+  assert.equal(roundsCompleted, 0, "MIS-UNIVERSE-4: no round complete yet after 3 slices");
+
+  // idx is now 150 > 130, next call wraps
+  const s4 = nextSlice();
+  assert.equal(roundsCompleted, 1, "MIS-UNIVERSE-4: round 1 complete after wrap");
+  assert.equal(idx, 50, "MIS-UNIVERSE-4: after wrap, idx advances by BATCH from 0");
+  assert.equal(s4.length, 50, "MIS-UNIVERSE-4: first slice of round 2 must be 50");
+});
+
+test("MIS-UNIVERSE-5: scheduler description includes MIS-FULL-UNIVERSE-SWEEP entry", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // Verify the Tier B sweep is registered in the scheduler startup log
+  assert.match(
+    source,
+    /MIS-FULL-UNIVERSE-SWEEP \(10s\/slice, 50 tickers\/slice/,
+    "MIS-UNIVERSE-5: scheduler log must mention MIS-FULL-UNIVERSE-SWEEP"
+  );
+  // Verify Tier B slice function exists
+  assert.ok(
+    source.includes("async function _runMisFullSweepSlice"),
+    "MIS-UNIVERSE-5: _runMisFullSweepSlice must be defined"
+  );
+  // Verify universe cache refresh function exists
+  assert.ok(
+    source.includes("async function _refreshMisUniverseCache"),
+    "MIS-UNIVERSE-5: _refreshMisUniverseCache must be defined"
+  );
+});
+
+// =============================================================================
+// REALTIME-SNAPSHOT tests
+// =============================================================================
+
+test("REALTIME-SNAPSHOT-1: quoteSnapshotResponseSchema exists in contracts and has required fields", async () => {
+  const contracts = await import("../packages/contracts/src/index.js");
+  assert.ok(
+    "quoteSnapshotResponseSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: quoteSnapshotResponseSchema must be exported from contracts"
+  );
+  assert.ok(
+    "quoteSnapshotSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: quoteSnapshotSchema must be exported from contracts"
+  );
+  assert.ok(
+    "freshnessModeSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: freshnessModeSchema must be exported from contracts"
+  );
+  assert.ok(
+    "realtimeQuoteSourceSchema" in contracts,
+    "REALTIME-SNAPSHOT-1: realtimeQuoteSourceSchema must be exported from contracts"
+  );
+});
+
+test("REALTIME-SNAPSHOT-2: freshnessModeSchema has expected enum values", async () => {
+  const { freshnessModeSchema } = await import("../packages/contracts/src/realtime.js");
+  const parsed = freshnessModeSchema.parse("intraday");
+  assert.strictEqual(parsed, "intraday");
+  assert.ok(freshnessModeSchema.safeParse("live").success);
+  assert.ok(freshnessModeSchema.safeParse("stale").success);
+  assert.ok(freshnessModeSchema.safeParse("eod").success);
+  assert.ok(!freshnessModeSchema.safeParse("unknown").success);
+});
+
+test("REALTIME-SNAPSHOT-3: quoteSnapshotSchema parses a minimal intraday snapshot", async () => {
+  const { quoteSnapshotSchema } = await import("../packages/contracts/src/realtime.js");
+  const snap = quoteSnapshotSchema.parse({
+    symbol: "2330",
+    exchange: "TWSE",
+    market: "TSE",
+    channel: "quote",
+    source: "twse_mis",
+    source_time: new Date().toISOString(),
+    ingest_time: new Date().toISOString(),
+    last_price: 1050.0,
+    freshness_mode: "intraday",
+    freshness_ms: 12345
+  });
+  assert.strictEqual(snap.symbol, "2330");
+  assert.strictEqual(snap.source, "twse_mis");
+  assert.strictEqual(snap.freshness_mode, "intraday");
+  assert.strictEqual(snap.version, "1");
+  assert.strictEqual(snap.bid, null);       // no depth data → null
+  assert.strictEqual(snap.serial, null);    // no serial → null
+  assert.strictEqual(snap.prev_close, null); // not provided → null
+});
+
+test("REALTIME-SNAPSHOT-4: quoteSnapshotSchema parses an EOD snapshot with OHLC", async () => {
+  const { quoteSnapshotSchema } = await import("../packages/contracts/src/realtime.js");
+  const snap = quoteSnapshotSchema.parse({
+    symbol: "0050",
+    exchange: "TWSE",
+    market: "TSE",
+    channel: "quote",
+    source: "eod",
+    source_time: "2026-06-03T13:30:00+08:00",
+    ingest_time: new Date().toISOString(),
+    last_price: 220.5,
+    freshness_mode: "eod",
+    freshness_ms: 60000,
+    prev_close: 218.0,
+    change: 2.5,
+    change_pct: 1.15,
+    open: 219.0,
+    high: 221.0,
+    low: 218.5
+  });
+  assert.strictEqual(snap.symbol, "0050");
+  assert.strictEqual(snap.source, "eod");
+  assert.strictEqual(snap.freshness_mode, "eod");
+  assert.strictEqual(snap.change_pct, 1.15);
+  assert.strictEqual(snap.open, 219.0);
+});
+
+test("REALTIME-SNAPSHOT-5: GET /api/v1/realtime/snapshot route is defined in server.ts", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.ok(
+    source.includes('"/api/v1/realtime/snapshot"'),
+    "REALTIME-SNAPSHOT-5: snapshot route must be registered in server.ts"
+  );
+  assert.ok(
+    source.includes("_misTileCache.get(sym)"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must read from _misTileCache"
+  );
+  assert.ok(
+    source.includes("getStockDayAllRows"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must use getStockDayAllRows for EOD fallback"
+  );
+  assert.ok(
+    source.includes("freshness_mode"),
+    "REALTIME-SNAPSHOT-5: snapshot handler must set freshness_mode"
+  );
+});
+
+// ── OVERVIEW-MIS-INDEX: overview handler intraday MIS overlay tests ──────────
+test("OVERVIEW-MIS-1: _overviewMisIndexCache is declared as module-level in server.ts", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.ok(
+    source.includes("let _overviewMisIndexCache"),
+    "OVERVIEW-MIS-1: _overviewMisIndexCache must be declared as module-level let"
+  );
+  assert.ok(
+    source.includes("OVERVIEW_MIS_INDEX_TTL_MS"),
+    "OVERVIEW-MIS-1: OVERVIEW_MIS_INDEX_TTL_MS TTL constant must exist"
+  );
+});
+
+test("OVERVIEW-MIS-2: overview handler reads _overviewMisIndexCache and enriches index with MIS data", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  // Find the overview route handler
+  const overviewIdx = source.indexOf('"/api/v1/market-data/overview"');
+  assert.ok(overviewIdx !== -1, "OVERVIEW-MIS-2: overview route must exist");
+  const handlerSlice = source.slice(overviewIdx, overviewIdx + 5000);
+  assert.ok(
+    handlerSlice.includes("_overviewMisIndexCache"),
+    "OVERVIEW-MIS-2: overview handler must read _overviewMisIndexCache"
+  );
+  assert.ok(
+    handlerSlice.includes("twse_mis_intraday"),
+    "OVERVIEW-MIS-2: overview handler must set source to twse_mis_intraday when MIS data available"
+  );
+  assert.ok(
+    handlerSlice.includes("freshnessStatus: \"fresh\"") || handlerSlice.includes('freshnessStatus: "fresh"'),
+    "OVERVIEW-MIS-2: overview handler must set freshnessStatus fresh for MIS intraday index"
+  );
+});
+
+test("OVERVIEW-MIS-3: overview handler enriches heatmap tiles from _misTileCache with sourceState and asOf", () => {
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const overviewIdx = source.indexOf('"/api/v1/market-data/overview"');
+  assert.ok(overviewIdx !== -1, "OVERVIEW-MIS-3: overview route must exist");
+  const handlerSlice = source.slice(overviewIdx, overviewIdx + 5000);
+  assert.ok(
+    handlerSlice.includes("_misTileCache.get(sym)"),
+    "OVERVIEW-MIS-3: overview handler must read from _misTileCache for heatmap enrichment"
+  );
+  assert.ok(
+    handlerSlice.includes("sourceState: \"twse_mis_intraday\"") || handlerSlice.includes('sourceState: "twse_mis_intraday"'),
+    "OVERVIEW-MIS-3: overview handler must set sourceState=twse_mis_intraday on enriched heatmap tiles"
+  );
+  assert.ok(
+    handlerSlice.includes("tradeDateYmd !== todayYmd") || handlerSlice.includes("tradeDateYmd === todayYmd"),
+    "OVERVIEW-MIS-3: overview handler must guard MIS heatmap enrichment with today's date check"
+  );
+  assert.ok(
+    handlerSlice.includes("asOf: misEntry.ts"),
+    "OVERVIEW-MIS-3: overview handler must set asOf from MIS entry timestamp"
+  );
+});
+
+// ── GPT-5.5 UPGRADE: per-feature model override + max_completion_tokens support ──
+
+test("GPT55-UPGRADE-1: llm-gateway MODEL_PRICING contains gpt-5.5 entry", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/llm/llm-gateway.ts"), "utf8");
+  assert.ok(
+    src.includes('"gpt-5.5"'),
+    "GPT55-UPGRADE-1: MODEL_PRICING must include gpt-5.5 entry"
+  );
+  assert.ok(
+    src.includes("input: 5.000") || src.includes("input:5.000") || src.includes("input: 5"),
+    "GPT55-UPGRADE-1: gpt-5.5 input price must be $5/1M"
+  );
+  assert.ok(
+    src.includes("output: 30.000") || src.includes("output:30.000") || src.includes("output: 30"),
+    "GPT55-UPGRADE-1: gpt-5.5 output price must be $30/1M"
+  );
+});
+
+test("GPT55-UPGRADE-2: llm-gateway handles gpt-5.5 family API differences (max_completion_tokens, no temperature)", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/llm/llm-gateway.ts"), "utf8");
+  assert.ok(
+    src.includes("USES_MAX_COMPLETION_TOKENS"),
+    "GPT55-UPGRADE-2: USES_MAX_COMPLETION_TOKENS Set must be defined"
+  );
+  assert.ok(
+    src.includes("max_completion_tokens"),
+    "GPT55-UPGRADE-2: requestBody must use max_completion_tokens for applicable models"
+  );
+  assert.ok(
+    src.includes("tokenLimitKey"),
+    "GPT55-UPGRADE-2: tokenLimitKey variable must select correct token limit parameter per model"
+  );
+  assert.ok(
+    src.includes("isReasoningModel"),
+    "GPT55-UPGRADE-2: isReasoningModel flag must gate temperature omission for reasoning models"
+  );
+  assert.ok(
+    src.includes("Only add temperature for models that support it") ||
+    src.includes("!isReasoningModel"),
+    "GPT55-UPGRADE-2: temperature must be omitted for reasoning models (gpt-5.5 does not support temperature != 1)"
+  );
+});
+
+test("GPT55-UPGRADE-3: orchestrator-v3 uses OPENAI_MODEL_AI_REC per-feature override", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC"]'),
+    "GPT55-UPGRADE-3: orchestrator-v3 must read OPENAI_MODEL_AI_REC env var"
+  );
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC"] ?? process.env["OPENAI_MODEL"]'),
+    "GPT55-UPGRADE-3: orchestrator-v3 must fall back to OPENAI_MODEL if AI_REC override absent"
+  );
+});
+
+test("GPT55-UPGRADE-4: brief generator uses OPENAI_MODEL_BRIEF + synthesis prompt is narrative not dump", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-strategy-brief.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_BRIEF"]'),
+    "GPT55-UPGRADE-4: strategy-brief must read OPENAI_MODEL_BRIEF env var"
+  );
+  assert.ok(
+    src.includes("briefModel"),
+    "GPT55-UPGRADE-4: briefModel variable must pass to callLlm modelKey"
+  );
+  assert.ok(
+    src.includes("premarket_context") || src.includes("盤前市況情境"),
+    "GPT55-UPGRADE-4: brief prompt must include pre-market context narrative section"
+  );
+  assert.ok(
+    src.includes("institutional_flow_analysis") || src.includes("法人動向解讀"),
+    "GPT55-UPGRADE-4: brief prompt must include institutional flow analysis section"
+  );
+  assert.ok(
+    src.includes("美股隔夜資料本日缺席") || src.includes("美股隔夜"),
+    "GPT55-UPGRADE-4: brief prompt must handle missing overnight US market data honestly"
+  );
+});
+
+test("GPT55-UPGRADE-4b: direct daily brief uses OPENAI_MODEL_BRIEF and 240s timeout", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-pipeline.ts"), "utf8");
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_BRIEF"]'),
+    "GPT55-UPGRADE-4b: direct daily brief must read OPENAI_MODEL_BRIEF"
+  );
+  assert.ok(
+    src.includes("resolveDailyBriefLlmRuntimeOptions"),
+    "GPT55-UPGRADE-4b: direct daily brief must centralize model runtime options"
+  );
+  assert.ok(
+    src.includes("timeoutMs: 240_000"),
+    "GPT55-UPGRADE-4b: direct daily brief timeout must be 240s to avoid rule-template fallback"
+  );
+  assert.ok(
+    src.includes("maxTokens: 12_000"),
+    "GPT55-UPGRADE-4b: gpt-5.5 brief path must reserve enough completion budget for reasoning tokens"
+  );
+  assert.ok(
+    src.includes("temperature: briefRuntime.temperature"),
+    "GPT55-UPGRADE-4b: reasoning models must be able to omit temperature via undefined runtime option"
+  );
+  assert.ok(
+    !src.includes("timeoutMs: 45_000"),
+    "GPT55-UPGRADE-4b: old 45s timeout must not remain in direct daily brief generation"
+  );
+});
+
+test("GPT55-UPGRADE-5: ai rec v3 has a model fallback so one bad deep model cannot blank the product", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("resolveAiRecFallbackModel"),
+    "GPT55-UPGRADE-5: orchestrator-v3 must resolve a fallback model for AI recommendations"
+  );
+  assert.ok(
+    src.includes('process.env["OPENAI_MODEL_AI_REC_FALLBACK"]'),
+    "GPT55-UPGRADE-5: fallback model must be configurable via OPENAI_MODEL_AI_REC_FALLBACK"
+  );
+  assert.ok(
+    src.includes("callAiRecLlmWithFallback"),
+    "GPT55-UPGRADE-5: v3 LLM calls must go through the fallback wrapper"
+  );
+  assert.ok(
+    src.includes("_model_fallback"),
+    "GPT55-UPGRADE-5: fallback calls must be visible in the LLM ledger task type"
+  );
+});
+
+// ── JSON-SYNTHESIS (structured output parser — PR feat/api-ai-rec-json-output) ─────────────────
+
+test("GPT55-UPGRADE-6: ai rec v3 caps fallback model token budget", async () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("capAiRecFallbackMaxTokensForModel"),
+    "GPT55-UPGRADE-6: orchestrator-v3 must define a fallback token cap helper"
+  );
+  assert.ok(
+    src.includes("capAiRecFallbackMaxTokensForModel(fallback, opts.maxTokens)"),
+    "GPT55-UPGRADE-6: fallback call must cap maxTokens before retrying with a smaller model"
+  );
+  assert.ok(
+    src.includes("[/^gpt-4o(?:$|-)/i, 16000]"),
+    "GPT55-UPGRADE-6: gpt-4o fallback must stay below its 16384 completion-token limit"
+  );
+
+  const { capAiRecFallbackMaxTokensForModel } =
+    await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-4o", 28000),
+    16000,
+    "GPT55-UPGRADE-6: synthesis fallback must not send 28000 max_tokens to gpt-4o"
+  );
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-4o-mini", 32000),
+    16000,
+    "GPT55-UPGRADE-6: repair fallback must not send 32000 max_tokens to gpt-4o-mini"
+  );
+  assert.equal(
+    capAiRecFallbackMaxTokensForModel("gpt-5.5", 32000),
+    32000,
+    "GPT55-UPGRADE-6: deep reasoning model budget should not be capped by the gpt-4o fallback rule"
+  );
+});
+
+test("JSON-SYNTHESIS-1: parseV3JsonSynthesis is exported from orchestrator-v3", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes("export function parseV3JsonSynthesis"),
+    "JSON-SYNTHESIS-1: parseV3JsonSynthesis must be exported from orchestrator-v3.ts"
+  );
+});
+
+test("JSON-SYNTHESIS-2: parseV3JsonSynthesis parses a valid JSON array into stock items", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const sampleJson = JSON.stringify([
+    {
+      ticker: "2330",
+      companyName: "台積電",
+      action: "A+今日首選",
+      totalScore: 88,
+      marketState: "trend",
+      subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 870, entryHigh: 890,
+      entryReason: "OTE 0.618 回踩月線",
+      tp1: 920, tp1Reason: "前波高 920",
+      tp2: 960, tp2Reason: "年線頂部",
+      stopLoss: 855, atrMultiple: 0.5, rRatio: 2.1,
+      confidence: 0.85, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["外資連 3 日買超共 1.2 萬張，月線多頭排列", "AI 伺服器族群帶動需求端，news trace 顯示訂單能見度強"],
+      whyNotBuy: ["股價已漲 20%，短線追高風險", "FOMC 會議 T-2 不確定性"],
+      oneLineReason: "外資連 3 日買超 + AI 族群強勢，技術面突破月線 880 確認多頭"
+    },
+    {
+      ticker: "2454",
+      companyName: "聯發科",
+      action: "A可觀察布局",
+      totalScore: 79,
+      marketState: "trend",
+      subScores: { theme: 16, revenue: 11, institutional: 10, margin: 9, rs: 7, technical: 15, valuation: 4 },
+      entryLow: 780, entryHigh: 800,
+      entryReason: "突破後回測不破 790",
+      tp1: 840, tp1Reason: "整數關 840",
+      tp2: 880, tp2Reason: "月線上緣",
+      stopLoss: 765, atrMultiple: 0.5, rRatio: 1.8,
+      confidence: 0.72, navPct: 0.006, marketMultiplier: 1.0,
+      whyBuy: ["法人 5 日淨買超，RSI 55 健康", "SoC 新案題材帶動，trace 顯示法人連 5 日偏多"],
+      whyNotBuy: ["庫存去化未完成，Q3 能見度不足", "外資持股比例已接近上限"],
+      oneLineReason: "SoC 新案題材 + 法人連 5 日淨買超，技術面 790 回測支撐確認"
+    }
+  ]);
+  const items = parseV3JsonSynthesis(sampleJson, "2026-06-05");
+  assert.ok(Array.isArray(items), "JSON-SYNTHESIS-2: parseV3JsonSynthesis must return an array");
+  assert.strictEqual(items.length, 2, `JSON-SYNTHESIS-2: must parse 2 items from JSON, got ${items.length}`);
+  assert.strictEqual(items[0].ticker, "2330", "JSON-SYNTHESIS-2: first item ticker must be 2330");
+  assert.strictEqual(items[0].bucket, "A+", "JSON-SYNTHESIS-2: A+今日首選 must map to bucket A+");
+  assert.strictEqual(items[0].totalScore, 88, "JSON-SYNTHESIS-2: totalScore must be 88");
+  assert.ok(items[0].subScores?.theme === 18, "JSON-SYNTHESIS-2: subScores.theme must be 18");
+  assert.ok(items[0].entryZone?.low === 870, "JSON-SYNTHESIS-2: entryZone.low must be 870");
+  assert.ok(items[0].tp1 === 920, "JSON-SYNTHESIS-2: tp1 must be 920");
+  assert.ok(items[0].confidence === 0.85, "JSON-SYNTHESIS-2: confidence must be 0.85");
+  assert.ok(Array.isArray(items[0].why_buy) && items[0].why_buy!.length === 2, "JSON-SYNTHESIS-2: why_buy must be array with 2 items");
+  assert.ok(items[0].whyBuyBrief?.length! <= 80, "JSON-SYNTHESIS-2: whyBuyBrief from oneLineReason must be <= 80 chars");
+  assert.strictEqual(items[1].ticker, "2454", "JSON-SYNTHESIS-2: second item ticker must be 2454");
+  assert.strictEqual(items[1].bucket, "A", "JSON-SYNTHESIS-2: A可觀察布局 must map to bucket A");
+});
+
+test("JSON-SYNTHESIS-3: parseV3JsonSynthesis returns [] for non-JSON input (falls back to markdown parser)", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const markdownInput = `## 2330 台積電\n- 分類: A+今日首選\n- 總分: 88`;
+  const items = parseV3JsonSynthesis(markdownInput, "2026-06-05");
+  assert.ok(Array.isArray(items), "JSON-SYNTHESIS-3: must return array even for non-JSON");
+  assert.strictEqual(items.length, 0, "JSON-SYNTHESIS-3: non-JSON input must return empty array (triggers markdown fallback)");
+});
+
+test("JSON-SYNTHESIS-4: parseV3JsonSynthesis filters year-like tickers (e.g. 2025, 2026)", async () => {
+  const { parseV3JsonSynthesis } = await import("../apps/api/src/ai-recommendation-v2/orchestrator-v3.js") as any;
+  const badJson = JSON.stringify([
+    { ticker: "2026", companyName: "幻覺年份", action: "A+今日首選", totalScore: 88,
+      marketState: "trend", subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 100, entryHigh: 110, tp1: 120, tp2: 130, stopLoss: 90,
+      confidence: 0.8, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["test"], whyNotBuy: ["test"], oneLineReason: "test" },
+    { ticker: "2330", companyName: "台積電", action: "A+今日首選", totalScore: 88,
+      marketState: "trend", subScores: { theme: 18, revenue: 13, institutional: 12, margin: 10, rs: 8, technical: 16, valuation: 4 },
+      entryLow: 870, entryHigh: 890, tp1: 920, tp2: 960, stopLoss: 855,
+      confidence: 0.85, navPct: 0.008, marketMultiplier: 1.0,
+      whyBuy: ["法人買超"], whyNotBuy: ["短線追高"], oneLineReason: "外資買超 + AI 題材" }
+  ]);
+  const items = parseV3JsonSynthesis(badJson, "2026-06-05");
+  assert.ok(!items.some((i: any) => i.ticker === "2026"), "JSON-SYNTHESIS-4: year-like ticker 2026 must be filtered out");
+  assert.ok(items.some((i: any) => i.ticker === "2330"), "JSON-SYNTHESIS-4: valid ticker 2330 must be included");
+});
+
+test("JSON-SYNTHESIS-5: synthesizeReportV3 uses strict structured JSON synthesis calls", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
+  assert.ok(
+    src.includes('responseFormat: "json_schema"'),
+    "JSON-SYNTHESIS-5: synthesizeReportV3 must use strict responseFormat json_schema"
+  );
+  assert.ok(
+    src.includes("responseSchema") && src.includes("v3_stock_recommendations") && src.includes("V3_SYNTHESIS_JSON_SCHEMA"),
+    "JSON-SYNTHESIS-5: synthesizeReportV3 must pass the AI rec v3 schema definition"
+  );
+  assert.ok(
+    src.includes("parseV3JsonSynthesis"),
+    "JSON-SYNTHESIS-5: synthesizeAndParseReportV3 must call parseV3JsonSynthesis as primary parser"
+  );
+  assert.ok(
+    src.includes("JSON parser succeeded"),
+    "JSON-SYNTHESIS-5: JSON parse success log must exist for observability"
+  );
+  assert.ok(
+    src.includes("falling back to markdown parser"),
+    "JSON-SYNTHESIS-5: fallback log to markdown parser must exist for observability"
+  );
+});
+
+test("COMPANY-TICK-PANEL-1: company成交明細 must render real tick or FinMind KBar aggregate data, not a static blocked shell", () => {
+  const panelSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/TickStreamPanel.tsx"), "utf8");
+  const pageSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/page.tsx"), "utf8");
+
+  assert.ok(
+    panelSrc.includes("getKgiTicks(symbol, MAX_TICKS)"),
+    "COMPANY-TICK-PANEL-1: TickStreamPanel must attempt the real KGI tick endpoint for the selected symbol"
+  );
+  assert.ok(
+    panelSrc.includes("FinMind 分K成交摘要"),
+    "COMPANY-TICK-PANEL-1: TickStreamPanel must fall back to labeled FinMind KBar aggregate data instead of staying blank"
+  );
+  assert.ok(
+    panelSrc.includes("這不是逐筆 tick，不混充"),
+    "COMPANY-TICK-PANEL-1: FinMind aggregate fallback must be honest and not pretend to be raw ticks"
+  );
+  assert.ok(
+    pageSrc.includes("kbarRows={kbarView?.rows ?? []}"),
+    "COMPANY-TICK-PANEL-1: company page must pass fetched FinMind KBar rows into the tick panel"
+  );
+  assert.ok(
+    pageSrc.includes("symbol={company.ticker}"),
+    "COMPANY-TICK-PANEL-1: company page must bind the current ticker to the tick panel"
+  );
+});
+
+test("COMPANIES-REGISTRY-1: companies page labels and fallback must be product-readable", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/web/app/companies/page.tsx"), "utf8");
+
+  for (const label of ["公司板", "公司搜尋", "主題雷達", "產業鏈", "公司圖譜", "公司主檔", "降級可用"]) {
+    assert.ok(src.includes(label), `COMPANIES-REGISTRY-1: companies page must include readable label ${label}`);
+  }
+
+  assert.ok(
+    src.includes("getCompaniesLite({ limit: 2500 })") && src.includes("getCompanies()"),
+    "COMPANIES-REGISTRY-1: companies registry must use full company master as a real fallback when lite registry fails"
+  );
+  assert.ok(
+    src.includes("完整公司主檔備援") && src.includes("Lite 主檔暫時不可用"),
+    "COMPANIES-REGISTRY-1: fallback state must be visible and honest"
+  );
+
+  const forbiddenFragments = ["?砍", "甇?", "銝", "蝮賢", "鞈", "瑼", "�"];
+  for (const fragment of forbiddenFragments) {
+    assert.ok(!src.includes(fragment), `COMPANIES-REGISTRY-1: companies page still contains mojibake fragment ${fragment}`);
+  }
+});
+
+test("COMPANY-AI-ANALYST-1: company AI analyst must enforce a complete product report", () => {
+  const contractSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/aiAnalystReportContract.ts"), "utf8");
+  const qualitySrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/aiAnalystReportQuality.ts"), "utf8");
+  const panelSrc = readFileSync(path.join(process.cwd(), "apps/web/app/companies/[symbol]/AiAnalystReportPanel.tsx"), "utf8");
+
+  for (const section of [
+    "## 1. 公司概況與定位",
+    "## 2. 今日/最近資料狀態",
+    "## 3. 近期事件與新聞",
+    "## 4. 技術結構",
+    "## 5. 籌碼與法人",
+    "## 6. 主題與產業鏈位置",
+    "## 7. 主要風險",
+    "## 8. AI 結論與觀察等級",
+    "## 9. 資料來源與生成時間",
+  ]) {
+    assert.ok(contractSrc.includes(section), `COMPANY-AI-ANALYST-1: missing required section ${section}`);
+  }
+
+  assert.ok(
+    contractSrc.includes("不要複述本段規則、禁止詞或工具名稱"),
+    "COMPANY-AI-ANALYST-1: prompt must forbid echoing engineering rules or tool names"
+  );
+  assert.ok(
+    qualitySrc.includes("missing_sections") && qualitySrc.includes("COMPANY_AI_ANALYST_REQUIRED_SECTIONS"),
+    "COMPANY-AI-ANALYST-1: quality gate must block incomplete reports, not only tool leaks"
+  );
+  assert.ok(
+    panelSrc.includes("本次回覆缺少公司頁要求的固定九段") && panelSrc.includes("這份 AI 報告需要重新生成"),
+    "COMPANY-AI-ANALYST-1: UI must stop incomplete reports from masquerading as formal analysis"
+  );
+
+  for (const fragment of ["?砍", "甇?", "銝", "蝮賢", "鞈", "瑼", "�"]) {
+    assert.ok(!contractSrc.includes(fragment), `COMPANY-AI-ANALYST-1: contract still contains mojibake fragment ${fragment}`);
+    assert.ok(!qualitySrc.includes(fragment), `COMPANY-AI-ANALYST-1: quality gate still contains mojibake fragment ${fragment}`);
+    assert.ok(!panelSrc.includes(fragment), `COMPANY-AI-ANALYST-1: panel still contains mojibake fragment ${fragment}`);
+  }
 });
 
 // Teardown pollers that may be started by imported API modules.

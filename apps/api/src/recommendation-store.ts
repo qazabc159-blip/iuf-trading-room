@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Recommendation Orchestrator Store — v2 real-data layer
  *
  * v1 (PR #469): mock skeleton.
@@ -19,7 +19,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { StockRecommendation } from "@iuf-trading-room/contracts";
+import type { AppSession, StockRecommendation } from "@iuf-trading-room/contracts";
+import type { TradingRoomRepository } from "@iuf-trading-room/domain";
+import { getCompanyOhlcv, type OhlcvBar } from "./companies-ohlcv.js";
 
 // ---------------------------------------------------------------------------
 // Feedback in-process store (memory-mode v1; Day 5 wires to DB table)
@@ -214,6 +216,67 @@ type LeadersPayload = {
   asOf?: string;
 };
 
+const MIN_REAL_RECOMMENDATION_ITEMS = 5;
+const MAX_REAL_RECOMMENDATION_CANDIDATES = 8;
+
+const CORE_MARKET_BACKSTOP_CANDIDATES: Array<{
+  ticker: string;
+  companyName: string;
+  score: number;
+  reason: string;
+}> = [
+  {
+    ticker: "2330",
+    companyName: "台積電",
+    score: 67,
+    reason: "核心權值與半導體供應鏈觀察標的；僅在市場排行與重大訊息候選不足時補位。",
+  },
+  {
+    ticker: "2454",
+    companyName: "聯發科",
+    score: 66,
+    reason: "IC 設計大型權值觀察標的；用於補足每日 AI 推薦的正式台股研究池。",
+  },
+  {
+    ticker: "2317",
+    companyName: "鴻海",
+    score: 65,
+    reason: "AI 伺服器與電子代工核心觀察標的；僅作研究候選，不代表策略晉升。",
+  },
+  {
+    ticker: "2308",
+    companyName: "台達電",
+    score: 64,
+    reason: "電源、散熱與 AI 伺服器供應鏈核心觀察標的；用於真資料補位。",
+  },
+  {
+    ticker: "3711",
+    companyName: "日月光投控",
+    score: 63,
+    reason: "封測大型權值觀察標的；用於維持每日研究池覆蓋度。",
+  },
+  {
+    ticker: "2412",
+    companyName: "中華電",
+    score: 62,
+    reason: "防禦型權值觀察標的；用於市場風格偏保守時的研究候選。",
+  },
+];
+
+type OhlcvRow = {
+  dt: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  source?: string;
+};
+
+type OhlcvPayload = {
+  data?: OhlcvRow[];
+};
+
 type IntelItem = {
   id: string;
   date: string;
@@ -230,7 +293,7 @@ type IntelItem = {
 async function fetchInternal<T>(url: string, cookie: string): Promise<T | null> {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(url, {
       headers: { cookie },
       signal: ctrl.signal,
@@ -244,6 +307,117 @@ async function fetchInternal<T>(url: string, cookie: string): Promise<T | null> 
 }
 
 type ActionBucket = StockRecommendation["action"];
+
+function ohlcvLookbackFromDate(): string {
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  now.setUTCDate(now.getUTCDate() - 220);
+  return now.toISOString().slice(0, 10);
+}
+
+function cleanTicker(ticker: string | undefined | null): string | null {
+  const value = String(ticker ?? "").trim();
+  if (!/^\d{4}[A-Z]?$/.test(value)) return null;
+  return value;
+}
+
+function toFinitePrice(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function roundPrice(value: number): number {
+  if (value >= 1000) return Math.round(value / 5) * 5;
+  if (value >= 100) return Math.round(value * 2) / 2;
+  if (value >= 50) return Math.round(value * 10) / 10;
+  return Math.round(value * 100) / 100;
+}
+
+function formatPlanPrice(value: number): string {
+  const rounded = roundPrice(value);
+  if (rounded >= 100) return rounded.toLocaleString("zh-TW", { maximumFractionDigits: 1 });
+  return rounded.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function average(values: number[]): number | null {
+  const valid = values.filter((v) => Number.isFinite(v));
+  if (valid.length === 0) return null;
+  return valid.reduce((sum, v) => sum + v, 0) / valid.length;
+}
+
+function normaliseOhlcvRows(rows: OhlcvRow[] | undefined): OhlcvRow[] {
+  return (rows ?? [])
+    .filter((row) => toFinitePrice(row.close) !== null && toFinitePrice(row.high) !== null && toFinitePrice(row.low) !== null)
+    .sort((a, b) => a.dt.localeCompare(b.dt));
+}
+
+function deriveTradePlanFromOhlcv(rows: OhlcvRow[] | undefined): Pick<StockRecommendation, "entryZone" | "invalidation" | "targets"> & {
+  technicalReasons: string[];
+  ohlcvSource: StockRecommendation["sourceTrail"][number] | null;
+  kbarState: "OK" | "STALE" | "MISSING";
+} {
+  const ordered = normaliseOhlcvRows(rows);
+  const recent = ordered.slice(-60);
+  const last = recent.at(-1);
+  if (!last || recent.length < 20) {
+    return {
+      entryZone: {
+        primary: "等待 OHLCV 回補",
+        reason: "最近日 K 不足 20 根，推薦 API 不補假進場區間。",
+      },
+      invalidation: {
+        price: null,
+        rule: "OHLCV 不足，停損點位暫不生成。",
+      },
+      targets: [
+        { label: "TP1", price: null, reason: "OHLCV 不足，目標價暫不生成。" },
+        { label: "TP2", price: null, reason: "OHLCV 不足，目標價暫不生成。" },
+      ],
+      technicalReasons: ["OHLCV 少於 20 根，技術面僅列入觀察。"],
+      ohlcvSource: null,
+      kbarState: recent.length > 0 ? "STALE" : "MISSING",
+    };
+  }
+
+  const last20 = recent.slice(-20);
+  const close = toFinitePrice(last.close)!;
+  const low20 = Math.min(...last20.map((row) => toFinitePrice(row.low)!).filter(Boolean));
+  const high20 = Math.max(...last20.map((row) => toFinitePrice(row.high)!).filter(Boolean));
+  const sma20 = average(last20.map((row) => toFinitePrice(row.close)!).filter(Boolean)) ?? close;
+  const volatility = Math.max(0.03, Math.min(0.14, (high20 - low20) / close));
+  const entryLow = roundPrice(Math.max(low20, close * (1 - Math.max(0.035, volatility * 0.45))));
+  const entryHigh = roundPrice(Math.max(entryLow, Math.min(close * 1.01, Math.max(sma20, close * 0.985))));
+  const stop = roundPrice(Math.min(low20 * 0.98, close * (1 - Math.max(0.055, volatility * 0.55))));
+  const risk = Math.max(close - stop, close * 0.035);
+  const tp1 = roundPrice(close + risk * 1.35);
+  const tp2 = roundPrice(close + risk * 2.1);
+  const source = last.source ?? "companies_ohlcv";
+
+  return {
+    entryZone: {
+      primary: `${formatPlanPrice(entryLow)}–${formatPlanPrice(entryHigh)}`,
+      secondary: `最近收盤 ${formatPlanPrice(close)}；20 日區間 ${formatPlanPrice(low20)}–${formatPlanPrice(high20)}`,
+      reason: `以 ${last.dt} 最近 20 根日 K 派生，不使用 mock 點位。`,
+    },
+    invalidation: {
+      price: stop,
+      rule: `跌破近 20 日支撐緩衝 ${formatPlanPrice(stop)}，視為本輪觀察結構失效。`,
+    },
+    targets: [
+      { label: "TP1", price: tp1, reason: "以最近波動風險距離 1.35R 派生。" },
+      { label: "TP2", price: tp2, reason: "以最近波動風險距離 2.1R 派生。" },
+    ],
+    technicalReasons: [
+      `最近收盤 ${formatPlanPrice(close)}，20 日均線約 ${formatPlanPrice(sma20)}`,
+      `20 日高低區間 ${formatPlanPrice(low20)}–${formatPlanPrice(high20)}，用於 entry/stop/TP 派生`,
+    ],
+    ohlcvSource: {
+      type: "technical",
+      source: `companies_ohlcv_${source}`,
+      timestamp: last.dt,
+    },
+    kbarState: "OK",
+  };
+}
 
 function computeAction(
   totalScore: number,
@@ -268,13 +442,186 @@ function computeDataQualityPenalty(dq: AthenaCandidateSignal["dataQuality"]): nu
   return missingCount * 0.15 + pendingCount * 0.05;
 }
 
+function buildSupplementalSignals(
+  fixture: AthenaFixture,
+  leaders: LeadersPayload | null,
+  newsItems: IntelItem[]
+): AthenaCandidateSignal[] {
+  const existing = new Set(fixture.signals.map((signal) => signal.ticker));
+  const out: AthenaCandidateSignal[] = [];
+  const generatedAt = new Date().toISOString();
+
+  const pushCandidate = (input: {
+    ticker?: string;
+    companyName?: string;
+    reason: string;
+    score: number;
+    sourceAt?: string;
+    strategySource?: string;
+    regime?: string;
+  }) => {
+    const ticker = cleanTicker(input.ticker);
+    if (!ticker || existing.has(ticker) || out.some((item) => item.ticker === ticker)) return;
+    out.push({
+      ticker,
+      companyName: input.companyName?.trim() || ticker,
+      quantRank: fixture.signals.length + out.length + 1,
+      quantScore: input.score,
+      strategySource: input.strategySource ?? "market_context",
+      regime: input.regime ?? "market-context",
+      gateStatus: "WATCH",
+      expectedHoldingPeriod: "波段",
+      quantReason: [
+        input.reason,
+        "此為正式市場排行 / 重大訊息補足候選，用於每日觀察清單，不代表策略晉升或下單建議。",
+      ],
+      riskFlags: [
+        "market_context_not_promoted_strategy",
+        "requires_manual_confirmation_before_trade",
+      ],
+      dataQuality: {
+        backtestEvidence: "PENDING",
+        forwardObservation: "PENDING",
+        liquidity: "OK",
+      },
+      snapshotAt: input.sourceAt ?? leaders?.asOf ?? generatedAt,
+    });
+  };
+
+  for (const stock of leaders?.topGainers ?? []) {
+    pushCandidate({
+      ticker: stock.symbol,
+      companyName: stock.name,
+      score: 68,
+      sourceAt: leaders?.asOf,
+      reason: `今日市場漲幅排行正式來源，漲跌幅 ${stock.changePct.toFixed(2)}%。`,
+    });
+    if (fixture.signals.length + out.length >= MAX_REAL_RECOMMENDATION_CANDIDATES) break;
+  }
+
+  for (const stock of leaders?.mostActive ?? []) {
+    pushCandidate({
+      ticker: stock.symbol,
+      companyName: stock.name,
+      score: 66,
+      sourceAt: leaders?.asOf,
+      reason: `今日成交活躍正式來源，成交量 ${Math.round(stock.volume).toLocaleString("zh-TW")}。`,
+    });
+    if (fixture.signals.length + out.length >= MAX_REAL_RECOMMENDATION_CANDIDATES) break;
+  }
+
+  for (const item of newsItems) {
+    pushCandidate({
+      ticker: item.ticker,
+      companyName: item.companyName,
+      score: 64,
+      sourceAt: item.date,
+      reason: `重大訊息 / 市場情報正式來源：${item.title}`,
+    });
+    if (fixture.signals.length + out.length >= MAX_REAL_RECOMMENDATION_CANDIDATES) break;
+  }
+
+  if (fixture.signals.length + out.length < MIN_REAL_RECOMMENDATION_ITEMS) {
+    for (const candidate of CORE_MARKET_BACKSTOP_CANDIDATES) {
+      pushCandidate({
+        ...candidate,
+        strategySource: "core_market_watchlist",
+        regime: "core-market-coverage",
+        sourceAt: generatedAt,
+      });
+      if (fixture.signals.length + out.length >= MAX_REAL_RECOMMENDATION_CANDIDATES) break;
+    }
+  }
+
+  return out;
+}
+
+async function fetchOhlcvByTicker(
+  internalBaseUrl: string,
+  sessionCookie: string,
+  tickers: string[],
+  opts: {
+    session?: AppSession;
+    repo?: TradingRoomRepository;
+  } = {}
+): Promise<Map<string, OhlcvRow[]>> {
+  const unique = Array.from(new Set(tickers.map(cleanTicker).filter(Boolean) as string[])).slice(0, 12);
+  const from = ohlcvLookbackFromDate();
+  const to = todayTstDate();
+  const result = new Map<string, OhlcvRow[]>();
+
+  if (opts.session && opts.repo) {
+    const companiesByTicker = new Map<string, { id: string; ticker: string }>();
+    try {
+      const companies = await opts.repo.listCompaniesLite({
+        workspaceSlug: opts.session.workspace.slug,
+      });
+      for (const company of companies) {
+        const ticker = cleanTicker(company.ticker);
+        if (ticker) companiesByTicker.set(ticker, { id: company.id, ticker });
+      }
+    } catch {
+      // Fall back to the HTTP path below. Recommendations must degrade, not crash.
+    }
+
+    const directSettled = await Promise.allSettled(
+      unique.map(async (ticker) => {
+        const company = companiesByTicker.get(ticker);
+        if (!company) return [ticker, [] as OhlcvRow[]] as const;
+        const bars = await getCompanyOhlcv(company.id, opts.session!, {
+          interval: "1d",
+          from,
+          to,
+          ticker,
+        });
+        return [ticker, normaliseOhlcvRows(bars.map(ohlcvBarToRow))] as const;
+      })
+    );
+
+    for (const item of directSettled) {
+      if (item.status !== "fulfilled") continue;
+      result.set(item.value[0], item.value[1]);
+    }
+  }
+
+  const missing = unique.filter((ticker) => (result.get(ticker)?.length ?? 0) < 20);
+  const settled = await Promise.allSettled(
+    missing.map(async (ticker) => {
+      const payload = await fetchInternal<OhlcvPayload>(
+        `${internalBaseUrl}/api/v1/companies/${encodeURIComponent(ticker)}/ohlcv?interval=1d&from=${from}&to=${to}`,
+        sessionCookie
+      );
+      return [ticker, normaliseOhlcvRows(payload?.data ?? [])] as const;
+    })
+  );
+
+  for (const item of settled) {
+    if (item.status !== "fulfilled") continue;
+    if (item.value[1].length > 0) result.set(item.value[0], item.value[1]);
+  }
+  return result;
+}
+
+function ohlcvBarToRow(bar: OhlcvBar): OhlcvRow {
+  return {
+    dt: bar.dt,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    source: bar.source,
+  };
+}
+
 /**
  * Core synthesis function — exported for testability.
  */
 export function synthesizeFromFixture(
   fixture: AthenaFixture,
   leaders: LeadersPayload | null,
-  newsItems: IntelItem[]
+  newsItems: IntelItem[],
+  ohlcvByTicker: Map<string, OhlcvRow[]> = new Map()
 ): StockRecommendation[] {
   const date = todayTstDate();
   const generatedAt = new Date().toISOString();
@@ -284,6 +631,7 @@ export function synthesizeFromFixture(
     ...(leaders?.topLosers ?? []).map((s) => s.symbol),
     ...(leaders?.mostActive ?? []).map((s) => s.symbol),
   ]);
+  const fixtureTickers = new Set(fixture.signals.map((signal) => signal.ticker));
 
   const newsByTicker = new Map<string, string[]>();
   for (const item of newsItems) {
@@ -293,7 +641,10 @@ export function synthesizeFromFixture(
     newsByTicker.set(item.ticker, existing);
   }
 
-  return fixture.signals.map((sig, idx) => {
+  const supplementalSignals = buildSupplementalSignals(fixture, leaders, newsItems);
+  const signals = [...fixture.signals, ...supplementalSignals];
+
+  return signals.map((sig, idx) => {
     const dqPenalty = computeDataQualityPenalty(sig.dataQuality);
     const totalScore = Math.round(sig.quantScore * (1 - dqPenalty));
     const hasMissingData = Object.values(sig.dataQuality).includes("MISSING");
@@ -303,19 +654,22 @@ export function synthesizeFromFixture(
     const isLeader = allLeaderSymbols.has(sig.ticker);
     const leaderNote = isLeader ? [`${sig.ticker} 出現於今日市場領漲/領跌名單`] : [];
 
-    // Source trail: always include fixture + conditional leaders/news
+    // Source trail: fixture entries keep the Athena fixture reference; supplemental
+    // market/core candidates must not pretend they came from the quant fixture.
     const sourceTrail: StockRecommendation["sourceTrail"] = [
       {
         type: "quant",
         source: sig.strategySource,
         timestamp: sig.snapshotAt,
-      },
-      {
+      }
+    ];
+    if (fixtureTickers.has(sig.ticker)) {
+      sourceTrail.push({
         type: "fixture",
         source: `athena_cont_liq_v36_fixture_${fixture.snapshotAt.slice(0, 10)}`,
         timestamp: fixture.producedAtTaipei,
-      },
-    ];
+      });
+    }
     if (leaders?.asOf) {
       sourceTrail.push({
         type: "leaders",
@@ -329,6 +683,11 @@ export function synthesizeFromFixture(
         source: "market_intel_announcements",
         timestamp: generatedAt,
       });
+    }
+
+    const tradePlan = deriveTradePlanFromOhlcv(ohlcvByTicker.get(sig.ticker));
+    if (tradePlan.ohlcvSource) {
+      sourceTrail.push(tradePlan.ohlcvSource);
     }
 
     // Confidence: quant gate drives it, penalised by data quality
@@ -367,27 +726,15 @@ export function synthesizeFromFixture(
         gateStatus: sig.gateStatus,
         reason: sig.quantReason,
       },
-      entryZone: {
-        primary: "參考技術面支撐帶",
-        reason: "cont_liq_v36 研究候選，未達進場建議，請參考個股技術面",
-      },
-      invalidation: {
-        price: null,
-        rule: "forward observation 未成熟 (Day 6/20)，結構判斷待成熟後更新",
-      },
-      targets: [
-        {
-          label: "TP1",
-          price: null,
-          reason: "待 forward observation 成熟後補充",
-        },
-      ],
+      entryZone: tradePlan.entryZone,
+      invalidation: tradePlan.invalidation,
+      targets: tradePlan.targets,
       positionSizing: {
         suggestion: "小倉",
         maxRiskPct: 1.0,
       },
       reasons: {
-        technical: [],
+        technical: tradePlan.technicalReasons,
         chip: [],
         news: [...newsReasons, ...leaderNote],
         theme: [],
@@ -397,7 +744,7 @@ export function synthesizeFromFixture(
       risks: sig.riskFlags.map((f) => f.replace(/_/g, " ")),
       dataQuality: {
         quote: "OK",
-        kbar: "OK",
+        kbar: tradePlan.kbarState,
         chip: "OK",
         news: newsReasons.length > 0 ? "OK" : "STALE",
         quant: sig.dataQuality.forwardObservation === "PENDING" ? "WEAK" : "OK",
@@ -409,6 +756,26 @@ export function synthesizeFromFixture(
 
     return rec;
   });
+}
+
+function hasCompleteRealTradePlan(item: StockRecommendation): boolean {
+  const pricedTargets = item.targets.filter((target) => target.price !== null && target.price !== undefined);
+  const technicalSource = item.sourceTrail.find((source) => source.type === "technical");
+  return Boolean(
+    item.entryZone.primary &&
+    item.invalidation.price !== null &&
+    item.invalidation.price !== undefined &&
+    pricedTargets.length >= 2 &&
+    technicalSource &&
+    technicalSource.source !== "companies_ohlcv_mock"
+  );
+}
+
+function rerankRecommendations(items: StockRecommendation[]): StockRecommendation[] {
+  return items.map((item, index) => ({
+    ...item,
+    rank: index + 1,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +791,8 @@ export function synthesizeFromFixture(
 export async function getTodayRecommendations(opts: {
   internalBaseUrl: string;
   sessionCookie: string;
+  session?: AppSession;
+  repo?: TradingRoomRepository;
 }): Promise<{ items: StockRecommendation[]; isMock: boolean }> {
   const fixture = loadAthenaFixture();
   if (!fixture) {
@@ -449,7 +818,22 @@ export async function getTodayRecommendations(opts: {
       ? (newsRaw.value?.data?.items ?? [])
       : [];
 
-  const items = synthesizeFromFixture(fixture, leaders, newsItems);
+  const supplementalSignals = buildSupplementalSignals(fixture, leaders, newsItems);
+  const candidateTickers = [
+    ...fixture.signals.map((signal) => signal.ticker),
+    ...supplementalSignals.map((signal) => signal.ticker),
+  ];
+  const ohlcvByTicker = await fetchOhlcvByTicker(
+    opts.internalBaseUrl,
+    opts.sessionCookie,
+    candidateTickers,
+    { session: opts.session, repo: opts.repo }
+  );
+
+  const items = rerankRecommendations(
+    synthesizeFromFixture(fixture, leaders, newsItems, ohlcvByTicker)
+      .filter(hasCompleteRealTradePlan)
+  );
   return { items, isMock: false };
 }
 
@@ -656,3 +1040,4 @@ export function getRecommendationById(
 ): StockRecommendation | null {
   return items.find((r) => r.recommendationId === id) ?? null;
 }
+

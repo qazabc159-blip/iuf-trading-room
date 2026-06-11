@@ -40,18 +40,54 @@ function normalizeBucket(value: unknown, totalScore: number | null): BucketLabel
     : scoreToBucket(totalScore);
 }
 
+export function isActionableV3Item(item: AiRecommendationV3Item): boolean {
+  const camelScores = item.subScores;
+  const snakeScores = item.sub_scores;
+  const totalScore = asNumber(
+    item.totalScore
+      ?? snakeScores?.total
+      ?? (
+        camelScores
+          ? (camelScores.theme ?? 0) +
+            (camelScores.revenue ?? 0) +
+            (camelScores.institutional ?? 0) +
+            (camelScores.margin ?? 0) +
+            (camelScores.rs ?? 0) +
+            (camelScores.technical ?? 0) +
+            (camelScores.valuation ?? 0)
+          : null
+      )
+  );
+  const bucket = normalizeBucket(item.bucket, totalScore);
+  const actionText = String(item.action ?? "").trim();
+  if (bucket === "C") return false;
+  if (actionText.includes("高風險排除")) return false;
+  if (totalScore != null && totalScore < 65) return false;
+  return true;
+}
+
 function localizeV3Narrative(value: string): string {
-  return value
+  const localized = value
     .trim()
-    .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "後端以 verified lastPrice 建立程式化 fallback 進場區間：$1。")
-    .replace(/Verified technical data was available from get_company_technical\./i, "get_company_technical 已回傳可驗證技術資料。")
+    .replace(/Programmatic fallback range: ([0-9.]+x-[0-9.]+x) of verified lastPrice\./i, "系統依最新可用成交價推估觀察區間：$1。")
+    .replace(/Verified technical data was available from get_company_technical\./i, "量價技術資料已完成核對。")
     .replace(/Price is above MA20\./i, "價格站上 MA20。")
     .replace(/Price is above MA60\./i, "價格站上 MA60。")
     .replace(/Price is not above MA20; keep sizing conservative\./i, "價格未站上 MA20，部位需保守。")
     .replace(/Price is not above MA60; keep sizing conservative\./i, "價格未站上 MA60，部位需保守。")
-    .replace(/Deterministic fallback from verified get_company_technical data\./i, "以 get_company_technical 驗證資料產生固定規則補值。")
-    .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "這是固定規則補值，因為 LLM 未回傳足夠的結構化推薦。")
-    .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "完整 AI 敘事恢復健康前，只能視為研究候選。");
+    .replace(/Deterministic fallback from verified get_company_technical data\./i, "系統依已核對的量價資料產生保守觀察值。")
+    .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "完整 AI 敘事仍在補強，先以量價驗證訊號保守觀察。")
+    .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "僅作研究候選，需搭配交易室風控與部位上限。");
+
+  const productText = localized
+    .replace(/\btrace\s*=\s*[^。；;\n]+[。；;]?\s*/gi, "")
+    .replace(/\b(?:RSI|institutional|margin|technical|news|revenue|source)?\s*parsing error\b[^。；;\n]*[。；;]?\s*/gi, "")
+    .replace(/\b(?:parser|diagnostic|rawSynthesisPreview|json_schema|usedFallback|synthesisFallbackUsed)\b[^。；;\n]*[。；;]?\s*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([。；;])/g, "$1")
+    .trim();
+
+  return productText || "資料仍在補齊，請搭配交易室風控與部位上限。";
 }
 
 function joinLines(...values: Array<string[] | string | null | undefined>): string | null {
@@ -230,6 +266,7 @@ export function mapV3ItemToStockRecCard(
   data?: AiRecommendationV3Response | null,
 ): StockRecCardData | null {
   if (!item.ticker) return null;
+  if (!isActionableV3Item(item)) return null;
 
   const camelScores = item.subScores;
   const snakeScores = item.sub_scores;
@@ -247,8 +284,9 @@ export function mapV3ItemToStockRecCard(
 
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
-  const entryLabel = (item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null)
-    ?? (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
+  const entryReason = item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null;
+  const entryLabel = entryReason
+    || (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
@@ -369,9 +407,23 @@ export function buildV3PanelState(input: {
 
   const status = input.data?.status ?? "pending";
   const backendItemCount = input.data?.itemCount ?? input.data?.items?.length ?? input.visibleCount;
-  const hasEnoughItems = backendItemCount >= 5 && input.visibleCount >= Math.min(5, backendItemCount);
+  const rawItems = input.data?.items ?? [];
+  const actionableBackendCount = rawItems.filter(isActionableV3Item).length;
+  const exclusionCount = Math.max(0, rawItems.length - actionableBackendCount);
+  const hasEnoughItems = actionableBackendCount >= 5 && input.visibleCount >= Math.min(5, actionableBackendCount);
   const isComplete = status === "complete";
   const usedFallback = input.data?.usedFallback === true || input.data?.synthesisFallbackUsed === true || input.data?.fullAiReportParsed === false;
+  if (isComplete && backendItemCount > 0 && actionableBackendCount === 0) {
+    return {
+      tone: "degraded",
+      label: "未達推薦門檻",
+      title: "今日沒有可行動 AI 推薦",
+      detail: `後端回傳 ${backendItemCount} 張卡，其中 ${exclusionCount} 張是 C / 高風險排除；系統不會把排除名單包裝成推薦。`,
+      endpoint: ENDPOINT,
+      owner: source?.owner ?? OWNER,
+      nextAction: nextFromSource ?? "請後端重跑候選池與評分來源，直到產出 A+/A/B 可行動標的；若市場真的沒有機會，維持此誠實狀態。",
+    };
+  }
   if (input.visibleCount > 0) {
     const live = isComplete && hasEnoughItems && !usedFallback;
     return {

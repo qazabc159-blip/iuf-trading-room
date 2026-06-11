@@ -76,6 +76,8 @@ describe("AI recommendations v3 view mapping", () => {
     const card = mapV3ItemToStockRecCard({
       ticker: "2059",
       companyName: "川湖",
+      bucket: "B",
+      totalScore: 68,
       entryZone: { reason: "Programmatic fallback range: 0.98x-1.01x of verified lastPrice." },
       why_buy: [
         "Verified technical data was available from get_company_technical.",
@@ -87,10 +89,43 @@ describe("AI recommendations v3 view mapping", () => {
       ],
     });
 
-    expect(card?.entry?.label).toContain("fallback 進場區間");
-    expect(card?.why_buy).toContain("get_company_technical 已回傳可驗證技術資料");
+    expect(card?.entry?.label).toContain("最新可用成交價推估觀察區間");
+    expect(card?.why_buy).toContain("量價技術資料已完成核對");
     expect(card?.why_buy).toContain("價格站上 MA20");
-    expect(card?.risk).toContain("完整 AI 敘事恢復健康前");
+    expect(card?.risk).toContain("僅作研究候選");
+    expect(`${card?.entry?.label}\n${card?.why_buy}\n${card?.risk}`).not.toMatch(/fallback|get_company_technical|LLM/i);
+  });
+
+  it("scrubs parser diagnostics from customer-facing card narratives", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2330",
+      companyName: "台積電",
+      bucket: "A",
+      totalScore: 76,
+      entryZone: {
+        low: 2280,
+        high: 2320,
+        reason: "trace=entryZone RSI parsing error; 靠近支撐區，等待量能確認。",
+      },
+      tp1Structured: { price: 2400 },
+      tp2Structured: { price: 2480 },
+      stopLossStructured: { price: 2240 },
+      why_buy: [
+        "trace=2330 technical parser diagnostic; 價格站上 MA20。",
+        "institutional parsing error: missing rows; 產業鏈題材仍在主流觀察名單。",
+      ],
+      why_not_buy: [
+        "rawSynthesisPreview returned parser noise; 若跌破支撐需降部位。",
+      ],
+      source: "brain_react_v2",
+    });
+
+    const productText = `${card?.entry?.label}\n${card?.why_buy}\n${card?.risk}`;
+    expect(productText).toContain("靠近支撐區");
+    expect(productText).toContain("價格站上 MA20");
+    expect(productText).toContain("產業鏈題材");
+    expect(productText).toContain("跌破支撐");
+    expect(productText).not.toMatch(/trace=|parsing error|parser|diagnostic|rawSynthesisPreview|usedFallback/i);
   });
 
   it("marks non-complete five-card fallback responses as degraded instead of live", () => {
@@ -98,7 +133,7 @@ describe("AI recommendations v3 view mapping", () => {
       data: {
         status: "synthesis_format_error",
         itemCount: 5,
-        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}` })),
+        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}`, bucket: "B" as const, totalScore: 68 })),
         usedFallback: true,
         fullAiReportParsed: false,
         synthesisRetryUsed: false,
@@ -120,7 +155,11 @@ describe("AI recommendations v3 view mapping", () => {
       data: {
         status: "complete",
         itemCount: 3,
-        items: [{ ticker: "2330" }, { ticker: "2317" }, { ticker: "2603" }],
+        items: [
+          { ticker: "2330", bucket: "B", totalScore: 68 },
+          { ticker: "2317", bucket: "B", totalScore: 69 },
+          { ticker: "2603", bucket: "B", totalScore: 70 },
+        ],
         usedFallback: false,
         fullAiReportParsed: true,
       },
@@ -131,6 +170,30 @@ describe("AI recommendations v3 view mapping", () => {
     expect(state.tone).toBe("degraded");
     expect(state.detail).toContain("目前顯示 3 檔");
     expect(state.detail).toContain("不會補假資料");
+  });
+
+  it("does not mark five high-risk exclusion cards as live recommendations", () => {
+    const state = buildV3PanelState({
+      data: {
+        status: "complete",
+        itemCount: 5,
+        items: Array.from({ length: 5 }, (_, index) => ({
+          ticker: `23${index}`,
+          bucket: "C" as const,
+          action: "高風險排除",
+          totalScore: 56,
+        })),
+        usedFallback: false,
+        fullAiReportParsed: true,
+      },
+      error: null,
+      visibleCount: 0,
+    });
+
+    expect(state.tone).toBe("degraded");
+    expect(state.title).toContain("今日沒有可行動 AI 推薦");
+    expect(state.detail).toContain("高風險排除");
+    expect(state.detail).toContain("不會把排除名單包裝成推薦");
   });
 
   it("derives official announcement source state or exposes the missing backend field", () => {
@@ -189,7 +252,7 @@ describe("AI recommendations v3 view mapping", () => {
       data: {
         status: "complete",
         itemCount: 5,
-        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}` })),
+        items: Array.from({ length: 5 }, (_, index) => ({ ticker: `23${index}`, bucket: "B" as const, totalScore: 68 })),
         usedFallback: false,
         fullAiReportParsed: true,
         synthesisFallbackUsed: false,

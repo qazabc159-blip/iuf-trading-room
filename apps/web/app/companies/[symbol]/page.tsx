@@ -295,7 +295,7 @@ export default async function CompanyDetailPage({
   // ── Phase 1: fetch OHLCV (needed for kbarDate) ──────────────────────────────
   let ohlcvErrorMsg: string | null = null;
   const from = new Date();
-  from.setFullYear(from.getFullYear() - 3);
+  from.setFullYear(from.getFullYear() - 10);
   const rawBars: OhlcvBar[] = await getCompanyOhlcv(company.id, { interval: "1d", from: from.toISOString().slice(0, 10) }).catch((err) => {
     ohlcvErrorMsg = friendlyError(err);
     console.warn("[company-detail] getCompanyOhlcv failed", { id: company.id, err });
@@ -535,7 +535,12 @@ export default async function CompanyDetailPage({
         </div>
         <div className="company-data-status-rail">
           <DerivativesPanel />
-          <TickStreamPanel />
+          <TickStreamPanel
+            symbol={company.ticker}
+            kbarRows={kbarView?.rows ?? []}
+            kbarState={kbarState}
+            kbarReason={kbarReason}
+          />
         </div>
       </div>
 

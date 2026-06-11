@@ -123,12 +123,54 @@ function displaySource(source: string | null | undefined): string {
   return raw;
 }
 
-function displaySourceTrail(sourceTrail: string | null | undefined): string {
+function uniqueParts(parts: string[]) {
+  return Array.from(new Set(parts));
+}
+
+export function displaySourceTrail(sourceTrail: string | null | undefined): string {
   const raw = sourceTrail?.trim();
   if (!raw || raw.toLowerCase().includes("sourcetrail")) {
     return "資料路徑尚未完整回傳";
   }
-  return raw;
+
+  const normalized = raw.toLowerCase();
+  const parts: string[] = [];
+
+  if (normalized.includes("recommendation_source=brain_react")) {
+    parts.push("推薦來源：AI 推薦引擎");
+  } else if (normalized.includes("recommendation_source=")) {
+    parts.push("推薦來源：推薦資料庫");
+  }
+
+  if (normalized.includes("run(") || normalized.includes("ai_recommendations_runs")) {
+    parts.push("推薦批次：已讀取今日推薦結果");
+  }
+
+  if (normalized.includes("official_announcements")) {
+    if (normalized.includes("state=live")) {
+      parts.push("官方公告：已納入重大訊息狀態");
+    } else if (normalized.includes("state=empty")) {
+      parts.push("官方公告：目前無可用新公告");
+    } else {
+      parts.push("官方公告：資料狀態待確認");
+    }
+  }
+
+  if (
+    normalized.includes("technical(")
+    || normalized.includes("finmind_ohlcv")
+    || normalized.includes("get_company_technical")
+    || normalized.includes("lastprice")
+  ) {
+    parts.push("技術/量價：已納入報價與 K 線資料");
+  }
+
+  if (normalized.includes("get_news_top10") || normalized.includes("news")) {
+    parts.push("新聞/題材：已納入市場新聞資料");
+  }
+
+  if (parts.length === 0) return raw;
+  return uniqueParts(parts).join("；");
 }
 
 export function StockRecCard({ rec }: { rec: StockRecCardData }) {
@@ -428,18 +470,18 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
             <span>{displaySource(rec.source)}</span>
           </div>
           <div className="_src-source-code">
-            <b>資料路徑</b>
+            <b>資料依據</b>
             <span>{sourceTrail}</span>
           </div>
           {flags.usedFallback || flags.synthesisFallbackUsed || flags.fullAiReportParsed === false ? (
             <div className="_src-source-state">
-              <span data-tone="warn">資料完整度需留意</span>
-              <small>本卡仍顯示後端回傳內容，未用前端假資料補齊。</small>
+              <span data-tone="warn">資料完整度提醒</span>
+              <small>部分 AI 敘事仍在補強；此卡先以已核對的量價、風控與來源資料呈現，請搭配部位上限使用。</small>
             </div>
           ) : (
             <div className="_src-source-state">
               <span data-tone="ok">正式資料</span>
-              <small>本卡直接使用推薦引擎回傳資料，未用前端假資料補齊。</small>
+              <small>推薦流程與可驗證資料已併入；仍需搭配交易室風控與自身部位限制。</small>
             </div>
           )}
         </div>

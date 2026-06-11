@@ -31,7 +31,7 @@ type LoadState = "idle" | "loading" | "live" | "empty" | "blocked";
 const ROUTES: Item[] = [
   { code: "01", label: "戰情台", sub: "大盤、觀察清單、重大訊息與策略總覽", href: "/", group: "頁面" },
   { code: "02", label: "市場情報", sub: "公司公告、新聞線索與市場情報", href: "/market-intel", group: "頁面" },
-  { code: "03", label: "AI 推薦", sub: "Recommendation Orchestrator 與候選分層", href: "/ai-recommendations", group: "頁面" },
+  { code: "03", label: "AI 推薦", sub: "今日推薦、觀察名單與風控分層", href: "/ai-recommendations", group: "頁面" },
   { code: "04", label: "交易室", sub: "模擬資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
   { code: "05", label: "公司 / 主題", sub: "公司池、主題板、產業鏈與 K 線", href: "/companies", group: "頁面" },
   { code: "06", label: "量化策略", sub: "Athena strategy input 與 SIM-only 訂閱", href: "/quant-strategies", group: "頁面" },
@@ -40,7 +40,6 @@ const ROUTES: Item[] = [
   { code: "09", label: "交易計畫", sub: "交易室子頁：交易計畫與審核佇列", href: "/plans", group: "頁面" },
   { code: "10", label: "AI 每日簡報", sub: "右上角 dock：OpenAlice 簡報列表", href: "/briefs", group: "頁面" },
   { code: "11", label: "警示", sub: "右上角 bell：風控提醒與警示紀錄", href: "/alerts", group: "頁面" },
-  { code: "12", label: "營運監控", sub: "系統狀態、稽核與工作流", href: "/ops", group: "頁面" },
 ];
 
 function clip(value: string | null | undefined, max = 72) {

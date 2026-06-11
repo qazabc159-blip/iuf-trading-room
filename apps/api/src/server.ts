@@ -7,6 +7,7 @@ import type { Context } from "hono";
 import {
   type AppSession,
   autopilotExecuteInputSchema,
+  buildMyEntitlements,
   companyMergeInputSchema,
   companyCreateInputSchema,
   companyKeywordsReplaceInputSchema,
@@ -157,6 +158,7 @@ import {
   marketDataQuotesQuerySchema,
   marketDataSymbolsQuerySchema,
   marketDataEffectiveQuotesQuerySchema,
+  resolveMarketDataChangePct,
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes,
@@ -352,6 +354,7 @@ function isPublicDiagRoute(path: string): boolean {
   if (path === "/api/v1/paper/health") return true;
   if (path === "/api/v1/paper/health/detail") return true;
   if (path === "/api/v1/diagnostics/kbar") return true;
+  if (path === "/api/v1/diagnostics/kline-depth") return true;
   return false;
 }
 
@@ -503,6 +506,7 @@ function getBearerToken(c: Context) {
 
 // UUID v4 pattern — used to decide whether `:id` needs ticker fallback.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OFFICIAL_COMPANY_TICKER_PATTERN = /^\d{4,6}$/;
 
 /**
  * Resolve a company by UUID or ticker within a workspace.
@@ -519,7 +523,14 @@ async function resolveCompany(
   }
   // Ticker fallback: scan list within workspace. listCompanies is workspace-scoped.
   const companies = await repo.listCompanies(undefined, options);
-  return companies.find((c) => c.ticker === idOrTicker) ?? null;
+  const existing = companies.find((c) => c.ticker === idOrTicker);
+  if (existing) return existing;
+
+  // Product rule: K-line/company pages must not be limited to the curated
+  // representative pools. If a valid TW ticker is missing from our company
+  // master, discover it from official TWSE/TPEx company lists and create a
+  // minimal official master row before the caller fetches FinMind data.
+  return ensureCompanyFromOfficialUniverse(repo, idOrTicker, options);
 }
 
 async function requireOpenAliceDevice(c: Context, deviceId: string) {
@@ -764,6 +775,13 @@ app.get("/api/v1/session", (c) =>
     data: c.get("session")
   })
 );
+
+app.get("/api/v1/entitlements/me", (c) => {
+  const session = c.get("session");
+  return c.json({
+    data: buildMyEntitlements(session.user)
+  });
+});
 
 app.get("/api/v1/audit-logs/summary", async (c) => {
   const query = auditLogSummaryQuerySchema.parse(c.req.query());
@@ -1131,24 +1149,134 @@ app.get("/api/v1/market-data/overview", async (c) => {
     includeStale: query.includeStale,
     topLimit: query.topLimit
   });
+
+  // ── MIS intraday overlay (盤中即時強化) ─────────────────────────────────
+  // During trading hours (08:55-14:35 TST weekdays):
+  //   1. marketContext.index — override with cached MIS TAIEX (tse_t00.tw) data
+  //   2. marketContext.heatmap — overlay _misTileCache today-only entries
+  // Outside trading hours: pass through base result (EOD / null kept as-is).
+  // Cache: _overviewMisIndexCache written by MIS cron (45s) — TTL 60s here.
+  // If cache expired/missing, we fall through (盤後 or cron not fired yet).
+
+  let finalOverviewData = overviewData;
+
+  if (overviewData?.marketContext) {
+    // Check MIS cron window: 08:55-14:35 TST weekdays
+    const _hhmm = getTaipeiHHMM();
+    const _taipeiDay = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
+    const isMisWindow = _hhmm >= 855 && _hhmm <= 1435 && _taipeiDay >= 1 && _taipeiDay <= 5;
+
+    if (isMisWindow) {
+      const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10).replace(/-/g, "");
+      const nowIso = new Date().toISOString();
+      const taipeiDateStr = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      // 1. Enrich index from _overviewMisIndexCache (written by MIS cron every 45s)
+      const idxCache = _overviewMisIndexCache;
+      const idxFresh = idxCache &&
+        idxCache.tradeDateYmd === todayYmd &&
+        (Date.now() - idxCache.cachedAt) < 60_000; // 60s TTL
+
+      let enrichedIndex = overviewData.marketContext.index as Record<string, unknown>;
+      if (idxFresh && idxCache!.taiex) {
+        const t = idxCache!.taiex;
+        const asOfTs = t.time
+          ? new Date(`${taipeiDateStr}T${t.time}+08:00`).toISOString()
+          : nowIso;
+        const intradayHistory = updateOverviewMisIndexHistory({
+          key: "TAIEX",
+          tradeDateYmd: todayYmd,
+          time: t.time,
+          last: t.last,
+          volume: t.volume
+        });
+        enrichedIndex = {
+          ...enrichedIndex,
+          state: "LIVE",
+          symbol: "t00",
+          market: "TW_INDEX",
+          name: "加權指數",
+          source: "twse_mis_intraday",
+          last: t.last,
+          prevClose: t.prevClose,
+          change: t.change,
+          changePct: t.changePct,
+          timestamp: asOfTs,
+          asOf: asOfTs,
+          updatedAt: nowIso,
+          freshnessStatus: "fresh",
+          reason: "mis_intraday",
+          history: mergeOverviewIndexHistory(enrichedIndex["history"], intradayHistory)
+        };
+      }
+
+      // 2. Enrich heatmap tiles from _misTileCache (today-only guard)
+      const baseHeatmap = (overviewData.marketContext.heatmap ?? []) as Array<Record<string, unknown>>;
+      const enrichedHeatmap = baseHeatmap.map((tile) => {
+        const sym = String(tile["symbol"] ?? "");
+        const misEntry = _misTileCache.get(sym);
+        if (!misEntry || misEntry.tradeDateYmd !== todayYmd) return tile;
+        // MIS entry is today's — overlay price data + intraday source metadata
+        const prevClose = typeof tile["prevClose"] === "number" ? tile["prevClose"] : null;
+        const change = prevClose !== null
+          ? parseFloat((misEntry.last - prevClose).toFixed(2))
+          : null;
+        const changePct = resolveMarketDataChangePct({
+          last: misEntry.last,
+          prevClose,
+          changePct: misEntry.changePct
+        });
+        return {
+          ...tile,
+          last: misEntry.last,
+          change,
+          changePct,
+          source: "twse_mis_intraday",
+          sourceState: "twse_mis_intraday",
+          sourceLabel: "盤中即時 (MIS)",
+          updatedAt: misEntry.ts,
+          asOf: misEntry.ts,
+          freshnessStatus: "fresh",
+          readiness: "ready"
+        };
+      });
+
+      const misHeatmapCount = enrichedHeatmap.filter((t) => t["sourceState"] === "twse_mis_intraday").length;
+      const contextState = (idxFresh && idxCache!.taiex) || misHeatmapCount > 0 ? "LIVE" : overviewData.marketContext.state;
+
+      finalOverviewData = {
+        ...overviewData,
+        marketContext: {
+          ...overviewData.marketContext,
+          state: contextState as typeof overviewData.marketContext.state,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          index: enrichedIndex as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          heatmap: enrichedHeatmap as any
+        }
+      };
+    }
+  }
+
   // Normalize heatmap sector labels to zh-TW before sending response.
   // companies.chain_position (Yahoo Finance English) leaks as fallback in officialHeatmapSectorForSymbol
   // for symbols not in MARKET_HEATMAP_SYMBOL_SECTOR_LABELS. Normalize here so Bruce verify
   // sees zh-TW in raw API JSON regardless of source path.
-  const normalizedHeatmap = overviewData?.marketContext?.heatmap
-    ? overviewData.marketContext.heatmap.map((row) => ({
+  const normalizedHeatmap = finalOverviewData?.marketContext?.heatmap
+    ? (finalOverviewData.marketContext.heatmap as Array<Record<string, unknown>>).map((row) => ({
         ...row,
-        sector: row.sector ? normalizeTwseIndustryZhTw(row.sector) : row.sector
+        sector: row["sector"] ? normalizeTwseIndustryZhTw(String(row["sector"])) : row["sector"]
       }))
-    : overviewData?.marketContext?.heatmap;
+    : finalOverviewData?.marketContext?.heatmap;
   return c.json({
-    data: overviewData && normalizedHeatmap !== undefined ? {
-      ...overviewData,
+    data: finalOverviewData && normalizedHeatmap !== undefined ? {
+      ...finalOverviewData,
       marketContext: {
-        ...overviewData.marketContext,
+        ...finalOverviewData.marketContext,
         heatmap: normalizedHeatmap
       }
-    } : overviewData
+    } : finalOverviewData
   });
 });
 
@@ -1916,6 +2044,24 @@ app.get("/api/v1/companies", async (c) => {
   return c.json({ data });
 });
 
+app.get("/api/v1/companies/lite", async (c) => {
+  const workspaceSlug = c.get("session").workspace.slug;
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 2500), 1), 4000);
+  const data = await getCompaniesLiteCached(c.get("repo"), workspaceSlug);
+
+  return c.json({
+    data: data.slice(0, limit).map((company) => ({
+      id: company.id,
+      ticker: company.ticker,
+      name: company.name,
+      market: company.market,
+      chainPosition: company.chainPosition,
+      beneficiaryTier: company.beneficiaryTier,
+      updatedAt: company.updatedAt,
+    })),
+  });
+});
+
 app.post("/api/v1/companies", async (c) => {
   const payload = companyCreateInputSchema.parse(await c.req.json());
   return c.json(
@@ -2447,6 +2593,219 @@ app.post("/api/v1/strategy/:strategyId/toggle-mode", async (c) => {
   }
 
   return c.json({ data: outcome.result }, 200);
+});
+
+// =============================================================================
+// GET /api/v1/realtime/snapshot — Canonical quote snapshot endpoint
+//
+// Returns the latest known QuoteSnapshot for each requested symbol.
+// Data source priority (today):
+//   1. TWSE MIS intraday cache (_misTileCache, refreshed every 10–45s during
+//      trading hours 08:55–14:35 by the MIS sweep cron)
+//   2. TWSE STOCK_DAY_ALL EOD (shared 5-min cache, official close)
+// Both sources are honest about what they are — freshness_mode is always set.
+//
+// Contract guarantee: when Fubon Neo WS adapter ships, only the data-fetch
+// section changes. This path, response schema, and freshness labeling stays.
+//
+// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES)
+// Query: ?symbols=2330,0050 (comma-separated, required, max 50)
+// =============================================================================
+app.get("/api/v1/realtime/snapshot", async (c) => {
+  const session = c.get("session");
+  const role = session.user.role as string;
+  if (!READ_DRAFT_ROLES.has(role)) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const rawSymbols = (c.req.query("symbols") ?? "").trim();
+  if (!rawSymbols) {
+    return c.json({ error: "missing_symbols", message: "?symbols= is required (comma-separated)" }, 400);
+  }
+
+  const requested = [...new Set(
+    rawSymbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)
+  )].slice(0, 50);
+
+  if (requested.length === 0) {
+    return c.json({ error: "missing_symbols", message: "No valid symbol found in ?symbols=" }, 400);
+  }
+
+  const { quoteSnapshotResponseSchema } = await import("@iuf-trading-room/contracts");
+  const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+
+  // --- Build TWSE EOD lookup (shared dedup cache — no extra upstream call if warm) ---
+  const eodRows = await getStockDayAllRows().catch(() => []);
+  type EodEntry = {
+    last_price: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    change: number | null;
+    change_pct: number | null;
+    prev_close: number | null;
+    total_volume: number | null;
+    source_time: string;
+  };
+  const eodMap = new Map<string, EodEntry>();
+  for (const row of eodRows) {
+    const code = row.Code?.trim();
+    if (!code) continue;
+    const close = parseFloat(row.ClosingPrice);
+    if (!isFinite(close)) continue;
+    const chgRaw = parseFloat(row.Change?.trim() ?? "");
+    const chg = isFinite(chgRaw) ? chgRaw : null;
+    const open = isFinite(parseFloat(row.OpeningPrice)) ? parseFloat(row.OpeningPrice) : null;
+    const high = isFinite(parseFloat(row.HighestPrice)) ? parseFloat(row.HighestPrice) : null;
+    const low = isFinite(parseFloat(row.LowestPrice)) ? parseFloat(row.LowestPrice) : null;
+    const vol = isFinite(parseFloat(row.TradeVolume)) ? parseFloat(row.TradeVolume) : null;
+    const prevClose = chg != null ? close - chg : null;
+    const changePct = prevClose != null && prevClose !== 0
+      ? Math.round((chg! / prevClose) * 10000) / 100
+      : null;
+
+    // Derive ISO source_time from TWSE ROC date "114/05/18" → "2026-05-18T13:30:00+08:00"
+    const dateParts = (row.Date ?? "").trim().split("/");
+    let sourceTime = nowIso;
+    if (dateParts.length === 3) {
+      const rocYear = parseInt(dateParts[0]!, 10);
+      const dateStr = `${rocYear + 1911}-${dateParts[1]!.padStart(2, "0")}-${dateParts[2]!.padStart(2, "0")}`;
+      sourceTime = `${dateStr}T13:30:00+08:00`;
+    }
+
+    eodMap.set(code, {
+      last_price: close,
+      open,
+      high,
+      low,
+      change: chg,
+      change_pct: changePct,
+      prev_close: prevClose,
+      total_volume: vol,
+      source_time: sourceTime
+    });
+  }
+
+  // --- Freshness helpers ---
+  // MIS intraday threshold: 5 min (MIS cron fires every 45s / sweep every 10s)
+  const MIS_STALE_MS = 5 * 60 * 1000;
+  // EOD is always classified as "eod" regardless of age
+  const TAIPEI_HHMM = (() => {
+    const d = new Date(now + 8 * 60 * 60 * 1000);
+    return d.getUTCHours() * 100 + d.getUTCMinutes();
+  })();
+  const isTradingHours = TAIPEI_HHMM >= 855 && TAIPEI_HHMM <= 1435;
+  const todayYmd = new Date(now + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
+
+  // --- Resolve each symbol ---
+  const snapshots = [];
+  const found: string[] = [];
+  const missing: string[] = [];
+
+  for (const sym of requested) {
+    // Tier 1: MIS intraday cache
+    const misEntry = _misTileCache.get(sym);
+    const misIsToday = misEntry?.tradeDateYmd === todayYmd;
+    const misAgeMs = misEntry ? now - new Date(misEntry.ts).getTime() : Infinity;
+    const misIsValid = misEntry != null && misIsToday && misAgeMs < MIS_STALE_MS;
+
+    if (misIsValid && isTradingHours) {
+      // MIS data: last_price + changePct available; no OHLC or depth
+      const misSourceTime = misEntry!.ts;
+      const freshnessMs = Math.max(0, now - new Date(misSourceTime).getTime());
+
+      // Try to blend EOD reference for prev_close / open / high / low
+      const eod = eodMap.get(sym);
+
+      found.push(sym);
+      snapshots.push(quoteSnapshotResponseSchema.shape.snapshots.element.parse({
+        symbol: sym,
+        exchange: "TWSE" as const,
+        market: "TSE" as const,
+        channel: "quote" as const,
+        source: "twse_mis" as const,
+        source_time: misSourceTime,
+        ingest_time: nowIso,
+        serial: null,
+        last_price: misEntry!.last,
+        last_size: null,
+        total_volume: eod?.total_volume ?? null,
+        bid: null,
+        ask: null,
+        bid_size: null,
+        ask_size: null,
+        flags: {},
+        freshness_mode: "intraday" as const,
+        freshness_ms: freshnessMs,
+        version: "1" as const,
+        prev_close: eod?.prev_close ?? null,
+        change: misEntry!.changePct != null && eod?.prev_close != null
+          ? Math.round((misEntry!.changePct / 100) * eod.prev_close * 100) / 100
+          : null,
+        change_pct: misEntry!.changePct,
+        open: eod?.open ?? null,
+        high: eod?.high ?? null,
+        low: eod?.low ?? null
+      }));
+      continue;
+    }
+
+    // Tier 2: TWSE EOD
+    const eod = eodMap.get(sym);
+    if (eod) {
+      const freshnessMs = Math.max(0, now - new Date(eod.source_time).getTime());
+      // If MIS entry exists but is stale/off-hours, call it "stale"; pure EOD = "eod"
+      const freshnessMode = (misEntry != null && !misIsToday)
+        ? "stale" as const
+        : "eod" as const;
+
+      found.push(sym);
+      snapshots.push(quoteSnapshotResponseSchema.shape.snapshots.element.parse({
+        symbol: sym,
+        exchange: "TWSE" as const,
+        market: "TSE" as const,
+        channel: "quote" as const,
+        source: "eod" as const,
+        source_time: eod.source_time,
+        ingest_time: nowIso,
+        serial: null,
+        last_price: eod.last_price,
+        last_size: null,
+        total_volume: eod.total_volume,
+        bid: null,
+        ask: null,
+        bid_size: null,
+        ask_size: null,
+        flags: {},
+        freshness_mode: freshnessMode,
+        freshness_ms: freshnessMs,
+        version: "1" as const,
+        prev_close: eod.prev_close,
+        change: eod.change,
+        change_pct: eod.change_pct,
+        open: eod.open,
+        high: eod.high,
+        low: eod.low
+      }));
+      continue;
+    }
+
+    // No data
+    missing.push(sym);
+  }
+
+  return c.json(quoteSnapshotResponseSchema.parse({
+    generated_at: nowIso,
+    symbols_found: found,
+    symbols_missing: missing,
+    snapshots
+  }));
 });
 
 app.post("/api/v1/signals", async (c) => {
@@ -5247,9 +5606,41 @@ const authRegisterSchema = z.object({
   inviteCode: z.string().min(1).max(128)
 });
 
+function sanitizeOperationalErrorMessage(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value
+    .replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, "postgres://[REDACTED]@")
+    .replace(/(password|passwd|pwd|token|secret)=([^&\s]+)/gi, "$1=[REDACTED]")
+    .slice(0, 1200);
+}
+
+function serializeOperationalError(error: unknown) {
+  const record = error && typeof error === "object"
+    ? (error as Record<string, unknown>)
+    : {};
+  const cause = record.cause && typeof record.cause === "object"
+    ? (record.cause as Record<string, unknown>)
+    : {};
+
+  return {
+    name: typeof record.name === "string" ? record.name : undefined,
+    code: typeof record.code === "string" ? record.code : undefined,
+    message: sanitizeOperationalErrorMessage(record.message),
+    causeName: typeof cause.name === "string" ? cause.name : undefined,
+    causeCode: typeof cause.code === "string" ? cause.code : undefined,
+    causeMessage: sanitizeOperationalErrorMessage(cause.message)
+  };
+}
+
 app.post("/auth/login", async (c) => {
   const body = authLoginSchema.parse(await c.req.json());
-  const result = await loginWithPassword(body.email, body.password);
+  let result;
+  try {
+    result = await loginWithPassword(body.email, body.password);
+  } catch (error) {
+    console.warn("[auth/login] database login failed", serializeOperationalError(error));
+    return c.json({ error: "auth_login_unavailable", code: "AUTH_LOGIN_DB_ERROR" }, 503);
+  }
   if (!result.ok) {
     return c.json({ error: result.error }, 401);
   }
@@ -5972,10 +6363,26 @@ const ohlcvQuerySchema = z.object({
   interval: z.enum(["1d", "1w", "1m", "5m", "15m", "60m"]).optional().default("1d")
 });
 
+function normalizeOhlcvInterval(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const value = raw.trim().toLowerCase();
+  if (value === "1mo" || value === "1mon" || value === "1month" || value === "month") return "1m";
+  if (value === "1wk" || value === "1week" || value === "week") return "1w";
+  return value;
+}
+
+function normalizeOhlcvQuery(raw: Record<string, string | undefined>): Record<string, string | undefined> {
+  const interval = normalizeOhlcvInterval(raw.interval ?? raw.timeframe ?? raw.freq);
+  return {
+    ...raw,
+    interval: interval ?? raw.interval
+  };
+}
+
 app.get("/api/v1/companies/:id/ohlcv", async (c) => {
   let query: ReturnType<typeof ohlcvQuerySchema.parse>;
   try {
-    query = ohlcvQuerySchema.parse(c.req.query());
+    query = ohlcvQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -6154,7 +6561,7 @@ const ohlcvBulkQuerySchema = z.object({
 app.get("/api/v1/companies/ohlcv/bulk", async (c) => {
   let query: ReturnType<typeof ohlcvBulkQuerySchema.parse>;
   try {
-    query = ohlcvBulkQuerySchema.parse(c.req.query());
+    query = ohlcvBulkQuerySchema.parse(normalizeOhlcvQuery(c.req.query()));
   } catch (err) {
     if (err instanceof ZodError) {
       return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
@@ -6384,7 +6791,10 @@ import {
   runDatasetBackfill,
   type BackfillDataset
 } from "./jobs/finmind-full-ingest.js";
-import { runTwseAnnouncementIngest } from "./jobs/twse-announcement-ingest.js";
+import {
+  fetchAllTwseMaterialAnnouncements,
+  runTwseAnnouncementIngest
+} from "./jobs/twse-announcement-ingest.js";
 
 // Helper: resolve ticker from company (already resolved via resolveCompany → company.ticker)
 function companyIdToTicker(ticker: string): string {
@@ -7398,6 +7808,261 @@ app.get("/api/v1/companies/:id/announcements", async (c) => {
 
   const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
   const stockId = companyIdToTicker(company.ticker);
+  const companyName = company.name ?? stockId;
+  const session = c.get("session");
+
+  type CompanyAnnouncementRow = {
+    id: string | null;
+    date: string | null;
+    title: string | null;
+    category: string | null;
+    body: string | null;
+    ticker: string | null;
+    company_name: string | null;
+    url: string | null;
+    source: string | null;
+  };
+
+  function categoryFromTitle(title: string): string {
+    if (/股利|除權|除息|配息|配股/.test(title)) return "股利";
+    if (/財報|財務|營收|EPS|獲利|損益|業績/.test(title)) return "財報";
+    if (/董事會|股東會|法說|重大決議/.test(title)) return "治理";
+    if (/取得|處分|投資|併購|合併|契約|訴訟|背書|保證/.test(title)) return "事件";
+    return "重大訊息";
+  }
+
+  function toItem(row: CompanyAnnouncementRow, index: number) {
+    const date = String(row.date ?? "").slice(0, 10);
+    const title = row.title ?? "";
+    return {
+      id: row.id ?? `${stockId}-${date || "announcement"}-${index}`,
+      date,
+      title,
+      category: row.category ?? categoryFromTitle(title),
+      body: row.body ?? undefined,
+      ticker: row.ticker ?? stockId,
+      companyName: row.company_name ?? companyName,
+      url: row.url,
+      source: row.source ?? "tw_announcements_cache"
+    };
+  }
+
+  const db = getDb();
+  function readCompanyAnnouncementRows<T>(result: unknown): T[] {
+    const rows = (result as { rows?: T[] })?.rows;
+    if (Array.isArray(rows)) return rows;
+    if (Array.isArray(result)) return result as T[];
+    return [];
+  }
+
+  function asRecord(value: unknown): Record<string, unknown> | null {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  }
+
+  function pickText(row: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = row[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return null;
+  }
+
+  function rocDateToIso(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    const rocMatch = text.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+    if (rocMatch) {
+      const year = Number(rocMatch[1]) + 1911;
+      const month = String(Number(rocMatch[2])).padStart(2, "0");
+      const day = String(Number(rocMatch[3])).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    const iso = text.replace(/\//g, "-");
+    return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+  }
+
+  function twseIihRowsFromSection(
+    payload: Record<string, unknown>,
+    key: "news" | "fina" | "conference",
+    category: string,
+    cutoff: Date
+  ): CompanyAnnouncementRow[] {
+    const rows = Array.isArray(payload[key]) ? payload[key] : [];
+    return rows.flatMap((raw, index): CompanyAnnouncementRow[] => {
+      const row = asRecord(raw);
+      if (!row) return [];
+      const date = rocDateToIso(pickText(row, ["date", "meetingDate", "publishDate", "reportDate"]));
+      if (!date) return [];
+      if (new Date(`${date}T23:59:59+08:00`).getTime() < cutoff.getTime()) return [];
+
+      const title = pickText(row, ["subject", "title", "name", "purpose", "type"]);
+      if (!title) return [];
+      const time = pickText(row, ["time", "meetingTime", "publishTime"]);
+      const url = pickText(row, ["link", "url", "file", "downloadUrl"]);
+      const sourceCompanyId = pickText(row, ["companyId", "code", "stockNo"]);
+      const sourceCompanyName = pickText(row, ["companyName", "name", "shortName"]);
+
+      return [{
+        id: `${stockId}-twse-iih-${key}-${date}-${index}`,
+        date,
+        title,
+        category,
+        body: time ? `揭露時間 ${time}` : null,
+        ticker: sourceCompanyId ?? stockId,
+        company_name: sourceCompanyName ?? companyName,
+        url,
+        source: "twse_iih_company_events"
+      }];
+    });
+  }
+
+  async function fetchTwseIihCompanyEventRows(): Promise<CompanyAnnouncementRow[]> {
+    const url = `https://www.twse.com.tw/rwd/zh/IIH/company/events?code=${encodeURIComponent(stockId)}`;
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json,text/plain,*/*",
+        "user-agent": "IUF-Trading-Room/1.0 company-announcements"
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error(`twse_iih_company_events_http_${response.status}`);
+
+    const text = await response.text();
+    const payload = asRecord(JSON.parse(text));
+    if (!payload) return [];
+    const info = asRecord(payload.info);
+    if (info && String(info.status ?? "").toLowerCase() !== "success") return [];
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return [
+      ...twseIihRowsFromSection(payload, "news", "重大訊息", cutoff),
+      ...twseIihRowsFromSection(payload, "fina", "財務報告", cutoff),
+      ...twseIihRowsFromSection(payload, "conference", "法說會", cutoff)
+    ]
+      .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")))
+      .slice(0, 30);
+  }
+
+  if (db) {
+    try {
+      const result = await db.execute(drizzleSql`
+        SELECT
+          CONCAT(a.ticker_symbol, '-', a.announced_at::text, '-', a.title_hash) AS id,
+          a.announced_at::text AS date,
+          a.title AS title,
+          '重大訊息' AS category,
+          a.content AS body,
+          a.ticker_symbol AS ticker,
+          COALESCE(c.name, a.ticker_symbol) AS company_name,
+          COALESCE(
+            a.source_url,
+            CASE
+              WHEN a.ticker_symbol IS NOT NULL AND a.ticker_symbol <> ''
+              THEN 'https://mops.twse.com.tw/mops/web/t05st02_sii?TYPEK=sii&code=' || a.ticker_symbol
+              ELSE NULL
+            END
+          ) AS url,
+          'tw_announcements_cache' AS source
+        FROM tw_announcements a
+        LEFT JOIN companies c
+          ON c.ticker = a.ticker_symbol
+         AND c.workspace_id = ${session.workspace.id}
+        WHERE a.ticker_symbol = ${stockId}
+          AND a.announced_at >= NOW() - (${days}::text || ' days')::interval
+          AND COALESCE(a.title, '') <> ''
+        ORDER BY a.announced_at DESC
+        LIMIT 30
+      `);
+      const rows = readCompanyAnnouncementRows<CompanyAnnouncementRow>(result);
+      if (rows.length > 0) {
+        return c.json({
+          data: rows.map(toItem),
+          state: "LIVE" as const,
+          source: "tw_announcements_cache"
+        });
+      }
+    } catch (err) {
+      console.warn("[company/announcements] tw_announcements cache unavailable:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  try {
+    const iihRows = await fetchTwseIihCompanyEventRows();
+    if (iihRows.length > 0) {
+      return c.json({
+        data: iihRows.map(toItem),
+        state: "LIVE" as const,
+        source: "twse_iih_company_events"
+      });
+    }
+  } catch (err) {
+    console.warn("[company/announcements] TWSE IIH company events unavailable:", err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const liveRows = (await fetchAllTwseMaterialAnnouncements())
+      .filter((row) => String(row.Code ?? "").trim() === stockId)
+      .filter((row) => {
+        const iso = String(row.Date ?? "").replace(/\//g, "-");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return true;
+        return new Date(`${iso}T23:59:59+08:00`).getTime() >= cutoff.getTime();
+      })
+      .slice(0, 30)
+      .map((row, index): CompanyAnnouncementRow => {
+        const date = String(row.Date ?? "").replace(/\//g, "-");
+        const title = row.Title ?? "";
+        return {
+          id: `${stockId}-${date}-${index}`,
+          date,
+          title,
+          category: categoryFromTitle(title),
+          body: row.Content ?? null,
+          ticker: stockId,
+          company_name: row.Name ?? companyName,
+          url: row.Link ?? null,
+          source: "twse_openapi_live"
+        };
+      });
+
+    if (liveRows.length > 0) {
+      return c.json({
+        data: liveRows.map(toItem),
+        state: "LIVE" as const,
+        source: "twse_openapi_live"
+      });
+    }
+  } catch (err) {
+    console.warn("[company/announcements] TWSE live fallback unavailable:", err instanceof Error ? err.message : String(err));
+    return c.json({
+      data: [],
+      state: "DEGRADED" as const,
+      degradedReason: "twse_live_and_cache_unavailable",
+      source: "tw_announcements_cache"
+    });
+  }
+
+  return c.json({
+    data: [],
+    state: "EMPTY" as const,
+    degradedReason: "no_official_company_announcements",
+    source: "tw_announcements_cache"
+  });
+});
+
+app.get("/api/v1/internal/legacy/companies/:id/announcements", async (c) => {
+  const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
+    workspaceSlug: c.get("session").workspace.slug
+  });
+  if (!company) return c.json({ error: "company_not_found" }, 404);
+
+  const days = Math.max(1, Math.min(365, Number(c.req.query("days") ?? "30")));
+  const stockId = companyIdToTicker(company.ticker);
 
   // F3: wrap in try/catch — fetchTwse now throws TwseNonJsonError on HTML-200 maintenance response.
   // Previously swallowed error into {data:[]}; now surfaces DEGRADED state to frontend.
@@ -7890,7 +8555,8 @@ app.post("/api/v1/internal/finmind/sync-now", async (c) => {
 //     companies_ohlcv, tw_institutional_buysell, tw_margin_short, tw_dividend
 //
 //   Body: { dataset: "companies_ohlcv" | "tw_institutional_buysell" | "tw_margin_short" | "tw_dividend",
-//            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number }
+//            from: "YYYY-MM-DD", to: "YYYY-MM-DD", batch_size?: number,
+//            symbols?: ["2330", "6202"] }
 //
 //   Hard lines:
 //     - Owner role required (403 otherwise)
@@ -7905,7 +8571,8 @@ const finmindBackfillBodySchema = z.object({
   dataset: z.enum(["companies_ohlcv", "tw_institutional_buysell", "tw_margin_short", "tw_dividend"]),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD"),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD"),
-  batch_size: z.number().int().min(1).max(200).optional()
+  batch_size: z.number().int().min(1).max(200).optional(),
+  symbols: z.array(z.string().regex(/^\d{4}$/)).min(1).max(80).optional()
 });
 
 app.post("/api/v1/internal/finmind/backfill", async (c) => {
@@ -7921,7 +8588,7 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     }, 422);
   }
 
-  let body: { dataset: BackfillDataset; from: string; to: string; batch_size?: number };
+  let body: { dataset: BackfillDataset; from: string; to: string; batch_size?: number; symbols?: string[] };
   try {
     const raw = await c.req.json().catch(() => ({}));
     const parsed = finmindBackfillBodySchema.safeParse(raw);
@@ -7938,6 +8605,13 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     return c.json({ error: "invalid_range", message: "from must be <= to" }, 400);
   }
 
+  if (body.symbols?.length && body.dataset !== "companies_ohlcv") {
+    return c.json({
+      error: "invalid_symbols_dataset",
+      message: "symbols can only be used with dataset=companies_ohlcv"
+    }, 400);
+  }
+
   const workspaceSlug = session.workspace.slug ?? "default";
 
   console.log(
@@ -7950,7 +8624,8 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
     from: body.from,
     to: body.to,
     workspaceSlug,
-    batchSize: body.batch_size
+    batchSize: body.batch_size,
+    symbols: body.symbols
   });
 
   // Write audit log (non-fatal)
@@ -7971,7 +8646,8 @@ app.post("/api/v1/internal/finmind/backfill", async (c) => {
           rows_quarantined: result.rowsQuarantined,
           state: result.state,
           duration_ms: result.durationMs,
-          tickers_attempted: result.tickersAttempted
+          tickers_attempted: result.tickersAttempted,
+          symbols: body.symbols ?? null
         }
       }).catch((err: unknown) => {
         console.warn("[finmind-backfill-endpoint] audit log write failed:", err instanceof Error ? err.message : String(err));
@@ -8360,6 +9036,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     high: number | null;
     low: number | null;
     prevClose: number | null;
+    changePct: number | null;
     volume: number | null;
     bid: number | null;
     ask: number | null;
@@ -8399,6 +9076,10 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const high = parseNum(msg["h"]);
       const low = parseNum(msg["l"]);
       const prevClose = parseNum(msg["y"]);
+      const changePct =
+        prevClose && prevClose > 0
+          ? Math.round(((lastPrice - prevClose) / prevClose) * 10000) / 100
+          : null;
       const volume = parseNum(msg["v"]); // accumulated trade volume (lots)
       // b = underscore-separated ask prices; a = bid prices (MIS convention reversed)
       const bPrices = msg["b"]?.split("_").filter(Boolean);
@@ -8409,21 +9090,46 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const tradeDate = msg["d"] ?? "";
       if (!_isTwseLiveSessionNow() || !_isTodayMisTradeDate(tradeDate)) return null;
 
-      return { lastPrice, open, high, low, prevClose, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
+      return { lastPrice, open, high, low, prevClose, changePct, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
     } catch {
       return null;
     }
+  }
+
+  // Helper: parse a TWSE ROC date ("1150609" compact or "115/06/09" slash) to ISO "2026-06-09".
+  // The EOD payload's trading date — TWSE OpenAPI lags: on the evening of a trading day it
+  // can still serve the PREVIOUS session. The UI must label prices with this date, never "today".
+  function _rocDateToIso(raw?: string | null): string | null {
+    const trimmed = String(raw ?? "").trim();
+    const slashParts = trimmed.split("/");
+    if (slashParts.length === 3) {
+      const year = parseInt(slashParts[0]!, 10) + 1911;
+      if (!Number.isFinite(year)) return null;
+      return `${year}-${slashParts[1]!.padStart(2, "0")}-${slashParts[2]!.padStart(2, "0")}`;
+    }
+    if (/^\d{7}$/.test(trimmed)) {
+      const year = parseInt(trimmed.slice(0, 3), 10) + 1911;
+      return `${year}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
+    }
+    return null;
   }
 
   // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
   // Used when both KGI and MIS intraday are unavailable.
   async function _twseEodFallback(sym: string, blockReason?: string | null): Promise<{
     lastPrice: number | null;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    prevClose: number | null;
+    changePct: number | null;
     volume: number | null;
     source: "twse_openapi_eod";
     state: "STALE" | "NO_DATA";
     freshness: "stale" | "not-available";
     note: string;
+    /** ISO trading date of the EOD row (may be 1-2 sessions behind on TWSE publish lag). */
+    dataDate: string | null;
     marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
     referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
   }> {
@@ -8432,25 +9138,41 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const rows = await getStockDayAllRows();
       const row = rows.find((r) => r.Code === sym);
       if (!row) {
-        return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+        return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
       }
-      const closeRaw = row.ClosingPrice?.replace(/,/g, "").trim();
-      const volRaw = row.TradeVolume?.replace(/,/g, "").trim();
-      const close = closeRaw && !isNaN(Number(closeRaw)) ? Number(closeRaw) : null;
-      const vol = volRaw && !isNaN(Number(volRaw)) ? Number(volRaw) : null;
+      const parseEodNum = (value?: string | null) => {
+        const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
+      const close = parseEodNum(row.ClosingPrice);
+      const open = parseEodNum(row.OpeningPrice);
+      const high = parseEodNum(row.HighestPrice);
+      const low = parseEodNum(row.LowestPrice);
+      const vol = parseEodNum(row.TradeVolume);
+      const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+      const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
+      const changePct = prevClose && prevClose > 0
+        ? Math.round((changeRaw / prevClose) * 10000) / 100
+        : null;
       return {
         lastPrice: close,
+        open,
+        high,
+        low,
+        prevClose,
+        changePct,
         volume: vol,
         source: "twse_openapi_eod",
         state: close !== null ? "STALE" : "NO_DATA",
         freshness: close !== null ? "stale" : "not-available",
         note: `twse_eod date=${row.Date ?? "unknown"}`,
+        dataDate: _rocDateToIso(row.Date),
         marketSession,
         referenceReason: _eodReferenceReason(blockReason),
       };
     } catch (e) {
       console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
-      return { lastPrice: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", marketSession, referenceReason: _eodReferenceReason(blockReason) };
+      return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
   }
 
@@ -8465,6 +9187,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: mis.lastPrice,
+          open: mis.open,
+          high: mis.high,
+          low: mis.low,
+          prevClose: mis.prevClose,
+          changePct: mis.changePct,
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
@@ -8482,6 +9209,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       data: {
         symbol,
         lastPrice: fb.lastPrice,
+        open: fb.open,
+        high: fb.high,
+        low: fb.low,
+        prevClose: fb.prevClose,
+        changePct: fb.changePct,
         bid: null,
         ask: null,
         volume: fb.volume,
@@ -8492,6 +9224,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         marketSession: fb.marketSession,
         referenceReason: fb.referenceReason,
         note: fb.note,
+        dataDate: fb.dataDate,
         updatedAt
       }
     });
@@ -8520,6 +9253,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           data: {
             symbol,
             lastPrice: mis.lastPrice,
+            open: mis.open,
+            high: mis.high,
+            low: mis.low,
+            prevClose: mis.prevClose,
+            changePct: mis.changePct,
             bid: mis.bid,
             ask: mis.ask,
             volume: mis.volume,
@@ -8538,6 +9276,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: fb.lastPrice,
+          open: fb.open,
+          high: fb.high,
+          low: fb.low,
+          prevClose: fb.prevClose,
+          changePct: fb.changePct,
           bid: null,
           ask: null,
           volume: fb.volume,
@@ -8548,6 +9291,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           marketSession: fb.marketSession,
           referenceReason: fb.referenceReason,
           note: `kgi_subscribe_failed:${subscribeBlockReason} → ${fb.note}`,
+          dataDate: fb.dataDate,
           updatedAt
         }
       });
@@ -8623,6 +9367,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         data: {
           symbol,
           lastPrice: mis.lastPrice,
+          open: mis.open,
+          high: mis.high,
+          low: mis.low,
+          prevClose: mis.prevClose,
+          changePct: mis.changePct,
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
@@ -8642,6 +9391,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       data: {
         symbol,
         lastPrice: fb.lastPrice,
+        open: fb.open,
+        high: fb.high,
+        low: fb.low,
+        prevClose: fb.prevClose,
+        changePct: fb.changePct,
         bid: null,
         ask: null,
         volume: fb.volume,
@@ -8652,6 +9406,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         marketSession: fb.marketSession,
         referenceReason: fb.referenceReason,
         note: `kgi_blocked:${blockedReason} → ${fb.note}`,
+        dataDate: fb.dataDate,
         updatedAt
       }
     });
@@ -10783,6 +11538,9 @@ app.get("/api/v1/breadth", async (c) => {
 // This replaces chain_position (per-stock Yahoo Finance labels) for heatmap grouping.
 // Cache TTL: 4 hours (industry changes rarely, only on listing/delisting events).
 let _twseIndustryMapCache: { map: Map<string, string>; expiresAt: number } | null = null;
+// Last healthy (both-sources) map. On 6/10 one listing source failed transiently and
+// the partial map (888 tickers vs ~1978) was cached for 4h → heatmap regression.
+let _twseIndustryMapLastGood: Map<string, string> | null = null;
 
 async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
   if (_twseIndustryMapCache && Date.now() < _twseIndustryMapCache.expiresAt) {
@@ -10797,10 +11555,23 @@ async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
     // TPEx first, TWSE overwrites (same dedup policy as bulk-seed)
     for (const c of tpex) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
     for (const c of twse) { if (c.ticker && c.industry) map.set(c.ticker, c.industry); }
-    _twseIndustryMapCache = { map, expiresAt: Date.now() + 4 * 60 * 60 * 1000 };
+
+    const partial = twse.length === 0 || tpex.length === 0;
+    if (partial && _twseIndustryMapLastGood && _twseIndustryMapLastGood.size > map.size) {
+      // Degraded fetch — serve last-good and retry upstream soon instead of
+      // locking the partial map in for 4 hours.
+      console.warn(`[industry-map] partial fetch (twse=${twse.length} tpex=${tpex.length}, mapped=${map.size}) — serving last-good (${_twseIndustryMapLastGood.size}), retry in 5min`);
+      _twseIndustryMapCache = { map: _twseIndustryMapLastGood, expiresAt: Date.now() + 5 * 60 * 1000 };
+      return _twseIndustryMapLastGood;
+    }
+
+    if (!partial && map.size > 0) {
+      _twseIndustryMapLastGood = map;
+    }
+    _twseIndustryMapCache = { map, expiresAt: Date.now() + (partial ? 5 * 60 * 1000 : 4 * 60 * 60 * 1000) };
     return map;
   } catch {
-    return new Map();
+    return _twseIndustryMapLastGood ?? new Map();
   }
 }
 
@@ -12744,6 +13515,161 @@ app.get("/api/v1/diagnostics/kbar", async (c) => {
 //   - source must be "athena" or reject 400
 // =============================================================================
 
+const OWNED_DAILY_KLINE_REQUIRED_BARS = 720;
+const OWNED_DAILY_KLINE_STALE_DAYS = 4;
+const OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS = 3650;
+const OWNED_DAILY_KLINE_PRIORITY_TICKERS = [
+  "2330", "6202", "2317", "2454", "2308", "2412",
+  "3711", "2303", "3034", "2379", "3443", "3661", "6488", "6770", "6415", "5274",
+  "2382", "3231", "6669", "2356", "4938", "3017", "3324", "6230", "8210",
+  "2881", "2882", "2884", "2885", "2886", "2891", "2892", "5880", "5876", "2801",
+  "2603", "2609", "2615", "2636", "2605", "2606", "2610", "2618", "2646", "6757",
+  "2002", "2014", "2009", "2031", "2015", "2023", "2027", "2029", "2010", "2022", "2013", "2007", "2008",
+  "3045", "2395", "5608", "2637", "2607"
+] as const;
+const OWNED_DAILY_KLINE_PRIORITY: Map<string, number> = new Map(
+  OWNED_DAILY_KLINE_PRIORITY_TICKERS.map((ticker, index) => [ticker, index])
+);
+
+type OwnedKlineDepthState = "READY" | "SHALLOW" | "STALE" | "EMPTY" | "MISSING_COMPANY";
+
+function normalizeKlineDepthSymbols(raw: string | undefined): string[] {
+  const values = (raw ?? "2330,6202")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => /^\d{4}$/.test(value));
+  return [...new Set(values)].slice(0, 100);
+}
+
+function resolveOwnedKlineDepthState(realRows: number, latestDate: string | null): OwnedKlineDepthState {
+  if (realRows <= 0) return "EMPTY";
+  if (realRows < OWNED_DAILY_KLINE_REQUIRED_BARS) return "SHALLOW";
+  if (!latestDate) return "STALE";
+  const latestMs = Date.parse(`${latestDate}T00:00:00+08:00`);
+  if (!Number.isFinite(latestMs)) return "STALE";
+  return Date.now() - latestMs > OWNED_DAILY_KLINE_STALE_DAYS * 24 * 60 * 60 * 1000
+    ? "STALE"
+    : "READY";
+}
+
+app.get("/api/v1/diagnostics/kline-depth", async (c) => {
+  const symbols = normalizeKlineDepthSymbols(c.req.query("symbols"));
+  const workspaceSlug = c.req.query("workspace") ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
+  const base = {
+    owned: true,
+    workspaceSlug,
+    requiredBars: OWNED_DAILY_KLINE_REQUIRED_BARS,
+    staleAfterDays: OWNED_DAILY_KLINE_STALE_DAYS,
+    backfillDays: OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS,
+    symbols,
+    asOf: new Date().toISOString()
+  };
+
+  if (!isDatabaseMode()) {
+    return c.json({ data: { ...base, state: "NO_DB", owned: false, items: [] } });
+  }
+
+  const db = getDb();
+  if (!db) {
+    return c.json({ data: { ...base, state: "ERROR", owned: false, items: [], error: "getDb() returned null" } }, 503);
+  }
+
+  try {
+    const result = await db.execute(drizzleSql`
+      WITH target_workspace AS (
+        SELECT id
+        FROM workspaces
+        WHERE slug = ${workspaceSlug}
+        ORDER BY created_at ASC
+        LIMIT 1
+      ),
+      owned_daily AS (
+        SELECT
+          company_id,
+          COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')::int AS real_rows,
+          MIN(dt) FILTER (WHERE source != 'mock' AND interval = '1d')::text AS first_date,
+          MAX(dt) FILTER (WHERE source != 'mock' AND interval = '1d')::text AS latest_date,
+          COUNT(*) FILTER (WHERE source = 'mock' AND interval = '1d')::int AS mock_rows,
+          (ARRAY_AGG(source ORDER BY dt DESC) FILTER (WHERE interval = '1d'))[1] AS latest_source
+        FROM companies_ohlcv
+        GROUP BY company_id
+      )
+      SELECT
+        c.ticker,
+        c.name,
+        COALESCE(o.real_rows, 0)::int AS real_rows,
+        COALESCE(o.mock_rows, 0)::int AS mock_rows,
+        o.first_date,
+        o.latest_date,
+        o.latest_source
+      FROM companies c
+      JOIN target_workspace tw ON tw.id = c.workspace_id
+      LEFT JOIN owned_daily o ON o.company_id = c.id
+      WHERE c.ticker ~ '^[0-9]{4}$'
+      ORDER BY c.ticker ASC
+    `);
+
+    const rows = ((result as { rows?: Record<string, unknown>[] }).rows
+      ?? (Array.isArray(result) ? result : [])) as Record<string, unknown>[];
+    const byTicker = new Map(rows.map((row) => [String(row.ticker ?? ""), row]));
+    const items = symbols.map((symbol) => {
+      const row = byTicker.get(symbol);
+      if (!row) {
+        return {
+          symbol,
+          name: null,
+          state: "MISSING_COMPANY" as OwnedKlineDepthState,
+          realRows: 0,
+          mockRows: 0,
+          firstDate: null,
+          latestDate: null,
+          latestSource: null,
+          owned: true
+        };
+      }
+      const realRows = Number(row.real_rows ?? 0);
+      const latestDate = typeof row.latest_date === "string" ? row.latest_date : null;
+      return {
+        symbol,
+        name: String(row.name ?? symbol),
+        state: resolveOwnedKlineDepthState(realRows, latestDate),
+        realRows,
+        mockRows: Number(row.mock_rows ?? 0),
+        firstDate: typeof row.first_date === "string" ? row.first_date : null,
+        latestDate,
+        latestSource: typeof row.latest_source === "string" ? row.latest_source : null,
+        owned: true
+      };
+    });
+    const ready = items.filter((item) => item.state === "READY").length;
+
+    return c.json({
+      data: {
+        ...base,
+        state: ready === items.length ? "READY" : ready > 0 ? "PARTIAL" : "NEEDS_BACKFILL",
+        summary: {
+          total: items.length,
+          ready,
+          shallow: items.filter((item) => item.state === "SHALLOW").length,
+          stale: items.filter((item) => item.state === "STALE").length,
+          empty: items.filter((item) => item.state === "EMPTY").length,
+          missingCompany: items.filter((item) => item.state === "MISSING_COMPANY").length
+        },
+        items
+      }
+    });
+  } catch (err) {
+    return c.json({
+      data: {
+        ...base,
+        state: "ERROR",
+        items: [],
+        error: err instanceof Error ? err.message : String(err)
+      }
+    }, 500);
+  }
+});
+
 interface LabBundle {
   id: string;
   bundleId: string;
@@ -13144,6 +14070,61 @@ app.get("/api/v1/companies/:symbol/dividend", async (c) => {
  * always tries finmind when token is present — OHLCV_SOURCE only guards the
  * manual one-shot sync endpoint). No-op when DB unavailable.
  */
+async function resolveOhlcvDeepBackfillCandidates(
+  workspaceId: string
+): Promise<Array<{ companyId: string; ticker: string; workspaceId: string }>> {
+  const db = getDb();
+  if (!db) return [];
+
+  const result = await db.execute(drizzleSql`
+    WITH owned_daily AS (
+      SELECT
+        company_id,
+        COUNT(*) FILTER (WHERE source != 'mock' AND interval = '1d')::int AS real_rows,
+        MAX(dt) FILTER (WHERE source != 'mock' AND interval = '1d') AS latest_date
+      FROM companies_ohlcv
+      GROUP BY company_id
+    )
+    SELECT
+      c.id::text AS company_id,
+      c.ticker,
+      c.workspace_id::text AS workspace_id
+    FROM companies c
+    LEFT JOIN owned_daily o ON o.company_id = c.id
+    WHERE c.workspace_id = ${workspaceId}
+      AND c.ticker ~ '^[0-9]{4}$'
+      AND (
+        COALESCE(o.real_rows, 0) < ${OWNED_DAILY_KLINE_REQUIRED_BARS}
+        OR o.latest_date IS NULL
+        OR o.latest_date < (CURRENT_DATE - (${OWNED_DAILY_KLINE_STALE_DAYS}::int * INTERVAL '1 day'))
+      )
+    ORDER BY COALESCE(o.real_rows, 0) ASC, o.latest_date ASC NULLS FIRST, c.ticker ASC
+  `);
+
+  const rows = ((result as { rows?: Record<string, unknown>[] }).rows
+    ?? (Array.isArray(result) ? result : [])) as Record<string, unknown>[];
+  return rows
+    .map((row, index) => ({
+      companyId: String(row.company_id ?? ""),
+      ticker: String(row.ticker ?? ""),
+      workspaceId: String(row.workspace_id ?? workspaceId),
+      originalIndex: index
+    }))
+    .filter((row) => row.companyId && /^\d{4}$/.test(row.ticker))
+    .sort((a, b) => {
+      const aPriority = OWNED_DAILY_KLINE_PRIORITY.get(a.ticker) ?? Number.MAX_SAFE_INTEGER;
+      const bPriority = OWNED_DAILY_KLINE_PRIORITY.get(b.ticker) ?? Number.MAX_SAFE_INTEGER;
+      return aPriority - bPriority || a.originalIndex - b.originalIndex;
+    })
+    .map(({ originalIndex: _originalIndex, ...row }) => row);
+}
+
+function daysAgoUtcDate(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
   if (process.env.FINMIND_KILL_SWITCH === "true") {
     console.log("[ohlcv-scheduler] FINMIND_KILL_SWITCH=true, skipping tick");
@@ -13174,6 +14155,27 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
     const allTickers = rows
       .filter((r) => /^\d{4}$/.test(r.ticker)) // Taiwan 4-digit only
       .map((r) => ({ companyId: r.id, ticker: r.ticker, workspaceId: r.workspaceId }));
+    const deepCandidates = await resolveOhlcvDeepBackfillCandidates(workspaceId);
+    const deepTickers = takeFinMindSchedulerBatch(
+      "ohlcv-deep-backfill",
+      deepCandidates,
+      schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48),
+      true
+    );
+    if (deepTickers.length > 0) {
+      console.log(
+        `[ohlcv-scheduler] Starting deep owned-store backfill for ${deepTickers.length}/${deepCandidates.length} ` +
+        `underfilled tickers (requiredBars=${OWNED_DAILY_KLINE_REQUIRED_BARS})`
+      );
+      const deepResult = await runOhlcvFinmindSync(deepTickers, {
+        startDate: daysAgoUtcDate(OWNED_DAILY_KLINE_DEEP_BACKFILL_DAYS),
+        forceFinmind: true
+      });
+      console.log(
+        `[ohlcv-scheduler] Deep backfill done: success=${deepResult.tickersSuccess} ` +
+        `failed=${deepResult.tickersFailed} durationMs=${deepResult.durationMs}`
+      );
+    }
     const tickers = takeFinMindSchedulerBatch(
       "ohlcv",
       allTickers,
@@ -13966,6 +14968,96 @@ async function _fetchTpexListedCompanies(): Promise<Array<{ ticker: string; name
   }
 }
 
+type OfficialCompanyMasterRow = {
+  ticker: string;
+  name: string;
+  industry: string;
+  market: "TWSE" | "TPEX";
+};
+
+let _officialCompanyUniverseCache:
+  | { loadedAtMs: number; rows: OfficialCompanyMasterRow[] }
+  | null = null;
+const OFFICIAL_COMPANY_UNIVERSE_CACHE_MS = 6 * 60 * 60 * 1000;
+
+async function getOfficialCompanyUniverse(): Promise<OfficialCompanyMasterRow[]> {
+  const now = Date.now();
+  if (
+    _officialCompanyUniverseCache &&
+    now - _officialCompanyUniverseCache.loadedAtMs < OFFICIAL_COMPANY_UNIVERSE_CACHE_MS
+  ) {
+    return _officialCompanyUniverseCache.rows;
+  }
+
+  const [twseCompanies, tpexCompanies] = await Promise.all([
+    _fetchTwseListedCompanies(),
+    _fetchTpexListedCompanies(),
+  ]);
+
+  const byTicker = new Map<string, OfficialCompanyMasterRow>();
+  for (const company of tpexCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上櫃",
+      market: "TPEX",
+    });
+  }
+  for (const company of twseCompanies) {
+    byTicker.set(company.ticker, {
+      ticker: company.ticker,
+      name: company.name,
+      industry: company.industry || "上市",
+      market: "TWSE",
+    });
+  }
+
+  const rows = Array.from(byTicker.values());
+  _officialCompanyUniverseCache = { loadedAtMs: now, rows };
+  return rows;
+}
+
+async function ensureCompanyFromOfficialUniverse(
+  repo: TradingRoomRepository,
+  ticker: string,
+  options: { workspaceSlug: string }
+) {
+  const normalizedTicker = ticker;
+  if (!OFFICIAL_COMPANY_TICKER_PATTERN.test(normalizedTicker)) return null;
+
+  const official = (await getOfficialCompanyUniverse()).find((row) => row.ticker === normalizedTicker);
+  if (!official) return null;
+
+  try {
+    return await repo.createCompany(
+      {
+        ticker: official.ticker,
+        name: official.name,
+        market: official.industry || official.market,
+        country: "Taiwan",
+        chainPosition: official.industry || official.market,
+        beneficiaryTier: "Observation" as const,
+        exposure: _BULK_SEED_EXPOSURE,
+        validation: _BULK_SEED_VALIDATION,
+        notes: `Official company master read-through from ${official.market} OpenAPI ${new Date().toISOString().slice(0, 10)}`,
+        themeIds: [],
+      },
+      options
+    );
+  } catch (err) {
+    // Another request may have created the same ticker between our list and insert.
+    // Re-read once so concurrent customer searches do not surface a false 404.
+    const companies = await repo.listCompanies(undefined, options).catch(() => []);
+    const existing = companies.find((company) => company.ticker === normalizedTicker);
+    if (existing) return existing;
+    console.warn(
+      `[companies/read-through] failed ticker=${normalizedTicker}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
 app.post("/api/v1/admin/companies/bulk-seed", async (c) => {
   const session = c.get("session");
   if (session.user.role !== "Owner") {
@@ -14499,10 +15591,13 @@ function finMindSchedulerCircuitOpen(job: string): boolean {
 function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
   job: string,
   tickers: T[],
-  maxBatchSize: number
+  maxBatchSize: number,
+  preserveOrder = false
 ): T[] {
   if (tickers.length === 0) return [];
-  const ordered = [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  const ordered = preserveOrder
+    ? [...tickers]
+    : [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
   const batchSize = Math.min(Math.max(1, maxBatchSize), ordered.length);
   const start = (_finMindSchedulerCursors.get(job) ?? 0) % ordered.length;
   const first = ordered.slice(start, start + batchSize);
@@ -14511,7 +15606,8 @@ function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
   const next = (start + batch.length) % ordered.length;
   _finMindSchedulerCursors.set(job, next);
   console.log(
-    `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next}`
+    `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next} ` +
+    `preserveOrder=${preserveOrder}`
   );
   return batch;
 }
@@ -14860,10 +15956,111 @@ let _tsweMisQuoteCronLastError: string | null = null;
 let _tsweMisQuoteCronLastCount = 0;
 
 // Module-level: MIS intraday tile cache for heatmap enrichment.
-// Written by _runTwseMisQuoteCron, read by /api/v1/market/heatmap/kgi-core.
+// Written by _runTwseMisQuoteCron (Tier A core 40) and _runMisFullSweepSlice (Tier B full universe).
 // Key: ticker symbol (e.g. "2330"). Value: last price + tradeDateYmd for freshness check.
 // Cleared implicitly when MIS z="-" (盤後) — next MIS cron tick simply won't update.
 const _misTileCache = new Map<string, { last: number; changePct: number | null; ts: string; tradeDateYmd: string }>();
+
+// Module-level: MIS intraday market index cache for overview endpoint.
+// Caches TAIEX (tse_t00.tw) + OTC (otc_o00.tw) live index data.
+// TTL: 30s — overview handler reads this, MIS cron writes on each tick.
+let _overviewMisIndexCache: {
+  taiex: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
+  otc: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
+  cachedAt: number;
+  tradeDateYmd: string;
+} | null = null;
+const OVERVIEW_MIS_INDEX_TTL_MS = 30 * 1000; // 30s
+
+type OverviewMisIndexBar = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  source: "twse_mis_intraday";
+};
+
+const _overviewMisIndexHistory = new Map<string, { tradeDateYmd: string; rows: OverviewMisIndexBar[] }>();
+
+function parseMisNumericField(value: string | undefined): number | null {
+  if (!value || value === "-") return null;
+  const parsed = Number(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function updateOverviewMisIndexHistory(input: {
+  key: string;
+  tradeDateYmd: string;
+  time: string;
+  last: number;
+  volume: number | null;
+}): OverviewMisIndexBar[] {
+  const yyyy = input.tradeDateYmd.slice(0, 4);
+  const mm = input.tradeDateYmd.slice(4, 6);
+  const dd = input.tradeDateYmd.slice(6, 8);
+  const rawTime = /^\d{2}:\d{2}/.test(input.time)
+    ? input.time.slice(0, 5)
+    : getTaipeiHHMM().toString().padStart(4, "0").replace(/^(\d{2})(\d{2})$/, "$1:$2");
+  const minuteKey = `${yyyy}-${mm}-${dd} ${rawTime}`;
+  const current = _overviewMisIndexHistory.get(input.key);
+  const bucket = current && current.tradeDateYmd === input.tradeDateYmd
+    ? current
+    : { tradeDateYmd: input.tradeDateYmd, rows: [] };
+  const lastRow = bucket.rows[bucket.rows.length - 1];
+
+  if (lastRow?.date === minuteKey) {
+    lastRow.high = Math.max(lastRow.high ?? input.last, input.last);
+    lastRow.low = Math.min(lastRow.low ?? input.last, input.last);
+    lastRow.close = input.last;
+    lastRow.volume = input.volume ?? lastRow.volume;
+  } else {
+    bucket.rows.push({
+      date: minuteKey,
+      open: input.last,
+      high: input.last,
+      low: input.last,
+      close: input.last,
+      volume: input.volume,
+      source: "twse_mis_intraday"
+    });
+  }
+
+  bucket.rows = bucket.rows.slice(-240);
+  _overviewMisIndexHistory.set(input.key, bucket);
+  return bucket.rows;
+}
+
+function mergeOverviewIndexHistory(
+  baseHistory: unknown,
+  intradayHistory: OverviewMisIndexBar[]
+): OverviewMisIndexBar[] {
+  const baseRows = Array.isArray(baseHistory)
+    ? baseHistory.filter((row): row is OverviewMisIndexBar => {
+        const value = row as Partial<OverviewMisIndexBar>;
+        return typeof value.date === "string" && typeof value.close === "number" && Number.isFinite(value.close);
+      })
+    : [];
+  const byDate = new Map<string, OverviewMisIndexBar>();
+  for (const row of baseRows.slice(-96)) byDate.set(row.date, row);
+  for (const row of intradayHistory) byDate.set(row.date, row);
+  return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date)).slice(-160);
+}
+
+// Module-level: MIS full-universe sweep state (Tier B — ~1978 stocks, rolling slice every 10s).
+// Universe is loaded from DB companies once per 30min, then iterated slice-by-slice during
+// trading hours so all ~1978 stocks get intraday MIS quotes injected into the manual cache.
+// This feeds decision-summary / strategy ideas / portfolio for the full universe, not just
+// the 40 heatmap core symbols covered by Tier A.
+let _misUniverseCache: Array<{ ticker: string; market: string }> = [];
+let _misUniverseCacheUpdatedAt = 0;
+const MIS_UNIVERSE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min refresh
+let _misUniverseSweepIdx = 0;
+let _misFullSweepRunning = false;
+// Per-round stats (reset when sweep index wraps back to 0)
+let _misFullSweepInjectedThisRound = 0;
+let _misFullSweepRoundsCompleted = 0;
 
 /**
  * Start all schedulers. Called once after server is ready.
@@ -15508,15 +16705,21 @@ function startSchedulers(workspaceSlug: string): void {
           persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
         };
 
-        // Use HEATMAP_CORE_SYMBOLS as the fetch universe (40 tickers, all TWSE).
+        // Use HEATMAP_CORE_SYMBOLS as the fetch universe (40 tickers).
         // Previously used DB companies LIMIT 200, but DB has 1900+ companies (full TWSE
         // bulk-seed). The LIMIT 200 missed most of the 40 heatmap core symbols.
         // MIS cron purpose is to feed _misTileCache for kgi-core heatmap Tier 1.5 —
         // so fetching exactly the 40 heatmap symbols is correct and efficient.
+        //
+        // Market mapping: most HEATMAP_CORE_SYMBOLS are TWSE-listed (TSE), but a small
+        // number are TPEX-listed (OTC). Using the wrong exchange prefix causes MIS to
+        // return an empty c:"" record which is then silently skipped. Verified 2026-06-03:
+        // 3707 (漢磊) is TPEX/OTC — confirmed via MIS otc_3707.tw returning valid data.
+        const OTC_HEATMAP_SYMBOLS = new Set(["3707"]);
         const { HEATMAP_CORE_SYMBOLS } = await import("./kgi-subscription-manager.js");
         const companyRows: Array<{ ticker: string; market: string }> = Array.from(HEATMAP_CORE_SYMBOLS).map((ticker) => ({
           ticker,
-          market: "TWSE", // All HEATMAP_CORE_SYMBOLS are TWSE-listed
+          market: OTC_HEATMAP_SYMBOLS.has(ticker) ? "TPEX" : "TWSE",
         }));
 
         if (!companyRows.length) return;
@@ -15654,6 +16857,45 @@ function startSchedulers(workspaceSlug: string): void {
         _tsweMisQuoteCronLastCount = allQuotes.length;
         _tsweMisQuoteCronLastError = null;
         console.log(`[twse-mis-cron] injected ${allQuotes.length} intraday quotes into manual cache + _misTileCache (${_misTileCache.size} symbols)`);
+
+        // Also fetch TAIEX (tse_t00.tw) + OTC (otc_o00.tw) market index for overview endpoint.
+        // These are not in HEATMAP_CORE_SYMBOLS so we fetch separately and cache in _overviewMisIndexCache.
+        try {
+          const indexUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw%7Cotc_o00.tw&json=1&delay=0";
+          const idxResp = await fetch(indexUrl, {
+            signal: AbortSignal.timeout(5000),
+            headers: { "Accept": "application/json" }
+          });
+          if (idxResp.ok) {
+            const idxData = await idxResp.json() as { msgArray?: Array<Record<string, string>> };
+            const idxArr = idxData.msgArray ?? [];
+            const parseIdxRow = (row: Record<string, string> | undefined) => {
+              if (!row) return null;
+              const tRaw = row["t"] ?? "";
+              const last = parseMisNumericField(row["z"]);
+              const prevClose = parseMisNumericField(row["y"]);
+              const volume = parseMisNumericField(row["v"] ?? row["tv"]);
+              if (last === null || prevClose === null || !Number.isFinite(last) || !Number.isFinite(prevClose) || prevClose === 0) return null;
+              const change = parseFloat((last - prevClose).toFixed(2));
+              const changePct = parseFloat(((change / prevClose) * 100).toFixed(2));
+              return { last, prevClose, change, changePct, time: tRaw, volume };
+            };
+            const taiexRow = idxArr.find((r) => r["ex"] === "tse" && (r["ch"] === "t00.tw" || r["c"] === "t00"));
+            const otcRow = idxArr.find((r) => r["ex"] === "otc" && (r["ch"] === "o00.tw" || r["c"] === "o00"));
+            const nextIndexCache = {
+              taiex: parseIdxRow(taiexRow),
+              otc: parseIdxRow(otcRow),
+              cachedAt: Date.now(),
+              tradeDateYmd: todayYmd
+            };
+            _overviewMisIndexCache = nextIndexCache;
+            if (nextIndexCache.taiex) {
+              console.log(`[twse-mis-cron] index cached: TAIEX=${nextIndexCache.taiex.last} changePct=${nextIndexCache.taiex.changePct}%`);
+            }
+          }
+        } catch {
+          // index fetch failure is non-fatal — overview will use fallback
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         _tsweMisQuoteCronLastError = msg;
@@ -15667,6 +16909,277 @@ function startSchedulers(workspaceSlug: string): void {
     setTimeout(() => {
       void _runTwseMisQuoteCron();
     }, 30_000);
+  }
+
+  // MIS-FULL-UNIVERSE-SWEEP (Tier B): During trading hours (08:55–14:35 TST weekdays),
+  // sweep the entire DB companies universe (~1978 stocks) in rolling 50-ticker slices
+  // every 10s. One full sweep round covers all stocks in ~400s (≈6.7 min).
+  // Purpose: inject intraday MIS quotes for all companies, not just the 40 heatmap core.
+  // This powers decision-summary / strategy ideas / search / portfolio for the full universe.
+  // Design:
+  //   - Universe: DB companies (ticker+market), filtered to /^\d{4,6}$/ tickers, cached 30min.
+  //   - Slice: 50 tickers per HTTP request (MIS supports up to ~100, we use 50 conservatively).
+  //   - Throttle: 1 request per 10s, 5s HTTP timeout, concurrent guard prevents overlap.
+  //   - Thin stocks: vol=0 guard relaxed — any stock with bid or ask price is injected.
+  //     This ensures low-liquidity stocks show bid-based reference prices, not "block".
+  //   - Tier A (core 40, 45s) continues unchanged for heatmap freshness.
+  //   - _misTileCache written for all stocks, heatmap enricher only reads core 40 keys.
+  {
+    const MIS_SWEEP_INTERVAL_MS = 10 * 1000; // 10s per slice
+    const MIS_SWEEP_BATCH_SIZE = 50;         // 50 tickers per MIS request
+    const MIS_SWEEP_HTTP_TIMEOUT_MS = 5000;
+
+    /** Reload universe cache from DB companies. Idempotent — skipped if cache is fresh. */
+    async function _refreshMisUniverseCache(): Promise<void> {
+      const now = Date.now();
+      if (_misUniverseCache.length > 0 && now - _misUniverseCacheUpdatedAt < MIS_UNIVERSE_CACHE_TTL_MS) {
+        return; // cache still valid
+      }
+      if (!isDatabaseMode()) return;
+      const db2 = getDb();
+      if (!db2) return;
+      try {
+        // Resolve workspace id for companies query
+        const wsSlugResolved = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows = await db2
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlugResolved))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string }>);
+        if (!wsRows.length) return;
+        const wsId = wsRows[0].id;
+
+        const rows = await db2
+          .select({ ticker: companies.ticker, market: companies.market })
+          .from(companies)
+          .where(eq(companies.workspaceId, wsId))
+          .catch(() => [] as Array<{ ticker: string; market: string }>);
+
+        // Filter to valid ticker format and known exchange prefixes
+        const valid = rows.filter(
+          (r) => r.ticker && OFFICIAL_COMPANY_TICKER_PATTERN.test(r.ticker)
+        );
+        _misUniverseCache = valid;
+        _misUniverseCacheUpdatedAt = now;
+        console.log(`[mis-sweep] universe cache refreshed: ${valid.length} tickers from DB`);
+      } catch (err) {
+        console.warn("[mis-sweep] universe cache refresh failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    /** Determine MIS exchange prefix from company market string. */
+    function _misSwpExPrefix(market: string): "tse" | "otc" {
+      const m = market.trim().toUpperCase();
+      if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) {
+        return "otc";
+      }
+      return "tse";
+    }
+
+    /** Parse a MIS numeric string field. Returns null for "-" / empty / non-positive. */
+    function _misSwpParseNum(s?: string): number | null {
+      if (!s || s === "-" || s.trim() === "") return null;
+      const n = Number(s.replace(/,/g, "").trim());
+      return isFinite(n) && n > 0 ? n : null;
+    }
+
+    /** Map company market string to canonical market enum value. */
+    function _misSwpMapMkt(m: string): "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER" {
+      const upper = m.trim().toUpperCase();
+      if (upper === "TWSE" || upper.includes("上市")) return "TWSE";
+      if (upper === "TPEX" || upper.includes("上櫃")) return "TPEX";
+      if (upper === "TWO") return "TWO";
+      if (upper === "TW_EMERGING" || upper.includes("EMERGING")) return "TW_EMERGING";
+      return "OTHER";
+    }
+
+    /**
+     * Run one sweep slice: fetch MIS quotes for 50 tickers at current pointer position,
+     * inject into manual cache + _misTileCache. Advances pointer by BATCH_SIZE.
+     * If pointer wraps to 0, logs round completion stats.
+     */
+    async function _runMisFullSweepSlice(): Promise<void> {
+      // Only during trading hours
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 855 || hhmm > 1435) return;
+
+      // Concurrent guard
+      if (_misFullSweepRunning) return;
+      _misFullSweepRunning = true;
+
+      try {
+        // Refresh universe cache if stale (no-op if fresh)
+        await _refreshMisUniverseCache();
+        if (!_misUniverseCache.length) return;
+
+        const total = _misUniverseCache.length;
+
+        // Detect wrap-around: if idx reached end, log round stats and reset counters
+        if (_misUniverseSweepIdx >= total) {
+          _misUniverseSweepIdx = 0;
+          _misFullSweepRoundsCompleted++;
+          console.log(
+            `[mis-sweep] round ${_misFullSweepRoundsCompleted} complete: ` +
+            `${_misFullSweepInjectedThisRound} quotes injected over ${total} stocks, ` +
+            `_misTileCache size=${_misTileCache.size}`
+          );
+          _misFullSweepInjectedThisRound = 0;
+        }
+
+        const slice = _misUniverseCache.slice(_misUniverseSweepIdx, _misUniverseSweepIdx + MIS_SWEEP_BATCH_SIZE);
+        _misUniverseSweepIdx += MIS_SWEEP_BATCH_SIZE;
+
+        if (!slice.length) return;
+
+        // Build MIS ex_ch query string: tse_XXXX.tw|otc_YYYY.tw|...
+        const exChParts = slice.map((c) => `${_misSwpExPrefix(c.market)}_${c.ticker.trim()}.tw`);
+        const exCh = exChParts.join("|");
+        const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
+
+        let data: { msgArray?: Array<Record<string, string>>; rtcode?: string };
+        try {
+          const resp = await fetch(url, {
+            signal: AbortSignal.timeout(MIS_SWEEP_HTTP_TIMEOUT_MS),
+            headers: { "Accept": "application/json" }
+          });
+          if (!resp.ok) {
+            console.warn(`[mis-sweep] HTTP ${resp.status} for slice idx=${_misUniverseSweepIdx - MIS_SWEEP_BATCH_SIZE}`);
+            return;
+          }
+          data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+        } catch (fetchErr) {
+          console.warn(`[mis-sweep] fetch failed idx=${_misUniverseSweepIdx - MIS_SWEEP_BATCH_SIZE}:`, fetchErr instanceof Error ? fetchErr.message : String(fetchErr));
+          return;
+        }
+
+        if (data.rtcode !== "0000" || !data.msgArray?.length) return;
+
+        // Build minimal cron session for upsertManualQuotes
+        if (!isDatabaseMode()) return;
+        const db3 = getDb();
+        if (!db3) return;
+
+        // Resolve workspace id (cached from universe refresh)
+        const wsSlug2 = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows2 = await db3
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlug2))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string }>);
+        if (!wsRows2.length) return;
+
+        const sweepSession = {
+          workspace: { id: wsRows2[0].id, name: wsSlug2, slug: wsSlug2 },
+          user: { id: "00000000-0000-0000-0000-000000000002", name: "twse-mis-sweep", email: "cron@system", role: "Owner" as const },
+          persistenceMode: "database" as const
+        };
+
+        const now = new Date().toISOString();
+        const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+          .toISOString().slice(0, 10).replace(/-/g, "");
+
+        /** Check if MIS data date matches today in Taipei. */
+        function isTodayMisDate(d: string): boolean {
+          // MIS d field: "20260603" format
+          return d?.replace(/-/g, "") === todayYmd;
+        }
+
+        const quotes: Array<{
+          symbol: string;
+          market: "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER";
+          source: "manual";
+          last: number | null;
+          bid: number | null;
+          ask: number | null;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          prevClose: number | null;
+          volume: number | null;
+          changePct: number | null;
+          timestamp: string;
+        }> = [];
+
+        for (const msg of data.msgArray) {
+          const ticker = msg["c"]?.trim();
+          if (!ticker) continue;
+          if (!isTodayMisDate(msg["d"] ?? "")) continue;
+
+          // Resolve last price: z (last trade) → best bid → best ask
+          // For thin/illiquid stocks, z is often "-" or absent; bid/ask gives a valid reference.
+          const zNum = _misSwpParseNum(msg["z"]);
+          const bPrices = msg["b"]?.split("_").filter(Boolean);
+          const aPrices = msg["a"]?.split("_").filter(Boolean);
+          const bidNum = _misSwpParseNum(bPrices?.[0]);
+          const askNum = _misSwpParseNum(aPrices?.[0]);
+          const last = zNum ?? bidNum ?? askNum;
+
+          // Require a valid last price (bid or ask is enough for thin stocks)
+          if (!last || last <= 0) continue;
+
+          // Volume: thin stocks may have vol=0 — that is OK for reference price
+          // We only require a valid quote (bid/ask/trade) to inject.
+          // Downstream: source="manual" → decision="review" (not block), never "allow".
+          const vol = _misSwpParseNum(msg["v"]);
+
+          const companyRow = slice.find((r) => r.ticker.trim() === ticker);
+          const market = _misSwpMapMkt(companyRow?.market ?? "");
+
+          const open = _misSwpParseNum(msg["o"]);
+          const high = _misSwpParseNum(msg["h"]);
+          const low = _misSwpParseNum(msg["l"]);
+          const prevClose = _misSwpParseNum(msg["y"]);
+          const changePct =
+            prevClose && prevClose > 0
+              ? Math.round(((last - prevClose) / prevClose) * 10000) / 100
+              : null;
+
+          quotes.push({
+            symbol: ticker,
+            market,
+            source: "manual",
+            last,
+            bid: bidNum,
+            ask: askNum,
+            open,
+            high,
+            low,
+            prevClose,
+            volume: vol,
+            changePct,
+            timestamp: now,
+          });
+
+          // Write to _misTileCache (readable by heatmap enricher for any ticker)
+          _misTileCache.set(ticker, {
+            last,
+            changePct,
+            ts: now,
+            tradeDateYmd: todayYmd,
+          });
+        }
+
+        if (!quotes.length) return;
+
+        // upsertManualQuotes max 200 per call — slice already ≤50, so single call is fine
+        await upsertManualQuotes({ session: sweepSession, quotes });
+        _misFullSweepInjectedThisRound += quotes.length;
+
+      } finally {
+        _misFullSweepRunning = false;
+      }
+    }
+
+    // Register interval: 10s per slice
+    ui(_runMisFullSweepSlice, MIS_SWEEP_INTERVAL_MS);
+
+    // Boot fire: 60s — after Tier A (30s) and EOD cron (45s) boot fires settle
+    setTimeout(async () => {
+      await _refreshMisUniverseCache();
+      void _runMisFullSweepSlice();
+    }, 60_000);
   }
 
   // TWSE-EOD-QUOTE-CRON: Outside trading hours (before 08:55 and after 14:35 TST, all days),
@@ -15804,6 +17317,7 @@ function startSchedulers(workspaceSlug: string): void {
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
     "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
+    "MIS-FULL-UNIVERSE-SWEEP (10s/slice, 50 tickers/slice, ~400s/round for ~1978 stocks, fires 08:55-14:35 TST weekdays) + " +
     "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
@@ -15848,40 +17362,51 @@ function startSchedulers(workspaceSlug: string): void {
   }
 
   // AI-REC-V3-CRON: Daily AI Recommendation v3 (Yang SOP / 7-axis ReAct).
-  // Cadence: 24h loose — window guard fires once per day in 08:30–09:15 TST (before market open).
-  // This avoids contending with v2 (09:30) and respects the 24h cost budget.
-  // Boot fire at 90s — allows DB pool warm-up and v2 boot fire (60s) to complete first.
+  // Cadence: 5-min tick + window guard, fires once per day in 08:30–09:15 TST.
+  // (The old 24h tick almost never landed inside the 45-min window, so after the
+  // 6/5 budget blow-up the cron simply never fired again — 5 days of zero cards.)
+  // On a failed run the day is NOT consumed: retry on the next tick inside the
+  // window, capped at AI_REC_V3_MAX_ATTEMPTS_PER_DAY to bound LLM spend.
+  // Boot fire at 90s only when today has no v3 run yet — on 6/5 every deploy
+  // boot-fired a fresh run and a dozen deploys burned the whole daily budget.
   // State: shared _aiRecV3Cron* module-level vars (also used by manual POST endpoint).
   {
-    const AI_REC_V3_CRON_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
-    let _aiRecV3LastCronFireDate: string | null = null; // YYYY-MM-DD Taipei date guard
-
-    /** Returns true if current Taipei time is in the 08:30–09:15 window on a weekday. */
-    function isAiRecV3CronWindow(): boolean {
-      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const day = taipeiNow.getUTCDay();
-      if (day === 0 || day === 6) return false;
-      const hhmm = taipeiNow.getUTCHours() * 100 + taipeiNow.getUTCMinutes();
-      return hhmm >= 830 && hhmm <= 915;
-    }
+    const AI_REC_V3_CRON_TICK_MS = 5 * 60 * 1000;
 
     ui(async () => {
-      if (!isAiRecV3CronWindow()) return;
+      const { isV3CronWindowAt, taipeiDateOf } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+      if (!isV3CronWindowAt()) return;
       if (_aiRecV3CronRunning) return;
 
-      // Once-per-day guard: use Taipei calendar date
-      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const todayDate = taipeiNow.toISOString().slice(0, 10); // YYYY-MM-DD
-      if (_aiRecV3LastCronFireDate === todayDate) return;
+      const todayDate = taipeiDateOf();
+      if (_aiRecV3CronSuccessDate === todayDate) return;
+      if (_aiRecV3AttemptDate !== todayDate) {
+        _aiRecV3AttemptDate = todayDate;
+        _aiRecV3AttemptCount = 0;
+      }
+      if (_aiRecV3AttemptCount >= AI_REC_V3_MAX_ATTEMPTS_PER_DAY) return;
+      _aiRecV3AttemptCount++;
 
-      _aiRecV3LastCronFireDate = todayDate;
-      console.info(`[ai-rec-v3-cron] firing daily cron for date=${todayDate}`);
-      void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
-    }, AI_REC_V3_CRON_INTERVAL_MS);
+      console.info(`[ai-rec-v3-cron] firing daily cron for date=${todayDate} attempt=${_aiRecV3AttemptCount}/${AI_REC_V3_MAX_ATTEMPTS_PER_DAY}`);
+      await _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
+      if (_aiRecV3CronLastError === null) {
+        _aiRecV3CronSuccessDate = todayDate;
+      }
+    }, AI_REC_V3_CRON_TICK_MS);
 
-    // Boot fire: pre-warm at 90s so first day always has a v3 run after deploy.
-    setTimeout(() => {
+    // Boot fire: pre-warm at 90s so first day always has a v3 run after deploy —
+    // but only if today has no run row yet (any status), so deploy bursts don't burn budget.
+    setTimeout(async () => {
       if (_aiRecV3CronRunning) return;
+      try {
+        const { hasV3RunForTaipeiDate, taipeiDateOf } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+        if (await hasV3RunForTaipeiDate(taipeiDateOf())) {
+          console.info("[ai-rec-v3-cron] boot-fire skipped — a v3 run already exists for today");
+          return;
+        }
+      } catch {
+        // guard query failed — fall through and fire (memory mode / fresh DB)
+      }
       console.info("[ai-rec-v3-cron] boot-fire at 90s");
       void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
     }, 90_000);
@@ -16115,6 +17640,39 @@ function startSchedulers(workspaceSlug: string): void {
     }, S1_SIM_POLL_MS);
 
     console.log("[schedulers] S1-SIM-PIPELINE wired: auto signal(Mon 08:30 TST) + auto orders(Mon 09:00 TST, signal catch-up before submit) + eod(daily 14:00 TST); manual trigger is backup only");
+  }
+
+  // =============================================================================
+  // AI-REC-PERF-CRON: forward-return update for ai_rec_pick_snapshots
+  //
+  // Fires daily at 14:40–15:00 TST (after market close + EOD snapshot).
+  // Finds snapshot rows with ret_updated_at IS NULL or stale and fills
+  // ret_1d/ret_5d/ret_20d + excess vs TAIEX from companies_ohlcv.
+  // Processes up to 50 rows per tick (see updateForwardReturns batch limit).
+  // =============================================================================
+  {
+    const AI_REC_PERF_POLL_MS = 15 * 60 * 1000;
+    let _aiRecPerfRetUpdatedDate: string | null = null;
+
+    function isAiRecPerfRetWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      return hhmm >= 1440 && hhmm < 1500; // 14:40–15:00 TST
+    }
+
+    ui(async () => {
+      if (!isAiRecPerfRetWindow()) return;
+      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const todayDate = taipeiNow.toISOString().slice(0, 10);
+      if (_aiRecPerfRetUpdatedDate === todayDate) return;
+      _aiRecPerfRetUpdatedDate = todayDate;
+      try {
+        const { updateForwardReturns } = await import("./ai-rec-perf-store.js");
+        const result = await updateForwardReturns();
+        console.info(`[ai-rec-perf-cron] daily ret update done: updated=${result.updated} errors=${result.errors}`);
+      } catch (e) {
+        console.warn("[ai-rec-perf-cron] tick error:", e instanceof Error ? e.message : String(e));
+      }
+    }, AI_REC_PERF_POLL_MS);
   }
 }
 
@@ -16689,7 +18247,7 @@ app.post("/api/v1/auth/change-password", async (c) => {
 // GET  /api/v1/recommendations/:id     → StockRecommendation | 404
 // POST /api/v1/recommendations/:id/feedback → 204
 //
-// Auth: Owner-only v1. Paid-tier expansion comes later.
+// Auth: signed-in account with ai_recommendations entitlement.
 // Data: mock layer v1 — real cont_liq_v36 + MAIN wiring comes Day 3+.
 // Lane: strategy backend (Jason). Only touches recommendation-store.ts.
 // =============================================================================
@@ -16714,13 +18272,15 @@ let _recCache: { items: import("@iuf-trading-room/contracts").StockRecommendatio
 
 async function getOrFetchRecommendations(
   internalBaseUrl: string,
-  sessionCookie: string
+  sessionCookie: string,
+  session: AppSession,
+  repo: TradingRoomRepository
 ): Promise<{ items: import("@iuf-trading-room/contracts").StockRecommendation[]; isMock: boolean }> {
   const now = Date.now();
   if (_recCache && now < _recCache.expiresAt) {
     return { items: _recCache.items, isMock: _recCache.isMock };
   }
-  const result = await getTodayRecommendations({ internalBaseUrl, sessionCookie });
+  const result = await getTodayRecommendations({ internalBaseUrl, sessionCookie, session, repo });
   _recCache = { ...result, expiresAt: now + 60_000 };
   return result;
 }
@@ -16736,17 +18296,36 @@ function deriveInternalBaseUrl(reqUrl: string): string {
   }
 }
 
+function recommendationEntitlementResponse(c: Context) {
+  const session = c.get("session");
+  if (!session) {
+    return { ok: false as const, response: c.json({ error: "unauthenticated" }, 401) };
+  }
+
+  const entitlement = buildMyEntitlements(session.user).features.find((feature) => feature.id === "ai_recommendations");
+  if (!entitlement?.access) {
+    return {
+      ok: false as const,
+      response: c.json({
+        error: "feature_not_included",
+        feature: "ai_recommendations",
+        message: "AI recommendations are not enabled for this subscription tier."
+      }, 403)
+    };
+  }
+
+  return { ok: true as const, session };
+}
+
 // GET /api/v1/recommendations/today
 app.get("/api/v1/recommendations/today", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
 
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
 
-  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie, auth.session, c.get("repo"));
 
   const response: Record<string, unknown> = {
     date: items[0]?.date ?? new Date().toISOString().slice(0, 10),
@@ -16761,17 +18340,15 @@ app.get("/api/v1/recommendations/today", async (c) => {
 
 // GET /api/v1/recommendations/:id
 app.get("/api/v1/recommendations/:id", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
 
   const { id } = c.req.param();
 
   // Try real list first, then mock fallback
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
-  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items, isMock } = await getOrFetchRecommendations(internalBase, cookie, auth.session, c.get("repo"));
 
   const rec = getRecommendationById(items, id) ?? getMockRecommendationById(id);
 
@@ -16786,17 +18363,16 @@ app.get("/api/v1/recommendations/:id", async (c) => {
 
 // POST /api/v1/recommendations/:id/feedback
 app.post("/api/v1/recommendations/:id/feedback", async (c) => {
-  const session = c.get("session");
-  if (!session || session.user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
+  const auth = recommendationEntitlementResponse(c);
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
 
   const { id } = c.req.param();
 
   // Verify the recommendation exists — use real resolver (same cache as /today and /:id)
   const internalBase = deriveInternalBaseUrl(c.req.url);
   const cookie = c.req.header("cookie") ?? "";
-  const { items } = await getOrFetchRecommendations(internalBase, cookie);
+  const { items } = await getOrFetchRecommendations(internalBase, cookie, session, c.get("repo"));
   const rec = getRecommendationById(items, id);
   if (!rec) {
     return c.json({ error: "not_found", message: "推薦項目已過期或不存在" }, 404);
@@ -16944,6 +18520,12 @@ app.get("/api/v1/admin/ai-recommendations/status", async (c) => {
 let _aiRecV3CronRunning = false;
 let _aiRecV3CronLastFiredAt: string | null = null;
 let _aiRecV3CronLastError: string | null = null;
+// Daily fire bookkeeping (Taipei dates). Success consumes the day; failures retry
+// on later ticks inside the window, capped to bound LLM spend.
+const AI_REC_V3_MAX_ATTEMPTS_PER_DAY = 3;
+let _aiRecV3CronSuccessDate: string | null = null;
+let _aiRecV3AttemptDate: string | null = null;
+let _aiRecV3AttemptCount = 0;
 
 /**
  * Shared execution function for both manual refresh and the daily cron.
@@ -16960,15 +18542,33 @@ async function _runAiRecV3Cron(opts: {
   _aiRecV3CronRunning = true;
   _aiRecV3CronLastFiredAt = new Date().toISOString();
   try {
-    const { runAiRecommendationV3 } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    const { runAiRecommendationV3, getLatestAiRecommendationV3Run, failStaleV3RunningRows, V3_RUNNING_STALE_AFTER_MS } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    // Sweep rows stuck in status="running" (crashed runs) so the read path never
+    // serves a days-old "running" row again.
+    await failStaleV3RunningRows({ minAgeMs: V3_RUNNING_STALE_AFTER_MS, reason: "(stale running run swept before new cron fire)" });
     await runAiRecommendationV3({
       trigger: opts.trigger,
-      maxRounds: 10,
+      // Five technical checks are too brittle for a five-card product gate:
+      // one weak/C-bucket ticker makes the whole daily recommendation fail.
+      // Allow extra rounds so the rejection loop can fetch replacement
+      // candidates instead of ending with 4 actionable cards.
+      maxRounds: 15,
       costCapUsd: 2.0,
       runId: opts.runId,
       workspaceId: opts.workspaceId ?? null,
     });
     _aiRecV3CronLastError = null;
+
+    // AI-REC-PERF: snapshot picks after run completes (fail-open — must not crash v3 cron)
+    try {
+      const latestRun = getLatestAiRecommendationV3Run();
+      if (latestRun && latestRun.items.length > 0) {
+        const { snapshotV3Picks } = await import("./ai-rec-perf-store.js");
+        await snapshotV3Picks(latestRun);
+      }
+    } catch (snapErr) {
+      console.warn("[ai-rec-v3-cron] snapshot error (non-fatal):", snapErr instanceof Error ? snapErr.message : snapErr);
+    }
   } catch (err) {
     _aiRecV3CronLastError = err instanceof Error ? err.message : String(err);
     console.error("[ai-rec-v3] run error:", _aiRecV3CronLastError);
@@ -16981,7 +18581,12 @@ async function _runAiRecV3Cron(opts: {
 // GET /api/v1/ai-recommendations/v3
 // F4: Exposes reactTrace + finalReportMarkdown for debug; fallback shows raw markdown when items=0
 app.get("/api/v1/ai-recommendations/v3", async (c) => {
-  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const {
+    getLatestAiRecommendationV3RunForRead,
+    getV3RunAgeMs,
+    isV3RunningStale,
+    V3_RUNNING_STALE_AFTER_MS,
+  } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = await getLatestAiRecommendationV3RunForRead();
   if (!latest) {
     return c.json({
@@ -17023,6 +18628,17 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
   const synthesisFallbackUsed =
     latest.synthesisFallbackUsed ?? (latest.status === "synthesis_format_error" && latest.items.length >= 5);
+  const runAgeMs = getV3RunAgeMs(latest.generatedAt);
+  const staleRunning = isV3RunningStale(latest.status, latest.generatedAt);
+  const runDiagnostics = {
+    status: latest.status,
+    runAgeMs,
+    staleRunning,
+    staleAfterMs: V3_RUNNING_STALE_AFTER_MS,
+    cronRunning: _aiRecV3CronRunning,
+    cronLastFiredAt: _aiRecV3CronLastFiredAt,
+    cronLastError: _aiRecV3CronLastError,
+  };
   return c.json({
     ok: true,
     runId: latest.runId,
@@ -17043,11 +18659,19 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
     scoreBreakdown: latest.scoreBreakdown ?? null,
+    runDiagnostics,
     // F4 debug fields:
     reactTrace: includeTrace ? latest.reactTrace : undefined,
     finalReportMarkdown: latest.finalReportMarkdown,
     // Diagnostic: when parser/fallback path fired, surface a hint
-    parserDiagnostic: (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
+    parserDiagnostic: staleRunning
+      ? {
+          hint: "Latest AI recommendation v3 run is still running past the expected window. Check cronLastError and Railway logs before trusting the stale product surface.",
+          usedFallback: synthesisFallbackUsed,
+          runAgeMs,
+          staleAfterMs: V3_RUNNING_STALE_AFTER_MS,
+        }
+      : (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
       ? {
           hint: latest.status === "synthesis_format_error"
             ? "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present."
@@ -17084,14 +18708,28 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "forbidden_role" }, 403);
   }
-  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const {
+    getLatestAiRecommendationV3RunForRead,
+    getV3RunAgeMs,
+    isV3RunningStale,
+    V3_RUNNING_STALE_AFTER_MS,
+  } = await import("./ai-recommendation-v2/orchestrator-v3.js");
   const latest = await getLatestAiRecommendationV3RunForRead();
+  const latestRunAgeMs = latest ? getV3RunAgeMs(latest.generatedAt) : null;
+  const latestStaleRunning = latest ? isV3RunningStale(latest.status, latest.generatedAt) : false;
   return c.json({
     cron_running: _aiRecV3CronRunning,
     cron_last_fired_at: _aiRecV3CronLastFiredAt,
     cron_last_error: _aiRecV3CronLastError,
+    cron_success_date: _aiRecV3CronSuccessDate,
+    cron_attempts_today: _aiRecV3AttemptDate === null ? 0 : _aiRecV3AttemptCount,
+    cron_max_attempts_per_day: AI_REC_V3_MAX_ATTEMPTS_PER_DAY,
     latest_run_id: latest?.runId ?? null,
     latest_status: latest?.status ?? null,
+    latest_generated_at: latest?.generatedAt ?? null,
+    latest_run_age_ms: latestRunAgeMs,
+    latest_stale_running: latestStaleRunning,
+    stale_after_ms: V3_RUNNING_STALE_AFTER_MS,
     latest_item_count: latest?.items.length ?? 0,
     latest_cost_usd: latest?.totalCostUsd ?? 0,
     latest_market_state: latest?.marketState ?? null,
@@ -17100,6 +18738,73 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
     latest_synthesis_fallback_used:
       latest?.synthesisFallbackUsed ?? (latest?.status === "synthesis_format_error" && (latest?.items.length ?? 0) >= 5),
   });
+});
+
+// =============================================================================
+// AI-REC FORWARD PERFORMANCE ENDPOINTS (Jason 2026-06-05)
+// Prove whether AI-picked stocks make money vs TAIEX benchmark.
+// Lane: strategy backend (Jason). Files: ai-rec-perf-store.ts
+// Auth: Owner-only (production alpha — not yet surfaced to frontend)
+// =============================================================================
+
+// GET /api/v1/admin/ai-rec/performance
+// Returns hit_rate, avg_excess_return (1d/5d/20d), sample_count, by_bucket breakdown.
+app.get("/api/v1/admin/ai-rec/performance", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const fromDate = c.req.query("from") ?? undefined;
+  const toDate = c.req.query("to") ?? undefined;
+
+  const { getAiRecPerformance } = await import("./ai-rec-perf-store.js");
+  const perf = await getAiRecPerformance({ fromDate, toDate });
+
+  return c.json(perf);
+});
+
+// POST /api/v1/admin/ai-rec/snapshot — manual snapshot trigger (for today's v3 run)
+// Useful for backfilling: call after v3 refresh to force-write snapshot.
+app.post("/api/v1/admin/ai-rec/snapshot", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+  const latest = await getLatestAiRecommendationV3RunForRead();
+
+  if (!latest) {
+    return c.json({ ok: false, error: "no_v3_run_available", hint: "Trigger a v3 refresh first." }, 404);
+  }
+  if (latest.items.length === 0) {
+    return c.json({ ok: false, error: "v3_run_has_no_items", status: latest.status }, 422);
+  }
+
+  const { snapshotV3Picks } = await import("./ai-rec-perf-store.js");
+  await snapshotV3Picks(latest);
+
+  return c.json({
+    ok: true,
+    runId: latest.runId,
+    itemsSnapshotted: latest.items.length,
+    snappedAt: new Date().toISOString(),
+  });
+});
+
+// POST /api/v1/admin/ai-rec/update-returns — manual forward-return update trigger
+// Normally fired by daily cron; exposed here for Bruce manual verify / backfill.
+app.post("/api/v1/admin/ai-rec/update-returns", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const { updateForwardReturns } = await import("./ai-rec-perf-store.js");
+  const result = await updateForwardReturns();
+
+  return c.json({ ok: true, ...result, updatedAt: new Date().toISOString() });
 });
 
 // =============================================================================
@@ -18639,6 +20344,14 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
+function getSchedulerStartupDelayMs(): number {
+  const raw = Number.parseInt(process.env.SCHEDULER_STARTUP_DELAY_MS ?? "", 10);
+  if (Number.isFinite(raw)) {
+    return Math.max(0, Math.min(raw, 10 * 60_000));
+  }
+  return isDatabaseMode() && process.env.NODE_ENV === "production" ? 180_000 : 0;
+}
+
 if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT === "1") {
   serve(
     {
@@ -18647,85 +20360,95 @@ if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT ==
       hostname: host
     },
     async (info) => {
-    console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
-    const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
-    await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
-    const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
-    await initRiskStore(schedulerWorkspace);
-    console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
-    // F2 + F3: Start ETL schedulers after server is ready
-    console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
-    startSchedulers(schedulerWorkspace);
-    // B-EL-4: Start outbox poller (transactional event delivery, 500ms interval)
-    const { startOutboxPoller } = await import("./events/event-log-outbox.js");
-    startOutboxPoller();
-    // Job #3: Seed real operational events so GET /api/v1/event-streams always has data.
-    // BUG FIX (PR #739): previous version ran immediately at boot → DB pool not yet ready
-    // → isDatabaseMode()=false at call time → seedEventLog() hit in-memory fallback
-    // → events written to _memStreams, not el_event_streams → lost on process restart → streams=[].
-    // Fix: defer 30s to ensure DB pool + migrations are warm before seeding.
-    setTimeout(async () => {
-      try {
-        if (!isDatabaseMode()) {
-          console.warn("[event-seed] skipping — isDatabaseMode()=false at 30s seed time");
-          return;
-        }
-        const db = getDb();
-        if (!db) {
-          console.warn("[event-seed] skipping — getDb() returned null at 30s seed time");
-          return;
-        }
-        const wsRows = await db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(eq(workspaces.slug, schedulerWorkspace))
-          .limit(1);
-        const wsId = wsRows[0]?.id ?? null;
-        if (!wsId) {
-          console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
-          return;
-        }
-        console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
-        const { seedEventLog } = await import("./events/event-seed.js");
-        const seedResult = await seedEventLog(wsId);
-        console.log(
-          `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
-        );
-      } catch (e) {
-        console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
-      }
-    }, 30_000); // 30s: DB pool + migration apply must be complete before first write
+      console.log(`IUF Trading Room API listening on http://${host}:${info.port}`);
+      const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+      await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
+      const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
+      await initRiskStore(schedulerWorkspace);
+      console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
+      console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
 
-    // Job #2b fix: Boot+10s dryRun seed for never-run tools (b — 8 tools lastRunAt=null).
-    // Runs after schedulers start so real calls may have already populated some keys.
-    setTimeout(() => {
-      import("./tools/tool-boot-seed.js")
-        .then(({ seedNeverRunTools }) => {
-          // Resolve workspace UUID for tool_calls.workspace_id (nullable — pass null if unavailable)
-          const db2 = getDb();
-          if (!db2) {
-            seedNeverRunTools(null).catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+      const launchBackgroundSchedulers = async () => {
+        startSchedulers(schedulerWorkspace);
+        const { startOutboxPoller } = await import("./events/event-log-outbox.js");
+        startOutboxPoller();
+
+        // Seed real operational events after the app has proven DB connectivity.
+        const eventSeedHandle = setTimeout(async () => {
+          try {
+            if (!isDatabaseMode()) {
+              console.warn("[event-seed] skipping — isDatabaseMode()=false at seed time");
+              return;
+            }
+            const db = getDb();
+            if (!db) {
+              console.warn("[event-seed] skipping — getDb() returned null at seed time");
+              return;
+            }
+            const wsRows = await db
+              .select({ id: workspaces.id })
+              .from(workspaces)
+              .where(eq(workspaces.slug, schedulerWorkspace))
+              .limit(1);
+            const wsId = wsRows[0]?.id ?? null;
+            if (!wsId) {
+              console.warn(`[event-seed] workspace not found for slug="${schedulerWorkspace}" — skipping seed`);
+              return;
+            }
+            console.log(`[event-seed] firing seedEventLog for wsId=${wsId}`);
+            const { seedEventLog } = await import("./events/event-seed.js");
+            const seedResult = await seedEventLog(wsId);
+            console.log(
+              `[event-seed] done: startup=${seedResult.startupEventId ? "ok" : "fail"} audit=${seedResult.auditEventsSeeded} orders=${seedResult.orderEventsSeeded} errors=${seedResult.errors.length}${seedResult.errors.length > 0 ? " | " + seedResult.errors.join("; ") : ""}`
             );
-            return;
+          } catch (e) {
+            console.warn("[event-seed] seed failed:", e instanceof Error ? e.message : e);
           }
-          db2
-            .select({ id: workspaces.id })
-            .from(workspaces)
-            .where(eq(workspaces.slug, schedulerWorkspace))
-            .limit(1)
-            .then((wsRows2) => {
-              const wsId2 = wsRows2[0]?.id ?? null;
-              return seedNeverRunTools(wsId2);
+        }, 30_000);
+        eventSeedHandle.unref?.();
+
+        const toolSeedHandle = setTimeout(() => {
+          import("./tools/tool-boot-seed.js")
+            .then(({ seedNeverRunTools }) => {
+              const db2 = getDb();
+              if (!db2) {
+                seedNeverRunTools(null).catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
+                return;
+              }
+              db2
+                .select({ id: workspaces.id })
+                .from(workspaces)
+                .where(eq(workspaces.slug, schedulerWorkspace))
+                .limit(1)
+                .then((wsRows2) => {
+                  const wsId2 = wsRows2[0]?.id ?? null;
+                  return seedNeverRunTools(wsId2);
+                })
+                .catch((e) =>
+                  console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+                );
             })
             .catch((e) =>
-              console.warn("[tool-boot-seed] seed failed:", e instanceof Error ? e.message : e)
+              console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
             );
-        })
-        .catch((e) =>
-          console.warn("[tool-boot-seed] import failed:", e instanceof Error ? e.message : e)
-        );
-    }, 10_000);
+        }, 10_000);
+        toolSeedHandle.unref?.();
+      };
+
+      const schedulerStartupDelayMs = getSchedulerStartupDelayMs();
+      if (schedulerStartupDelayMs > 0) {
+        console.log(`[schedulers] Delaying DB-heavy schedulers for ${schedulerStartupDelayMs}ms so auth/company/K-line reads warm first.`);
+        const schedulerDelayHandle = setTimeout(() => {
+          void launchBackgroundSchedulers().catch((e) =>
+            console.warn("[schedulers] delayed launch failed:", e instanceof Error ? e.message : e)
+          );
+        }, schedulerStartupDelayMs);
+        schedulerDelayHandle.unref?.();
+      } else {
+        await launchBackgroundSchedulers();
+      }
     }
   );
 }
