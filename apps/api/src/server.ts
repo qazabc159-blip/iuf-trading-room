@@ -3338,11 +3338,11 @@ app.get("/api/v1/briefs/search", async (c) => {
   const workspaceId = c.get("session").workspace.id;
 
   // ── Published-only filter (mirrors listBriefs normalization) ──────────────
-  // published | approved | (draft + generated_by=worker)
+  // published | approved. Worker rule-template drafts are excluded — they never
+  // meet the v2 template contract (empty-shell briefs, 6/10 audit).
   const publishedFilter = or(
     eq(dailyBriefs.status, "published"),
-    eq(dailyBriefs.status, "approved"),
-    and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+    eq(dailyBriefs.status, "approved")
   );
 
   // ── FTS search using raw SQL ───────────────────────────────────────────────
@@ -14282,7 +14282,8 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
     return;
   }
 
-  // Idempotency: skip if today's brief formal row already exists
+  // Idempotency: skip if today's brief formal row already exists.
+  // Worker rule-template drafts don't count — they must never block the v2 pipeline.
   const [existingBrief] = await db
     .select({ id: dailyBriefs.id, sections: dailyBriefs.sections })
     .from(dailyBriefs)
@@ -14292,8 +14293,7 @@ async function runDailyBriefDispatcherTick(): Promise<void> {
         eq(dailyBriefs.date, todayStr),
         or(
           eq(dailyBriefs.status, "published"),
-          eq(dailyBriefs.status, "approved"),
-          and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+          eq(dailyBriefs.status, "approved")
         )
       )
     )

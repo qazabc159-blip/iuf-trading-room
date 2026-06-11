@@ -59,9 +59,9 @@ function clampOffset(raw: number | null): number {
 
 /** Published-status filter (mirrors listBriefs normalization + search filter) */
 function isPublishedForSearch(row: { status: string; generatedBy: string }): boolean {
-  if (row.status === "published" || row.status === "approved") return true;
-  if (row.status === "draft" && row.generatedBy === "worker") return true;
-  return false;
+  // Worker rule-template drafts are excluded since 2026-06-11 — they never meet
+  // the v2 template contract and surfaced as empty-shell briefs (6/10 audit).
+  return row.status === "published" || row.status === "approved";
 }
 
 /** Simulate search result item shape */
@@ -199,17 +199,18 @@ test("BS5: missing q — empty or whitespace-only q is rejected", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BS6. Published filter — only published/approved/worker-draft rows qualify
+// BS6. Published filter — only published/approved rows qualify
 // ---------------------------------------------------------------------------
 
-test("BS6: published filter — draft rows from manual authors are excluded", () => {
+test("BS6: published filter — draft rows are excluded regardless of author", () => {
   // Should be included
   assert.ok(isPublishedForSearch({ status: "published", generatedBy: "worker" }));
   assert.ok(isPublishedForSearch({ status: "published", generatedBy: "manual" }));
   assert.ok(isPublishedForSearch({ status: "approved", generatedBy: "worker" }));
-  assert.ok(isPublishedForSearch({ status: "draft", generatedBy: "worker" }), "worker draft must be included (legacy formal row)");
 
-  // Must be excluded (unpublished manual drafts, awaiting_review, queued_for_review)
+  // Must be excluded — worker rule-template drafts never meet the v2 contract
+  // and surfaced as empty-shell briefs (6/10 audit; changed 2026-06-11)
+  assert.ok(!isPublishedForSearch({ status: "draft", generatedBy: "worker" }), "worker rule-template draft must NOT be included");
   assert.ok(!isPublishedForSearch({ status: "draft", generatedBy: "manual" }), "manual draft must NOT be included");
   assert.ok(!isPublishedForSearch({ status: "awaiting_review", generatedBy: "worker" }), "awaiting_review must NOT be included");
   assert.ok(!isPublishedForSearch({ status: "queued_for_review", generatedBy: "worker" }), "queued_for_review must NOT be included");

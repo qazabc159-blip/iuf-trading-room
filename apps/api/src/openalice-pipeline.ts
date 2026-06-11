@@ -290,10 +290,11 @@ function getTaipeiDayOfWeek(now: Date = new Date()): number {
 }
 
 function visibleDailyBriefCondition() {
+  // Worker rule-template drafts are excluded: they predate the v2 contract and
+  // always fail the frontend template gate (empty-shell briefs, 6/10 audit).
   return or(
     eq(dailyBriefs.status, "published"),
-    eq(dailyBriefs.status, "approved"),
-    and(eq(dailyBriefs.status, "draft"), eq(dailyBriefs.generatedBy, "worker"))
+    eq(dailyBriefs.status, "approved")
   );
 }
 
