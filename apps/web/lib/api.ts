@@ -340,6 +340,33 @@ export async function getRecommendationDetail(id: string) {
   });
 }
 
+// ── AI 推薦績效成績單 (forward performance vs 0050) ──────────────────────────
+// Owner-only backend endpoint; non-owner sessions get null and the panel hides.
+export type AiRecPerformance = {
+  overall_hit_rate_1d: number | null;
+  overall_hit_rate_5d: number | null;
+  overall_hit_rate_20d: number | null;
+  avg_excess_1d: number | null;
+  avg_excess_5d: number | null;
+  avg_excess_20d: number | null;
+  total_picks: number;
+  picks_with_ret_1d: number;
+  picks_with_ret_5d: number;
+  picks_with_ret_20d: number;
+  earliest_pick_date: string | null;
+  latest_pick_date: string | null;
+  benchmark: string;
+  computed_at: string;
+};
+
+export async function getAiRecPerformance(): Promise<AiRecPerformance | null> {
+  try {
+    return await requestRaw<AiRecPerformance>("/api/v1/admin/ai-rec/performance", { cache: "no-store" });
+  } catch {
+    return null;
+  }
+}
+
 export async function sendRecommendationFeedback(id: string, input: RecommendationFeedback) {
   return requestRaw<{ ok: true }>(`/api/v1/recommendations/${encodeURIComponent(id)}/feedback`, {
     method: "POST",
