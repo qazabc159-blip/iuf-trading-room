@@ -5082,6 +5082,7 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
           avg_cost: 0,
           last_price: null,
           unrealized_pnl_twd: null,
+          market_value_twd: null,
         }));
       if (rebuiltPositions.length > 0) {
         report = {

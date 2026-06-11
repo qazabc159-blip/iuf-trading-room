@@ -81,6 +81,7 @@ export interface S1EodReport {
     avg_cost: number;
     last_price: number | null;
     unrealized_pnl_twd: number | null;
+    market_value_twd: number | null;
   }>;
   total_unrealized_pnl_twd: number | null;
   total_market_value_twd: number | null;
@@ -926,6 +927,7 @@ type S1PositionRow = {
   avg_cost: number;
   last_price: number | null;
   unrealized_pnl_twd: number | null;
+  market_value_twd: number | null;
 };
 
 export interface S1PositionsSnapshot {
@@ -984,6 +986,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       avg_cost: entryBySymbol.get(r.symbol)?.latest_price ?? 0,
       last_price: null,
       unrealized_pnl_twd: null,
+      market_value_twd: null,
     }));
 
   // 1. Fetch positions from KGI gateway (live prices when the session still has them)
@@ -1002,7 +1005,10 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         shares: p.netQuantity,
         avg_cost: p.lastPrice ?? 0,
         last_price: p.lastPrice ?? null,
-        unrealized_pnl_twd: p.unrealized !== undefined ? p.unrealized : null
+        unrealized_pnl_twd: p.unrealized !== undefined ? p.unrealized : null,
+        market_value_twd: p.lastPrice !== undefined && p.lastPrice !== null
+          ? p.netQuantity * p.lastPrice
+          : null,
       }));
     if (positions.length === 0 && auditPositions.length > 0) {
       // Gateway reachable but session is empty — ephemeral SIM positions reset.
@@ -1036,7 +1042,8 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
             shares: r.shares,
             avg_cost: 0, // unknown without fill confirmation
             last_price: null,
-            unrealized_pnl_twd: null
+            unrealized_pnl_twd: null,
+            market_value_twd: null
           }));
       } catch {
         notes.push("no_order_file_found: positions unknown (file ephemeral, no audit_log entry in 7-day window)");
@@ -1044,33 +1051,72 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     }
   }
 
-  // 1b. Mark-to-market audit-rebuilt positions with TWSE EOD closes (best effort).
+  // 1b. Mark-to-market audit-rebuilt positions with EOD closes (best effort).
+  // S1 holdings span listed (TWSE) and OTC (TPEX) symbols — a TWSE-only price
+  // map leaves OTC positions (e.g. 5701) permanently un-priced (last_price=null
+  // forever), which in turn nulls out the whole-portfolio totals below.
   if (dataSource !== "kgi_gateway" && positions.length > 0) {
     try {
       const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
-      const rows = await getStockDayAllRows();
-      const closeBySymbol = new Map(rows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
+      const TPEX_BASE_URL = "https://www.tpex.org.tw/openapi/v1";
+      const FETCH_TIMEOUT_MS = 3000;
+
+      const [stockRows, tpexRows] = await Promise.all([
+        getStockDayAllRows(),
+        (async (): Promise<Array<{ SecuritiesCompanyCode: string; Close: string }>> => {
+          try {
+            const resp = await fetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
+              headers: { "Accept": "application/json" },
+              signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+              redirect: "follow"
+            });
+            if (!resp.ok) return [];
+            const raw = await resp.json();
+            return Array.isArray(raw) ? raw : [];
+          } catch {
+            return [];
+          }
+        })(),
+      ]);
+
+      const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
+      for (const row of tpexRows) {
+        const code = row.SecuritiesCompanyCode?.trim();
+        if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
+        const close = parseFloat(row.Close);
+        if (isFinite(close)) closeBySymbol.set(code, close);
+      }
+
       let marked = 0;
       for (const p of positions) {
         const close = closeBySymbol.get(p.symbol);
         if (close !== undefined && isFinite(close) && close > 0) {
           p.last_price = close;
+          p.market_value_twd = Math.round(p.shares * close);
           if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((close - p.avg_cost) * p.shares);
           marked++;
         }
       }
-      if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE STOCK_DAY_ALL EOD`);
+      if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE+TPEX EOD closes`);
     } catch {
-      notes.push("mark_to_market_unavailable: TWSE EOD fetch failed");
+      notes.push("mark_to_market_unavailable: TWSE/TPEX EOD fetch failed");
     }
   }
 
-  const totalUnrealized = positions.length > 0 && positions.every((p) => p.unrealized_pnl_twd !== null)
-    ? positions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
+  // Totals: partial-sum over priced positions rather than requiring full
+  // coverage — an OTC symbol with no price for the day no longer nulls out
+  // the whole portfolio's market value / unrealized P&L.
+  const pricedPositions = positions.filter((p) => p.last_price !== null);
+  const unrealizedKnownPositions = positions.filter((p) => p.unrealized_pnl_twd !== null);
+  const totalUnrealized = unrealizedKnownPositions.length > 0
+    ? unrealizedKnownPositions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
     : null;
-  const totalMarketValue = positions.length > 0 && positions.every((p) => p.last_price !== null)
-    ? positions.reduce((s, p) => s + p.shares * (p.last_price ?? 0), 0)
+  const totalMarketValue = pricedPositions.length > 0
+    ? pricedPositions.reduce((s, p) => s + (p.market_value_twd ?? 0), 0)
     : null;
+  if (positions.length > 0 && pricedPositions.length < positions.length) {
+    notes.push(`mark_to_market_coverage: ${pricedPositions.length}/${positions.length} positions priced`);
+  }
 
   // Estimated cash residual from the basket that the current positions belong to.
   let cashResidual = S1_DEFAULT_CAPITAL_TWD; // assume default capital undeployed until basket found

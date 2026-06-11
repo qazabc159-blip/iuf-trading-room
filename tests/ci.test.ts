@@ -15716,6 +15716,25 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
   assert.match(runnerSource, /mark_to_market/);
 });
 
+test("S1-OBS-7b: mark-to-market covers OTC (TPEX) symbols, not just TWSE-listed", () => {
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  // 6/11 root-cause: 1b mark-to-market only used TWSE STOCK_DAY_ALL, so
+  // OTC-listed S1 holdings (e.g. 5701) never got a price -> last_price/
+  // total_market_value/total_unrealized_pnl stayed null forever.
+  assert.match(runnerSource, /tpex_mainboard_daily_close_quotes/);
+  assert.match(runnerSource, /SecuritiesCompanyCode/);
+
+  // Totals must be partial sums over priced positions, not an all-or-nothing
+  // gate, with an explicit coverage note when some positions are unpriced.
+  assert.match(runnerSource, /mark_to_market_coverage: \$\{pricedPositions\.length\}\/\$\{positions\.length\} positions priced/);
+  assert.doesNotMatch(runnerSource, /positions\.every\(\(p\) => p\.last_price !== null\)/);
+  assert.doesNotMatch(runnerSource, /positions\.every\(\(p\) => p\.unrealized_pnl_twd !== null\)/);
+
+  // Each position carries its own market value (shares * last_price).
+  assert.match(runnerSource, /market_value_twd: number \| null/);
+});
+
 // =============================================================================
 // C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
 // =============================================================================
