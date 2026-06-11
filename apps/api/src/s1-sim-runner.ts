@@ -19,7 +19,7 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 
@@ -213,6 +213,48 @@ async function readS1ObservationAudit<T>(
   const data = (payload as Record<string, unknown>)["data"];
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   return data as T;
+}
+
+/**
+ * Latest audit entry for an action within a trading-date window (inclusive).
+ * entityId stores the trading date as YYYY-MM-DD, so lexicographic compare works.
+ * Needed because S1 is weekly: mid-week EOD reports must find LAST Tuesday's
+ * orders, not today's (which don't exist Wed–Mon).
+ */
+async function readLatestS1ObservationAuditInWindow<T>(
+  action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS],
+  window: { from: string; to: string },
+): Promise<{ tradingDate: string; data: T } | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  const workspaceId = await resolveS1WorkspaceId();
+  if (!workspaceId) return null;
+
+  const rows = await db
+    .select({ entityId: auditLogs.entityId, payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, action),
+        eq(auditLogs.entityType, "s1_sim"),
+        gte(auditLogs.entityId, window.from),
+        lte(auditLogs.entityId, window.to),
+      ),
+    )
+    .orderBy(desc(auditLogs.entityId), desc(auditLogs.createdAt))
+    .limit(1)
+    .catch(() => [] as Array<{ entityId: string | null; payload: unknown }>);
+
+  const row = rows[0];
+  if (!row?.entityId) return null;
+  const payload = row.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = (payload as Record<string, unknown>)["data"];
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  return { tradingDate: row.entityId, data: data as T };
 }
 
 export async function resolveS1SimCapitalTwd(workspaceId: string): Promise<S1CapitalConfig> {
@@ -890,9 +932,32 @@ export async function runS1EodReportTick(): Promise<void> {
   console.log(`[s1-eod] START trading_date=${todayTst}`);
   const notes: string[] = [];
 
-  // 1. Fetch positions from KGI gateway
-  const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
-  const client = new KgiGatewayClient({ gatewayBaseUrl: kgiGatewayUrl(), connectTimeoutMs: 10_000 });
+  // 0. Rebuild this week's positions from the durable audit log FIRST.
+  // S1 is weekly: positions entered on Tuesday carry until the next rebalance.
+  // KGI SIM session positions are ephemeral (EC2 stops 14:10 / any relogin resets
+  // them), so the gateway legitimately answers [] mid-week — that must never be
+  // recorded as "no positions" (6/10 audit R4: 跨日持倉失真).
+  const lookbackFrom = taipeiDateStr(-7);
+  const latestOrdersAudit = await readLatestS1ObservationAuditInWindow<S1OrderSubmitResult>(
+    S1_AUDIT_ACTIONS.ordersSubmitted,
+    { from: lookbackFrom, to: todayTst },
+  );
+  const positionsDate = latestOrdersAudit?.tradingDate ?? todayTst;
+
+  // Basket of the same trading date — entry-price estimates + cash residual.
+  let basketForResidual: S1Basket | null = null;
+  try {
+    const basketPath = join(reportsBase(), "s1_sim_basket", `${positionsDate}.json`);
+    const raw = await fs.readFile(basketPath, "utf-8");
+    basketForResidual = JSON.parse(raw) as S1Basket;
+  } catch {
+    // File gone (redeploy) — try audit log
+    basketForResidual = await readS1ObservationAudit<S1Basket>(
+      S1_AUDIT_ACTIONS.signalGenerated,
+      positionsDate,
+    );
+  }
+  const entryBySymbol = new Map((basketForResidual?.basket ?? []).map((e) => [e.symbol, e]));
 
   type PositionRow = {
     symbol: string;
@@ -901,6 +966,21 @@ export async function runS1EodReportTick(): Promise<void> {
     last_price: number | null;
     unrealized_pnl_twd: number | null;
   };
+
+  const auditPositions: PositionRow[] = (latestOrdersAudit?.data.results ?? [])
+    .filter((r) => r.status === "accepted")
+    .map((r) => ({
+      symbol: r.symbol,
+      shares: r.shares,
+      // entry estimate from the basket's signal-time price (no fill confirmation in SIM)
+      avg_cost: entryBySymbol.get(r.symbol)?.latest_price ?? 0,
+      last_price: null,
+      unrealized_pnl_twd: null,
+    }));
+
+  // 1. Fetch positions from KGI gateway (live prices when the session still has them)
+  const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+  const client = new KgiGatewayClient({ gatewayBaseUrl: kgiGatewayUrl(), connectTimeoutMs: 10_000 });
 
   let positions: PositionRow[] = [];
   let dataSource = "kgi_gateway";
@@ -916,74 +996,76 @@ export async function runS1EodReportTick(): Promise<void> {
         last_price: p.lastPrice ?? null,
         unrealized_pnl_twd: p.unrealized !== undefined ? p.unrealized : null
       }));
-    console.log(`[s1-eod] fetched ${positions.length} positions from KGI gateway`);
+    if (positions.length === 0 && auditPositions.length > 0) {
+      // Gateway reachable but session is empty — ephemeral SIM positions reset.
+      positions = auditPositions;
+      dataSource = "audit_log_rebuild";
+      notes.push(`gateway_empty_rebuilt_from_audit: KGI SIM session positions are ephemeral; rebuilt ${auditPositions.length} positions from ${positionsDate} accepted orders`);
+    } else {
+      console.log(`[s1-eod] fetched ${positions.length} positions from KGI gateway`);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn(`[s1-eod] gateway unavailable: ${msg} — using order file fallback`);
+    console.warn(`[s1-eod] gateway unavailable: ${msg} — rebuilding from audit`);
     notes.push(`gateway_unavailable: ${msg}`);
-    dataSource = "order_file_fallback";
 
-    // Fallback 1: read today's order submit file (ephemeral — may be gone after redeploy)
-    const orderPath = join(reportsBase(), "s1_sim_daily", `${todayTst}_orders.json`);
-    let orderResult: S1OrderSubmitResult | null = null;
-    try {
-      const raw = await fs.readFile(orderPath, "utf-8");
-      orderResult = JSON.parse(raw) as S1OrderSubmitResult;
-      notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
-    } catch {
-      // File not found (ephemeral) — try audit log as durable fallback
-    }
-
-    // Fallback 2: audit log (durable DB — survives redeploy)
-    if (!orderResult) {
-      const auditOrders = await readS1ObservationAudit<S1OrderSubmitResult>(
-        S1_AUDIT_ACTIONS.ordersSubmitted,
-        todayTst,
-      );
-      if (auditOrders) {
-        orderResult = auditOrders;
-        notes.push("positions_from_audit_log: avg_cost and last_price unknown without KGI fill confirmation");
-        dataSource = "audit_log_fallback";
-      } else {
-        notes.push("no_order_file_found: positions unknown (file ephemeral, no audit_log entry)");
+    if (auditPositions.length > 0) {
+      positions = auditPositions;
+      dataSource = "audit_log_fallback";
+      notes.push(`positions_from_audit_log: rebuilt ${auditPositions.length} positions from ${positionsDate} accepted orders`);
+    } else {
+      // Legacy fallback: today's order submit file (ephemeral — may be gone after redeploy)
+      dataSource = "order_file_fallback";
+      const orderPath = join(reportsBase(), "s1_sim_daily", `${todayTst}_orders.json`);
+      try {
+        const raw = await fs.readFile(orderPath, "utf-8");
+        const orderResult = JSON.parse(raw) as S1OrderSubmitResult;
+        notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
+        positions = orderResult.results
+          .filter((r) => r.status === "accepted")
+          .map((r) => ({
+            symbol: r.symbol,
+            shares: r.shares,
+            avg_cost: 0, // unknown without fill confirmation
+            last_price: null,
+            unrealized_pnl_twd: null
+          }));
+      } catch {
+        notes.push("no_order_file_found: positions unknown (file ephemeral, no audit_log entry in 7-day window)");
       }
-    }
-
-    if (orderResult) {
-      positions = orderResult.results
-        .filter((r) => r.status === "accepted")
-        .map((r) => ({
-          symbol: r.symbol,
-          shares: r.shares,
-          avg_cost: 0, // unknown without fill confirmation
-          last_price: null,
-          unrealized_pnl_twd: null
-        }));
     }
   }
 
-  const totalUnrealized = positions.every((p) => p.unrealized_pnl_twd !== null)
+  // 1b. Mark-to-market audit-rebuilt positions with TWSE EOD closes (best effort).
+  if (dataSource !== "kgi_gateway" && positions.length > 0) {
+    try {
+      const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+      const rows = await getStockDayAllRows();
+      const closeBySymbol = new Map(rows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
+      let marked = 0;
+      for (const p of positions) {
+        const close = closeBySymbol.get(p.symbol);
+        if (close !== undefined && isFinite(close) && close > 0) {
+          p.last_price = close;
+          if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((close - p.avg_cost) * p.shares);
+          marked++;
+        }
+      }
+      if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE STOCK_DAY_ALL EOD`);
+    } catch {
+      notes.push("mark_to_market_unavailable: TWSE EOD fetch failed");
+    }
+  }
+
+  const totalUnrealized = positions.length > 0 && positions.every((p) => p.unrealized_pnl_twd !== null)
     ? positions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
     : null;
-  const totalMarketValue = positions.every((p) => p.last_price !== null && p.avg_cost > 0)
+  const totalMarketValue = positions.length > 0 && positions.every((p) => p.last_price !== null)
     ? positions.reduce((s, p) => s + p.shares * (p.last_price ?? 0), 0)
     : null;
 
-  // Estimated cash residual from basket (best effort)
-  // Try file first, then audit log (durable fallback for post-redeploy)
+  // Estimated cash residual from the basket that the current positions belong to.
   let cashResidual = S1_DEFAULT_CAPITAL_TWD; // assume default capital undeployed until basket found
-  let basketForResidual: S1Basket | null = null;
-  try {
-    const basketPath = join(reportsBase(), "s1_sim_basket", `${todayTst}.json`);
-    const raw = await fs.readFile(basketPath, "utf-8");
-    basketForResidual = JSON.parse(raw) as S1Basket;
-  } catch {
-    // File gone (redeploy) — try audit log
-    basketForResidual = await readS1ObservationAudit<S1Basket>(
-      S1_AUDIT_ACTIONS.signalGenerated,
-      todayTst,
-    );
-  }
   if (basketForResidual) {
     const deployed = basketForResidual.basket.reduce((s, e) => s + e.target_notional_twd, 0);
     cashResidual = basketForResidual.capital_twd - deployed;
