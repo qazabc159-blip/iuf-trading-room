@@ -43,7 +43,8 @@ function formatTime(value: string | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-TW", { hour12: false });
+  // Server component renders on Railway (UTC) — must pin Taipei or the clock shows UTC.
+  return date.toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" });
 }
 
 function modeAccent(mode: string): string {
