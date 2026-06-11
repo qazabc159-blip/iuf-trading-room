@@ -223,6 +223,12 @@ export async function runDailyBriefProducer(): Promise<{
     });
   }
 
+  // status=draft, NOT published: this rule-template output (Market Overview /
+  // Active Themes / raw DB rows) predates the v2 brief contract and always fails
+  // the frontend template gate — publishing it surfaced "已發布但內容暫停展示"
+  // empty shells for days when the OpenAlice v2 pipeline didn't deliver
+  // (6/9-6/11, audit 6/10). Kept as draft for debugging; only the v2 pipeline
+  // publishes user-facing briefs.
   const [inserted] = await db
     .insert(dailyBriefs)
     .values({
@@ -231,7 +237,7 @@ export async function runDailyBriefProducer(): Promise<{
       marketState,
       sections,
       generatedBy: "worker",
-      status: "published"
+      status: "draft"
     })
     .returning();
 

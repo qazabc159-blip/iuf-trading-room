@@ -1047,8 +1047,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
           eq(dailyBriefsTable.workspaceId, workspace.id),
           or(
             eq(dailyBriefsTable.status, "published"),
-            eq(dailyBriefsTable.status, "approved"),
-            and(eq(dailyBriefsTable.status, "draft"), eq(dailyBriefsTable.generatedBy, "worker"))
+            eq(dailyBriefsTable.status, "approved")
           )
         )
       )
@@ -1059,11 +1058,10 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       // Legacy OpenAlice-approved rows used "approved" even though the public
       // contract only exposes draft/published. Treat them as published so the
       // daily brief surface does not hide already-approved formal rows.
+      // NOTE: worker rule-template drafts are deliberately NOT exposed anymore —
+      // they never meet the v2 template contract, so surfacing them produced
+      // "已發布但內容暫停展示" empty shells (6/10 audit).
       if (row.status === "published" || row.status === "approved") return "published";
-      // Legacy worker fallback wrote a formal daily_briefs row with status=draft.
-      // That row was already used as the producer's "existing formal row" gate,
-      // so expose it as published instead of making the website look empty.
-      if (row.status === "draft" && row.generatedBy === "worker") return "published";
       return "draft";
     };
 
