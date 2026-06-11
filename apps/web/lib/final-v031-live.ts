@@ -303,6 +303,9 @@ async function buildMarketIntelPayload() {
       finMind.datasets?.some((dataset) => dataset.state === "LIVE"));
   const mopsLive = (announcements?.items?.length ?? 0) > 0 && (announcements?.failures ?? 0) === 0;
   const aiLive = !!news?.items?.length && news.ai_call_success !== false;
+  // 3 real sources. The old 4th「主管機關公告」slot was a hardcoded-warn placeholder
+  // (duplicate of MOPS) that made the health bar permanently look broken (audit A2:
+  // 來源正常 2/4 forever) — removed from both the list and the denominator.
   const sourceOkCount = [mopsLive, finMindLive, aiLive].filter(Boolean).length;
   const feedState = marketFeedState(items, news, announcements, newsError, announcementsError);
 
@@ -313,8 +316,8 @@ async function buildMarketIntelPayload() {
       total: Math.max(news?.input_row_count ?? 0, items.length),
       aiSelected: news?.items?.length ?? 0,
       sourceOk: sourceOkCount,
-      sourceTotal: 4,
-      nextRefresh: news?.next_refresh_at ? minutesAgoText(news.next_refresh_at).replace("前", "後") : "排程中",
+      sourceTotal: 3,
+      nextRefresh: nextRefreshText(news?.next_refresh_at),
     },
     topicCounts: {
       all: items.length,
@@ -347,13 +350,6 @@ async function buildMarketIntelPayload() {
         status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
         fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
       },
-      {
-        name: "主管機關公告",
-        label: "公告欄位完整度待確認；不顯示未驗證內容",
-        state: "warn",
-        status: "待確認",
-        fresh: "排程探測",
-      },
     ],
     readiness: {
       coverage: Math.min(100, Math.max(0, Math.round((items.length / 12) * 100))),
@@ -363,6 +359,18 @@ async function buildMarketIntelPayload() {
     heatmap: heatmapTiles,
     institutional,
   };
+}
+
+// 「下次抓取」must format a FUTURE time. The old code reused minutesAgoText and
+// swapped 前→後, which printed「剛剛」whenever the schedule was due/overdue (audit A2).
+function nextRefreshText(iso: string | null | undefined): string {
+  if (!iso) return "排程中";
+  const ms = Date.parse(iso) - Date.now();
+  if (!Number.isFinite(ms)) return "排程中";
+  if (ms <= 60_000) return "即將更新";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} 分鐘後`;
+  return `${Math.round(minutes / 60)} 小時後`;
 }
 
 function confidenceText(value: number) {
@@ -980,6 +988,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return text.trim() || String(raw || "").trim();
   }
 
+  // Mirror of nextRefreshText — formats a FUTURE schedule time, never「剛剛」.
+  function clientNextRefreshText(iso) {
+    if (!iso) return "排程中";
+    const ms = Date.parse(iso) - Date.now();
+    if (!Number.isFinite(ms)) return "排程中";
+    if (ms <= 60000) return "即將更新";
+    const minutes = Math.round(ms / 60000);
+    if (minutes < 60) return minutes + " 分鐘後";
+    return Math.round(minutes / 60) + " 小時後";
+  }
+
   function clientNewsItem(item, index) {
     const title = clientCleanHeadline(item.headline || item.title || "正式市場訊息");
     const tag = (item.tags && item.tags[0]) || item.impact_tier || item.category || "市場";
@@ -1152,8 +1171,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         total: Math.max(news?.input_row_count || 0, items.length),
         aiSelected: news?.items?.length || 0,
         sourceOk: [mopsLive, finMindLive, aiLive].filter(Boolean).length,
-        sourceTotal: 4,
-        nextRefresh: news?.next_refresh_at ? ago(news.next_refresh_at).replace("前", "後") : "排程中"
+        sourceTotal: 3,
+        nextRefresh: clientNextRefreshText(news?.next_refresh_at)
       },
       topicCounts: { all: items.length, ai: counts.ai || 0, semi: counts.semi || 0, fin: counts.fin || 0, auto: counts.auto || 0 },
       items,
@@ -1161,8 +1180,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       sources: [
         { name:"公開資訊觀測站", label:mopsLive ? "官方公告進入市場情報 " + (announcements?.items?.length || 0) + " 則" : "目前無可呈現公告", state:mopsLive ? "ok" : "warn", status:mopsLive ? "正常" : "待確認", fresh: announcements?.items?.[0]?.date ? ago(announcements.items[0].date) : "尚未同步" },
         { name:"FinMind 市場資料", label:finMindLive ? "市場資料源可用" : "市場資料源同步中", state:finMindLive ? "ok" : "warn", status:finMindLive ? "正常" : "待確認", fresh: finMind?.updatedAt ? ago(finMind.updatedAt) : "尚未同步" },
-        { name:"AI 精選訊息", label:aiLive ? "AI 精選已回傳 " + (news?.items?.length || 0) + " 則" : "AI 精選尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" },
-        { name:"主管機關公告", label:"公告欄位完整度待確認；不顯示未驗證內容", state:"warn", status:"待確認", fresh:"排程探測" }
+        { name:"AI 精選訊息", label:aiLive ? "AI 精選已回傳 " + (news?.items?.length || 0) + " 則" : "AI 精選尚無可顯示項目", state:aiLive ? "ok" : "warn", status:aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳", fresh: news?.as_of ? ago(news.as_of) : "尚未同步" }
       ],
       readiness: { coverage: Math.min(100, Math.round(items.length / 12 * 100)), freshness: finMindLive || aiLive ? 90 : 45, reviewQueue: Math.max(0, announcements?.failures || 0) },
       heatmap: heatmapTiles,
