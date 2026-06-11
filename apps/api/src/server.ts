@@ -17322,40 +17322,51 @@ function startSchedulers(workspaceSlug: string): void {
   }
 
   // AI-REC-V3-CRON: Daily AI Recommendation v3 (Yang SOP / 7-axis ReAct).
-  // Cadence: 24h loose — window guard fires once per day in 08:30–09:15 TST (before market open).
-  // This avoids contending with v2 (09:30) and respects the 24h cost budget.
-  // Boot fire at 90s — allows DB pool warm-up and v2 boot fire (60s) to complete first.
+  // Cadence: 5-min tick + window guard, fires once per day in 08:30–09:15 TST.
+  // (The old 24h tick almost never landed inside the 45-min window, so after the
+  // 6/5 budget blow-up the cron simply never fired again — 5 days of zero cards.)
+  // On a failed run the day is NOT consumed: retry on the next tick inside the
+  // window, capped at AI_REC_V3_MAX_ATTEMPTS_PER_DAY to bound LLM spend.
+  // Boot fire at 90s only when today has no v3 run yet — on 6/5 every deploy
+  // boot-fired a fresh run and a dozen deploys burned the whole daily budget.
   // State: shared _aiRecV3Cron* module-level vars (also used by manual POST endpoint).
   {
-    const AI_REC_V3_CRON_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
-    let _aiRecV3LastCronFireDate: string | null = null; // YYYY-MM-DD Taipei date guard
-
-    /** Returns true if current Taipei time is in the 08:30–09:15 window on a weekday. */
-    function isAiRecV3CronWindow(): boolean {
-      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const day = taipeiNow.getUTCDay();
-      if (day === 0 || day === 6) return false;
-      const hhmm = taipeiNow.getUTCHours() * 100 + taipeiNow.getUTCMinutes();
-      return hhmm >= 830 && hhmm <= 915;
-    }
+    const AI_REC_V3_CRON_TICK_MS = 5 * 60 * 1000;
 
     ui(async () => {
-      if (!isAiRecV3CronWindow()) return;
+      const { isV3CronWindowAt, taipeiDateOf } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+      if (!isV3CronWindowAt()) return;
       if (_aiRecV3CronRunning) return;
 
-      // Once-per-day guard: use Taipei calendar date
-      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const todayDate = taipeiNow.toISOString().slice(0, 10); // YYYY-MM-DD
-      if (_aiRecV3LastCronFireDate === todayDate) return;
+      const todayDate = taipeiDateOf();
+      if (_aiRecV3CronSuccessDate === todayDate) return;
+      if (_aiRecV3AttemptDate !== todayDate) {
+        _aiRecV3AttemptDate = todayDate;
+        _aiRecV3AttemptCount = 0;
+      }
+      if (_aiRecV3AttemptCount >= AI_REC_V3_MAX_ATTEMPTS_PER_DAY) return;
+      _aiRecV3AttemptCount++;
 
-      _aiRecV3LastCronFireDate = todayDate;
-      console.info(`[ai-rec-v3-cron] firing daily cron for date=${todayDate}`);
-      void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
-    }, AI_REC_V3_CRON_INTERVAL_MS);
+      console.info(`[ai-rec-v3-cron] firing daily cron for date=${todayDate} attempt=${_aiRecV3AttemptCount}/${AI_REC_V3_MAX_ATTEMPTS_PER_DAY}`);
+      await _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
+      if (_aiRecV3CronLastError === null) {
+        _aiRecV3CronSuccessDate = todayDate;
+      }
+    }, AI_REC_V3_CRON_TICK_MS);
 
-    // Boot fire: pre-warm at 90s so first day always has a v3 run after deploy.
-    setTimeout(() => {
+    // Boot fire: pre-warm at 90s so first day always has a v3 run after deploy —
+    // but only if today has no run row yet (any status), so deploy bursts don't burn budget.
+    setTimeout(async () => {
       if (_aiRecV3CronRunning) return;
+      try {
+        const { hasV3RunForTaipeiDate, taipeiDateOf } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+        if (await hasV3RunForTaipeiDate(taipeiDateOf())) {
+          console.info("[ai-rec-v3-cron] boot-fire skipped — a v3 run already exists for today");
+          return;
+        }
+      } catch {
+        // guard query failed — fall through and fire (memory mode / fresh DB)
+      }
       console.info("[ai-rec-v3-cron] boot-fire at 90s");
       void _runAiRecV3Cron({ trigger: "cron_daily", workspaceId: null });
     }, 90_000);
@@ -18469,6 +18480,12 @@ app.get("/api/v1/admin/ai-recommendations/status", async (c) => {
 let _aiRecV3CronRunning = false;
 let _aiRecV3CronLastFiredAt: string | null = null;
 let _aiRecV3CronLastError: string | null = null;
+// Daily fire bookkeeping (Taipei dates). Success consumes the day; failures retry
+// on later ticks inside the window, capped to bound LLM spend.
+const AI_REC_V3_MAX_ATTEMPTS_PER_DAY = 3;
+let _aiRecV3CronSuccessDate: string | null = null;
+let _aiRecV3AttemptDate: string | null = null;
+let _aiRecV3AttemptCount = 0;
 
 /**
  * Shared execution function for both manual refresh and the daily cron.
@@ -18485,7 +18502,10 @@ async function _runAiRecV3Cron(opts: {
   _aiRecV3CronRunning = true;
   _aiRecV3CronLastFiredAt = new Date().toISOString();
   try {
-    const { runAiRecommendationV3, getLatestAiRecommendationV3Run } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    const { runAiRecommendationV3, getLatestAiRecommendationV3Run, failStaleV3RunningRows, V3_RUNNING_STALE_AFTER_MS } = await import("./ai-recommendation-v2/orchestrator-v3.js");
+    // Sweep rows stuck in status="running" (crashed runs) so the read path never
+    // serves a days-old "running" row again.
+    await failStaleV3RunningRows({ minAgeMs: V3_RUNNING_STALE_AFTER_MS, reason: "(stale running run swept before new cron fire)" });
     await runAiRecommendationV3({
       trigger: opts.trigger,
       // Five technical checks are too brittle for a five-card product gate:
@@ -18661,6 +18681,9 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
     cron_running: _aiRecV3CronRunning,
     cron_last_fired_at: _aiRecV3CronLastFiredAt,
     cron_last_error: _aiRecV3CronLastError,
+    cron_success_date: _aiRecV3CronSuccessDate,
+    cron_attempts_today: _aiRecV3AttemptDate === null ? 0 : _aiRecV3AttemptCount,
+    cron_max_attempts_per_day: AI_REC_V3_MAX_ATTEMPTS_PER_DAY,
     latest_run_id: latest?.runId ?? null,
     latest_status: latest?.status ?? null,
     latest_generated_at: latest?.generatedAt ?? null,

@@ -111,7 +111,10 @@ const DEFAULT_TIMEOUT_MS = 25_000;
 export function getDailyBudgetUsd(): number {
   const env = process.env["LLM_DAILY_BUDGET_USD"];
   const parsed = env ? parseFloat(env) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5.0; // $5/day default
+  // $10/day (Yang approved raise 2026-06-11; was $5). Runaway-burn protection lives
+  // upstream: per-run costCapUsd, once-daily v3 cron with bounded retries, and a
+  // boot-fire guard that skips when today already has a run.
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10.0;
 }
 
 /** Daily quota limit (call count). Matches openai-quota-guard default. */
