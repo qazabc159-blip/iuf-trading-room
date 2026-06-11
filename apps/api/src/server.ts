@@ -11692,10 +11692,60 @@ app.get("/api/v1/heatmap", async (c) => {
 //   - No DB migration
 // =============================================================================
 
+// During the MIS window, returns the cron-cached realtime TAIEX/OTC index
+// (tse_t00.tw / otc_o00.tw, refreshed every 45s). Null off-hours or when stale.
+// The 6/11 audit found both overview endpoints serving YESTERDAY's close labeled
+// "live/今日收盤" mid-session because neither read this cache (only the legacy
+// market-data/overview overlay did).
+function _misIndexOverviewSnapshot(): {
+  taiex: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
+  otc: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
+  tsFor: (time: string) => string;
+} | null {
+  const hhmm = getTaipeiHHMM();
+  const taipeiDay = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
+  const inWindow = hhmm >= 855 && hhmm <= 1435 && taipeiDay >= 1 && taipeiDay <= 5;
+  if (!inWindow) return null;
+  const idxCache = _overviewMisIndexCache;
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+  // Allow up to 2 min staleness (cron ticks every 45s; one missed tick must not flap to EOD)
+  if (!idxCache || idxCache.tradeDateYmd !== todayYmd || Date.now() - idxCache.cachedAt > 120_000) return null;
+  if (!idxCache.taiex) return null;
+  const taipeiDateStr = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return {
+    taiex: idxCache.taiex,
+    otc: idxCache.otc,
+    tsFor: (time: string) => time ? new Date(`${taipeiDateStr}T${time}+08:00`).toISOString() : new Date().toISOString(),
+  };
+}
+
+// Honest close label: derive from the data's own trading date, never assume today.
+// TWSE MI_INDEX lags a session, so "fetch succeeded" does NOT mean today's close.
+function _taiexCloseLabel(ts: string | null | undefined, isLkg: boolean): string {
+  if (isLkg) return "上日收盤";
+  const tsDate = typeof ts === "string" ? ts.slice(0, 10) : null;
+  const todayTaipei = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return tsDate === todayTaipei ? "今日收盤" : "上日收盤";
+}
+
 app.get("/api/v1/market/overview/twse", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
+  // 1. MIS realtime index (盤中即時) — preferred during the trading session
+  const mis = _misIndexOverviewSnapshot();
+  if (mis?.taiex) {
+    return c.json({
+      taiex: { value: mis.taiex.last, change: mis.taiex.change, changePct: mis.taiex.changePct, ts: mis.tsFor(mis.taiex.time) },
+      otc: mis.otc ? { value: mis.otc.last, change: mis.otc.change, changePct: mis.otc.changePct, ts: mis.tsFor(mis.otc.time) } : null,
+      source: "twse_mis_intraday",
+      staleAfterSec: 60,
+      sourceState: "live",
+      taiexDisplayLabel: "盤中即時"
+    });
+  }
+
+  // 2. EOD chain (off-hours / MIS unavailable)
   const { getTwseMarketOverview } = await import("./data-sources/twse-openapi-client.js");
   const result = await getTwseMarketOverview();
 
@@ -11711,10 +11761,7 @@ app.get("/api/v1/market/overview/twse", async (c) => {
 
   const { _isLkg, ...resultPayload } = result;
   const sourceState = _isLkg ? "lkg" : "live";
-  // taiexDisplayLabel: human-readable label for frontend — distinguishes live vs prior-close.
-  // "lkg" means TWSE fetch failed and we're serving the last-known-good value (prior close).
-  // Cycle 11 wording: 上日收盤 vs 今日收盤. Unavailable case handled by the null branch above.
-  const taiexDisplayLabel = sourceState === "lkg" ? "上日收盤" : "今日收盤";
+  const taiexDisplayLabel = _taiexCloseLabel(result.taiex?.ts, Boolean(_isLkg));
   return c.json({ ...resultPayload, sourceState, taiexDisplayLabel });
 });
 
@@ -11847,6 +11894,33 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
     // If KGI returned real values for TAIEX, return KGI source
     if (kgiResult.taiex.value !== null) {
       return c.json({ ...kgiResult, sourceState: "live" });
+    }
+
+    // MIS realtime index (盤中即時) — KGI quote auth is not enabled on this
+    // account, so MIS is the de-facto realtime index source during the session.
+    const mis = _misIndexOverviewSnapshot();
+    if (mis?.taiex) {
+      return c.json({
+        taiex: {
+          symbol: "^TWII",
+          value: mis.taiex.last,
+          change: mis.taiex.change,
+          changePct: mis.taiex.changePct,
+          ts: mis.tsFor(mis.taiex.time),
+          source: "twse_mis_intraday",
+          staleSec: null,
+        },
+        otc: {
+          symbol: "^TPEX",
+          value: mis.otc?.last ?? null,
+          change: mis.otc?.change ?? null,
+          changePct: mis.otc?.changePct ?? null,
+          ts: mis.otc ? mis.tsFor(mis.otc.time) : null,
+          source: "twse_mis_intraday",
+          staleSec: null,
+        },
+        sourceState: "live",
+      });
     }
 
     // Fallback: TWSE OpenAPI EOD

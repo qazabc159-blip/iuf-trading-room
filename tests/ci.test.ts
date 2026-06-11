@@ -15723,6 +15723,21 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
 // Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
 // when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
 
+test("REALTIME-INDEX: both overview endpoints must serve the MIS intraday index during the session", () => {
+  // 6/11 audit: mid-session both /market/overview/twse and /market/overview/kgi
+  // served YESTERDAY's close labeled live/今日收盤 — the MIS index cache
+  // (tse_t00.tw, 45s cron) existed but neither endpoint read it.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /function _misIndexOverviewSnapshot\(\)/);
+  // both endpoints consume the snapshot (helper + 2 call sites)
+  const usages = serverSource.match(/_misIndexOverviewSnapshot\(\)/g) ?? [];
+  assert.ok(usages.length >= 2, `expected >=2 _misIndexOverviewSnapshot() call sites, got ${usages.length}`);
+  assert.match(serverSource, /taiexDisplayLabel: "盤中即時"/);
+  // EOD close label must derive from the data's own ts, never assume today
+  assert.match(serverSource, /function _taiexCloseLabel\(/);
+  assert.doesNotMatch(serverSource, /const taiexDisplayLabel = sourceState === "lkg" \? "上日收盤" : "今日收盤";/);
+});
+
 test("MIS-INTRADAY-FALLBACK: realtime MIS fetch must fall back to bid/ask when z='-'", () => {
   // MIS frequently returns z="-" mid-session even for actively traded stocks
   // (verified live 2026-06-11 12:37: 2330 z="-", bid=2245). Without the bid/ask
