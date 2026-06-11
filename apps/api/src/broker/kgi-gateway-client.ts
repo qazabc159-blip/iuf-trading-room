@@ -154,11 +154,20 @@ async function gatewayFetch(
   options: RequestInit,
   timeoutMs: number
 ): Promise<Response> {
+  // EventBridge uptime guard: outside the gateway's weekday 08:20-14:10 TST
+  // window every connect is dead air — short-circuit so fallback chains fire in
+  // milliseconds instead of after 6-11s timeouts (Bruce latency profile 6/11).
+  const { isKgiGatewayScheduledOff, noteKgiGatewayAlive, KGI_SCHEDULED_OFF_MESSAGE } = await import("./kgi-gateway-schedule.js");
+  if (isKgiGatewayScheduledOff()) {
+    throw new KgiGatewayUnreachableError(url, new Error(KGI_SCHEDULED_OFF_MESSAGE));
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
+    noteKgiGatewayAlive();
     return response;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
