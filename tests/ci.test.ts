@@ -15723,6 +15723,19 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
 // Tests for the TWSE OpenAPI fallback parse logic used in /companies/:id/quote/realtime
 // when KGI quote is unavailable. Tests are self-contained (no HTTP, no DB).
 
+test("TAIEX-CHANGE-BASIS: MI_5MINS change must be computed vs the official previous close", () => {
+  // 6/11 audit: the daily brief claimed +3.31% 多頭強勢 on the day AFTER a -3.31%
+  // crash — fetchTaiwanMarketIndexToday measured close vs the day's FIRST 5-min
+  // row (intraday drift) instead of yesterday's official close (MIS field y).
+  const clientSource = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
+  assert.match(clientSource, /ex_ch=tse_t00\.tw&json=1&delay=0/);
+  assert.doesNotMatch(clientSource, /\/\/ Compute change from first row \(opening = yesterday's close reference\)/);
+  // the prompt formatter must state the comparison basis and pin the sign
+  const pipelineSource = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-pipeline.ts"), "utf8");
+  assert.match(pipelineSource, /較前一交易日收盤/);
+  assert.match(pipelineSource, /負號=下跌/);
+});
+
 test("REALTIME-INDEX: both overview endpoints must serve the MIS intraday index during the session", () => {
   // 6/11 audit: mid-session both /market/overview/twse and /market/overview/kgi
   // served YESTERDAY's close labeled live/今日收盤 — the MIS index cache

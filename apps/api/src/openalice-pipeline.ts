@@ -524,7 +524,8 @@ function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
   const lines: string[] = [];
 
   if (snap.taiex.value !== null) {
-    lines.push(`TAIEX: ${snap.taiex.value} (${snap.taiex.change != null ? (snap.taiex.change >= 0 ? "+" : "") + snap.taiex.change : "n/a"}, ${snap.taiex.changePct != null ? (snap.taiex.changePct >= 0 ? "+" : "") + snap.taiex.changePct + "%" : "n/a"})`);
+    // 明示漲跌基準與正負號 — 6/11 audit: 大跌日簡報寫成 +3.31% 多頭強勢
+    lines.push(`TAIEX: ${snap.taiex.value}（較前一交易日收盤 ${snap.taiex.change != null ? (snap.taiex.change >= 0 ? "+" : "") + snap.taiex.change : "n/a"} 點、${snap.taiex.changePct != null ? (snap.taiex.changePct >= 0 ? "+" : "") + snap.taiex.changePct + "%" : "n/a"}；負號=下跌，引用時不得改變方向）`);
     if (snap.taiex.asOf) lines.push(`  資料日期: ${snap.taiex.asOf} (${snap.taiex.sourceState ?? "unknown"})`);
   }
 
