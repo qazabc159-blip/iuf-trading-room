@@ -14,8 +14,12 @@ permissions:
   issues: write
 
 jobs:
+  # Monitoring deliberately runs on GitHub-hosted ubuntu, NOT the self-hosted
+  # Taipei EC2 runner: that box is part of the system under test (EventBridge
+  # stops it at 14:10 TST daily), so probes scheduled outside its uptime would
+  # silently never run.
   skip-check:
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
+    runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
@@ -38,44 +42,40 @@ jobs:
   run-smoke:
     needs: skip-check
     if: ${{ needs.skip-check.outputs.should_run == 'true' }}
-    runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
+    runs-on: ubuntu-latest
     env:
       IUF_TEST_EMAIL: ${{ secrets.IUF_TEST_EMAIL }}
       IUF_TEST_PASSWORD: ${{ secrets.IUF_TEST_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
+      # The smoke MUST run on every runner OS. The old version skipped the whole
+      # harness on Linux runners but still reported SMOKE_FAILED=false — a fake
+      # green that let real outages go unnoticed for days (6/11 audit C4). The
+      # harness is plain PowerShell REST probing and runs fine under pwsh on
+      # ubuntu; invoking the script directly (not via powershell.exe) makes it
+      # OS-independent.
       - name: Run Production Smoke (12-item ETL freshness)
         id: prod_smoke
         shell: pwsh
         run: |
-          if ($env:RUNNER_OS -eq 'Windows') {
-            $ts = (Get-Date -Format "yyyyMMdd-HHmm")
-            $out = "evidence/w7_paper_sprint/gha_prod_smoke_$ts.md"
-            powershell -NoProfile -ExecutionPolicy Bypass `
-              -File scripts/verify/Invoke-ProductionSmoke.ps1 `
-              -OutFile $out
-            Add-Content -LiteralPath $env:GITHUB_ENV -Value ('PROD_SMOKE_OUT={0}' -f $out) -Encoding UTF8
-          } else {
-            Write-Host 'Note: Linux runner selected (reduced cost). For full Windows smoke, manually dispatch workflow.'
-            Add-Content -LiteralPath $env:GITHUB_ENV -Value 'PROD_SMOKE_OUT=skipped' -Encoding UTF8
-          }
+          $ts = (Get-Date -Format "yyyyMMdd-HHmm")
+          $out = "evidence/w7_paper_sprint/gha_prod_smoke_$ts.md"
+          # In-process invocation: a failing harness calls `exit 1` which ends this
+          # step with a failure outcome directly — no exit-code relay needed.
+          & ./scripts/verify/Invoke-ProductionSmoke.ps1 -OutFile $out
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value ('PROD_SMOKE_OUT={0}' -f $out) -Encoding UTF8
         continue-on-error: true
 
       - name: Check overall result
         id: result_check
         shell: pwsh
         run: |
-          if ($env:RUNNER_OS -eq 'Windows') {
-            $failed = @()
-            if ('${{ steps.prod_smoke.outcome }}' -eq 'failure') { $failed += 'prod' }
-            if ($failed.Count -gt 0) {
-              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=true' -Encoding UTF8
-              Add-Content -LiteralPath $env:GITHUB_ENV -Value ('SMOKE_FAIL_LIST={0}' -f ($failed -join ',')) -Encoding UTF8
-            } else {
-              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=false' -Encoding UTF8
-              Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAIL_LIST=' -Encoding UTF8
-            }
+          $failed = @()
+          if ('${{ steps.prod_smoke.outcome }}' -eq 'failure') { $failed += 'prod' }
+          if ($failed.Count -gt 0) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=true' -Encoding UTF8
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value ('SMOKE_FAIL_LIST={0}' -f ($failed -join ',')) -Encoding UTF8
           } else {
             Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAILED=false' -Encoding UTF8
             Add-Content -LiteralPath $env:GITHUB_ENV -Value 'SMOKE_FAIL_LIST=' -Encoding UTF8
@@ -83,13 +83,14 @@ jobs:
 
       - name: Upload smoke artifacts
         uses: actions/upload-artifact@v4
-        if: always() && runner.os == 'Windows'
+        if: always()
         with:
           name: smoke-results-${{ github.run_id }}
           path: |
             evidence/w7_paper_sprint/gha_prod_smoke_*.md
             evidence/w7_paper_sprint/bruce_powershell_smoke_harness_*.md
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Alert on failure (dedupe standing issue)
         if: env.SMOKE_FAILED == 'true'
