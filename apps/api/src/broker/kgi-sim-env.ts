@@ -861,7 +861,10 @@ export function _resetDailySmokeHistory(): void {
  *   2. Prod-write audit check (broker.* audit_log entries in last 24h == 0)
  *   3. Trade smoke (only if env=sim AND confirmedByBruce AND confirmedByJason)
  *
- * Window: 08:00-08:30 TST (00:00-00:30 UTC). Call from 15-min polling cron.
+ * Window: 08:25-08:55 TST (00:25-00:55 UTC). Call from 15-min polling cron.
+ * The EC2 gateway starts on an EventBridge schedule at 08:20 TST — firing before
+ * that (the old 08:00-08:30 window hit ~08:03) made the smoke fail every day and
+ * buried real failures in alert fatigue (audit R5).
  * Idempotent: skips if already fired today (TST wall-clock date).
  * forceRun=true bypasses window+idempotency (manual trigger / tests).
  *
@@ -876,12 +879,13 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
   confirmedByJason?: boolean;
   forceRun?: boolean;
 }): Promise<DailySmokeHistoryEntry | null> {
-  // Window check: 08:00-08:30 TST = 00:00-00:30 UTC
+  // Window check: 08:25-08:55 TST = 00:25-00:55 UTC (after the EC2 gateway's
+  // 08:20 EventBridge start — see audit R5: 08:03 fire vs 08:20 boot = always FAIL)
   if (!params.forceRun) {
     const now = new Date();
     const hourUTC = now.getUTCHours();
     const minUTC = now.getUTCMinutes();
-    const inWindow = hourUTC === 0 && minUTC < 30;
+    const inWindow = hourUTC === 0 && minUTC >= 25 && minUTC < 55;
     if (!inWindow) return null;
 
     // Idempotent: skip if already fired today (TST wall-clock)
