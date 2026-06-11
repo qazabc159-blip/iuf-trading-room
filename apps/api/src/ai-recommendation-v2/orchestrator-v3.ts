@@ -381,6 +381,83 @@ export function isV3RunningStale(status: AiRecommendationV3RunResult["status"], 
   return ageMs !== null && ageMs > V3_RUNNING_STALE_AFTER_MS;
 }
 
+/** Taipei calendar date (YYYY-MM-DD) for a given epoch ms. */
+export function taipeiDateOf(nowMs = Date.now()): string {
+  return new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Daily cron fire window: 08:30–09:15 TST weekdays (pre-market, after EC2 gateway 08:20 start). */
+export function isV3CronWindowAt(nowMs = Date.now()): boolean {
+  const taipei = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const day = taipei.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+  return hhmm >= 830 && hhmm <= 915;
+}
+
+/**
+ * Marks v3 rows stuck in status="running" older than minAgeMs as failed.
+ * A run that crashes mid-loop (e.g. LLMBudgetExceeded) used to leave its row
+ * "running" forever, which the read path then skipped for days.
+ */
+export async function failStaleV3RunningRows(opts: { minAgeMs: number; reason: string }): Promise<number> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return 0;
+    const db = getDb();
+    if (!db) return 0;
+    const { sql, and, eq, lt } = await import("drizzle-orm");
+    const cutoff = new Date(Date.now() - opts.minAgeMs);
+    const rows = await db
+      .update(aiRecommendationsRuns)
+      .set({ status: "failed", finalReportMarkdown: opts.reason, completedAt: new Date() })
+      .where(and(
+        sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        eq(aiRecommendationsRuns.status, "running"),
+        lt(aiRecommendationsRuns.generatedAt, cutoff)
+      ))
+      .returning({ id: aiRecommendationsRuns.id });
+    if (rows.length > 0) {
+      console.warn(`[ai-rec-v3] marked ${rows.length} stuck running run(s) as failed: ${opts.reason}`);
+    }
+    return rows.length;
+  } catch (e) {
+    console.warn("[ai-rec-v3] failStaleV3RunningRows failed:", e instanceof Error ? e.message : e);
+    return 0;
+  }
+}
+
+/**
+ * True if any v3 run row (any status) exists for the given Taipei calendar date.
+ * Boot-fire guard: on 6/5 every deploy boot-fired a fresh v3 run, and a dozen
+ * deploys in one day burned the whole LLM daily budget.
+ */
+export async function hasV3RunForTaipeiDate(dateStr: string): Promise<boolean> {
+  try {
+    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return false;
+    const db = getDb();
+    if (!db) return false;
+    const { sql, and, gte, lt } = await import("drizzle-orm");
+    const dayStart = new Date(`${dateStr}T00:00:00+08:00`);
+    if (!Number.isFinite(dayStart.getTime())) return false;
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const rows = await db
+      .select({ id: aiRecommendationsRuns.id })
+      .from(aiRecommendationsRuns)
+      .where(and(
+        sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        gte(aiRecommendationsRuns.generatedAt, dayStart),
+        lt(aiRecommendationsRuns.generatedAt, dayEnd)
+      ))
+      .limit(1);
+    return rows.length > 0;
+  } catch (e) {
+    console.warn("[ai-rec-v3] hasV3RunForTaipeiDate failed:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 export type V3RunReadCandidate = {
   status: string;
   items?: unknown;
@@ -2719,12 +2796,57 @@ export async function runAiRecommendationV3(
   // This allows upgrading AI rec to gpt-5.5 without touching global env (which would
   // also upgrade high-frequency cheap tasks like news-top10).
   const model = resolveAiRecPrimaryModel();
+
+  await persistV3RunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger, model });
+
+  try {
+    return await runAiRecommendationV3Body({ opts, runId, dbRowId, trigger, dateStr, generatedAt, model });
+  } catch (err) {
+    // An error thrown mid-run (e.g. LLMBudgetExceeded inside the ReAct loop) used to
+    // leave the persisted row status="running" forever — the read path then skipped it
+    // and the product showed nothing for days. Persist a terminal status before rethrow.
+    const message = err instanceof Error ? err.message : String(err);
+    const status: AiRecommendationV3RunResult["status"] =
+      err instanceof Error && err.name === "LLMBudgetExceeded" ? "budget_exceeded" : "failed";
+    try {
+      await finalizeV3Run({
+        runId,
+        status,
+        generatedAt,
+        items: [],
+        reactTrace: [],
+        finalReportMarkdown: `(run aborted: ${message})`,
+        totalCostUsd: 0,
+        totalTokens: 0,
+        marketState: null,
+        marketRiskOffScore: null,
+        programmaticRiskOff: null,
+        synthesisRetryUsed: false,
+        synthesisFallbackUsed: false,
+        dbRowId,
+        scoreBreakdown: computeScoreBreakdown([]),
+      }, model, opts.workspaceId);
+    } catch {
+      // best-effort — the original error is what the caller needs to see
+    }
+    throw err;
+  }
+}
+
+async function runAiRecommendationV3Body(ctx: {
+  opts: AiRecommendationV3RunOptions;
+  runId: string;
+  dbRowId: string;
+  trigger: AiRecTrigger;
+  dateStr: string;
+  generatedAt: string;
+  model: string;
+}): Promise<AiRecommendationV3RunResult> {
+  const { opts, runId, dbRowId, trigger, dateStr, generatedAt, model } = ctx;
   // Raised 12→18 (cap 15→22): multi-dimension forcing needs extra rounds for
   // get_company_fundamentals + get_supply_chain calls on top candidates.
   const maxRounds = Math.min(opts.maxRounds ?? 18, 22);
   const costCap = Math.min(opts.costCapUsd ?? 2.0, 5.0);
-
-  await persistV3RunStart({ id: dbRowId, runId, workspaceId: opts.workspaceId, trigger, model });
 
   // ── F1: Programmatic risk_off_score (before firing LLM) ──────────────────
   const programmaticRiskOff = await computeProgrammaticRiskOffScore();

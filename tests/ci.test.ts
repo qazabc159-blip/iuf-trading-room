@@ -15406,18 +15406,20 @@ test("AI-REC-V3-CRON-1: _runAiRecV3Cron shared function exists and sets cron sta
   );
 });
 
-test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 24h interval and boot-fire", () => {
+test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 5-min tick, retry cap and guarded boot-fire", () => {
   const src = readFileSync("apps/api/src/server.ts", "utf8");
   assert.ok(
     src.includes("AI-REC-V3-CRON"),
     "AI-REC-V3-CRON-2: startSchedulers must contain AI-REC-V3-CRON block comment"
   );
+  // The old 24h tick + 45-min window meant the cron almost never fired (6/5–6/10
+  // dead-cron bug). The tick must be much shorter than the window.
   assert.ok(
-    src.includes("AI_REC_V3_CRON_INTERVAL_MS") && src.includes("24 * 60 * 60 * 1000"),
-    "AI-REC-V3-CRON-2: v3 cron must use 24h interval"
+    src.includes("AI_REC_V3_CRON_TICK_MS = 5 * 60 * 1000"),
+    "AI-REC-V3-CRON-2: v3 cron must tick every 5 minutes (not 24h)"
   );
   assert.ok(
-    src.includes("isAiRecV3CronWindow"),
+    src.includes("isV3CronWindowAt"),
     "AI-REC-V3-CRON-2: v3 cron must have a window guard function"
   );
   assert.ok(
@@ -15425,8 +15427,17 @@ test("AI-REC-V3-CRON-2: AI-REC-V3-CRON block exists in startSchedulers with 24h 
     "AI-REC-V3-CRON-2: v3 cron must have a boot-fire setTimeout at 90s"
   );
   assert.ok(
-    src.includes("_aiRecV3LastCronFireDate"),
-    "AI-REC-V3-CRON-2: v3 cron must have a once-per-day date guard"
+    src.includes("_aiRecV3CronSuccessDate") && src.includes("AI_REC_V3_MAX_ATTEMPTS_PER_DAY"),
+    "AI-REC-V3-CRON-2: v3 cron must have a per-day success guard with bounded failure retries"
+  );
+  // Boot-fire on every deploy burned the whole daily LLM budget on 6/5 — must check DB first.
+  assert.ok(
+    src.includes("hasV3RunForTaipeiDate"),
+    "AI-REC-V3-CRON-2: boot-fire must skip when today already has a v3 run"
+  );
+  assert.ok(
+    src.includes("failStaleV3RunningRows"),
+    "AI-REC-V3-CRON-2: cron must sweep stuck running rows before firing"
   );
 });
 
