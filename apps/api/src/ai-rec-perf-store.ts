@@ -52,6 +52,19 @@ export interface AiRecPerfResult {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Normalize db.execute() results. This repo's driver is drizzle-orm/postgres-js,
+ * whose execute() returns the row array DIRECTLY — there is no `.rows` wrapper.
+ * Every reader in this module was written against the node-postgres shape and
+ * therefore ALWAYS saw zero rows (audit B2 root cause: performance forever 0,
+ * forward returns a permanent no-op, backfill runsSeen=0). Accept both shapes.
+ */
+export function execRows<T>(res: unknown): T[] {
+  if (Array.isArray(res)) return res as T[];
+  const wrapped = res as { rows?: T[] };
+  return Array.isArray(wrapped?.rows) ? wrapped.rows : [];
+}
+
 /** Get latest close price for a ticker from companies_ohlcv. Returns null if unavailable. */
 async function getLatestCloseFromDb(
   db: import("drizzle-orm/node-postgres").NodePgDatabase<Record<string, never>>,
@@ -59,7 +72,7 @@ async function getLatestCloseFromDb(
 ): Promise<number | null> {
   try {
     const { sql } = await import("drizzle-orm");
-    const rows = (await db.execute(sql`
+    const res = await db.execute(sql`
       SELECT o.close AS close
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
@@ -67,8 +80,8 @@ async function getLatestCloseFromDb(
         AND o.interval IN ('1d', 'day')
       ORDER BY o.dt DESC
       LIMIT 1
-    `)) as unknown as { rows: Array<{ close: string | null }> };
-    const v = parseFloat(rows.rows?.[0]?.close ?? "");
+    `);
+    const v = parseFloat(execRows<{ close: string | null }>(res)[0]?.close ?? "");
     return isNaN(v) ? null : v;
   } catch {
     return null;
@@ -89,7 +102,7 @@ async function getCloseNDaysAfter(
   try {
     const { sql } = await import("drizzle-orm");
     // Find the Nth trading day AFTER pick_date (OFFSET n-1 skips n-1 rows)
-    const rows = (await db.execute(sql`
+    const res = await db.execute(sql`
       SELECT o.close AS close
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
@@ -98,8 +111,8 @@ async function getCloseNDaysAfter(
         AND o.dt > ${pickDate}::date
       ORDER BY o.dt ASC
       LIMIT 1 OFFSET ${n - 1}
-    `)) as unknown as { rows: Array<{ close: string | null }> };
-    const v = parseFloat(rows.rows?.[0]?.close ?? "");
+    `);
+    const v = parseFloat(execRows<{ close: string | null }>(res)[0]?.close ?? "");
     return isNaN(v) ? null : v;
   } catch {
     return null;
@@ -195,7 +208,7 @@ async function upsertPickRow(
 async function getCloseOnOrBefore(db: PerfDb, ticker: string, pickDate: string): Promise<number | null> {
   try {
     const { sql } = await import("drizzle-orm");
-    const rows = (await db.execute(sql`
+    const res = await db.execute(sql`
       SELECT o.close AS close
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
@@ -204,8 +217,8 @@ async function getCloseOnOrBefore(db: PerfDb, ticker: string, pickDate: string):
         AND o.dt::date <= ${pickDate}::date
       ORDER BY o.dt DESC
       LIMIT 1
-    `)) as unknown as { rows: Array<{ close: string | null }> };
-    const v = parseFloat(rows.rows?.[0]?.close ?? "");
+    `);
+    const v = parseFloat(execRows<{ close: string | null }>(res)[0]?.close ?? "");
     return isNaN(v) ? null : v;
   } catch {
     return null;
@@ -284,9 +297,9 @@ export async function backfillPickSnapshots(): Promise<{
       AND status = 'complete'
       AND jsonb_array_length(items) > 0
     ORDER BY ((generated_at AT TIME ZONE 'Asia/Taipei')::date), generated_at DESC
-  `)) as unknown as { rows: Array<{ run_id: string; items: unknown; pick_date: string }> };
+  `));
 
-  for (const run of runs.rows ?? []) {
+  for (const run of execRows<{ run_id: string; items: unknown; pick_date: string }>(runs)) {
     out.runsSeen++;
     const items = Array.isArray(run.items) ? (run.items as PickItemLike[]) : [];
     for (const item of items) {
@@ -346,13 +359,12 @@ export async function updateForwardReturns(): Promise<{ updated: number; errors:
         AND (ret_updated_at IS NULL OR ret_updated_at::date < ${todayStr}::date)
       ORDER BY ret_updated_at NULLS FIRST, pick_date DESC
       LIMIT 50
-    `)) as unknown as {
-      rows: Array<{ id: string; pick_date: string; ticker: string; pick_price: number }>
-    };
+    `));
+    const pendingRows = execRows<{ id: string; pick_date: string; ticker: string; pick_price: number }>(rows);
 
-    if (!rows.rows?.length) return { updated: 0, errors: 0 };
+    if (!pendingRows.length) return { updated: 0, errors: 0 };
 
-    for (const row of rows.rows) {
+    for (const row of pendingRows) {
       try {
         const { id, pick_date, ticker, pick_price } = row;
 
@@ -379,7 +391,7 @@ export async function updateForwardReturns(): Promise<{ updated: number; errors:
 
         // For TAIEX baseline: get TAIEX close on pick_date (if available) or fall back to latest
         // We fetch TAIEX close ON pick_date via a direct query
-        const taiexPickRows = (await db.execute(sql`
+        const taiexPickRows = await db.execute(sql`
           SELECT o.close::float AS close
           FROM companies_ohlcv o
           INNER JOIN companies c ON c.id = o.company_id
@@ -387,8 +399,8 @@ export async function updateForwardReturns(): Promise<{ updated: number; errors:
             AND o.interval IN ('1d', 'day')
             AND o.dt = ${pick_date}::date
           LIMIT 1
-        `)) as unknown as { rows: Array<{ close: number | null }> };
-        const taiexPickPrice = taiexPickRows.rows?.[0]?.close ?? taiexP0 ?? null;
+        `);
+        const taiexPickPrice = execRows<{ close: number | null }>(taiexPickRows)[0]?.close ?? taiexP0 ?? null;
 
         const taiexRet1d = calcReturn(taiexPickPrice, taiexP1);
         const taiexRet5d = calcReturn(taiexPickPrice, taiexP5);
@@ -488,18 +500,16 @@ export async function getAiRecPerformance(opts: {
       WHERE bucket IN ('A+', 'A', 'B')
         AND (${fromFilter}::date IS NULL OR pick_date >= ${fromFilter}::date)
         AND (${toFilter}::date IS NULL OR pick_date <= ${toFilter}::date)
-    `)) as unknown as {
-      rows: Array<{
-        total_picks: number;
-        earliest_pick_date: string | null;
-        latest_pick_date: string | null;
-        n_1d: number; hit_1d: number; avg_excess_1d: number | null;
-        n_5d: number; hit_5d: number; avg_excess_5d: number | null;
-        n_20d: number; hit_20d: number; avg_excess_20d: number | null;
-      }>
-    };
+    `));
 
-    const o = overall.rows?.[0];
+    const o = execRows<{
+      total_picks: number;
+      earliest_pick_date: string | null;
+      latest_pick_date: string | null;
+      n_1d: number; hit_1d: number; avg_excess_1d: number | null;
+      n_5d: number; hit_5d: number; avg_excess_5d: number | null;
+      n_20d: number; hit_20d: number; avg_excess_20d: number | null;
+    }>(overall)[0];
 
     // By-bucket breakdown (all buckets including C)
     const byBucket = (await db.execute(sql`
@@ -520,17 +530,15 @@ export async function getAiRecPerformance(opts: {
         AND (${toFilter}::date IS NULL OR pick_date <= ${toFilter}::date)
       GROUP BY bucket
       ORDER BY CASE bucket WHEN 'A+' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 ELSE 4 END
-    `)) as unknown as {
-      rows: Array<{
-        bucket: string;
-        sample_count: number;
-        n_1d: number; hit_1d: number; avg_excess_1d: number | null;
-        n_5d: number; hit_5d: number; avg_excess_5d: number | null;
-        n_20d: number; hit_20d: number; avg_excess_20d: number | null;
-      }>
-    };
+    `));
 
-    const bucketStats: AiRecPerfBucketStat[] = (byBucket.rows ?? []).map(b => ({
+    const bucketStats: AiRecPerfBucketStat[] = execRows<{
+      bucket: string;
+      sample_count: number;
+      n_1d: number; hit_1d: number; avg_excess_1d: number | null;
+      n_5d: number; hit_5d: number; avg_excess_5d: number | null;
+      n_20d: number; hit_20d: number; avg_excess_20d: number | null;
+    }>(byBucket).map(b => ({
       bucket: b.bucket,
       sampleCount: b.sample_count,
       hit_rate_1d: b.n_1d > 0 ? b.hit_1d / b.n_1d : null,
@@ -542,12 +550,13 @@ export async function getAiRecPerformance(opts: {
     }));
 
     // Total picks across all buckets
-    const totalPicksAll = (await db.execute(sql`
+    const totalPicksAllRes = await db.execute(sql`
       SELECT COUNT(*)::int AS n
       FROM ai_rec_pick_snapshots
       WHERE (${fromFilter}::date IS NULL OR pick_date >= ${fromFilter}::date)
         AND (${toFilter}::date IS NULL OR pick_date <= ${toFilter}::date)
-    `)) as unknown as { rows: Array<{ n: number }> };
+    `);
+    const totalPicksAll = execRows<{ n: number }>(totalPicksAllRes);
 
     return {
       overall_hit_rate_1d: o && o.n_1d > 0 ? o.hit_1d / o.n_1d : null,
@@ -556,7 +565,7 @@ export async function getAiRecPerformance(opts: {
       avg_excess_1d: o?.avg_excess_1d !== null && o?.avg_excess_1d !== undefined ? Number(o.avg_excess_1d) : null,
       avg_excess_5d: o?.avg_excess_5d !== null && o?.avg_excess_5d !== undefined ? Number(o.avg_excess_5d) : null,
       avg_excess_20d: o?.avg_excess_20d !== null && o?.avg_excess_20d !== undefined ? Number(o.avg_excess_20d) : null,
-      total_picks: totalPicksAll.rows?.[0]?.n ?? 0,
+      total_picks: totalPicksAll[0]?.n ?? 0,
       picks_with_ret_1d: o?.n_1d ?? 0,
       picks_with_ret_5d: o?.n_5d ?? 0,
       picks_with_ret_20d: o?.n_20d ?? 0,
