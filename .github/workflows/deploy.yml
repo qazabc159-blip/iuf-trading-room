@@ -1,10 +1,27 @@
 name: Deploy to Railway
 
+# Auto-deploy on every code merge to main. Quality gating happens at the PR
+# level (CI — Validate + CI — Security Baseline must pass before merge), so a
+# push to main is by definition release-ready.
+#
+# Deliberately NOT chained via workflow_run:
+#   - the old chain targeted "CI — Security Baseline (all PRs)", which only
+#     runs on pull_request → it never completed on main → auto-deploy never
+#     fired (every release 5/30-6/12 was a manual dispatch).
+#   - chaining "CI — Validate" instead would deadlock: its Playwright P0 smoke
+#     probes prod, so a fix that needs a deploy to turn green (e.g. #1064)
+#     would be blocked by the very red bar it is meant to fix.
 on:
-  workflow_run:
-    workflows: ["CI — Security Baseline (all PRs)"]
-    types: [completed]
+  push:
     branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+      - 'tsconfig*.json'
+      - '.npmrc'
   workflow_dispatch:
     inputs:
       service:
@@ -30,10 +47,10 @@ defaults:
 
 jobs:
   deploy:
-    # Only deploy if CI passed (auto), or manual dispatch.
+    # push = code merge to main (PR checks already passed); or manual dispatch.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      github.event_name == 'push'
     runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
     timeout-minutes: 20
 
