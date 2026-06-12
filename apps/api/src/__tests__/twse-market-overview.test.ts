@@ -25,6 +25,7 @@ import {
   _resetTwseOverviewSwr,
   _resetTaiexHistCache,
   getTaiexPrevSessionSnapshot,
+  getTaiexDailyCloses,
   isTwseIndexSnapshotConsistent,
   type TwseMarketOverviewResult,
   type TwseHeatmapTile
@@ -642,4 +643,22 @@ test("T5c: getTaiexPrevSessionSnapshot crosses the month boundary for early-mont
   _resetTaiexHistCache();
   const failFetch = (async () => new Response("oops", { status: 503 })) as unknown as typeof fetch;
   assert.equal(await getTaiexPrevSessionSnapshot("2026-06-11", { fetchOverride: failFetch }), null);
+});
+
+test("T6: getTaiexDailyCloses returns range plus lead-in close across months", async () => {
+  _resetTaiexHistCache();
+  const mayRows = [["115/05/29", "42,100.00", "42,300.00", "42,050.00", "42,200.00"]];
+  const juneRows = JUNE_HIST_ROWS;
+  const mockFetch = (async (input: URL | RequestInfo) => {
+    const url = String(input);
+    if (url.includes("date=202605")) return makeMi5MinsHistResponse(mayRows);
+    return makeMi5MinsHistResponse(juneRows);
+  }) as unknown as typeof fetch;
+
+  const rows = await getTaiexDailyCloses("2026-06-08", "2026-06-12", mockFetch);
+  // lead-in = 5/29 close, then 6/8-6/11 (6/12 not yet published in fixture)
+  assert.equal(rows[0].date, "2026-05-29");
+  assert.equal(rows[0].close, 42200);
+  assert.deepEqual(rows.slice(1).map((r) => r.date), ["2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11"]);
+  assert.equal(rows[rows.length - 1].close, 43149.46);
 });
