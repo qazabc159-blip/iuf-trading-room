@@ -3275,9 +3275,11 @@ app.get("/api/v1/reviews/weekly", async (c) => {
   }
 
   const briefs = await c.get("repo").listBriefs({ workspaceSlug: session.workspace.slug });
-  const publishedBriefDates = briefs
-    .filter((b) => b.status === "published")
-    .map((b) => b.date);
+  // A date can carry more than one published brief (e.g. force-regenerated
+  // days) — the delivery audit counts days, not rows.
+  const publishedBriefDates = [...new Set(
+    briefs.filter((b) => b.status === "published").map((b) => b.date)
+  )];
 
   const { buildWeeklyReview } = await import("./weekly-review.js");
   const review = await buildWeeklyReview({
