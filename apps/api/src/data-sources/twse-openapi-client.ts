@@ -836,6 +836,116 @@ async function fetchTaiwanMarketIndexToday(
   };
 }
 
+// ── TAIEX official daily closes (MI_5MINS_HIST month file) ───────────────────
+// One request returns the whole month's official daily OHLC for the index.
+// This is the only honest source for "previous completed session" — MIS y is
+// only valid for the *current* session, so date-blind callers (brief backfill
+// /regen) used to pair a historical close with today's prev close and feed
+// junk like「-1 點、+3.31%」into the daily brief (6/11 audit).
+
+interface TaiexDailyClose {
+  date: string; // ISO "2026-06-11"
+  close: number;
+}
+interface TaiexHistMonthCacheEntry {
+  rows: TaiexDailyClose[];
+  expiresAt: number;
+}
+const TAIEX_HIST_CACHE_TTL_MS = 30 * 60 * 1000;
+const _taiexHistMonthCache = new Map<string, TaiexHistMonthCacheEntry>();
+
+/** For test cleanup */
+export function _resetTaiexHistCache(): void {
+  _taiexHistMonthCache.clear();
+}
+
+/** Fetch one month of official TAIEX daily closes. monthYYYYMM e.g. "202606". Fail-open []. */
+async function fetchTaiexMonthDailyCloses(
+  monthYYYYMM: string,
+  doFetch: typeof fetch
+): Promise<TaiexDailyClose[]> {
+  const cached = _taiexHistMonthCache.get(monthYYYYMM);
+  if (cached && Date.now() < cached.expiresAt) return cached.rows;
+
+  try {
+    const url = `${TWSE_MAIN_BASE_URL}/MI_5MINS_HIST?date=${monthYYYYMM}01&response=json`;
+    const resp = await doFetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(MI5MINS_TIMEOUT_MS),
+      redirect: "follow"
+    });
+    if (!resp.ok) {
+      console.warn(`[twse-openapi-client] MI_5MINS_HIST HTTP ${resp.status} for ${monthYYYYMM}`);
+      return [];
+    }
+    const body = await resp.json() as { stat?: string; data?: string[][] };
+    if (body.stat !== "OK" || !Array.isArray(body.data)) return [];
+
+    const rows: TaiexDailyClose[] = [];
+    for (const row of body.data) {
+      // row[0] = ROC date "115/06/11", row[4] = 收盤指數 "43,149.46"
+      if (!Array.isArray(row) || row.length < 5) continue;
+      const parts = String(row[0]).trim().split("/");
+      if (parts.length !== 3) continue;
+      const year = parseInt(parts[0], 10) + 1911;
+      const close = parseFloat(String(row[4]).replace(/,/g, ""));
+      if (!isFinite(year) || !isFinite(close) || close <= 0) continue;
+      rows.push({ date: `${year}-${parts[1]}-${parts[2]}`, close });
+    }
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    _taiexHistMonthCache.set(monthYYYYMM, { rows, expiresAt: Date.now() + TAIEX_HIST_CACHE_TTL_MS });
+    return rows;
+  } catch (err) {
+    console.warn("[twse-openapi-client] MI_5MINS_HIST fetch failed:", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+/**
+ * Official close + daily change of the last *completed* trading session before
+ * `tradingDate` (ISO "YYYY-MM-DD"). For a pre-market brief dated D this is
+ * exactly the「昨日 TAIEX 收盤」pair: close(P) and close(P) - close(P-1) where
+ * P is the previous trading day. Returns null when upstream is unavailable.
+ */
+export async function getTaiexPrevSessionSnapshot(
+  tradingDate: string,
+  opts: { fetchOverride?: typeof fetch; includeTradingDate?: boolean } = {}
+): Promise<TwseIndexSnapshot | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tradingDate)) return null;
+  const doFetch = opts.fetchOverride ?? globalThis.fetch;
+  // Post-close ticks (close_watch/close_brief) want the trading date's own
+  // close once published; pre-market wants strictly the day before.
+  const upTo = (d: string) => (opts.includeTradingDate ? d <= tradingDate : d < tradingDate);
+
+  const month = tradingDate.slice(0, 7).replace("-", "");
+  const y = parseInt(tradingDate.slice(0, 4), 10);
+  const m = parseInt(tradingDate.slice(5, 7), 10);
+  const prevMonth = m === 1 ? `${y - 1}12` : `${y}${String(m - 1).padStart(2, "0")}`;
+
+  const rows = await fetchTaiexMonthDailyCloses(month, doFetch);
+  let completed = rows.filter((r) => upTo(r.date));
+  if (completed.length < 2) {
+    const prevRows = await fetchTaiexMonthDailyCloses(prevMonth, doFetch);
+    completed = [...prevRows, ...completed].filter((r) => upTo(r.date));
+  }
+  if (completed.length < 2) return null;
+
+  const last = completed[completed.length - 1];
+  const prev = completed[completed.length - 2];
+  const change = Math.round((last.close - prev.close) * 100) / 100;
+  const changePct = Math.round((change / prev.close) * 10000) / 100;
+  const snapshot: TwseIndexSnapshot = {
+    value: Math.round(last.close * 100) / 100,
+    change,
+    changePct,
+    ts: `${last.date}T13:30:00+08:00`
+  };
+  return isTwseIndexSnapshotConsistent(snapshot) ? snapshot : null;
+}
+
 // ── Taipei today date helper ──────────────────────────────────────────────────
 
 /** Returns today's date in Taipei time as "YYYYMMDD" */
