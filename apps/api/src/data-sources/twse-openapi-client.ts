@@ -206,6 +206,65 @@ export async function getStockDayAllRows(
   return _stockDayAllInflight;
 }
 
+// ── Shared TPEX daily-close dedup cache ──────────────────────────────────────
+// tpex_mainboard_daily_close_quotes is large (~4MB / ~10k rows). The 3s budget
+// used for small endpoints routinely times out on this payload from Railway
+// (europe-west4) — that silent fail-open is how OTC mark-to-market and the
+// heatmap OTC overlay shipped dark on 6/11. Generous timeout + same cache +
+// promise-coalescing pattern as STOCK_DAY_ALL.
+
+const TPEX_DAILY_CLOSE_TIMEOUT_MS = 10000;
+const TPEX_DAILY_CLOSE_CACHE_TTL_SECONDS = 300; // 5 min — EOD data, stable once published
+
+interface TpexDailyCloseCacheEntry {
+  rows: TpexDailyRow[];
+  expiresAt: number;
+}
+let _tpexDailyCloseCache: TpexDailyCloseCacheEntry | null = null;
+let _tpexDailyCloseInflight: Promise<TpexDailyRow[]> | null = null;
+
+/** For test cleanup */
+export function _resetTpexDailyCloseCache(): void {
+  _tpexDailyCloseCache = null;
+  _tpexDailyCloseInflight = null;
+}
+
+/** GET /tpex_mainboard_daily_close_quotes — all OTC mainboard EOD closes. Fail-open to []. */
+export async function getTpexMainboardCloseRows(
+  fetchOverride?: typeof fetch
+): Promise<TpexDailyRow[]> {
+  if (_tpexDailyCloseCache && Date.now() < _tpexDailyCloseCache.expiresAt) {
+    return _tpexDailyCloseCache.rows;
+  }
+  if (_tpexDailyCloseInflight) return _tpexDailyCloseInflight;
+
+  const doFetch = fetchOverride ?? globalThis.fetch;
+  _tpexDailyCloseInflight = (async (): Promise<TpexDailyRow[]> => {
+    try {
+      const resp = await doFetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(TPEX_DAILY_CLOSE_TIMEOUT_MS),
+        redirect: "follow"
+      });
+      if (!resp.ok) {
+        console.warn(`[twse-openapi-client] TPEX daily_close_quotes HTTP ${resp.status}`);
+        return [];
+      }
+      const raw = await resp.json();
+      const rows: TpexDailyRow[] = Array.isArray(raw) ? (raw as TpexDailyRow[]) : [];
+      _tpexDailyCloseCache = { rows, expiresAt: Date.now() + TPEX_DAILY_CLOSE_CACHE_TTL_SECONDS * 1000 };
+      return rows;
+    } catch (err) {
+      console.warn("[twse-openapi-client] TPEX daily_close_quotes fetch failed:", err instanceof Error ? err.message : String(err));
+      return [];
+    } finally {
+      _tpexDailyCloseInflight = null;
+    }
+  })();
+
+  return _tpexDailyCloseInflight;
+}
+
 // ── Fetch helper (simple, no auth) ────────────────────────────────────────────
 
 async function fetchTwse<T>(path: string): Promise<T[]> {
@@ -964,24 +1023,10 @@ export async function getTwseIndustryHeatmap(
 
   const doFetch = opts.fetchOverride ?? globalThis.fetch;
 
-  // ── STOCK_DAY_ALL + TPEX in parallel (shared dedup cache for STOCK_DAY_ALL) ─
+  // ── STOCK_DAY_ALL + TPEX in parallel (both behind shared dedup caches) ─────
   const [stockRows, tpexRows] = await Promise.all([
     getStockDayAllRows(doFetch),
-    (async (): Promise<TpexDailyRow[]> => {
-      try {
-        const resp = await doFetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
-          headers: { "Accept": "application/json" },
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-          redirect: "follow"
-        });
-        if (!resp.ok) return [];
-        const raw = await resp.json();
-        return Array.isArray(raw) ? (raw as TpexDailyRow[]) : [];
-      } catch {
-        console.warn("[twse-openapi-client] getTwseIndustryHeatmap: TPEX fetch failed, continuing without OTC");
-        return [];
-      }
-    })(),
+    getTpexMainboardCloseRows(doFetch),
   ]);
 
   // ── Aggregate by industry ────────────────────────────────────────────────

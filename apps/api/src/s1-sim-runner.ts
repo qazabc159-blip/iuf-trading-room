@@ -1057,33 +1057,24 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   // forever), which in turn nulls out the whole-portfolio totals below.
   if (dataSource !== "kgi_gateway" && positions.length > 0) {
     try {
-      const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
-      const TPEX_BASE_URL = "https://www.tpex.org.tw/openapi/v1";
-      const FETCH_TIMEOUT_MS = 3000;
+      // TPEX closes via the shared cached getter — the 6/11 inline fetch used
+      // a 3s timeout on the ~4MB payload, which silently timed out from
+      // Railway (europe-west4) and left OTC symbols unpriced with no trace.
+      const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
 
       const [stockRows, tpexRows] = await Promise.all([
         getStockDayAllRows(),
-        (async (): Promise<Array<{ SecuritiesCompanyCode: string; Close: string }>> => {
-          try {
-            const resp = await fetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
-              headers: { "Accept": "application/json" },
-              signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-              redirect: "follow"
-            });
-            if (!resp.ok) return [];
-            const raw = await resp.json();
-            return Array.isArray(raw) ? raw : [];
-          } catch {
-            return [];
-          }
-        })(),
+        getTpexMainboardCloseRows(),
       ]);
+      if (tpexRows.length === 0) {
+        notes.push("tpex_eod_unavailable: OTC closes missing (fetch failed or empty) — OTC positions stay unpriced");
+      }
 
       const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
       for (const row of tpexRows) {
         const code = row.SecuritiesCompanyCode?.trim();
         if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
-        const close = parseFloat(row.Close);
+        const close = parseFloat(row.Close ?? "");
         if (isFinite(close)) closeBySymbol.set(code, close);
       }
 

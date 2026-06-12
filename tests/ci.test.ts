@@ -15722,8 +15722,21 @@ test("S1-OBS-7b: mark-to-market covers OTC (TPEX) symbols, not just TWSE-listed"
   // 6/11 root-cause: 1b mark-to-market only used TWSE STOCK_DAY_ALL, so
   // OTC-listed S1 holdings (e.g. 5701) never got a price -> last_price/
   // total_market_value/total_unrealized_pnl stayed null forever.
-  assert.match(runnerSource, /tpex_mainboard_daily_close_quotes/);
+  assert.match(runnerSource, /getTpexMainboardCloseRows/);
   assert.match(runnerSource, /SecuritiesCompanyCode/);
+
+  // 6/12 follow-up: the inline 3s fetch silently timed out on the ~4MB TPEX
+  // payload from Railway (europe-west4), so OTC stayed unpriced in prod. OTC
+  // closes must come from the shared cached getter with a generous timeout,
+  // and an empty result must leave a diagnosable note. The heatmap OTC
+  // overlay shares the same getter (it had its own copy of the 3s fetch).
+  const twseClientSource = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
+  assert.match(twseClientSource, /TPEX_DAILY_CLOSE_TIMEOUT_MS = 10000/);
+  assert.match(twseClientSource, /_tpexDailyCloseInflight/);
+  assert.strictEqual(twseClientSource.match(/tpex_mainboard_daily_close_quotes`/g)?.length, 1,
+    "only the shared getter may fetch tpex_mainboard_daily_close_quotes");
+  assert.match(runnerSource, /tpex_eod_unavailable/);
+  assert.doesNotMatch(runnerSource, /AbortSignal\.timeout\(3000\)/);
 
   // Totals must be partial sums over priced positions, not an all-or-nothing
   // gate, with an explicit coverage note when some positions are unpriced.
