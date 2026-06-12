@@ -1007,14 +1007,14 @@ function buildSources(params: {
     },
     {
       key: "quant",
-      name: "量化批次",
+      name: "量化策略",
       short: "Quant",
-      desc: "候選 bundle / 批次紀錄",
+      desc: "策略候選 / 量化策略狀態",
       state: runs.state === "LIVE" ? "LIVE" : stateFromLoad(runs),
       updatedAt: runs.data?.items[0]?.createdAt ?? runs.updatedAt,
       note: `${formatNumber(runs.data?.items.length)} 批次 / ${formatNumber(signalCount)} 訊號`,
-      detail: "批次紀錄只呈現資料狀態，不顯示未驗證績效。",
-      href: "/runs",
+      detail: "量化策略只呈現資料狀態，不顯示未驗證績效。",
+      href: "/quant-strategies",
     },
   ];
 

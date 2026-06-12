@@ -1357,7 +1357,7 @@ export default async function AiRecommendationsPage() {
       `}</style>
 
       <div className="_rec-tabs" aria-label="AI 推薦導覽">
-        <Link href="/runs">策略執行紀錄</Link>
+        <Link href="/quant-strategies">量化策略</Link>
         <Link href="/signals">訊號中心</Link>
       </div>
 

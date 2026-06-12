@@ -35,7 +35,6 @@ const ROUTES: Item[] = [
   { code: "04", label: "交易室", sub: "模擬資金、部位、委託、成交與風控", href: "/portfolio", group: "頁面" },
   { code: "05", label: "公司 / 主題", sub: "公司池、主題板、產業鏈與 K 線", href: "/companies", group: "頁面" },
   { code: "06", label: "量化策略", sub: "Athena strategy input 與 SIM-only 訂閱", href: "/quant-strategies", group: "頁面" },
-  { code: "07", label: "策略批次", sub: "AI 推薦子頁：策略批次紀錄與輸出", href: "/runs", group: "頁面" },
   { code: "08", label: "訊號證據", sub: "AI 推薦子頁：訊號資料與證據紀錄", href: "/signals", group: "頁面" },
   { code: "09", label: "交易計畫", sub: "交易室子頁：交易計畫與審核佇列", href: "/plans", group: "頁面" },
   { code: "10", label: "AI 每日簡報", sub: "右上角 dock：OpenAlice 簡報列表", href: "/briefs", group: "頁面" },
