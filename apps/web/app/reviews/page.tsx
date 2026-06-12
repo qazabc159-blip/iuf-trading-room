@@ -2,6 +2,7 @@ import { PageFrame } from "@/components/PageFrame";
 import { getReviews } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanNarrativeText, cleanTradePlanText } from "@/lib/operator-copy";
+import { WeeklyReviewPanel } from "./WeeklyReviewPanel";
 import type { ReviewEntry } from "@iuf-trading-room/contracts";
 
 function formatDateShort(value: string) {
@@ -181,7 +182,14 @@ const REVIEWS_CSS = `
 }
 `;
 
-export default async function ReviewsPage() {
+export default async function ReviewsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ anchor?: string }>;
+}) {
+  const params = searchParams ? await searchParams : undefined;
+  const anchor = params?.anchor;
+
   let reviews: ReviewEntry[] = [];
   let error: string | null = null;
 
@@ -206,6 +214,8 @@ export default async function ReviewsPage() {
       note="此頁只讀取正式資料庫的交易檢討，不顯示假資料，也不提供本地模擬動作。"
     >
       <style>{REVIEWS_CSS}</style>
+
+      <WeeklyReviewPanel anchor={anchor} />
 
       {/* parity-kpi-bar hero */}
       <div className="parity-kpi-bar">

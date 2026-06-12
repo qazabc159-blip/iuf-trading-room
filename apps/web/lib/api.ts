@@ -454,6 +454,76 @@ export async function createReview(input: ReviewEntryCreateInput) {
   });
 }
 
+// ── Weekly review (B4 復盤閉環) ──────────────────────────────────────────────
+// Owner-only. GET /api/v1/reviews/weekly?anchor=YYYY-MM-DD returns { data: WeeklyReview }.
+export interface WeeklyReviewTaiexDay {
+  date: string;
+  close: number;
+  change: number | null;
+  changePct: number | null;
+}
+
+export interface WeeklyReviewFAutoPosition {
+  symbol: string;
+  shares: number;
+  avg_cost: number;
+  last_price: number | null;
+  unrealized_pnl_twd: number | null;
+}
+
+export interface WeeklyReview {
+  schema: "weekly_review_v1";
+  week_start: string;
+  week_end: string;
+  generated_at: string;
+  sim_only: true;
+  taiex: {
+    days: WeeklyReviewTaiexDay[];
+    week_change_pct: number | null;
+  };
+  f_auto: {
+    available: boolean;
+    positions_date: string | null;
+    data_source: string | null;
+    positions_count: number;
+    capital_twd: number | null;
+    cash_residual_twd: number | null;
+    total_market_value_twd: number | null;
+    total_unrealized_pnl_twd: number | null;
+    week_return_pct: number | null;
+    positions: WeeklyReviewFAutoPosition[];
+    notes: string[];
+  };
+  recommendations: {
+    week: AiRecPerformance;
+    cumulative: AiRecPerformance;
+  };
+  briefs: {
+    trading_days: string[];
+    published_dates: string[];
+    missing_dates: string[];
+  };
+  notes: string[];
+}
+
+export type WeeklyReviewResult =
+  | { ok: true; data: WeeklyReview }
+  | { ok: false; reason: "forbidden" | "unavailable" };
+
+export async function getWeeklyReview(anchor?: string): Promise<WeeklyReviewResult> {
+  const qs = anchor ? `?anchor=${encodeURIComponent(anchor)}` : "";
+  try {
+    const response = await request<WeeklyReview>(`/api/v1/reviews/weekly${qs}`, { cache: "no-store" });
+    return { ok: true, data: response.data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err ?? "");
+    if (/403|401|forbidden|unauthorized/i.test(message)) {
+      return { ok: false, reason: "forbidden" };
+    }
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 // Daily Briefs
 
 export async function getBriefs() {
