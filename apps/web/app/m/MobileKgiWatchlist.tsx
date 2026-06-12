@@ -8,11 +8,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatMobileKgiBlockedReason } from "./mobile-kgi-copy";
+import { isKgiGatewayScheduledOff } from "@/lib/kgi-trading-hours";
 
 type QuoteState =
   | { status: "loading" }
   | { status: "live"; lastPrice: number; priceChg: number; pctChg: number; volume: number; time: string }
   | { status: "blocked"; reason: string }
+  | { status: "scheduled-off" }
   | { status: "empty" };
 
 type WatchItem = { symbol: string; label: string };
@@ -188,6 +190,16 @@ function TickerCell({ item, q }: { item: WatchItem; q: QuoteState }) {
       </div>
     );
   }
+  if (q.status === "scheduled-off") {
+    return (
+      <div className="_mob-kgi-ticker-cell">
+        <div className="_mob-kgi-symbol">{item.symbol}</div>
+        <div className={`_mob-kgi-price blocked`}>--</div>
+        <div className="_mob-kgi-chg flat">排程關機</div>
+        <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>盤後暫停</div>
+      </div>
+    );
+  }
   if (q.status === "blocked" || q.status === "empty") {
     return (
       <div className="_mob-kgi-ticker-cell">
@@ -217,6 +229,16 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchAll = useCallback(async () => {
+    // Gateway runs on a weekday 08:20-14:10 TST EventBridge schedule. Outside
+    // that window, /kgi/quote/ticks reliably returns 422/503 — skip the call
+    // entirely and show the honest "排程關機中" state instead of noise.
+    if (isKgiGatewayScheduledOff()) {
+      const next: TickerQuotes = Object.fromEntries(watchlist.map(w => [w.symbol, { status: "scheduled-off" as const }]));
+      setQuotes(next);
+      setLiveCount(0);
+      setLastUpdated(new Date().toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" }));
+      return;
+    }
     const results = await Promise.all(watchlist.map(w => fetchQuoteForSymbol(w.symbol)));
     const next: TickerQuotes = {};
     let live = 0;
@@ -236,6 +258,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
   }, [fetchAll]);
 
   const anyLive = liveCount > 0;
+  const allScheduledOff = Object.values(quotes).every(q => q.status === "scheduled-off");
 
   return (
     <>
@@ -247,7 +270,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
             {anyLive ? "即時報價" : "報價"}
           </span>
           <span className="_mob-kgi-right">
-            {anyLive ? `${liveCount}/${watchlist.length} 活躍` : "離線"}{lastUpdated ? ` · ${lastUpdated}` : ""}
+            {allScheduledOff ? "排程關機中" : anyLive ? `${liveCount}/${watchlist.length} 活躍` : "離線"}{lastUpdated ? ` · ${lastUpdated}` : ""}
           </span>
         </div>
         <div className="_mob-kgi-ticker-row">

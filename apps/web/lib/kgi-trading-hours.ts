@@ -78,6 +78,20 @@ export function kgiCoreTilesAreNull(tiles: Array<{ pct: number | null; price: nu
 }
 
 /**
+ * True when the KGI SIM gateway (EC2, EventBridge-scheduled) is outside its
+ * weekday 08:20-14:10 TST run window. Outside this window, gateway-backed
+ * endpoints (e.g. /kgi/quote/ticks) return 422/503 by design — this is the
+ * expected "排程關機中" state, not an incident.
+ */
+export function isKgiGatewayScheduledOff(now: Date = new Date()): boolean {
+  const dow = taipeiDow(now);
+  if (dow === 0 || dow === 6) return true;
+  const { hour, minute } = taipeiHourMinute(now);
+  const totalMinutes = hour * 60 + minute;
+  return totalMinutes < 8 * 60 + 20 || totalMinutes > 14 * 60 + 10;
+}
+
+/**
  * Human-readable label for the KGI off-hours banner.
  * Returns the next open time string (weekday logic).
  */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "./kgi-trading-hours";
+import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "./kgi-trading-hours";
 
 /**
  * Helper: construct a Date in Asia/Taipei (UTC+8) from explicit local time parts.
@@ -65,6 +65,37 @@ describe("isKgiTradingHours", () => {
   // Boundary: Monday 08:59 TST → false (1 min before open)
   it("weekday 08:59 → false", () => {
     expect(isKgiTradingHours(tst(2026, 5, 18, 8, 59))).toBe(false);
+  });
+});
+
+describe("isKgiGatewayScheduledOff", () => {
+  // Gateway runs weekday 08:20-14:10 TST (EventBridge schedule)
+  it("weekday 08:20 exactly → false (gateway just opened)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 18, 8, 20))).toBe(false);
+  });
+
+  it("weekday 14:10 exactly → false (gateway still open)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 18, 14, 10))).toBe(false);
+  });
+
+  it("weekday 09:30 → false (mid-session)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 18, 9, 30))).toBe(false);
+  });
+
+  it("weekday 08:19 → true (1 min before gateway opens)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 18, 8, 19))).toBe(true);
+  });
+
+  it("weekday 14:11 → true (1 min after gateway closes)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 18, 14, 11))).toBe(true);
+  });
+
+  it("Saturday → true (weekend, no gateway)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 16, 10, 0))).toBe(true);
+  });
+
+  it("Sunday → true (weekend, no gateway)", () => {
+    expect(isKgiGatewayScheduledOff(tst(2026, 5, 17, 10, 0))).toBe(true);
   });
 });
 

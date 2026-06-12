@@ -30,7 +30,7 @@ async function loadRuns(): Promise<LoadState> {
     const envelope = await listStrategyRuns({ decisionMode: "paper", limit: 50, sort: "created_at" });
     const data = envelope.data;
     if (data.items.length === 0) {
-      return { state: "EMPTY", data, updatedAt, source, reason: "目前沒有紙上交易研究批次；等候選資料與市場資料到齊後再產生。" };
+      return { state: "EMPTY", data, updatedAt, source, reason: "策略批次紀錄已整併至量化策略與策略候選頁；此頁暫無新批次。" };
     }
     return { state: "LIVE", data, updatedAt: latestIso(data.items.map((r) => r.generatedAt)) ?? updatedAt, source };
   } catch (error) {
@@ -140,6 +140,12 @@ export default async function RunsPage() {
         <div className="terminal-note">
           <span className={`tg ${result.state === "EMPTY" ? "gold" : "status-bad"}`}>{stateLabel(result.state)}</span>{" "}
           {"reason" in result ? result.reason : ""}
+          {result.state === "EMPTY" && (
+            <div style={{ marginTop: 10, display: "flex", gap: 12 }}>
+              <Link href="/quant-strategies" className="mini-button">前往量化策略</Link>
+              <Link href="/ideas" className="mini-button">前往策略候選</Link>
+            </div>
+          )}
         </div>
       )}
 
