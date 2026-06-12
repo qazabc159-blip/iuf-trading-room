@@ -23,6 +23,8 @@ import {
   _resetTwseLeadersCache,
   _resetLkgOverviewCache,
   _resetTwseOverviewSwr,
+  _resetTaiexHistCache,
+  getTaiexPrevSessionSnapshot,
   isTwseIndexSnapshotConsistent,
   type TwseMarketOverviewResult,
   type TwseHeatmapTile
@@ -568,4 +570,76 @@ test("T4: getTwseIndustryHeatmap cache hit — second call returns cached result
   assert.ok(tiles2.length > 0, "second call must return tiles");
   assert.equal(callsAfterFirst, callsAfterSecond, "second call must not trigger new fetch (cache hit)");
   assert.deepEqual(tiles1, tiles2, "both calls must return identical results");
+});
+
+// ── T5: getTaiexPrevSessionSnapshot — official prev-session close for brief dates ──
+
+function makeMi5MinsHistResponse(rows: string[][]): Response {
+  return new Response(JSON.stringify({ stat: "OK", data: rows }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+const JUNE_HIST_ROWS = [
+  ["115/06/08", "44,507.49", "44,507.49", "42,376.86", "43,502.78"],
+  ["115/06/09", "43,687.62", "44,821.71", "43,687.62", "44,704.44"],
+  ["115/06/10", "44,581.45", "44,676.49", "43,225.54", "43,225.54"],
+  ["115/06/11", "43,172.21", "43,463.03", "42,006.39", "43,149.46"],
+];
+
+test("T5: getTaiexPrevSessionSnapshot returns the official previous-session close+change", async () => {
+  _resetTaiexHistCache();
+  const mockFetch = (async () => makeMi5MinsHistResponse(JUNE_HIST_ROWS)) as unknown as typeof fetch;
+
+  // Brief dated 6/11 must cite 6/10's official close: 43225.54, -1478.90 / -3.31%
+  // (the 6/11 audit bug fed -1 點 / +3.31% from a date-blind live path instead)
+  const snap = await getTaiexPrevSessionSnapshot("2026-06-11", { fetchOverride: mockFetch });
+  assert.ok(snap, "snapshot must resolve from hist rows");
+  assert.equal(snap.value, 43225.54);
+  assert.equal(snap.change, -1478.9);
+  assert.equal(snap.changePct, -3.31);
+  assert.equal(snap.ts, "2026-06-10T13:30:00+08:00");
+  assert.ok(isTwseIndexSnapshotConsistent(snap), "snapshot must be self-consistent");
+});
+
+test("T5b: getTaiexPrevSessionSnapshot includeTradingDate covers post-close ticks", async () => {
+  _resetTaiexHistCache();
+  const mockFetch = (async () => makeMi5MinsHistResponse(JUNE_HIST_ROWS)) as unknown as typeof fetch;
+
+  // close_brief for 6/11 wants 6/11's own close once published: 43149.46, -76.08 / -0.18%
+  const snap = await getTaiexPrevSessionSnapshot("2026-06-11", { fetchOverride: mockFetch, includeTradingDate: true });
+  assert.ok(snap);
+  assert.equal(snap.value, 43149.46);
+  assert.equal(snap.change, -76.08);
+  assert.equal(snap.changePct, -0.18);
+  assert.equal(snap.ts, "2026-06-11T13:30:00+08:00");
+});
+
+test("T5c: getTaiexPrevSessionSnapshot crosses the month boundary for early-month dates", async () => {
+  _resetTaiexHistCache();
+  const mayRows = [
+    ["115/05/28", "42,000.00", "42,100.00", "41,900.00", "42,000.00"],
+    ["115/05/29", "42,100.00", "42,300.00", "42,050.00", "42,200.00"],
+  ];
+  const calls: string[] = [];
+  const mockFetch = (async (input: URL | RequestInfo) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes("date=202605")) return makeMi5MinsHistResponse(mayRows);
+    return makeMi5MinsHistResponse([["115/06/02", "42,300.00", "42,500.00", "42,250.00", "42,400.00"]]);
+  }) as unknown as typeof fetch;
+
+  // 6/2 pre-market: prev session = 5/29 close 42200, change vs 5/28 = +200 / +0.48%
+  const snap = await getTaiexPrevSessionSnapshot("2026-06-02", { fetchOverride: mockFetch });
+  assert.ok(snap, "must merge previous month rows when current month has <2 completed sessions");
+  assert.equal(snap.value, 42200);
+  assert.equal(snap.change, 200);
+  assert.equal(snap.changePct, 0.48);
+  assert.ok(calls.some((u) => u.includes("date=202605")), "must fetch the previous month file");
+
+  // Upstream totally dark → null, never a fabricated pair
+  _resetTaiexHistCache();
+  const failFetch = (async () => new Response("oops", { status: 503 })) as unknown as typeof fetch;
+  assert.equal(await getTaiexPrevSessionSnapshot("2026-06-11", { fetchOverride: failFetch }), null);
 });

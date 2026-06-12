@@ -44,6 +44,7 @@ import {
   getTwseMarketOverview,
   getTwseIndustryHeatmap,
   getTwseLeaders,
+  getTaiexPrevSessionSnapshot,
   isTwseIndexSnapshotConsistent,
 } from "./data-sources/twse-openapi-client.js";
 
@@ -380,7 +381,9 @@ function hasConsistentTaiexSnapshot(taiex: LiveMarketSnapshot["taiex"]): boolean
  * Never throws — all errors return null fields. DB queries require a workspace.
  */
 async function collectLiveMarketSnapshot(
-  workspaceId: string
+  workspaceId: string,
+  tradingDate?: string,
+  tick?: SourcePack["tick"]
 ): Promise<LiveMarketSnapshot> {
   const snapshot: LiveMarketSnapshot = {
     taiex: { value: null, change: null, changePct: null, sourceState: null, asOf: null },
@@ -391,28 +394,57 @@ async function collectLiveMarketSnapshot(
     margin: { balanceChange: null, shortChange: null, date: null },
   };
 
-  // 1. TAIEX overview from TWSE OpenAPI
+  const validTradingDate = tradingDate && /^\d{4}-\d{2}-\d{2}$/.test(tradingDate) ? tradingDate : null;
+  const isHistoricalDate = validTradingDate !== null && validTradingDate !== getTaipeiDate();
+  const isCloseTick = tick === "close_watch" || tick === "close_brief";
+  // DB-source date cap matching the TAIEX semantics: pre-market briefs cite
+  // strictly-before-tradingDate data, close ticks may include the day itself.
+  const dateCapSql = validTradingDate ? `AND date ${isCloseTick ? "<=" : "<"} '${validTradingDate}'` : "";
+
+  // 1. TAIEX —「昨日收盤」must be the last *completed* session before
+  // tradingDate, from official daily closes (MI_5MINS_HIST). The previous
+  // date-blind path always fetched "now": a backfill/regen for a past date
+  // paired a historical close with today's prev close (6/11 audit:「-1 點、
+  // +3.31%」against the real 6/10 close of -1478.9 / -3.31%), and an intraday
+  // regen cited a live mid-session value as a close.
   try {
-    const overview = await getTwseMarketOverview();
-    if (overview) {
-      const taiexCandidate: LiveMarketSnapshot["taiex"] = {
-        value: overview.taiex?.value ?? null,
-        change: overview.taiex?.change ?? null,
-        changePct: overview.taiex?.changePct ?? null,
-        sourceState: overview._isLkg ? "lkg" : "live",
-        asOf: overview.taiex?.ts ? overview.taiex.ts.slice(0, 10) : null,
+    const prevSession = validTradingDate
+      ? await getTaiexPrevSessionSnapshot(validTradingDate, { includeTradingDate: tick === "close_watch" || tick === "close_brief" })
+      : null;
+    if (prevSession) {
+      snapshot.taiex = {
+        value: prevSession.value,
+        change: prevSession.change,
+        changePct: prevSession.changePct,
+        sourceState: "official_daily_close",
+        asOf: prevSession.ts.slice(0, 10),
       };
-      snapshot.taiex = hasConsistentTaiexSnapshot(taiexCandidate)
-        ? taiexCandidate
-        : { value: null, change: null, changePct: null, sourceState: "inconsistent_rejected", asOf: null };
+    } else if (!isHistoricalDate) {
+      // Same-day fallback when the hist endpoint is unavailable. Never used
+      // for historical dates — a wrong-date number is worse than no number.
+      const overview = await getTwseMarketOverview();
+      if (overview) {
+        const taiexCandidate: LiveMarketSnapshot["taiex"] = {
+          value: overview.taiex?.value ?? null,
+          change: overview.taiex?.change ?? null,
+          changePct: overview.taiex?.changePct ?? null,
+          sourceState: overview._isLkg ? "lkg" : "live",
+          asOf: overview.taiex?.ts ? overview.taiex.ts.slice(0, 10) : null,
+        };
+        snapshot.taiex = hasConsistentTaiexSnapshot(taiexCandidate)
+          ? taiexCandidate
+          : { value: null, change: null, changePct: null, sourceState: "inconsistent_rejected", asOf: null };
+      }
     }
   } catch {
     // non-fatal
   }
 
-  // 2. Heatmap top 3 sectors (gain + loss)
+  // 2. Heatmap top 3 sectors (gain + loss) — today only. There is no
+  // historical sector heatmap; feeding today's movers into a backfilled
+  // brief for another date would be fabricated context.
   try {
-    const db = getDb();
+    const db = isHistoricalDate ? null : getDb();
     if (db) {
       // Build ticker→industry map from companies table
       const compRows = await db.execute(
@@ -441,21 +473,23 @@ async function collectLiveMarketSnapshot(
     // non-fatal
   }
 
-  // 3. Leaders top 5 gainers + losers
-  try {
-    const leaders = await getTwseLeaders({ topN: 5 });
-    snapshot.topGainers = leaders.topGainers.map(s => ({
-      symbol: s.symbol,
-      name: s.name,
-      changePct: s.changePct,
-    }));
-    snapshot.topLosers = leaders.topLosers.map(s => ({
-      symbol: s.symbol,
-      name: s.name,
-      changePct: s.changePct,
-    }));
-  } catch {
-    // non-fatal
+  // 3. Leaders top 5 gainers + losers — today only (same reason as heatmap)
+  if (!isHistoricalDate) {
+    try {
+      const leaders = await getTwseLeaders({ topN: 5 });
+      snapshot.topGainers = leaders.topGainers.map(s => ({
+        symbol: s.symbol,
+        name: s.name,
+        changePct: s.changePct,
+      }));
+      snapshot.topLosers = leaders.topLosers.map(s => ({
+        symbol: s.symbol,
+        name: s.name,
+        changePct: s.changePct,
+      }));
+    } catch {
+      // non-fatal
+    }
   }
 
   // 4. Institutional net buy/sell aggregate from DB (latest date)
@@ -470,6 +504,7 @@ async function collectLiveMarketSnapshot(
             SUM(CASE WHEN investor_type='Dealer' THEN net_buy_sell ELSE 0 END) AS dealer_net
            FROM tw_institutional_buysell
            WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+           ${dateCapSql}
            GROUP BY date ORDER BY date DESC LIMIT 1`
         )
       );
@@ -499,6 +534,7 @@ async function collectLiveMarketSnapshot(
             SUM(short_sale_today_balance) AS short_balance
            FROM tw_margin_short
            WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+           ${dateCapSql}
            GROUP BY date ORDER BY date DESC LIMIT 2`
         )
       );
@@ -773,7 +809,7 @@ async function collectSourcePack(
   // exists" recency. The generator separately injects the same snapshot into
   // the prompt; keeping it in sourcePack makes the brief auditable afterwards.
   try {
-    const snapshot = await collectLiveMarketSnapshot(workspaceId);
+    const snapshot = await collectLiveMarketSnapshot(workspaceId, tradingDate, tick);
     sources.push(buildMarketOverviewSourceEntryFromSnapshot(snapshot, staleThreshold));
   } catch (e) {
     sources.push({
@@ -1617,7 +1653,7 @@ async function generateDirectDailyBriefDraft(input: {
   let liveSnapshotBlock = "";
   if (input.reason !== "historical_backfill") {
     try {
-      const snap = await collectLiveMarketSnapshot(input.workspaceId);
+      const snap = await collectLiveMarketSnapshot(input.workspaceId, input.sourcePack.tradingDate, input.sourcePack.tick);
       const formatted = formatLiveMarketSnapshotForPrompt(snap);
       liveSnapshotBlock = `\n\n即時市場數據（從 TWSE OpenAPI 及 DB 取得，生成時間 ${new Date().toISOString()}）：\n${formatted}`;
     } catch {
@@ -1745,7 +1781,7 @@ async function generateDailyBrief(
   // F1: Collect live market snapshot for enqueued path as well
   let liveSnapshotBlock = "";
   try {
-    const snap = await collectLiveMarketSnapshot(workspaceId);
+    const snap = await collectLiveMarketSnapshot(workspaceId, sourcePack.tradingDate, sourcePack.tick);
     const formatted = formatLiveMarketSnapshotForPrompt(snap);
     liveSnapshotBlock = `\n\n即時市場數據（從 TWSE OpenAPI 及 DB 取得）：\n${formatted}`;
   } catch {
