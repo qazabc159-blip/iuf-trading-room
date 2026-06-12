@@ -3265,6 +3265,29 @@ app.post("/api/v1/reviews", async (c) => {
   );
 });
 
+// GET /api/v1/reviews/weekly — auto weekly review (B4 復盤閉環, quantitative v1).
+// Owner-only: the report includes F-AUTO SIM positions. ?anchor=YYYY-MM-DD
+// reviews the week containing that date (defaults to the current week).
+app.get("/api/v1/reviews/weekly", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
+  const briefs = await c.get("repo").listBriefs({ workspaceSlug: session.workspace.slug });
+  const publishedBriefDates = briefs
+    .filter((b) => b.status === "published")
+    .map((b) => b.date);
+
+  const { buildWeeklyReview } = await import("./weekly-review.js");
+  const review = await buildWeeklyReview({
+    anchorDate: c.req.query("anchor") ?? undefined,
+    workspaceId: session.workspace.id,
+    publishedBriefDates,
+  });
+  return c.json({ data: review });
+});
+
 // ISSUE_004 fix (2026-05-14): derive top-level `heading` from sections[0].heading.
 // Frontend reads `.heading` directly; old code returned raw DailyBrief which has no
 // top-level heading field → always blank. Project it here so the list surface is complete.

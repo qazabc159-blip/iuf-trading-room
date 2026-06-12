@@ -905,6 +905,41 @@ async function fetchTaiexMonthDailyCloses(
 }
 
 /**
+ * Official TAIEX daily closes in [fromDate, toDate] (ISO, inclusive), plus the
+ * last close strictly before fromDate (so callers can compute day-over-day
+ * change for the first day). Fail-open to [].
+ */
+export async function getTaiexDailyCloses(
+  fromDate: string,
+  toDate: string,
+  fetchOverride?: typeof fetch
+): Promise<Array<{ date: string; close: number }>> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate) || fromDate > toDate) return [];
+  const doFetch = fetchOverride ?? globalThis.fetch;
+
+  const months: string[] = [];
+  // months covering the range, plus the month before fromDate for the lead-in close
+  let y = parseInt(fromDate.slice(0, 4), 10);
+  let m = parseInt(fromDate.slice(5, 7), 10);
+  months.push(m === 1 ? `${y - 1}12` : `${y}${String(m - 1).padStart(2, "0")}`);
+  const endKey = toDate.slice(0, 7).replace("-", "");
+  for (let guard = 0; guard < 14; guard++) {
+    months.push(`${y}${String(m).padStart(2, "0")}`);
+    if (months[months.length - 1] === endKey) break;
+    m++; if (m > 12) { m = 1; y++; }
+  }
+
+  const all: Array<{ date: string; close: number }> = [];
+  for (const month of months) {
+    all.push(...await fetchTaiexMonthDailyCloses(month, doFetch));
+  }
+  all.sort((a, b) => a.date.localeCompare(b.date));
+  const inRange = all.filter((r) => r.date >= fromDate && r.date <= toDate);
+  const before = all.filter((r) => r.date < fromDate);
+  return before.length > 0 ? [before[before.length - 1], ...inRange] : inRange;
+}
+
+/**
  * Official close + daily change of the last *completed* trading session before
  * `tradingDate` (ISO "YYYY-MM-DD"). For a pre-market brief dated D this is
  * exactly the「昨日 TAIEX 收盤」pair: close(P) and close(P) - close(P-1) where
