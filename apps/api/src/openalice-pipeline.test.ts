@@ -164,7 +164,9 @@ test("daily brief instructions advertise only the v2 five-section contract", () 
 
 test("daily brief instructions do not tell users to self-check external media", () => {
   const instructions = buildDailyBriefContractInstructions();
-  assert.match(instructions, /盤前劇本/);
+  // sanity anchor that we are looking at the real instructions text
+  // (#1007 multidim prompt renamed 盤前劇本 → 市場劇本)
+  assert.match(instructions, /市場劇本/);
   assert.equal(instructions.includes("請自行確認"), false);
   assert.equal(instructions.includes("自行查"), false);
 });
