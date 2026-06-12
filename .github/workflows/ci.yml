@@ -75,8 +75,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # No continue-on-error: unit tests are a real gate. The old escape made
+      # the validate job pass while the log printed "not ok" (REC10 /
+      # REC-LOWER-THRESHOLD-1 failed silently for weeks — 假綠燈).
       - name: Test
-        continue-on-error: true
         run: pnpm test
 
       - name: Smoke

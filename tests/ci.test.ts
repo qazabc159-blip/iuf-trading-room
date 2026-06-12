@@ -5,6 +5,14 @@ import path from "node:path";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
+// Self-heal for direct `tsx --test` runs that skip tests/setup-test-env.mjs
+// (the supported entry is `pnpm test`). Both flags are read at call time, and
+// without them the suite produces false reds that look like regressions:
+// W2d-T1..T9 hit the kgi-gateway-schedule guard outside 08:20-14:10 TST, and
+// scheduler boot keeps port 3001 alive (EADDRINUSE noise after tests end).
+process.env.NODE_ENV = "test";
+process.env.KGI_GATEWAY_ALWAYS_ON = "true";
+
 import {
   authenticateOpenAliceDevice,
   cleanupStaleOpenAliceDevices,
@@ -11220,18 +11228,29 @@ test("REC10: synthesizeFromFixture produces 4 candidates with non-empty sourceTr
   } as Parameters<typeof synthesizeFromFixture>[0];
 
   const result = synthesizeFromFixture(fixtureData, null, []);
-  assert.equal(result.length, 4, "REC10: should produce 4 candidates");
+  // MIN_REAL_RECOMMENDATION_ITEMS=5 backstop: 4 fixture signals get topped up
+  // with core_market_watchlist candidates to MAX=8 (deliberate product
+  // behavior since 5/28 退化護欄 — the old length=4 expectation predates it).
+  assert.equal(result.length, 8, "REC10: 4 fixture + backstop top-up to MAX 8");
 
   for (const rec of result) {
-    assert.ok(rec.sourceTrail.length >= 2, `REC10: sourceTrail must have >= 2 entries for ${rec.ticker}`);
+    assert.ok(rec.sourceTrail.length >= 1, `REC10: sourceTrail must be non-empty for ${rec.ticker}`);
     assert.ok(typeof rec.ticker === "string" && rec.ticker.length > 0, `REC10: ticker must be non-empty for rank ${rec.rank}`);
     assert.ok(rec.totalScore >= 0 && rec.totalScore <= 100, `REC10: totalScore in range for ${rec.ticker}`);
-    assert.equal(rec.quant.strategySource, "cont_liq_v36", `REC10: strategySource must be cont_liq_v36 for ${rec.ticker}`);
     assert.equal(rec.generatedBy, "iuf_recommendation_orchestrator_v1", `REC10: generatedBy literal correct for ${rec.ticker}`);
   }
-  // Verify tickers match expected Athena candidates
-  const tickers = result.map((r) => r.ticker);
-  assert.deepEqual(tickers, ["3707", "2426", "6205", "2486"], "REC10: ticker order matches fixture quantRank");
+  // First 4 = fixture candidates in quantRank order, carrying the strategy source
+  const fixtureRecs = result.slice(0, 4);
+  assert.deepEqual(fixtureRecs.map((r) => r.ticker), ["3707", "2426", "6205", "2486"], "REC10: ticker order matches fixture quantRank");
+  for (const rec of fixtureRecs) {
+    assert.equal(rec.quant.strategySource, "cont_liq_v36", `REC10: strategySource must be cont_liq_v36 for ${rec.ticker}`);
+    assert.ok(rec.sourceTrail.length >= 2, `REC10: fixture sourceTrail must have >= 2 entries for ${rec.ticker}`);
+  }
+  // Backstop candidates must be honestly labelled, never disguised as strategy output
+  for (const rec of result.slice(4)) {
+    assert.equal(rec.quant.strategySource, "core_market_watchlist", `REC10: backstop ${rec.ticker} must be labelled core_market_watchlist`);
+    assert.ok(rec.risks.includes("market context not promoted strategy"), `REC10: backstop ${rec.ticker} must carry the market-context risk flag`);
+  }
 });
 
 test("REC11: getMockRecommendations returns fallback when fixture missing", () => {
@@ -13095,9 +13114,13 @@ test("REC-LOWER-THRESHOLD-1: cont_liq WATCH score=76 (3707 DQ-penalised) lands i
   } as Parameters<typeof synthesizeFromFixture>[0];
 
   const result = synthesizeFromFixture(fixture, null, []);
-  assert.equal(result.length, 1, "REC-LOWER-THRESHOLD-1: must produce 1 recommendation");
+  // Backstop top-up (MIN_REAL_RECOMMENDATION_ITEMS) appends core_market_watchlist
+  // candidates after the fixture signal — this test pins the threshold math of
+  // the fixture candidate, not the list size.
+  assert.ok(result.length >= 1, "REC-LOWER-THRESHOLD-1: must produce at least the fixture recommendation");
 
   const rec = result[0]!;
+  assert.equal(rec.ticker, "3707", "REC-LOWER-THRESHOLD-1: fixture candidate must rank first");
   // quantScore=80, PENDING penalty=0.05 → totalScore=76 ≥ 75 → 今日首選
   assert.equal(rec.totalScore, 76, `REC-LOWER-THRESHOLD-1: totalScore must be 76, got ${rec.totalScore}`);
   assert.equal(rec.action, "今日首選", `REC-LOWER-THRESHOLD-1: action must be 今日首選 for score 76, got ${rec.action}`);
