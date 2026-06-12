@@ -19240,12 +19240,17 @@ app.get("/api/v1/themes/wiki/:token/companies", async (c) => {
 });
 
 // =============================================================================
-// NOTIFICATIONS — real events from audit_logs + daily_briefs (2026-05-15)
+// NOTIFICATIONS — real events from audit_logs + daily_briefs + iuf_events (2026-06-12 C2)
 // Sources:
 //   audit_logs:  paper_submit (filled/rejected), update/kill_switch (risk_alert),
 //                kgi.sim.order_submitted (kgi_status)
 //   daily_briefs: status=published → brief_published
-// read state: v1 always false (no user_notification_read table yet)
+//   iuf_events:   OpenAlice event rule engine — market/data rules (R01-R10) +
+//                 system-health producer rules (R11-R15). Unified feed: this is
+//                 the same store /api/v1/alerts reads, so the header notification
+//                 center and the /alerts page never diverge again.
+// read state: audit_logs/briefs items v1 always false (no user_notification_read
+//             table yet); iuf_events items use the table's own `acknowledged` flag.
 // mark-read: logs to audit_logs action=notifications.mark_read, returns 204
 // =============================================================================
 
@@ -19259,6 +19264,37 @@ type NotificationItem = {
   severity: "info" | "warn" | "critical";
   actionUrl?: string;
 };
+
+// Product-language (繁中, no engineering jargon) copy for iuf_events rule ids.
+// Falls back to ruleName from the DB row when a rule id is not in this map.
+const IUF_EVENT_NOTIFICATION_COPY: Record<string, { title: string; body: (payload: Record<string, unknown>) => string }> = {
+  R01_REVENUE_SURGE_YOY50: { title: "月營收大幅成長", body: () => "偵測到個股月營收年增率超過 50%" },
+  R02_INSTITUTIONAL_CONSECUTIVE_BUY_5D: { title: "三大法人連續買進", body: () => "三大法人連續 5 日同向買進" },
+  R03_INSTITUTIONAL_CONSECUTIVE_SELL_5D: { title: "三大法人連續賣出", body: () => "三大法人連續 5 日同向賣出" },
+  R04_SHAREHOLDING_HHI_BREAKOUT: { title: "籌碼集中度創高", body: () => "外資持股集中度突破近期高點" },
+  R05_REVENUE_DECLINE_YOY30: { title: "月營收大幅下滑", body: () => "偵測到個股月營收年增率低於 -30%" },
+  R06_MAJOR_SHAREHOLDER_THRESHOLD: { title: "大股東持股突破門檻", body: () => "外資持股比例突破 40%" },
+  R07_MAJOR_ANNOUNCEMENT: { title: "重大公告", body: () => "偵測到新的重大公告" },
+  R08_AI_BRIEF_PUBLISHED: { title: "今日簡報已發布", body: () => "AI 簡報已自動發布" },
+  R09_HALLUCINATION_REJECTED: { title: "簡報內容檢核未通過", body: () => "AI 簡報內容檢核未通過，已暫緩發布" },
+  R10_KGI_GATEWAY_STATE_CHANGE: { title: "交易連線狀態變化", body: () => "券商連線狀態已變化" },
+  R11_V3_REC_CRON_EXHAUSTED: { title: "今日 AI 推薦尚未產出", body: () => "今日 AI 推薦排程已結束，但尚未產出結果" },
+  R12_LLM_BUDGET_NEAR_LIMIT: {
+    title: "AI 用量接近今日上限",
+    body: (p) => {
+      const ratio = typeof p["usageRatio"] === "number" ? Math.round(p["usageRatio"] * 100) : null;
+      return ratio !== null ? `今日 AI 用量已達上限的 ${ratio}%` : "今日 AI 用量已接近上限";
+    }
+  },
+  R13_DAILY_SMOKE_FAILED: { title: "每日健康檢查失敗", body: () => "今日例行健康檢查未通過，請留意系統狀態" },
+  R14_THEME_REFRESH_STALE: { title: "題材內容今日未更新", body: () => "題材內容今日尚未完成更新" },
+  R15_S1_EOD_NO_POSITIONS: { title: "策略部位資料異常", body: () => "策略每日結算未取得任何部位資料" },
+};
+
+function iufEventSeverityToNotification(severity: "info" | "warning" | "critical"): NotificationItem["severity"] {
+  if (severity === "warning") return "warn";
+  return severity;
+}
 
 async function fetchNotifications(_session: AppSession, workspaceId: string): Promise<NotificationItem[]> {
   if (!isDatabaseMode()) return [];
@@ -19405,7 +19441,28 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
     // brief query failure is non-critical — audit rows still returned
   }
 
-  // ── 3. merge, sort newest-first, limit 50 ───────────────────────────────
+  // ── 3. iuf_events (OpenAlice event rule engine — unified feed, 2026-06-12) ──
+  // Same store as GET /api/v1/alerts. read = acknowledged (table's own flag).
+  try {
+    const events = await listEvents({ limit: 50 });
+    for (const ev of events) {
+      const copy = IUF_EVENT_NOTIFICATION_COPY[ev.ruleId];
+      notifications.push({
+        id: `event-${ev.id}`,
+        type: "system",
+        title: copy?.title ?? ev.ruleName,
+        body: copy?.body(ev.payload) ?? ev.ruleName,
+        timestamp: ev.triggeredAt,
+        read: ev.acknowledged,
+        severity: iufEventSeverityToNotification(ev.severity),
+        actionUrl: "/alerts"
+      });
+    }
+  } catch {
+    // event query failure is non-critical — other sources still returned
+  }
+
+  // ── 4. merge, sort newest-first, limit 50 ───────────────────────────────
   notifications.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return notifications.slice(0, 50);
 }
@@ -19432,12 +19489,22 @@ app.get("/api/v1/notifications", async (c) => {
 
 // POST /api/v1/notifications/:id/mark-read
 // v1: log to audit_logs (notifications.mark_read) — no read-state DB persistence yet
+// for audit_logs/brief-derived items. `event-<uuid>` ids (iuf_events unified feed,
+// 2026-06-12) additionally persist via acknowledgeEvent() — same store /alerts uses.
 app.post("/api/v1/notifications/:id/mark-read", async (c) => {
   const session = c.get("session");
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "OWNER_ONLY" }, 403);
   }
   const notificationId = c.req.param("id");
+
+  const eventId = notificationId.startsWith("event-") ? notificationId.slice("event-".length) : null;
+  if (eventId) {
+    await acknowledgeEvent(eventId).catch((e: unknown) => {
+      console.error("[notifications/mark-read] acknowledgeEvent failed:", e instanceof Error ? e.message : String(e));
+    });
+  }
+
   // fire-and-forget audit log
   writeAuditLog({
     session,

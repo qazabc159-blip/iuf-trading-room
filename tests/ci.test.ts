@@ -8742,6 +8742,7 @@ import {
   getEventEngineState,
   listEvents,
   acknowledgeEvent,
+  _eventEngineInternals,
   type IufEvent,
   type EngineStateSnapshot
 } from "../apps/api/src/openalice-event-rule-engine.ts";
@@ -8774,6 +8775,79 @@ test("event-engine: acknowledgeEvent returns not-ok in memory mode", async () =>
   const result = await acknowledgeEvent("00000000-0000-0000-0000-000000000001");
   assert.equal(result.ok, false, "should return ok=false in memory mode");
   assert.ok(result.reason, "should include a reason string");
+});
+
+// ── 2026-06-12 C2: unified alerts feed — execRows + producer rules R11-R15 ──────
+
+test("event-engine: execRows normalizes both postgres-js array shape and {rows:[]} shape", () => {
+  const { execRows } = _eventEngineInternals;
+  // postgres-js: execute() returns the row array directly
+  assert.deepEqual(execRows([{ a: 1 }, { a: 2 }]), [{ a: 1 }, { a: 2 }]);
+  // node-postgres legacy shape: { rows: [...] }
+  assert.deepEqual(execRows({ rows: [{ a: 1 }] }), [{ a: 1 }]);
+  // unknown/empty shapes degrade to []
+  assert.deepEqual(execRows(undefined), []);
+  assert.deepEqual(execRows({}), []);
+  assert.deepEqual(execRows(null), []);
+});
+
+test("event-engine: taipeiDateStr returns a YYYY-MM-DD string", () => {
+  const { taipeiDateStr } = _eventEngineInternals;
+  const date = taipeiDateStr();
+  assert.match(date, /^\d{4}-\d{2}-\d{2}$/, "should be ISO calendar date");
+});
+
+test("event-engine: RULES includes the 5 new system-health producer rules (R11-R15)", () => {
+  const { RULES } = _eventEngineInternals;
+  const ids = RULES.map((r) => r.id);
+  for (const expected of [
+    "R11_V3_REC_CRON_EXHAUSTED",
+    "R12_LLM_BUDGET_NEAR_LIMIT",
+    "R13_DAILY_SMOKE_FAILED",
+    "R14_THEME_REFRESH_STALE",
+    "R15_S1_EOD_NO_POSITIONS"
+  ]) {
+    assert.ok(ids.includes(expected), `RULES should include ${expected}`);
+  }
+});
+
+test("event-engine: DAILY_DEDUP_RULE_IDS covers all 5 system-health producer rules", () => {
+  const { DAILY_DEDUP_RULE_IDS } = _eventEngineInternals;
+  for (const expected of [
+    "R11_V3_REC_CRON_EXHAUSTED",
+    "R12_LLM_BUDGET_NEAR_LIMIT",
+    "R13_DAILY_SMOKE_FAILED",
+    "R14_THEME_REFRESH_STALE",
+    "R15_S1_EOD_NO_POSITIONS"
+  ]) {
+    assert.ok(DAILY_DEDUP_RULE_IDS.has(expected), `${expected} should use day-based dedup (同事件當日去重)`);
+  }
+});
+
+test("event-engine: R11/R12/R13/R14/R15 triggers never throw and return arrays (memory mode)", async () => {
+  const { RULES } = _eventEngineInternals;
+  const fakeState: EngineStateSnapshot = {
+    hasMonthlyRevenue: false,
+    hasInstitutional: false,
+    hasShareholding: false,
+    hasMarketValue: false,
+    hasAnnouncements: false,
+    recentAuditActions: [],
+    snapshotAt: new Date().toISOString()
+  };
+
+  for (const ruleId of [
+    "R11_V3_REC_CRON_EXHAUSTED",
+    "R12_LLM_BUDGET_NEAR_LIMIT",
+    "R13_DAILY_SMOKE_FAILED",
+    "R14_THEME_REFRESH_STALE",
+    "R15_S1_EOD_NO_POSITIONS"
+  ]) {
+    const rule = RULES.find((r) => r.id === ruleId);
+    assert.ok(rule, `rule ${ruleId} should exist`);
+    const candidates = await rule!.trigger(fakeState);
+    assert.ok(Array.isArray(candidates), `${ruleId} trigger should return an array`);
+  }
 });
 
 // =============================================================================

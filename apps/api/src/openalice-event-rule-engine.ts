@@ -4,7 +4,7 @@
  * Event-driven rule engine for OpenAlice — BLOCK #6 axis.
  * Upgrades OpenAlice from passive daily-brief to active event-push.
  *
- * 10 event rules (expandable stub design):
+ * 10 market/data event rules (expandable stub design):
  *   1.  月營收 yoy > 50%  (revenue surge)
  *   2.  三大法人連5日同向買進  (all-3 institutional consecutive buy — foreign+trust+dealer)
  *   3.  三大法人連5日同向賣出  (all-3 institutional consecutive sell — foreign+trust+dealer)
@@ -16,17 +16,42 @@
  *   9.  Hallucination rejected  (brief rejected for hallucination)
  *   10. KGI gateway state change  (connectivity event — active post-5/12)
  *
+ * 5 system-health producer rules (2026-06-12 C2 — alerts unified feed):
+ *   11. v3 推薦 cron 當日 attempts 用盡仍無 success
+ *   12. LLM 每日預算使用 > 80%
+ *   13. KGI SIM daily smoke 最近一次 FAIL
+ *   14. Theme refresh cron 平日 18:30 後 successDate ≠ 當日
+ *   15. S1 EOD rebuild 後 positions=0（gateway 排程關機 unreachable 不算）
+ *
  * Persistence: writes triggered events to `iuf_events` table.
  * Migration 0025_iuf_events.sql PROMOTED (2026-05-12 P0 unblock — Bruce R5 confirmed table missing).
  *
  * Engine: poll tick every 5 min via scheduler in server.ts.
  * Safe-default: any rule evaluation error is contained and logged; engine continues.
+ *
+ * 2026-06-12 ROOT-CAUSE FIX (C2 audit): every DB query in this module used the
+ * node-postgres `{ rows: [...] }` shape, but this repo's driver is
+ * drizzle-orm/postgres-js, whose execute() returns the row array DIRECTLY.
+ * `(result.rows ?? [])` was therefore ALWAYS `[]` — every rule, the dedup
+ * check, and listEvents() silently returned zero rows forever (same root
+ * cause class as audit B2 / ai-rec-perf-store). Fixed via execRows().
  */
 
 import { randomUUID } from "node:crypto";
 
 import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
 import { getDb, isDatabaseMode, auditLogs } from "@iuf-trading-room/db";
+
+/**
+ * Normalize db.execute() results. This repo's driver is drizzle-orm/postgres-js,
+ * whose execute() returns the row array DIRECTLY — there is no `.rows` wrapper.
+ * Accept both shapes defensively (see ai-rec-perf-store.ts for the same pattern).
+ */
+function execRows<T>(res: unknown): T[] {
+  if (Array.isArray(res)) return res as T[];
+  const wrapped = res as { rows?: T[] };
+  return Array.isArray(wrapped?.rows) ? wrapped.rows : [];
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -100,9 +125,9 @@ const RULES: EventRule[] = [
             ORDER BY revenue_growth DESC
             LIMIT 10
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; revenue_growth?: number }> };
+        );
 
-        const matches = (rows.rows ?? []).filter(
+        const matches = execRows<{ ticker_symbol?: string; revenue_growth?: number }>(rows).filter(
           (r) => r.ticker_symbol && typeof r.revenue_growth === "number"
         );
 
@@ -153,9 +178,9 @@ const RULES: EventRule[] = [
             HAVING COUNT(*) FILTER (WHERE foreign_net > 0 AND trust_net > 0 AND dealer_net > 0) >= 5
             LIMIT 20
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; all_buy_days?: number }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; all_buy_days?: number }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R02_INSTITUTIONAL_CONSECUTIVE_BUY_5D",
@@ -200,9 +225,9 @@ const RULES: EventRule[] = [
             HAVING COUNT(*) FILTER (WHERE foreign_net < 0 AND trust_net < 0 AND dealer_net < 0) >= 5
             LIMIT 20
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; all_sell_days?: number }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; all_sell_days?: number }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R03_INSTITUTIONAL_CONSECUTIVE_SELL_5D",
@@ -251,9 +276,9 @@ const RULES: EventRule[] = [
             ORDER BY (ratio - prev_20d_max) DESC
             LIMIT 10
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; ratio?: number; prev_20d_max?: number }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; ratio?: number; prev_20d_max?: number }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R04_SHAREHOLDING_HHI_BREAKOUT",
@@ -288,9 +313,9 @@ const RULES: EventRule[] = [
             ORDER BY revenue_growth ASC
             LIMIT 10
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; revenue_growth?: number }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; revenue_growth?: number }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R05_REVENUE_DECLINE_YOY30",
@@ -334,9 +359,9 @@ const RULES: EventRule[] = [
               AND (prev_ratio IS NULL OR prev_ratio < 40)
             LIMIT 10
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; ratio?: number; prev_ratio?: number }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; ratio?: number; prev_ratio?: number }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R06_MAJOR_SHAREHOLDER_THRESHOLD",
@@ -371,9 +396,9 @@ const RULES: EventRule[] = [
             ORDER BY announced_at DESC
             LIMIT 20
           `
-        ) as { rows?: Array<{ ticker_symbol?: string; title?: string; announced_at?: string }> };
+        );
 
-        return (rows.rows ?? [])
+        return execRows<{ ticker_symbol?: string; title?: string; announced_at?: string }>(rows)
           .filter((r) => r.ticker_symbol)
           .map((r) => ({
             ruleId: "R07_MAJOR_ANNOUNCEMENT",
@@ -448,6 +473,215 @@ const RULES: EventRule[] = [
         ticker: null,
         payload: { auditAction: e.action, entityId: e.entityId, at: e.createdAt.toISOString() }
       }));
+    }
+  },
+
+  // ── Rule 11: AI 推薦每日 cron 當日 attempts 用盡仍無 success ──────────────
+  // Cron window 08:30-09:15 TST weekdays. After the window closes, if today's
+  // Taipei date has no "complete" v3 run, surface it (no per-day attempt
+  // counter dependency — uses durable run rows so it survives restarts).
+  {
+    id: "R11_V3_REC_CRON_EXHAUSTED",
+    name: "AI 推薦今日尚無成功結果",
+    severity: "warning",
+    trigger: async () => {
+      try {
+        const { isV3CronWindowAt, taipeiDateOf, getLatestAiRecommendationV3RunForRead } =
+          await import("./ai-recommendation-v2/orchestrator-v3.js");
+
+        const now = Date.now();
+        const taipei = new Date(now + 8 * 60 * 60 * 1000);
+        const day = taipei.getUTCDay();
+        if (day === 0 || day === 6) return []; // weekend — cron never fires
+
+        // Only alert after the cron window has closed for the day.
+        if (isV3CronWindowAt(now)) return [];
+        const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+        if (hhmm < 915) return []; // before window opens — nothing to report yet
+
+        const todayDate = taipeiDateOf(now);
+        const latest = await getLatestAiRecommendationV3RunForRead();
+        const latestTaipeiDate = latest ? taipeiDateOf(new Date(latest.generatedAt).getTime()) : null;
+        const hasSuccessToday = latest?.status === "complete" && latestTaipeiDate === todayDate;
+        if (hasSuccessToday) return [];
+
+        return [{
+          ruleId: "R11_V3_REC_CRON_EXHAUSTED",
+          ruleName: "AI 推薦今日尚無成功結果",
+          severity: "warning" as EventSeverity,
+          ticker: null,
+          payload: {
+            date: todayDate,
+            latestStatus: latest?.status ?? null,
+            latestGeneratedAt: latest?.generatedAt ?? null
+          }
+        }];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  // ── Rule 12: LLM 每日預算使用 > 80% ───────────────────────────────────────
+  {
+    id: "R12_LLM_BUDGET_NEAR_LIMIT",
+    name: "LLM 每日預算接近上限",
+    severity: "warning",
+    trigger: async () => {
+      if (!isDatabaseMode()) return [];
+      const db = getDb();
+      if (!db) return [];
+
+      try {
+        const { getDailyBudgetUsd, getTodayUtc } = await import("./llm/llm-gateway.js");
+        const budget = getDailyBudgetUsd();
+        const today = getTodayUtc();
+
+        const rows = await db.execute(
+          drizzleSql`
+            SELECT COALESCE(SUM(total_cost_usd), 0) AS today_cost
+            FROM llm_cost_daily
+            WHERE date = ${today}
+          `
+        );
+        const todayCost = parseFloat(execRows<{ today_cost?: string }>(rows)[0]?.today_cost ?? "0");
+        if (!Number.isFinite(todayCost) || budget <= 0) return [];
+
+        const ratio = todayCost / budget;
+        if (ratio <= 0.8) return [];
+
+        return [{
+          ruleId: "R12_LLM_BUDGET_NEAR_LIMIT",
+          ruleName: "LLM 每日預算接近上限",
+          severity: "warning" as EventSeverity,
+          ticker: null,
+          payload: {
+            date: today,
+            todayCostUsd: Math.round(todayCost * 10000) / 10000,
+            budgetUsd: budget,
+            usageRatio: Math.round(ratio * 1000) / 1000
+          }
+        }];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  // ── Rule 13: KGI SIM daily smoke 最近一次 FAIL ────────────────────────────
+  {
+    id: "R13_DAILY_SMOKE_FAILED",
+    name: "每日 smoke 測試失敗",
+    severity: "critical",
+    trigger: async () => {
+      if (!isDatabaseMode()) return [];
+      const db = getDb();
+      if (!db) return [];
+
+      try {
+        const { getDailySmokeHistoryDurable } = await import("./broker/kgi-sim-env.js");
+
+        // Smoke history is keyed by workspace — use the primary workspace (single-tenant).
+        const rows = await db.execute(drizzleSql`SELECT id FROM workspaces LIMIT 1`);
+        const workspaceId = execRows<{ id?: string }>(rows)[0]?.id;
+        if (!workspaceId) return [];
+
+        const history = await getDailySmokeHistoryDurable(workspaceId);
+        const last = history[0];
+        if (!last || last.overallStatus !== "fail") return [];
+
+        return [{
+          ruleId: "R13_DAILY_SMOKE_FAILED",
+          ruleName: "每日 smoke 測試失敗",
+          severity: "critical" as EventSeverity,
+          ticker: null,
+          payload: {
+            firedAt: last.firedAt,
+            overallStatus: last.overallStatus
+          }
+        }];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  // ── Rule 14: Theme refresh cron 平日 18:30 後 successDate ≠ 當日 ──────────
+  {
+    id: "R14_THEME_REFRESH_STALE",
+    name: "題材更新今日未完成",
+    severity: "warning",
+    trigger: async () => {
+      try {
+        const { getThemeRefreshStatus, themeRefreshTaipeiDate } = await import("./theme-refresh.js");
+
+        const now = Date.now();
+        const taipei = new Date(now + 8 * 60 * 60 * 1000);
+        const day = taipei.getUTCDay();
+        if (day === 0 || day === 6) return []; // weekend — cron never fires
+
+        const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+        if (hhmm < 1830) return []; // window not closed yet
+
+        const todayDate = themeRefreshTaipeiDate(now);
+        const status = getThemeRefreshStatus();
+        if (status.successDate === todayDate) return [];
+
+        return [{
+          ruleId: "R14_THEME_REFRESH_STALE",
+          ruleName: "題材更新今日未完成",
+          severity: "warning" as EventSeverity,
+          ticker: null,
+          payload: {
+            date: todayDate,
+            successDate: status.successDate,
+            lastError: status.lastError,
+            attemptsToday: status.attemptsToday
+          }
+        }];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  // ── Rule 15: S1 EOD rebuild 後 positions=0 ────────────────────────────────
+  // buildS1PositionsSnapshot() already does the audit-log rebuild fallback (R4
+  // fix), so positions.length === 0 here means basket+orders are both missing
+  // for the 7-day lookback — NOT the benign 14:10 gateway-shutdown case.
+  // Only checked inside/after the daily EOD window (>= 14:00 TST weekdays).
+  {
+    id: "R15_S1_EOD_NO_POSITIONS",
+    name: "S1 EOD 部位重建為空",
+    severity: "critical",
+    trigger: async () => {
+      try {
+        const now = Date.now();
+        const taipei = new Date(now + 8 * 60 * 60 * 1000);
+        const day = taipei.getUTCDay();
+        if (day === 0 || day === 6) return []; // weekend — no EOD
+
+        const hhmm = taipei.getUTCHours() * 100 + taipei.getUTCMinutes();
+        if (hhmm < 1400) return []; // before EOD window
+
+        const { buildS1PositionsSnapshot } = await import("./s1-sim-runner.js");
+        const snapshot = await buildS1PositionsSnapshot();
+        if (snapshot.positions.length > 0) return [];
+
+        return [{
+          ruleId: "R15_S1_EOD_NO_POSITIONS",
+          ruleName: "S1 EOD 部位重建為空",
+          severity: "critical" as EventSeverity,
+          ticker: null,
+          payload: {
+            positionsDate: snapshot.positionsDate,
+            dataSource: snapshot.dataSource,
+            notes: snapshot.notes
+          }
+        }];
+      } catch {
+        return [];
+      }
     }
   }
 ];
@@ -536,12 +770,56 @@ async function isDuplicateEvent(ruleId: string, ticker: string | null): Promise<
           AND triggered_at >= NOW() - INTERVAL '1 hour'
         LIMIT 1
       `
-    ) as { rows?: unknown[] };
-    return (rows.rows?.length ?? 0) > 0;
+    );
+    return execRows<unknown>(rows).length > 0;
   } catch {
     // Table missing or query failed → no dedup check (safe-default)
     return false;
   }
+}
+
+// ── Deduplication: skip re-firing same rule (system-level) within the same Taipei day ──
+// Used by the system-health producer rules (R11-R15) — "同事件當日去重，不准刷屏".
+
+function taipeiDateStr(nowMs = Date.now()): string {
+  return new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+async function isDuplicateEventToday(ruleId: string): Promise<boolean> {
+  if (!isDatabaseMode()) return false;
+  const db = getDb();
+  if (!db) return false;
+
+  try {
+    const rows = await db.execute(
+      drizzleSql`
+        SELECT 1 FROM iuf_events
+        WHERE rule_id = ${ruleId}
+          AND ticker IS NULL
+          AND (triggered_at AT TIME ZONE 'Asia/Taipei')::date = ${taipeiDateStr()}::date
+        LIMIT 1
+      `
+    );
+    return execRows<unknown>(rows).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Rule IDs that dedup by Taipei-calendar-day instead of the default 1h window. */
+const DAILY_DEDUP_RULE_IDS = new Set([
+  "R11_V3_REC_CRON_EXHAUSTED",
+  "R12_LLM_BUDGET_NEAR_LIMIT",
+  "R13_DAILY_SMOKE_FAILED",
+  "R14_THEME_REFRESH_STALE",
+  "R15_S1_EOD_NO_POSITIONS"
+]);
+
+async function isDuplicateCandidate(candidate: { ruleId: string; ticker: string | null }): Promise<boolean> {
+  if (DAILY_DEDUP_RULE_IDS.has(candidate.ruleId)) {
+    return isDuplicateEventToday(candidate.ruleId);
+  }
+  return isDuplicateEvent(candidate.ruleId, candidate.ticker);
 }
 
 // ── Event writer ───────────────────────────────────────────────────────────────
@@ -598,7 +876,7 @@ export function getEventEngineState(): EventEngineState {
 // ── Main tick ──────────────────────────────────────────────────────────────────
 
 /**
- * Run one engine tick: evaluate all 10 rules, write triggered events to DB.
+ * Run one engine tick: evaluate all rules, write triggered events to DB.
  * Called every 5 minutes from server.ts scheduler.
  * Never throws — all errors are contained.
  */
@@ -627,7 +905,7 @@ export async function runEventEngineTick(): Promise<void> {
 
       for (const candidate of candidates) {
         try {
-          const isDup = await isDuplicateEvent(candidate.ruleId, candidate.ticker);
+          const isDup = await isDuplicateCandidate(candidate);
           if (isDup) continue;
           await writeEvent(candidate);
           eventsWritten++;
@@ -788,20 +1066,18 @@ export async function listEvents(opts: {
             ORDER BY triggered_at DESC
             LIMIT ${limit}
           `
-    ) as {
-      rows?: Array<{
-        id?: string;
-        rule_id?: string;
-        rule_name?: string;
-        severity?: string;
-        ticker?: string | null;
-        payload?: unknown;
-        triggered_at?: string;
-        acknowledged?: boolean;
-      }>;
-    };
+    );
 
-    return (rows.rows ?? [])
+    return execRows<{
+      id?: string;
+      rule_id?: string;
+      rule_name?: string;
+      severity?: string;
+      ticker?: string | null;
+      payload?: unknown;
+      triggered_at?: string;
+      acknowledged?: boolean;
+    }>(rows)
       .filter((r) => r.id && r.rule_id)
       .map((r) => ({
         id: r.id!,
@@ -836,3 +1112,11 @@ export async function acknowledgeEvent(eventId: string): Promise<{ ok: boolean; 
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// Re-export for tests (2026-06-12 C2 — unified alerts feed).
+export const _eventEngineInternals = {
+  execRows,
+  taipeiDateStr,
+  DAILY_DEDUP_RULE_IDS,
+  RULES
+};
