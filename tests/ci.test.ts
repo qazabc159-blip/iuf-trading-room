@@ -15903,6 +15903,17 @@ test("POST-CLOSE-MIS: today-dated MIS snapshot off-hours is served as the close,
   assert.match(serverSource, /state: liveNow \? "LIVE" : "CLOSE", freshness: liveNow \? "fresh" : "stale"/);
 });
 
+test("MIS-PREFIX-FALLBACK: quote retries the other exchange when company.market is mislabelled", () => {
+  // 6/15 batch verify: OTC stocks tagged market="TWSE" in the DB (3707 漢磊,
+  // 6488 環球晶) found nothing on the tse_ prefix and fell to EOD — which for
+  // OTC has no STOCK_DAY_ALL row → NO_DATA/None price. The price must not
+  // depend on the market field: try the derived exchange, then the other.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /async function _misFetchForExchange\(sym: string, prefix: "tse" \| "otc"\)/);
+  assert.match(serverSource, /const fallback: "tse" \| "otc" = primary === "tse" \? "otc" : "tse";/);
+  assert.match(serverSource, /\(await _misFetchForExchange\(sym, primary\)\) \?\? \(await _misFetchForExchange\(sym, fallback\)\)/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 

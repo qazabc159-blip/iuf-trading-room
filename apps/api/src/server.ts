@@ -9178,7 +9178,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   // Returns live intraday price only during the actual TWSE session with today's trade date.
   // MIS can keep serving the 13:30 close after hours; those values must not be marked LIVE.
   // Returns null when market is closed / stale / symbol not found / fetch fails.
-  async function _twseMisIntradayFetch(sym: string, market: string): Promise<{
+  type MisIntradayResult = {
     lastPrice: number;
     open: number | null;
     high: number | null;
@@ -9193,9 +9193,11 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     source: "twse_intraday";
     state: "LIVE" | "CLOSE";
     freshness: "fresh" | "stale";
-  } | null> {
+  };
+
+  // Fetch a today-dated MIS snapshot for one exchange prefix ("tse" | "otc").
+  async function _misFetchForExchange(sym: string, prefix: "tse" | "otc"): Promise<MisIntradayResult | null> {
     try {
-      const prefix = _misPrefixForMarket(market);
       const exCh = `${prefix}_${sym}.tw`;
       const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(exCh)}&json=1&delay=0`;
       const resp = await fetch(url, {
@@ -9253,6 +9255,18 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     } catch {
       return null;
     }
+  }
+
+  // Resolve a MIS snapshot, tolerant of a mislabelled company.market field.
+  // 6/15: OTC stocks (e.g. 3707 漢磊, 6488 環球晶) were tagged market="TWSE"
+  // in the DB, so the tse_ prefix found nothing and /quote dropped to EOD —
+  // which for OTC has no STOCK_DAY_ALL row → NO_DATA. Try the market-derived
+  // exchange first, then the other before giving up, so the price no longer
+  // depends on the market field being correct.
+  async function _twseMisIntradayFetch(sym: string, market: string): Promise<MisIntradayResult | null> {
+    const primary = _misPrefixForMarket(market);
+    const fallback: "tse" | "otc" = primary === "tse" ? "otc" : "tse";
+    return (await _misFetchForExchange(sym, primary)) ?? (await _misFetchForExchange(sym, fallback));
   }
 
   // Helper: parse a TWSE ROC date ("1150609" compact or "115/06/09" slash) to ISO "2026-06-09".
