@@ -602,6 +602,15 @@ export async function getKgiMarketOverview(): Promise<{
 }
 
 async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapshot> {
+  // Gateway runs on an EventBridge weekday 08:20-14:10 schedule. Off-hours
+  // every call would burn the full 3s timeout — /heatmap/kgi-core fans out to
+  // 40 symbols in parallel (~3.5s dead latency per request, measured 6/15
+  // 15:13) and /overview/kgi hits the index pair. Short-circuit to a null
+  // snapshot so the heatmap enricher and overview fall straight through to
+  // their MIS intraday / EOD tiers instead of waiting on a closed gateway.
+  const { isKgiGatewayScheduledOff } = await import("./broker/kgi-gateway-schedule.js");
+  if (isKgiGatewayScheduledOff()) return nullTickSnapshot(symbol);
+
   const gatewayUrl = getGatewayUrl();
   const encodedSymbol = encodeURIComponent(symbol);
   const url = `${gatewayUrl}/quote/ticks?symbol=${encodedSymbol}&limit=1`;
