@@ -344,12 +344,12 @@ function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null 
 
 function LegacyKgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null }) {
   if (!realtime || realtime.state === "BLOCKED" || realtime.state === "NO_DATA") {
-    const reason = realtime?.reason ?? (realtime ? "此股無即時報價資料。" : "KGI gateway (EC2) 尚未回傳即時報價。");
+    const reason = realtime?.reason ?? (realtime ? "此股暫無即時報價資料。" : "盤後即時報價暫停，請於開盤時段查看。");
     return (
-      <Panel code="QTE-KGI" title="凱基即時報價 (EC2)" right="source=BLOCKED">
+      <Panel code="QTE-KGI" title="即時報價" right="暫無報價">
         <div className="state-panel">
           <span className="badge badge-red">等待即時</span>
-          <span className="tg soft">source=BLOCKED / 不顯示假報價</span>
+          <span className="tg soft">不顯示假報價</span>
           <span className="state-reason">{reason}</span>
         </div>
       </Panel>
@@ -357,16 +357,15 @@ function LegacyKgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote |
   }
 
   const sourceBadge = realtime.state === "LIVE" ? "badge-green" : "badge-yellow";
-  const sourceLabel = realtime.state === "LIVE" ? "即時" : "略舊";
+  const sourceLabel = realtime.state === "LIVE" ? "即時" : realtime.state === "CLOSE" ? "今日收盤" : "略舊";
 
   return (
     <Panel
       code="QTE-KGI"
-      title="凱基即時報價 (EC2)"
+      title="即時報價"
       right={
         <span className="source-line" style={{ margin: 0 }}>
           <span className={`badge ${sourceBadge}`}>{sourceLabel}</span>
-          <span>source=LIVE / kgi-gateway</span>
           <span>更新 {formatDateTime(realtime.updatedAt)}</span>
         </span>
       }
