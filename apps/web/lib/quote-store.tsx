@@ -49,8 +49,8 @@ export type QuoteEntry = {
   bid: number | null;
   ask: number | null;
   volume: number | null;
-  /** 原始後端 state */
-  state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
+  /** 原始後端 state（CLOSE = 盤後當日收盤，6/15 新增） */
+  state: "LIVE" | "STALE" | "CLOSE" | "BLOCKED" | "NO_DATA";
   /** 原始後端 source */
   source: string;
   /** 計算出的 freshness_mode（給 UI 用） */

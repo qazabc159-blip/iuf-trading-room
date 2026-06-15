@@ -364,7 +364,9 @@ export default async function CompanyDetailPage({
   // realtime quote (fail-soft: null = gateway not reachable or BLOCKED)
   const realtimeQuote: CompanyRealtimeQuote | null =
     realtimeResult.status === "fulfilled" ? realtimeResult.value : null;
-  const realtimeLive = realtimeQuote?.state === "LIVE" || realtimeQuote?.state === "STALE";
+  // CLOSE = today's session close served off-hours (6/15 fix) — has a real
+  // price, so the badge must show it, not「等待即時」.
+  const realtimeLive = realtimeQuote?.state === "LIVE" || realtimeQuote?.state === "STALE" || realtimeQuote?.state === "CLOSE";
 
   // full-profile fundamentals for hero KPI strip (fail-soft: null = endpoint unavailable)
   let fullProfile: FullProfileEnvelope | null = null;
@@ -442,7 +444,7 @@ export default async function CompanyDetailPage({
           <span className="tg soft">即時</span>
           <b className={`tg ${realtimeLive ? "up" : "muted"}`}>
             {realtimeLive
-              ? `${realtimeQuote?.state === "LIVE" ? "即時" : "略舊"}${realtimeQuote?.lastPrice != null ? ` ${realtimeQuote.lastPrice}` : ""}`
+              ? `${realtimeQuote?.state === "LIVE" ? "即時" : realtimeQuote?.state === "CLOSE" ? "今日收盤" : "略舊"}${realtimeQuote?.lastPrice != null ? ` ${realtimeQuote.lastPrice}` : ""}`
               : "等待即時"}
           </b>
         </div>

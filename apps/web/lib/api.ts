@@ -1416,7 +1416,9 @@ export type CompanyRealtimeQuote = {
   ask: number | null;
   volume: number | null;
   freshness: "fresh" | "stale" | "not-available";
-  state: "LIVE" | "STALE" | "BLOCKED" | "NO_DATA";
+  // CLOSE = today's final MIS snapshot served off-hours (real session close,
+  // not yesterday's EOD) — added 6/15 post-close fix.
+  state: "LIVE" | "STALE" | "CLOSE" | "BLOCKED" | "NO_DATA";
   reason?: string;
   source: "kgi-gateway" | "twse_intraday" | "twse_openapi_eod";
   note?: string;
@@ -1452,7 +1454,7 @@ export type RealtimeSnapshotItem = {
   bid: number | null;
   ask: number | null;
   volume: number | null;
-  freshness_mode: "live" | "intraday" | "stale" | "eod";
+  freshness_mode: "live" | "intraday" | "stale" | "eod" | "close";
   freshness_ms: number;
   source: string;
   updatedAt: string;
@@ -1464,7 +1466,7 @@ export type RealtimeSnapshotResponse = {
   _stub: true;
 };
 
-function _stateToFreshnessMode(quote: CompanyRealtimeQuote): "live" | "intraday" | "stale" | "eod" {
+function _stateToFreshnessMode(quote: CompanyRealtimeQuote): "live" | "intraday" | "stale" | "eod" | "close" {
   return realtimeFreshnessMode(quote);
 }
 

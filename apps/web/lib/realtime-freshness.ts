@@ -1,4 +1,4 @@
-export type FreshnessMode = "live" | "intraday" | "stale" | "eod";
+export type FreshnessMode = "live" | "intraday" | "stale" | "eod" | "close";
 
 export type RealtimeFreshnessInput = {
   symbol?: string;
@@ -43,6 +43,10 @@ export function realtimeFreshnessMode(
   if (isTradingSessionEodFallback(quote)) return "stale";
   if (quote.source === "twse_openapi_eod") return "eod";
   if (quote.state === "BLOCKED" || quote.state === "NO_DATA") return "eod";
+  // Post-close (6/15): MIS keeps today's final snapshot off-hours (state=CLOSE,
+  // source twse_intraday). It is today's real close — not yesterday's EOD, not
+  // a stale live tick — so it gets its own badge rather than "盤中".
+  if (quote.state === "CLOSE") return "close";
   if (quote.source === "twse_intraday") return "intraday";
 
   if (quote.source === "kgi-gateway") {
