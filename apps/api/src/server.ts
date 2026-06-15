@@ -11899,6 +11899,36 @@ function _misIndexOverviewSnapshot(): {
   };
 }
 
+// On-demand MIS index snapshot for ONE index (tse_t00 = TAIEX, otc_o00 = 櫃買).
+// MIS keeps today's index close available off-hours (verified 6/15 22:xx:
+// otc_o00 z=429.37 d=20260615), but the cached _misIndexOverviewSnapshot is
+// gated to the trading window, leaving the EOD overview's OTC field null after
+// close. This fetches today's close directly so the off-hours overview can fill
+// the gap. Returns null when MIS has no today-dated value.
+async function _misIndexTodayFetch(
+  exCh: "tse_t00" | "otc_o00",
+): Promise<{ value: number; change: number; changePct: number; ts: string } | null> {
+  try {
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}.tw&json=1&delay=0`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(4000), headers: { "Accept": "application/json" } });
+    if (!resp.ok) return null;
+    const data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+    const m = data.msgArray?.[0];
+    if (!m) return null;
+    const z = parseFloat((m["z"] ?? "").replace(/,/g, ""));
+    const y = parseFloat((m["y"] ?? "").replace(/,/g, ""));
+    const d = (m["d"] ?? "").trim();
+    const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+    if (d !== todayYmd || !isFinite(z) || !isFinite(y) || z <= 0 || y <= 0) return null;
+    const change = Math.round((z - y) * 100) / 100;
+    const changePct = Math.round((change / y) * 10000) / 100;
+    const ts = new Date(`${todayYmd.slice(0, 4)}-${todayYmd.slice(4, 6)}-${todayYmd.slice(6, 8)}T13:30:00+08:00`).toISOString();
+    return { value: z, change, changePct, ts };
+  } catch {
+    return null;
+  }
+}
+
 // Honest close label: derive from the data's own trading date, never assume today.
 // TWSE MI_INDEX lags a session, so "fetch succeeded" does NOT mean today's close.
 function _taiexCloseLabel(ts: string | null | undefined, isLkg: boolean): string {
@@ -11942,7 +11972,14 @@ app.get("/api/v1/market/overview/twse", async (c) => {
   const { _isLkg, ...resultPayload } = result;
   const sourceState = _isLkg ? "lkg" : "live";
   const taiexDisplayLabel = _taiexCloseLabel(result.taiex?.ts, Boolean(_isLkg));
-  return c.json({ ...resultPayload, sourceState, taiexDisplayLabel });
+  // The EOD overview has no OTC index source — backfill today's 櫃買 close from
+  // MIS so the homepage OTC index is not blank after close.
+  let otcPayload = resultPayload.otc;
+  if (!otcPayload) {
+    const misOtc = await _misIndexTodayFetch("otc_o00");
+    if (misOtc) otcPayload = { value: misOtc.value, change: misOtc.change, changePct: misOtc.changePct, ts: misOtc.ts };
+  }
+  return c.json({ ...resultPayload, otc: otcPayload, sourceState, taiexDisplayLabel });
 });
 
 app.get("/api/v1/market/heatmap/twse", async (c) => {
@@ -12108,6 +12145,17 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
     const twseResult = await getTwseMarketOverview();
 
     if (twseResult) {
+      // EOD has no OTC index source — backfill today's 櫃買 close from MIS so
+      // the OTC index is not blank after close.
+      let otcOverview: { symbol: string; value: number | null; change: number | null; changePct: number | null; ts: string | null; source: string; staleSec: number | null };
+      if (twseResult.otc) {
+        otcOverview = { symbol: "^TPEX", value: twseResult.otc.value, change: twseResult.otc.change, changePct: twseResult.otc.changePct, ts: twseResult.otc.ts, source: "twse_openapi_eod", staleSec: null };
+      } else {
+        const misOtc = await _misIndexTodayFetch("otc_o00");
+        otcOverview = misOtc
+          ? { symbol: "^TPEX", value: misOtc.value, change: misOtc.change, changePct: misOtc.changePct, ts: misOtc.ts, source: "twse_mis_intraday", staleSec: null }
+          : { symbol: "^TPEX", value: null, change: null, changePct: null, ts: null, source: "twse_openapi_eod", staleSec: null };
+      }
       return c.json({
         taiex: {
           symbol: "^TWII",
@@ -12118,23 +12166,7 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
           source: "twse_openapi_eod",
           staleSec: null,
         },
-        otc: twseResult.otc ? {
-          symbol: "^TPEX",
-          value: twseResult.otc.value,
-          change: twseResult.otc.change,
-          changePct: twseResult.otc.changePct,
-          ts: twseResult.otc.ts,
-          source: "twse_openapi_eod",
-          staleSec: null,
-        } : {
-          symbol: "^TPEX",
-          value: null,
-          change: null,
-          changePct: null,
-          ts: null,
-          source: "twse_openapi_eod",
-          staleSec: null,
-        },
+        otc: otcOverview,
         source: "twse_openapi_eod",
         staleAfterSec: 60,
         sourceState: "fallback_eod",
