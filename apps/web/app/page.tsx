@@ -21,16 +21,15 @@ import {
   getFinMindStatus,
   getKgiCoreHeatmap,
   getKgiMarketOverview,
+  getLabStrategySnapshot,
   getMarketDataOverview,
   getMarketIntelAnnouncements,
   getNewsTop10,
   getOpsSnapshot,
   getKgiQuoteStatus,
-  getStrategyIdeas,
   getRecommendationsToday,
   getTwseMarketHeatmap,
   getTwseMarketOverview,
-  listStrategyRuns,
   type RecommendationListResponse,
   type CompanyAnnouncement,
   type DashboardSnapshot,
@@ -41,6 +40,7 @@ import {
   type KgiCoreHeatmapTile,
   type KgiMarketOverview,
   type KgiQuoteStatus,
+  type LabStrategySnapshot,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
   type NewsAiItem,
@@ -83,9 +83,7 @@ type DailyBriefDashboard = {
   reason?: string;
 };
 
-type StrategyIdeasData = Awaited<ReturnType<typeof getStrategyIdeas>>["data"];
-type StrategyRunsData = Awaited<ReturnType<typeof listStrategyRuns>>["data"];
-type StrategyIdeaItem = StrategyIdeasData["items"][number];
+type S1StrategyData = LabStrategySnapshot;
 
 type IntelItem = CompanyAnnouncement & {
   companyId?: string;
@@ -273,8 +271,9 @@ async function load<T>(
 // ── Per-fetch timeout wrapper ─────────────────────────────────────────────────
 // Returns either the real result or { _timeout: "<label>_<ms>ms" } sentinel.
 // Caller detects _timeout and maps to BLOCKED with stale_reason (never fake-green).
-const FETCH_SOFT_MS = 3000; // 3s soft budget – ops/brief/paper/broker/ideas/runs
-const FETCH_HARD_MS = 5000; // 5s hard budget – finmind/intel(TWSE crawl)/snapshot
+const FETCH_SOFT_MS = 8000; // operational panels must tolerate normal Railway contention
+const FETCH_HARD_MS = 10000; // multi-dataset queries
+const FETCH_PRODUCT_MS = 12000; // brief/recommendations/S1 product truth
 const FETCH_MARKET_MS = 15000; // 15s – TWSE EOD can be slow on cold cache; backend now 3s internal timeout + 5min cache
 const KGI_MARKET_ENDPOINT_MS = 3500;
 const FETCH_INTEL_MS = 12000;
@@ -655,20 +654,10 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
     "OpenAlice / Daily Brief",
     { today, state: "BLOCKED", latestDate: null, latest: null, todayBrief: null, draftCount: 0, reason: "每日簡報資料讀取失敗。" },
     async () => {
-      const [briefsResult, draftsResult] = await Promise.allSettled([
-        getBriefs(),
-        getContentDrafts({ status: "awaiting_review", limit: 50 }),
-      ]);
-      if (briefsResult.status === "rejected" && draftsResult.status === "rejected") {
-        throw briefsResult.reason;
-      }
-
-      const briefs = briefsResult.status === "fulfilled" ? briefsResult.value.data : [];
-      const drafts = draftsResult.status === "fulfilled" ? draftsResult.value.data : [];
+      const briefs = (await getBriefs()).data;
       const sortedBriefs = [...briefs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       const latest = sortedBriefs[0] ?? null;
       const todayBrief = sortedBriefs.find((brief) => brief.status === "published" && brief.date.slice(0, 10) === today) ?? null;
-      const todayDrafts = drafts.filter((draft) => draft.targetTable === "daily_briefs" && draftDate(draft.payload, draft.targetEntityId) === today);
 
       if (todayBrief) {
         return {
@@ -677,9 +666,12 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
           latestDate: todayBrief.date.slice(0, 10),
           latest,
           todayBrief,
-          draftCount: todayDrafts.length,
+          draftCount: 0,
         };
       }
+
+      const drafts = (await getContentDrafts({ status: "awaiting_review", limit: 50 })).data;
+      const todayDrafts = drafts.filter((draft) => draft.targetTable === "daily_briefs" && draftDate(draft.payload, draft.targetEntityId) === today);
       if (todayDrafts.length > 0) {
         return {
           today,
@@ -911,11 +903,10 @@ function buildSources(params: {
   ops: LoadState<OpsSnapshotData | null>;
   brief: LoadState<DailyBriefDashboard>;
   paper: LoadState<PaperHealthState | null>;
-  ideas: LoadState<StrategyIdeasData | null>;
-  runs: LoadState<StrategyRunsData | null>;
+  s1Strategy: LoadState<S1StrategyData | null>;
   intel: LoadState<MarketIntelDashboard>;
 }): SourceTile[] {
-  const { finmind, market, ops, brief, paper, ideas, runs, intel } = params;
+  const { finmind, market, ops, brief, paper, s1Strategy, intel } = params;
   const datasets = finmind.data?.status.datasets ?? [];
   const liveDatasets = datasets.filter((item) => finmindDatasetState(item) === "LIVE").length;
   const klineState: DashboardState =
@@ -924,7 +915,6 @@ function buildSources(params: {
         (market.data?.quality.bars.degraded ?? 0) > 0 ? "DEGRADED" : "EMPTY";
   const companyState: DashboardState =
     finmind.state === "BLOCKED" ? "BLOCKED" : liveDatasets > 0 ? "LIVE" : "EMPTY";
-  const signalCount = ideas.data?.items.reduce((sum: number, item: StrategyIdeaItem) => sum + item.signalCount, 0) ?? 0;
   const paperState: DashboardState = paper.state === "LIVE" && paper.data?.previewReady ? "LIVE" : stateFromLoad(paper);
 
   const rows: SourceTile[] = [
@@ -974,14 +964,14 @@ function buildSources(params: {
     },
     {
       key: "strategy",
-      name: "策略候選",
-      short: "策略",
-      desc: "候選觀察 / 篩選理由",
-      state: ideas.state === "LIVE" ? "LIVE" : stateFromLoad(ideas),
-      updatedAt: ideas.data?.generatedAt ?? ideas.updatedAt,
-      note: `${formatNumber(ideas.data?.items.length)} 候選 / ${formatNumber(ideas.data?.summary.block)} 阻擋`,
-      detail: "候選分數不是績效，不產生交易建議。",
-      href: "/ideas",
+      name: "S1 量化策略",
+      short: "S1",
+      desc: "正式量化 / SIM-only",
+      state: s1Strategy.state === "LIVE" ? "LIVE" : stateFromLoad(s1Strategy),
+      updatedAt: s1Strategy.data?.asOfDateTaipei ?? s1Strategy.updatedAt,
+      note: s1Strategy.data ? `${s1Strategy.data.status} / ${s1Strategy.data.displayMode ?? "research_only"}` : "等待正式快照",
+      detail: "目前正式產品只開 S1；研究快照與 KGI SIM 觀察分開呈現，不混入假候選。",
+      href: "/quant-strategies",
     },
     {
       key: "brief",
@@ -1009,11 +999,11 @@ function buildSources(params: {
       key: "quant",
       name: "量化策略",
       short: "Quant",
-      desc: "策略候選 / 量化策略狀態",
-      state: runs.state === "LIVE" ? "LIVE" : stateFromLoad(runs),
-      updatedAt: runs.data?.items[0]?.createdAt ?? runs.updatedAt,
-      note: `${formatNumber(runs.data?.items.length)} 批次 / ${formatNumber(signalCount)} 訊號`,
-      detail: "量化策略只呈現資料狀態，不顯示未驗證績效。",
+      desc: "S1 研究 / SIM 狀態",
+      state: s1Strategy.state === "LIVE" ? "LIVE" : stateFromLoad(s1Strategy),
+      updatedAt: s1Strategy.data?.asOfDateTaipei ?? s1Strategy.updatedAt,
+      note: s1Strategy.data?.displayName_zh ?? "S1 連續動能流動性策略",
+      detail: "只呈現核准的 S1 快照與 SIM-only 狀態，不顯示未驗證策略。",
       href: "/quant-strategies",
     },
   ];
@@ -1555,18 +1545,6 @@ function buildTapeQuotes(heatmap: HeatTile[], realtimeMarket: LoadState<Realtime
   realQuotes.push(...marketQuotes);
 
   return realQuotes.length > 0 ? realQuotes : EMPTY_TAPE_QUOTES;
-}
-
-function directionLabel(direction: StrategyIdeaItem["direction"]) {
-  if (direction === "bullish") return "偏多研究";
-  if (direction === "bearish") return "偏空研究";
-  return "中性";
-}
-
-function decisionLabel(decision: StrategyIdeaItem["marketData"]["decision"]) {
-  if (decision === "allow") return "可觀察";
-  if (decision === "review") return "待確認";
-  return "阻擋";
 }
 
 function makeSpark(seed: string, state: DashboardState, length = 20) {
@@ -2730,25 +2708,25 @@ function PaperPanel({
   );
 }
 
-function StrategyPanel({ ideas }: { ideas: LoadState<StrategyIdeasData | null> }) {
-  const rows = ideas.data?.items.slice(0, 4) ?? [];
+function StrategyPanel({ strategy }: { strategy: LoadState<S1StrategyData | null> }) {
+  const snapshot = strategy.data;
+  const netReturn = snapshot?.headlineMetrics.strategyNetAbsoluteReturnPct;
+  const maxDrawdown = snapshot?.headlineMetrics.maxDrawdownNetPct ?? snapshot?.headlineMetrics.maxDrawdown;
   return (
-    <Panel eyebrow="STRATEGY" title="策略候選" sub="候選研究，不等於交易建議" right={<StatusChip state={ideas.state === "LIVE" ? "LIVE" : stateFromLoad(ideas)} />}>
-      {rows.length > 0 ? (
+    <Panel eyebrow="STRATEGY" title="S1 自動量化" sub="唯一正式量化策略 / KGI SIM-only" right={<StatusChip state={strategy.state === "LIVE" ? "LIVE" : stateFromLoad(strategy)} />}>
+      {snapshot ? (
         <div className="tac-strategy-table">
-          <div><span>代號</span><span>名稱</span><span>立場</span><span>信心</span><span>閘門</span></div>
-          {rows.map((idea: StrategyIdeaItem) => (
-            <Link href={`/portfolio?ticker=${encodeURIComponent(idea.symbol)}&prefill=true&from_strategy=home`} key={`${idea.companyId}-${idea.symbol}`}>
-              <b>{idea.symbol}</b>
-              <span>{idea.companyName}</span>
-              <small>{directionLabel(idea.direction)}</small>
-              <small>{Math.round(idea.confidence * 100)}%</small>
-              <StatusChip state={idea.marketData.decision === "allow" ? "LIVE" : idea.marketData.decision === "review" ? "REVIEW" : "BLOCKED"} label={decisionLabel(idea.marketData.decision)} compact />
-            </Link>
-          ))}
+          <div><span>策略</span><span>狀態</span><span>累積報酬</span><span>最大回撤</span><span>觀察台</span></div>
+          <Link href="/ops/f-auto">
+            <b>S1</b>
+            <span>{snapshot.displayName_zh || snapshot.displayName}</span>
+            <small>{netReturn == null ? "--" : `${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}</small>
+            <small>{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</small>
+            <StatusChip state={snapshot.orderState === "paper_allowed" ? "LIVE" : "REVIEW"} label="查看持倉" compact />
+          </Link>
         </div>
       ) : (
-        <div className="tac-empty-line">策略候選目前沒有正式資料；不顯示假策略或假績效。</div>
+        <div className="tac-empty-line">S1 核准快照目前無法讀取；不顯示其他研究策略或假績效。</div>
       )}
     </Panel>
   );
@@ -2884,8 +2862,9 @@ async function DashboardContent({
   // ── Timeout-budgeted parallel fetches ──────────────────────────────────────
   // Each fetch is wrapped with timedFetch(label, budgetMs, promise).
   // Budget:
-  //   FETCH_SOFT_MS (3s) — most panels: market, ops, brief, paper, broker, ideas, runs
-  //   FETCH_HARD_MS (5s) — heavy queries: finmind (multi-dataset), intel (TWSE crawl), snapshot
+  //   FETCH_SOFT_MS (8s) — operational panels
+  //   FETCH_HARD_MS (10s) — heavy multi-dataset queries
+  //   FETCH_PRODUCT_MS (12s) — brief/recommendations/S1 product truth
   // If a fetch exceeds budget, timedFetch returns { _timeout: "..." } sentinel.
   // Result handler maps sentinel -> BLOCKED with real reason (never fake-green).
   //
@@ -2901,8 +2880,7 @@ async function DashboardContent({
     paperResult,
     brokerResult,
     recommendationsResult,
-    ideasResult,
-    runsResult,
+    s1StrategyResult,
     intelResult,
     snapshotResult,
   ] = await Promise.allSettled([
@@ -2922,29 +2900,22 @@ async function DashboardContent({
       (value) => value === null,
       "OpenAlice 營運快照目前沒有回傳資料。",
     )),
-    timedFetch("brief", FETCH_SOFT_MS, loadDailyBriefDashboard()),
+    timedFetch("brief", FETCH_PRODUCT_MS, loadDailyBriefDashboard()),
     timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
     timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
-    timedFetch("recommendations", FETCH_SOFT_MS, load(
+    timedFetch("recommendations", FETCH_PRODUCT_MS, load(
       "AI recommendations",
       { date: todayTaipeiDate(), generatedAt: now, count: 0, items: [] } as RecommendationListResponse,
       async () => await getRecommendationsToday(),
       (value) => value._mock === true || value.items.length === 0,
       "今日 AI 推薦尚未回傳正式清單。",
     )),
-    timedFetch("ideas", FETCH_SOFT_MS, load(
-      "Strategy ideas",
+    timedFetch("s1_strategy", FETCH_PRODUCT_MS, load(
+      "S1 strategy snapshot",
       null,
-      async () => (await getStrategyIdeas({ limit: 8, includeBlocked: true, decisionMode: "paper", sort: "score" })).data,
-      (value) => value === null || value.items.length === 0,
-      "策略想法目前沒有可用候選。",
-    )),
-    timedFetch("runs", FETCH_SOFT_MS, load(
-      "Strategy runs",
-      null,
-      async () => (await listStrategyRuns({ limit: 6, sort: "created_at" })).data,
-      (value) => value === null || value.items.length === 0,
-      "策略批次目前沒有可用紀錄。",
+      async () => await getLabStrategySnapshot("cont_liq_v36"),
+      (value) => value === null,
+      "S1 核准快照目前無法讀取。",
     )),
     timedFetch("intel", FETCH_INTEL_MS, loadMarketIntelDashboard()),
     timedFetch("snapshot", FETCH_HARD_MS, getDashboardSnapshot()),
@@ -3035,16 +3006,10 @@ async function DashboardContent({
     if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
-  const ideas = (() => {
-    if (ideasResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: "載入失敗" };
-    const v = ideasResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy ideas", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const runs = (() => {
-    if (runsResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: "載入失敗" };
-    const v = runsResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Strategy runs", reason: `資料延遲（${v._timeout}）` };
+  const s1Strategy = (() => {
+    if (s1StrategyResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 strategy snapshot", reason: "載入失敗" };
+    const v = s1StrategyResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 strategy snapshot", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
   const intel = (() => {
@@ -3069,7 +3034,7 @@ async function DashboardContent({
     );
   }
 
-  const sources = buildSources({ finmind, market, ops, brief, paper, ideas, runs, intel });
+  const sources = buildSources({ finmind, market, ops, brief, paper, s1Strategy, intel });
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
   const marketHeatmap = buildHeatmap(market);
   const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
@@ -3097,7 +3062,7 @@ async function DashboardContent({
           </section>
           <section className="tac-two-grid tac-action-grid">
             <AiRecommendationActionPanel recommendations={recommendations} />
-            <StrategyPanel ideas={ideas} />
+            <StrategyPanel strategy={s1Strategy} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">
             <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
