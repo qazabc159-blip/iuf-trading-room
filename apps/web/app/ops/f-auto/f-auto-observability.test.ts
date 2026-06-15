@@ -10,6 +10,8 @@ describe("F-AUTO S1 product observability", () => {
     expect(panelSource).toContain("getFAutoPortfolio");
     expect(panelSource).toContain("portfolioPositionsState");
     expect(panelSource).toContain("portfolioFundsState");
+    expect(panelSource).toContain("eodRows.get(position.symbol)");
+    expect(panelSource).toContain("eod?.unrealizedPnlTwd");
     expect(panelSource).toContain("不把查不到即時券商資料誤顯示成零持倉");
   });
 

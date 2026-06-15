@@ -92,17 +92,27 @@ function toTpeDate(offset = 0): string {
 
 function portfolioPositionsState(
   state: AsyncState<FAutoPortfolio>,
+  eodState: AsyncState<S1EodReport>,
 ): AsyncState<SimPosition[]> {
   if (state.phase !== "live") return state;
+  const eodRows = eodState.phase === "live" && eodState.data.found
+    ? new Map(eodState.data.positions.map((position) => [position.symbol, position]))
+    : new Map<string, S1EodReport["positions"][number]>();
   const positions = state.data.positions.map((position) => ({
+    ...(() => {
+      const eod = eodRows.get(position.symbol);
+      const lastPrice = position.last_price ?? eod?.lastPrice ?? null;
+      return {
+        avgCost: position.avg_cost ?? eod?.avgCost ?? null,
+        unrealizedPnl: position.unrealized_pnl_twd ?? eod?.unrealizedPnlTwd ?? null,
+        lastPrice,
+        marketValue:
+          position.market_value_twd ??
+          (lastPrice == null ? null : lastPrice * position.shares),
+      };
+    })(),
     symbol: position.symbol,
     qty: position.shares,
-    avgCost: position.avg_cost,
-    unrealizedPnl: position.unrealized_pnl_twd,
-    lastPrice: position.last_price,
-    marketValue:
-      position.market_value_twd ??
-      (position.last_price == null ? null : position.last_price * position.shares),
     note: state.data.data_source,
   }));
   return positions.length > 0 ? { phase: "live", data: positions } : { phase: "empty" };
@@ -110,10 +120,12 @@ function portfolioPositionsState(
 
 function portfolioFundsState(
   state: AsyncState<FAutoPortfolio>,
+  eodState: AsyncState<S1EodReport>,
 ): AsyncState<SimFunds> {
   if (state.phase !== "live") return state;
-  const marketValue = state.data.total_market_value_twd;
-  const cash = state.data.cash_residual_estimated_twd;
+  const eod = eodState.phase === "live" && eodState.data.found ? eodState.data : null;
+  const marketValue = eod?.totalMarketValueTwd ?? state.data.total_market_value_twd;
+  const cash = eod?.cashResidual ?? state.data.cash_residual_estimated_twd;
   return {
     phase: "live",
     data: {
@@ -131,16 +143,19 @@ function portfolioFundsState(
 function FAutoSummary({
   portfolio,
   status,
+  eod,
 }: {
   portfolio: AsyncState<FAutoPortfolio>;
   status: AsyncState<S1SimStatus>;
+  eod: AsyncState<S1EodReport>;
 }) {
   const data = portfolio.phase === "live" ? portfolio.data : null;
   const statusData = status.phase === "live" ? status.data : null;
+  const eodData = eod.phase === "live" && eod.data.found ? eod.data : null;
   const capital = data?.capital_twd ?? statusData?.configuredCapitalTwd ?? null;
-  const marketValue = data?.total_market_value_twd ?? statusData?.eodMarketValueTwd ?? null;
-  const cash = data?.cash_residual_estimated_twd ?? (capital != null && marketValue != null ? capital - marketValue : null);
-  const pnl = data?.total_unrealized_pnl_twd ?? statusData?.eodUnrealizedPnlTwd ?? null;
+  const marketValue = eodData?.totalMarketValueTwd ?? data?.total_market_value_twd ?? statusData?.eodMarketValueTwd ?? null;
+  const cash = eodData?.cashResidual ?? data?.cash_residual_estimated_twd ?? (capital != null && marketValue != null ? capital - marketValue : null);
+  const pnl = eodData?.totalUnrealizedPnlTwd ?? data?.total_unrealized_pnl_twd ?? statusData?.eodUnrealizedPnlTwd ?? null;
   const pnlPct = capital && pnl != null ? (pnl / capital) * 100 : null;
   const positionCount = data?.positions.length ?? statusData?.eodPositionCount ?? 0;
 
@@ -165,7 +180,7 @@ function FAutoSummary({
         <div><span>持倉市值</span><strong>{fmtTwd(marketValue)}</strong><small>{positionCount} 檔持倉</small></div>
         <div><span>現金餘額</span><strong>{fmtTwd(cash)}</strong><small>估值後可用餘額</small></div>
         <div className={pnlClass(pnl)}><span>未實現損益</span><strong>{fmtTwd(pnl)}</strong><small>{pnlPct == null ? "--" : `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`}</small></div>
-        <div><span>部位日期</span><strong>{data?.positions_date ?? statusData?.lastEodDate?.slice(0, 10) ?? "--"}</strong><small>{data?.data_source ?? statusData?.eodDataSource ?? "--"}</small></div>
+        <div><span>部位日期</span><strong>{eodData?.date ?? data?.positions_date ?? statusData?.lastEodDate?.slice(0, 10) ?? "--"}</strong><small>{eodData?.dataSource ?? data?.data_source ?? statusData?.eodDataSource ?? "--"}</small></div>
       </div>
     </section>
   );
@@ -681,8 +696,10 @@ export function FAutoSimPanel() {
 
   // S1 read-only endpoints. If prod is between deploys, 404/501 becomes a visible pending state.
   const s1StatusState = useFetch(getS1SimStatus, false);
-  const positionsState = portfolioPositionsState(portfolioState);
-  const fundsState = portfolioFundsState(portfolioState);
+  const [eodState, setEodState] = useState<AsyncState<S1EodReport>>({ phase: "pending_backend" });
+  const [basketState, setBasketState] = useState<AsyncState<S1Basket>>({ phase: "pending_backend" });
+  const positionsState = portfolioPositionsState(portfolioState, eodState);
+  const fundsState = portfolioFundsState(portfolioState, eodState);
   const portfolioSource = portfolioState.phase === "live"
     ? `${portfolioState.data.data_source} / ${portfolioState.data.positions_date}`
     : null;
@@ -691,8 +708,6 @@ export function FAutoSimPanel() {
     : s1StatusState.phase === "live" && s1StatusState.data.lastSignalDate
       ? s1StatusState.data.lastSignalDate
       : selectedDate;
-  const [eodState, setEodState] = useState<AsyncState<S1EodReport>>({ phase: "pending_backend" });
-  const [basketState, setBasketState] = useState<AsyncState<S1Basket>>({ phase: "pending_backend" });
 
   // EOD follows the selected review date; the basket follows the latest persisted S1 position date.
   useEffect(() => {
@@ -746,7 +761,7 @@ export function FAutoSimPanel() {
         <DateSelector selected={dateOffset} onChange={setDateOffset} />
       </div>
 
-      <FAutoSummary portfolio={portfolioState} status={s1StatusState} />
+      <FAutoSummary portfolio={portfolioState} status={s1StatusState} eod={eodState} />
 
       {/* Main grid */}
       <div className="_fauto-grid">
