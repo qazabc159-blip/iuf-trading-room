@@ -5,6 +5,8 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { enrichHeatmapTiles, type MisTileEntry } from "../kgi-heatmap-enricher.js";
 import type { KgiHeatmapTile } from "../kgi-subscription-manager.js";
@@ -80,4 +82,23 @@ test("getTwseIndustryHeatmap serves last-good tiles on transient upstream outage
 
   _resetTwseHeatmapCache();
   _resetStockDayAllCache();
+});
+
+test("PERF: fetchKgiLatestTick short-circuits when the gateway is scheduled off", () => {
+  // 6/15 15:13: /heatmap/kgi-core (40 parallel symbols) and /overview/kgi
+  // burned ~3.5s per request because fetchKgiLatestTick had no scheduled-off
+  // guard — every off-hours call waited the full 3s gateway timeout. The guard
+  // must run before the fetch so the enricher/overview fall through to MIS/EOD.
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/kgi-subscription-manager.ts"), "utf8");
+  const fnStart = src.indexOf("async function fetchKgiLatestTick");
+  assert.ok(fnStart >= 0, "fetchKgiLatestTick must exist");
+  // Slice to the next top-level declaration so we capture the whole function.
+  const rel = src.slice(fnStart + 1).search(/\n(?:async )?function /);
+  const fnBody = src.slice(fnStart, rel >= 0 ? fnStart + 1 + rel : undefined);
+  const guardIdx = fnBody.indexOf("isKgiGatewayScheduledOff");
+  const fetchIdx = fnBody.indexOf("await fetch(");
+  assert.ok(guardIdx >= 0, "fetchKgiLatestTick must consult isKgiGatewayScheduledOff");
+  assert.ok(fetchIdx >= 0, "fetchKgiLatestTick must still call the gateway during a live session");
+  assert.ok(guardIdx < fetchIdx, "the scheduled-off guard must run before the gateway fetch");
+  assert.match(fnBody, /if \(isKgiGatewayScheduledOff\(\)\) return nullTickSnapshot\(symbol\)/);
 });
