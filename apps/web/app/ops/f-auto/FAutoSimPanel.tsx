@@ -549,6 +549,22 @@ function EodReportPanel({
 }
 
 function SmokeHistoryPanel({ state }: { state: AsyncState<DailySmokeHistory> }) {
+  const statusLabel = (status: string | null | undefined) => {
+    if (status === "pass") return "通過";
+    if (status === "fail") return "未通過";
+    if (status === "partial") return "部分通過";
+    if (status === "skip") return "跳過";
+    return "待執行";
+  };
+  const statusClass = (status: string | null | undefined) =>
+    status === "pass"
+      ? "_fauto-green"
+      : status === "partial"
+        ? "_fauto-amber"
+        : status === "fail"
+          ? "_fauto-red"
+          : "";
+
   return (
     <div className="_fauto-panel">
       <div className="_fauto-panel-head">
@@ -570,8 +586,8 @@ function SmokeHistoryPanel({ state }: { state: AsyncState<DailySmokeHistory> }) 
               </div>
               <div className="_fauto-kv-row">
                 <span className="_fauto-kv-label">最近結果</span>
-                <span className={`_fauto-kv-value ${state.data.lastRunStatus === "pass" ? "_fauto-green" : "_fauto-red"}`}>
-                  {state.data.lastRunStatus ?? "--"}
+                <span className={`_fauto-kv-value ${statusClass(state.data.lastRunStatus)}`}>
+                  {statusLabel(state.data.lastRunStatus)}
                 </span>
               </div>
               <div className="_fauto-kv-row">
@@ -598,10 +614,10 @@ function SmokeHistoryPanel({ state }: { state: AsyncState<DailySmokeHistory> }) 
                 <tbody>
                   {state.data.history.map((entry) => (
                     <tr key={entry.date}>
-                      <td className="_fauto-ts">{entry.date}</td>
+                      <td className="_fauto-ts">{entry.date === "--" ? "--" : fmtDatetime(entry.date)}</td>
                       <td>
-                        <span className={`_fauto-smoke-badge ${entry.status === "pass" ? "_fauto-smoke-pass" : entry.status === "fail" ? "_fauto-smoke-fail" : "_fauto-smoke-skip"}`}>
-                          {entry.status === "pass" ? "通過" : entry.status === "fail" ? "失敗" : entry.status === "pending" ? "待執行" : "跳過"}
+                        <span className={`_fauto-smoke-badge ${entry.status === "pass" ? "_fauto-smoke-pass" : entry.status === "fail" ? "_fauto-smoke-fail" : entry.status === "partial" ? "_fauto-smoke-partial" : "_fauto-smoke-skip"}`}>
+                          {statusLabel(entry.status)}
                         </span>
                       </td>
                       <td className="_fauto-tbl-r">
@@ -1004,6 +1020,7 @@ const FAUTO_CSS = `
 ._fauto-side-sell { color: #4adb88; font-weight: 700; }
 ._fauto-green { color: #4adb88; }
 ._fauto-red   { color: #ff6b77; }
+._fauto-amber { color: #f4bd55; }
 
 /* Order status badges */
 ._fauto-ord-status {
@@ -1030,6 +1047,7 @@ const FAUTO_CSS = `
 }
 ._fauto-smoke-pass { background: rgba(46,204,113,0.10); color: #4adb88; }
 ._fauto-smoke-fail { background: rgba(230,57,70,0.10);  color: #ff6b77; }
+._fauto-smoke-partial { background: rgba(244,189,85,0.10); color: #f4bd55; }
 ._fauto-smoke-skip { background: rgba(145,160,181,0.08); color: #91a0b5; }
 
 /* Basket chips */

@@ -211,7 +211,7 @@ export type KgiSimBalance = {
 
 export type DailySmokeEntry = {
   date: string;
-  status: "pass" | "fail" | "skip" | "pending";
+  status: "pass" | "fail" | "partial" | "skip" | "pending";
   lastProdBrokerAuditCount?: number;
   note?: string | null;
 };
@@ -221,6 +221,27 @@ export type DailySmokeHistory = {
   lastRunAt?: string | null;
   lastProdBrokerAuditCount?: number;
   history: DailySmokeEntry[];
+};
+
+type DailySmokeHistoryRaw = {
+  lastRunStatus?: string | null;
+  lastRunAt?: string | null;
+  lastProdBrokerAuditCount?: number;
+  history?: Array<{
+    firedAt?: string | null;
+    overallStatus?: string | null;
+    prodBrokerAuditCount?: number | null;
+    quoteCheck?: {
+      gatewayReachable?: boolean;
+      loggedIn?: boolean;
+      subscribed?: boolean;
+      tickReceived?: boolean;
+      error?: string | null;
+    } | null;
+    tradeCheck?: {
+      error?: string | null;
+    } | null;
+  }>;
 };
 
 // S1 pipeline — read-only observation endpoints
@@ -501,7 +522,47 @@ export async function getKgiSimBalance() {
 
 /** GET /api/v1/internal/kgi/sim/daily-smoke-status — 7-day smoke ring buffer (Owner-only) */
 export async function getDailySmokeHistory() {
-  return apiFetch<DailySmokeHistory>("/api/v1/internal/kgi/sim/daily-smoke-status");
+  const result = await apiFetch<DailySmokeHistoryRaw>("/api/v1/internal/kgi/sim/daily-smoke-status");
+  if (!result.ok) return result;
+  return {
+    ok: true as const,
+    data: {
+      lastRunStatus: result.data.lastRunStatus ?? null,
+      lastRunAt: result.data.lastRunAt ?? null,
+      lastProdBrokerAuditCount: result.data.lastProdBrokerAuditCount,
+      history: (result.data.history ?? []).map((entry) => {
+        const rawStatus = String(entry.overallStatus ?? "pending").toLowerCase();
+        const status: DailySmokeEntry["status"] =
+          rawStatus === "pass" || rawStatus === "fail" || rawStatus === "partial" || rawStatus === "skip"
+            ? rawStatus
+            : "pending";
+        const quote = entry.quoteCheck;
+        const quoteState = quote
+          ? [
+              quote.gatewayReachable ? "gateway 可連" : "gateway 不可連",
+              quote.loggedIn ? "已登入" : "未登入",
+              quote.subscribed ? "行情已訂閱" : "行情未訂閱",
+              quote.tickReceived ? "已收到 tick" : "未收到 tick",
+            ].join(" / ")
+          : null;
+        const rawError = entry.quoteCheck?.error ?? entry.tradeCheck?.error ?? null;
+        const friendlyError =
+          rawError?.includes("KGI_QUOTE_AUTH_UNAVAILABLE")
+            ? "登入成功，但 KGI 行情 token 不可用；本次未取得行情 tick。"
+            : rawError?.includes("gateway_unreachable")
+              ? "KGI gateway 無法連線；本次健診未執行行情訂閱。"
+              : rawError
+                ? "健診未通過；詳細技術原因保留於後端稽核紀錄。"
+                : null;
+        return {
+          date: entry.firedAt ?? "--",
+          status,
+          lastProdBrokerAuditCount: entry.prodBrokerAuditCount ?? undefined,
+          note: friendlyError ?? quoteState,
+        };
+      }),
+    } satisfies DailySmokeHistory,
+  };
 }
 
 // ── F-AUTO 持倉（B3：交易室跨日可見） ─────────────────────────────────────────
