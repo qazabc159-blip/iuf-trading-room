@@ -15927,6 +15927,20 @@ test("OTC-INDEX-POSTCLOSE: overview backfills today's 櫃買 index from MIS when
   assert.ok(otcBackfills.length >= 2, `expected >=2 otc_o00 backfill sites, got ${otcBackfills.length}`);
 });
 
+test("DAILY-SMOKE-AUTH-EXPECTED: KGI quote-auth-unavailable degrades to partial, not a daily critical fail", () => {
+  // 6/12-6/14: R13 paged critical every day because the smoke set
+  // overallStatus=fail whenever KGI quote subscribe returned
+  // KGI_QUOTE_AUTH_UNAVAILABLE — a known, accepted condition (product realtime
+  // is TWSE MIS; KGI quote auth is intentionally off). That expected case must
+  // degrade to partial so R13 (fires only on "fail") stops the daily noise.
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/broker/kgi-sim-env.ts"), "utf8");
+  assert.match(src, /const quoteAuthExpectedOff =/);
+  assert.match(src, /KGI_QUOTE_AUTH_UNAVAILABLE/i);
+  assert.match(src, /const quoteUsable = quotePass \|\| quoteAuthExpectedOff;/);
+  // the old unconditional "!quotePass → fail" branch must be gone
+  assert.match(src, /else if \(!quoteUsable \|\| !tradePass \|\| !auditClean\)/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 
