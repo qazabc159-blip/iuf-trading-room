@@ -15891,6 +15891,18 @@ test("MIS-INTRADAY-FALLBACK: realtime MIS fetch must fall back to bid/ask when z
   assert.doesNotMatch(serverSource, /if \(!zRaw \|\| zRaw === "-" \|\| zRaw\.trim\(\) === ""\) return null;/);
 });
 
+test("POST-CLOSE-MIS: today-dated MIS snapshot off-hours is served as the close, not dropped to last week's EOD", () => {
+  // 6/15 15:13 repro: post-close, MIS still returns the day's final snapshot
+  // (z=2375, d=20260615, t=13:30) but the old gate `!_isTwseLiveSessionNow()`
+  // threw it away, dropping /quote to the previous official EOD — which still
+  // served 6/12 because TWSE STOCK_DAY_ALL had not published 6/15. The gate
+  // must only reject a stale (non-today) MIS date; today off-hours = CLOSE.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /if \(!_isTodayMisTradeDate\(tradeDate\)\) return null;/);
+  assert.doesNotMatch(serverSource, /if \(!_isTwseLiveSessionNow\(\) \|\| !_isTodayMisTradeDate\(tradeDate\)\) return null;/);
+  assert.match(serverSource, /state: liveNow \? "LIVE" : "CLOSE", freshness: liveNow \? "fresh" : "stale"/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 
