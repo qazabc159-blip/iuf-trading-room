@@ -15914,6 +15914,19 @@ test("MIS-PREFIX-FALLBACK: quote retries the other exchange when company.market 
   assert.match(serverSource, /\(await _misFetchForExchange\(sym, primary\)\) \?\? \(await _misFetchForExchange\(sym, fallback\)\)/);
 });
 
+test("OTC-INDEX-POSTCLOSE: overview backfills today's 櫃買 index from MIS when EOD has none", () => {
+  // 6/15 22:xx full-site sweep: overview/twse off-hours returned otc=null. The
+  // EOD chain has no OTC index source, but MIS otc_o00 keeps today's close
+  // (verified z=429.37 d=20260615). Both overview endpoints must backfill it so
+  // the homepage OTC index is not blank after close.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /async function _misIndexTodayFetch\(/);
+  assert.match(serverSource, /ex_ch=\$\{exCh\}\.tw/);
+  // both overview/twse and overview/kgi EOD branches backfill via the helper
+  const otcBackfills = serverSource.match(/_misIndexTodayFetch\("otc_o00"\)/g) ?? [];
+  assert.ok(otcBackfills.length >= 2, `expected >=2 otc_o00 backfill sites, got ${otcBackfills.length}`);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 
