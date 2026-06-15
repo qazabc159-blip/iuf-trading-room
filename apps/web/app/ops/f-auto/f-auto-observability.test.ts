@@ -21,6 +21,16 @@ describe("F-AUTO S1 product observability", () => {
     expect(panelSource).toContain("已送出 / 成交待確認");
   });
 
+  it("normalizes daily smoke diagnostics into actionable product copy", () => {
+    expect(apiSource).toContain("entry.overallStatus");
+    expect(apiSource).toContain("entry.firedAt");
+    expect(apiSource).toContain("entry.prodBrokerAuditCount");
+    expect(apiSource).toContain("登入成功，但 KGI 行情 token 不可用");
+    expect(apiSource).toContain("KGI gateway 無法連線");
+    expect(panelSource).toContain('if (status === "partial") return "部分通過"');
+    expect(panelSource).toContain('fmtDatetime(entry.date)');
+  });
+
   it("gives owners a primary navigation entry", () => {
     expect(sidebarSource).toContain("OWNER_NAV");
     expect(sidebarSource).toContain('path: "/ops/f-auto"');
