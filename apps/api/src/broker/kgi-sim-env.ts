@@ -973,16 +973,33 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
     console.log("[kgi-sim-daily-smoke] trade smoke skipped: dual-confirm not provided");
   }
 
-  // Compute overall status
+  // Compute overall status.
+  // KGI quote auth is intentionally NOT enabled on this account — product
+  // realtime runs on TWSE MIS, not KGI quote (owner ruling, Track B declined).
+  // A KGI_QUOTE_AUTH_UNAVAILABLE subscribe failure is therefore expected and
+  // must NOT fail the daily smoke: doing so paged R13 critical every single day
+  // (6/12-6/14 observed) for a known, accepted condition. The smoke's real
+  // subject is the SIM trade path + the no-real-order audit. A genuinely broken
+  // gateway / login still fails (different error, not auth-unavailable).
   const quotePass = quoteResult.gatewayReachable && quoteResult.loggedIn && quoteResult.subscribed && quoteResult.tickReceived;
+  const quoteAuthExpectedOff =
+    quoteResult.gatewayReachable &&
+    quoteResult.loggedIn &&
+    !quoteResult.subscribed &&
+    typeof quoteResult.error === "string" &&
+    /KGI_QUOTE_AUTH_UNAVAILABLE/i.test(quoteResult.error);
+  const quoteUsable = quotePass || quoteAuthExpectedOff;
   const tradePass = tradeCheck === null || ["accepted", "not_enabled"].includes(tradeCheck.orderOutcome);
   const auditClean = prodBrokerAuditCount === 0;
   let overallStatus: DailySmokeHistoryEntry["overallStatus"];
   if (quotePass && tradePass && auditClean) {
     overallStatus = "pass";
-  } else if (!quotePass) {
+  } else if (!quoteUsable || !tradePass || !auditClean) {
+    // genuinely broken gateway/login, a rejected trade, or a real-order audit hit
     overallStatus = "fail";
   } else {
+    // gateway + login OK, trade OK, audit clean — only the expectedly-off quote
+    // auth is degraded → partial, not a daily critical page.
     overallStatus = "partial";
   }
 
