@@ -5,6 +5,7 @@
  *   live     — 綠色脈衝圓點 + "即時"
  *   intraday — 藍色靜態圓點 + "盤中"（TWSE MIS 近即時，<= 15s 延遲）
  *   stale    — 灰色警示三角 + "略舊"（age > 2s，不假裝 live）
+ *   close    — 青色圓點 + "今日收盤"（盤後 MIS 當日完整收盤，非昨收、非盤中）
  *   eod      — 橘色方塊 + "昨收"（EOD/盤後資料）
  *
  * 用法：
@@ -90,6 +91,18 @@ const BADGE_CSS = `
   flex-shrink: 0;
 }
 
+/* close — 青色/今日收盤（已收盤但為當日完整收盤價，非昨收、非盤中） */
+._fb-badge--close {
+  border: 1px solid rgba(96,200,180,0.42);
+  background: rgba(96,200,180,0.07);
+  color: #54bda9;
+}
+._fb-dot-close {
+  width: 5px; height: 5px;
+  background: #54bda9;
+  flex-shrink: 0;
+}
+
 ._fb-age {
   opacity: 0.65;
   font-size: 9px;
@@ -155,6 +168,17 @@ export function FreshnessBadge({ mode, ageMs, compact, testId }: FreshnessBadgeP
           <span className="_fb-icon-stale">▲</span>
           {!compact && "略舊"}
           {!compact && ageStr && <span className="_fb-age">{ageStr}</span>}
+        </span>
+      )}
+
+      {mode === "close" && (
+        <span
+          className="_fb-badge _fb-badge--close"
+          aria-label="今日收盤"
+          data-testid={testId ?? "freshness-badge-close"}
+        >
+          <span className="_fb-dot-close" />
+          {!compact && "今日收盤"}
         </span>
       )}
 
