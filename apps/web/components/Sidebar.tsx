@@ -60,6 +60,16 @@ const NAV: NavItem[] = [
   },
 ];
 
+const OWNER_NAV: NavItem[] = [
+  {
+    path: "/ops/f-auto",
+    title: "F-AUTO SIM",
+    sub: "S1 持倉 / 損益",
+    Icon: Radio,
+    activePaths: ["/ops/f-auto"],
+  },
+];
+
 const INTERNAL_NAV: NavItem[] = [
   { path: "/admin/brain/llm", title: "Brain", sub: "AI 費用與模型", Icon: Brain, activePaths: ["/admin/brain"] },
   { path: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork, activePaths: ["/admin/events"] },
@@ -67,7 +77,6 @@ const INTERNAL_NAV: NavItem[] = [
   { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
   { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
   { path: "/admin/strategies", title: "Strategies", sub: "策略治理", Icon: BarChart3, activePaths: ["/admin/strategies"] },
-  { path: "/ops/f-auto", title: "F-AUTO SIM", sub: "KGI SIM / S1", Icon: Radio, activePaths: ["/ops/f-auto"] },
 ];
 
 function pathMatches(pathname: string, path: string) {
@@ -111,6 +120,7 @@ export function Sidebar() {
   }
 
   const isOwner = userRole === "Owner";
+  const primaryNav = isOwner ? [...NAV, ...OWNER_NAV] : NAV;
   const internalActive = INTERNAL_NAV.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
 
   return (
@@ -129,7 +139,7 @@ export function Sidebar() {
       </div>
 
       <nav ref={navRef} className="tac-nav" aria-label="主要導覽">
-        {NAV.map((item) => {
+        {primaryNav.map((item) => {
           const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
           const Icon = item.Icon;
           return (

@@ -13,10 +13,10 @@
  *   7. Daily smoke    — GET /api/v1/internal/kgi/sim/daily-smoke-status
  */
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  getSimPositions,
-  getSimFunds,
+  getFAutoPortfolio,
   getKgiSimOrders,
   getDailySmokeHistory,
   getS1SimStatus,
@@ -26,6 +26,7 @@ import {
   fmtDatetime,
   type SimPosition,
   type SimFunds,
+  type FAutoPortfolio,
   type KgiSimRawOrderItem,
   type DailySmokeHistory,
   type S1SimStatus,
@@ -89,15 +90,102 @@ function toTpeDate(offset = 0): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }); // YYYY-MM-DD
 }
 
+function portfolioPositionsState(
+  state: AsyncState<FAutoPortfolio>,
+): AsyncState<SimPosition[]> {
+  if (state.phase !== "live") return state;
+  const positions = state.data.positions.map((position) => ({
+    symbol: position.symbol,
+    qty: position.shares,
+    avgCost: position.avg_cost,
+    unrealizedPnl: position.unrealized_pnl_twd,
+    lastPrice: position.last_price,
+    marketValue:
+      position.market_value_twd ??
+      (position.last_price == null ? null : position.last_price * position.shares),
+    note: state.data.data_source,
+  }));
+  return positions.length > 0 ? { phase: "live", data: positions } : { phase: "empty" };
+}
+
+function portfolioFundsState(
+  state: AsyncState<FAutoPortfolio>,
+): AsyncState<SimFunds> {
+  if (state.phase !== "live") return state;
+  const marketValue = state.data.total_market_value_twd;
+  const cash = state.data.cash_residual_estimated_twd;
+  return {
+    phase: "live",
+    data: {
+      cashBalance: cash,
+      availableFunds: cash,
+      totalMarketValue: marketValue,
+      totalEquity: marketValue == null ? null : marketValue + cash,
+      currency: "TWD",
+      fetchedAt: state.data.as_of,
+      note: `持久化 S1 部位 / ${state.data.data_source} / 部位日 ${state.data.positions_date}`,
+    },
+  };
+}
+
+function FAutoSummary({
+  portfolio,
+  status,
+}: {
+  portfolio: AsyncState<FAutoPortfolio>;
+  status: AsyncState<S1SimStatus>;
+}) {
+  const data = portfolio.phase === "live" ? portfolio.data : null;
+  const statusData = status.phase === "live" ? status.data : null;
+  const capital = data?.capital_twd ?? statusData?.configuredCapitalTwd ?? null;
+  const marketValue = data?.total_market_value_twd ?? statusData?.eodMarketValueTwd ?? null;
+  const cash = data?.cash_residual_estimated_twd ?? (capital != null && marketValue != null ? capital - marketValue : null);
+  const pnl = data?.total_unrealized_pnl_twd ?? statusData?.eodUnrealizedPnlTwd ?? null;
+  const pnlPct = capital && pnl != null ? (pnl / capital) * 100 : null;
+  const positionCount = data?.positions.length ?? statusData?.eodPositionCount ?? 0;
+
+  return (
+    <section className="_fauto-summary" aria-label="S1 F-AUTO 資產總覽">
+      <div className="_fauto-summary-head">
+        <div>
+          <span className="_fauto-summary-kicker">S1 / F-AUTO / KGI SIM</span>
+          <h2>自動交易觀察總覽</h2>
+          <p>
+            顯示 S1 runner 的持久化部位、收盤估值與稽核委託。休市或 gateway 暫停時仍保留最後可信狀態，
+            不把查不到即時券商資料誤顯示成零持倉。
+          </p>
+        </div>
+        <div className="_fauto-summary-actions">
+          <Link href="/quant-strategies">策略規則</Link>
+          <Link href="/reviews">每週復盤</Link>
+        </div>
+      </div>
+      <div className="_fauto-summary-grid">
+        <div><span>配置資金</span><strong>{fmtTwd(capital)}</strong><small>{data?.capital_source ?? statusData?.capitalSource ?? "--"}</small></div>
+        <div><span>持倉市值</span><strong>{fmtTwd(marketValue)}</strong><small>{positionCount} 檔持倉</small></div>
+        <div><span>現金餘額</span><strong>{fmtTwd(cash)}</strong><small>估值後可用餘額</small></div>
+        <div className={pnlClass(pnl)}><span>未實現損益</span><strong>{fmtTwd(pnl)}</strong><small>{pnlPct == null ? "--" : `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`}</small></div>
+        <div><span>部位日期</span><strong>{data?.positions_date ?? statusData?.lastEodDate?.slice(0, 10) ?? "--"}</strong><small>{data?.data_source ?? statusData?.eodDataSource ?? "--"}</small></div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Sub-panels ───────────────────────────────────────────────────────────────
 
-function SimPositionsPanel({ state }: { state: AsyncState<SimPosition[]> }) {
+function SimPositionsPanel({
+  state,
+  source,
+}: {
+  state: AsyncState<SimPosition[]>;
+  source: string | null;
+}) {
   return (
     <div className="_fauto-panel">
       <div className="_fauto-panel-head">
         <span className="_fauto-panel-code">SIM-POS</span>
-        <span className="_fauto-panel-title">SIM 部位</span>
-        <span className="_fauto-panel-sub">KGI SIM 重建倉位</span>
+        <span className="_fauto-panel-title">S1 SIM 持倉</span>
+        <span className="_fauto-panel-sub">{source ?? "持久化部位"}</span>
       </div>
       <div className="_fauto-panel-body">
         {state.phase === "loading" && <PanelLoading />}
@@ -142,8 +230,8 @@ function SimFundsPanel({ state }: { state: AsyncState<SimFunds> }) {
     <div className="_fauto-panel">
       <div className="_fauto-panel-head">
         <span className="_fauto-panel-code">SIM-FUND</span>
-        <span className="_fauto-panel-title">SIM 資金</span>
-        <span className="_fauto-panel-sub">KGI SIM 重建餘額</span>
+        <span className="_fauto-panel-title">S1 SIM 資金</span>
+        <span className="_fauto-panel-sub">配置資金 / 部位估值</span>
       </div>
       <div className="_fauto-panel-body">
         {state.phase === "loading" && <PanelLoading />}
@@ -322,13 +410,13 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimRawOrderItem[]> }) 
     <div className="_fauto-panel">
       <div className="_fauto-panel-head">
         <span className="_fauto-panel-code">SIM-ORD</span>
-        <span className="_fauto-panel-title">當日委託 / 成交</span>
-        <span className="_fauto-panel-sub">KGI SIM 委託歷程</span>
+        <span className="_fauto-panel-title">委託 / 成交確認</span>
+        <span className="_fauto-panel-sub">KGI SIM 稽核歷程</span>
       </div>
       <div className="_fauto-panel-body">
         {state.phase === "loading" && <PanelLoading />}
         {state.phase === "error" && <PanelError message={state.message} />}
-        {state.phase === "empty" && <PanelEmpty label="今日尚無委託" />}
+        {state.phase === "empty" && <PanelEmpty label="尚無 S1 委託稽核紀錄" />}
         {state.phase === "pending_backend" && <PanelPending label="委託記錄" />}
         {state.phase === "live" && (
           <table className="_fauto-tbl">
@@ -548,7 +636,7 @@ function pnlClass(value: number | null | undefined): string {
 function orderStatusLabel(status: string): string {
   const s = status.toUpperCase();
   if (s === "FILLED") return "已成交";
-  if (s === "ACCEPTED" || s === "CONFIRMED") return "已接受";
+  if (s === "ACCEPTED" || s === "CONFIRMED") return "已送出 / 成交待確認";
   if (s === "PENDING") return "處理中";
   if (s === "REJECTED") return "已拒絕";
   if (s === "CANCELLED") return "已取消";
@@ -587,21 +675,29 @@ export function FAutoSimPanel() {
   const [dateOffset, setDateOffset] = useState(0);
   const selectedDate = toTpeDate(dateOffset);
 
-  const posState = useFetch(getSimPositions);
-  const fundsState = useFetch(getSimFunds);
+  const portfolioState = useFetch(getFAutoPortfolio);
   const ordersState = useFetch(getKgiSimOrders);
   const smokeState = useFetch(getDailySmokeHistory);
 
   // S1 read-only endpoints. If prod is between deploys, 404/501 becomes a visible pending state.
   const s1StatusState = useFetch(getS1SimStatus, false);
+  const positionsState = portfolioPositionsState(portfolioState);
+  const fundsState = portfolioFundsState(portfolioState);
+  const portfolioSource = portfolioState.phase === "live"
+    ? `${portfolioState.data.data_source} / ${portfolioState.data.positions_date}`
+    : null;
+  const basketDate = portfolioState.phase === "live"
+    ? portfolioState.data.positions_date
+    : s1StatusState.phase === "live" && s1StatusState.data.lastSignalDate
+      ? s1StatusState.data.lastSignalDate
+      : selectedDate;
   const [eodState, setEodState] = useState<AsyncState<S1EodReport>>({ phase: "pending_backend" });
   const [basketState, setBasketState] = useState<AsyncState<S1Basket>>({ phase: "pending_backend" });
 
-  // Reload S1 basket and EOD when date changes.
+  // EOD follows the selected review date; the basket follows the latest persisted S1 position date.
   useEffect(() => {
     let cancelled = false;
     setEodState({ phase: "loading" });
-    setBasketState({ phase: "loading" });
     getS1SimEodReport(selectedDate).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
@@ -616,7 +712,13 @@ export function FAutoSimPanel() {
       }
       setEodState({ phase: "live", data: result.data });
     });
-    getS1SimBasket(selectedDate).then((result) => {
+    return () => { cancelled = true; };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBasketState({ phase: "loading" });
+    getS1SimBasket(basketDate).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 404 || result.status === 501) {
@@ -631,7 +733,7 @@ export function FAutoSimPanel() {
       setBasketState({ phase: "live", data: result.data });
     });
     return () => { cancelled = true; };
-  }, [selectedDate]);
+  }, [basketDate]);
 
   return (
     <div className="_fauto-root">
@@ -644,13 +746,15 @@ export function FAutoSimPanel() {
         <DateSelector selected={dateOffset} onChange={setDateOffset} />
       </div>
 
+      <FAutoSummary portfolio={portfolioState} status={s1StatusState} />
+
       {/* Main grid */}
       <div className="_fauto-grid">
-        <SimPositionsPanel state={posState} />
+        <SimPositionsPanel state={positionsState} source={portfolioSource} />
         <SimFundsPanel state={fundsState} />
         <S1StatusPanel state={s1StatusState} />
         <SimOrdersPanel state={ordersState} />
-        <BasketPanel state={basketState} date={selectedDate} />
+        <BasketPanel state={basketState} date={basketDate} />
         <EodReportPanel state={eodState} date={selectedDate} />
         <SmokeHistoryPanel state={smokeState} />
       </div>
@@ -671,6 +775,90 @@ const FAUTO_CSS = `
   gap: 16px;
   margin-bottom: 20px;
   flex-wrap: wrap;
+}
+
+._fauto-summary {
+  border: 1px solid rgba(200,148,63,0.34);
+  border-radius: 6px;
+  background: rgba(8,11,16,0.82);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+._fauto-summary-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(220,228,240,0.09);
+}
+._fauto-summary-kicker {
+  display: block;
+  color: #c8943f;
+  font: 800 10px/1 var(--mono, monospace);
+  letter-spacing: 0.1em;
+  margin-bottom: 7px;
+}
+._fauto-summary h2 {
+  color: #eef2f7;
+  font-size: 20px;
+  margin: 0 0 6px;
+}
+._fauto-summary p {
+  color: rgba(180,193,211,0.72);
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0;
+  max-width: 760px;
+}
+._fauto-summary-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+._fauto-summary-actions a {
+  border: 1px solid rgba(200,148,63,0.36);
+  border-radius: 4px;
+  color: #e2b85c;
+  font: 800 11px/1 var(--mono, monospace);
+  padding: 9px 11px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+._fauto-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+._fauto-summary-grid > div {
+  min-width: 0;
+  padding: 14px 16px;
+  border-right: 1px solid rgba(220,228,240,0.08);
+}
+._fauto-summary-grid > div:last-child { border-right: none; }
+._fauto-summary-grid span,
+._fauto-summary-grid small {
+  display: block;
+  color: rgba(145,160,181,0.66);
+  font: 700 10px/1.4 var(--mono, monospace);
+}
+._fauto-summary-grid strong {
+  display: block;
+  color: #e7ecf3;
+  font: 800 18px/1.2 var(--mono, monospace);
+  margin: 6px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+._fauto-summary-grid ._fauto-green strong,
+._fauto-summary-grid ._fauto-green small { color: #56d99b; }
+._fauto-summary-grid ._fauto-red strong,
+._fauto-summary-grid ._fauto-red small { color: #ff6b77; }
+@media (max-width: 1100px) {
+  ._fauto-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  ._fauto-summary-grid > div { border-bottom: 1px solid rgba(220,228,240,0.08); }
+}
+@media (max-width: 680px) {
+  ._fauto-summary-head { flex-direction: column; }
+  ._fauto-summary-grid { grid-template-columns: 1fr 1fr; }
 }
 
 ._fauto-grid {

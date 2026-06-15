@@ -194,7 +194,10 @@ type KgiSimOrdersRaw =
         action?: string | null;
         qty?: number | null;
         quantity?: number | null;
+        shares?: number | null;
         submitted_at?: string | null;
+        submitted_at_tst?: string | null;
+        trading_date?: string | null;
         trade_id?: string | null;
       }>;
     };
@@ -461,7 +464,10 @@ export async function getKgiSimOrders() {
     Partial<KgiSimRawOrderItem> & {
       action?: string | null;
       quantity?: number | null;
+      shares?: number | null;
       submitted_at?: string | null;
+      submitted_at_tst?: string | null;
+      trading_date?: string | null;
       trade_id?: string | null;
     }
   >;
@@ -470,7 +476,7 @@ export async function getKgiSimOrders() {
     data: rows.map((row, index) => {
       const sideRaw = String(row.side ?? row.action ?? "").toLowerCase();
       const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw.includes("short") ? "sell" : "buy";
-      const qty = Number(row.qty ?? row.quantity ?? row.effectiveQtyShares ?? 0);
+      const qty = Number(row.qty ?? row.quantity ?? row.shares ?? row.effectiveQtyShares ?? 0);
       return {
         tradeId: row.tradeId ?? row.trade_id ?? `kgi-sim-order-${index}`,
         status: String(row.status ?? "unknown"),
@@ -482,7 +488,7 @@ export async function getKgiSimOrders() {
         price: row.price ?? null,
         orderType: row.orderType === "limit" ? "limit" : "market",
         isOddLot: row.isOddLot === true,
-        submittedAt: row.submittedAt ?? row.submitted_at ?? "",
+        submittedAt: row.submittedAt ?? row.submitted_at_tst ?? row.submitted_at ?? row.trading_date ?? "",
       } satisfies KgiSimRawOrderItem;
     }),
   };
@@ -510,6 +516,7 @@ export type FAutoPortfolio = {
     avg_cost: number;
     last_price: number | null;
     unrealized_pnl_twd: number | null;
+    market_value_twd?: number | null;
   }>;
   positions_date: string;
   data_source: string;
