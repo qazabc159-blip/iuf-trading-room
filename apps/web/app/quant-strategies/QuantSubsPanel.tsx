@@ -145,7 +145,7 @@ export function QuantSubsPanel() {
   return (
     <div style={wrapStyle}>
       <div style={truthNoteStyle} role="status" aria-live="polite">
-        已讀取 {subscriptions.length} 筆後端 audit log。S1 runner 只會使用最新一筆 S1/cont_liq_v36 配置，不會把舊研究策略混入正式產品。
+        已讀取 {subscriptions.length} 筆後端設定紀錄。系統只會套用最新一筆 S1 策略配置，不會把舊研究策略混入正式產品。
       </div>
 
       {failures.map((failure) => (
