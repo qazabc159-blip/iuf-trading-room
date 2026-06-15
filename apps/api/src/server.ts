@@ -9191,7 +9191,8 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     tradeTime: string;
     tradeDate: string;
     source: "twse_intraday";
-    state: "LIVE";
+    state: "LIVE" | "CLOSE";
+    freshness: "fresh" | "stale";
   } | null> {
     try {
       const prefix = _misPrefixForMarket(market);
@@ -9238,9 +9239,17 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const volume = parseNum(msg["v"]); // accumulated trade volume (lots)
       const tradeTime = msg["t"] ?? msg["%"] ?? "";
       const tradeDate = msg["d"] ?? "";
-      if (!_isTwseLiveSessionNow() || !_isTodayMisTradeDate(tradeDate)) return null;
+      // Post-close repair (6/15): MIS keeps the day's final snapshot (z=close,
+      // d=today, t=13:30) available after the session ends. The old gate threw
+      // it away because "now" is not a live session, dropping /quote all the
+      // way back to the previous official EOD — on 6/15 15:13 that still served
+      // 6/12 because TWSE STOCK_DAY_ALL had not published 6/15 yet. Only reject
+      // a stale MIS date (not today); a today-dated snapshot off-hours is the
+      // real session close, not stale.
+      if (!_isTodayMisTradeDate(tradeDate)) return null;
+      const liveNow = _isTwseLiveSessionNow();
 
-      return { lastPrice, open, high, low, prevClose, changePct, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: "LIVE" };
+      return { lastPrice, open, high, low, prevClose, changePct, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: liveNow ? "LIVE" : "CLOSE", freshness: liveNow ? "fresh" : "stale" };
     } catch {
       return null;
     }
@@ -9262,6 +9271,12 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       return `${year}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
     }
     return null;
+  }
+
+  // MIS trade date is Gregorian compact "20260615" → ISO "2026-06-15".
+  function _misCompactDateToIso(raw?: string | null): string | null {
+    const s = String(raw ?? "").trim();
+    return /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;
   }
 
   // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
@@ -9345,11 +9360,12 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
-          freshness: "fresh" as const,
+          freshness: mis.freshness,
           state: mis.state,
           source: mis.source,
           marketSession,
-          note: `mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+          dataDate: _misCompactDateToIso(mis.tradeDate),
+          note: `mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
         }
       });
@@ -9411,12 +9427,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
             bid: mis.bid,
             ask: mis.ask,
             volume: mis.volume,
-            freshness: "fresh" as const,
+            freshness: mis.freshness,
             state: mis.state,
             reason: subscribeBlockReason,
             source: mis.source,
             marketSession,
-            note: `kgi_subscribe_failed:${subscribeBlockReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+            dataDate: _misCompactDateToIso(mis.tradeDate),
+            note: `kgi_subscribe_failed:${subscribeBlockReason} → mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
             updatedAt
           }
         });
@@ -9525,12 +9542,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           bid: mis.bid,
           ask: mis.ask,
           volume: mis.volume,
-          freshness: "fresh" as const,
+          freshness: mis.freshness,
           state: mis.state,
           reason: blockedReason,
           source: mis.source,
           marketSession,
-          note: `kgi_blocked:${blockedReason} → mis_intraday date=${mis.tradeDate} time=${mis.tradeTime}`,
+          dataDate: _misCompactDateToIso(mis.tradeDate),
+          note: `kgi_blocked:${blockedReason} → mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
         }
       });
