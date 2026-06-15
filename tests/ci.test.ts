@@ -16061,7 +16061,12 @@ test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE only aft
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
   assert.match(source, /function _isTwseLiveSessionNow\(\): boolean/);
   assert.match(source, /function _isTodayMisTradeDate\(tradeDate: string\): boolean/);
-  assert.match(source, /if \(!_isTwseLiveSessionNow\(\) \|\| !_isTodayMisTradeDate\(tradeDate\)\) return null/);
+  // Post-close repair (6/15): the gate rejects only a stale (non-today) MIS
+  // date. A today-dated snapshot off-hours is the session close — served as
+  // CLOSE, never as LIVE — so intraday LIVE is still gated by the live session.
+  assert.match(source, /if \(!_isTodayMisTradeDate\(tradeDate\)\) return null;/);
+  assert.match(source, /state: liveNow \? "LIVE" : "CLOSE", freshness: liveNow \? "fresh" : "stale"/);
+  assert.doesNotMatch(source, /if \(!_isTwseLiveSessionNow\(\) \|\| !_isTodayMisTradeDate\(tradeDate\)\) return null/);
 });
 
 test("TWSE-MIS-5: source chain: twse_intraday LIVE takes priority over twse_openapi_eod STALE", () => {
