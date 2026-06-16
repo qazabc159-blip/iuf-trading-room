@@ -197,6 +197,8 @@ class OrderCreateResponse(BaseModel):
     ok: bool
     sim_only: Literal[True]
     status: str
+    trade_id: Optional[str] = None
+    broker_order_id: Optional[str] = None
     kgi_response_repr: Optional[str] = None
     note: Optional[str] = None
 

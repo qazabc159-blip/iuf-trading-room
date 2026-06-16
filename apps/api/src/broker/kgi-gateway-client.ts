@@ -470,6 +470,18 @@ export class KgiGatewayClient {
     return data.deals;
   }
 
+  async getRecentOrderEvents(limit = 100): Promise<KgiOrderEventRaw[]> {
+    const safeLimit = Math.max(1, Math.min(Math.floor(limit), 500));
+    const res = await gatewayFetch(
+      `${this.baseUrl}/events/order/recent?limit=${safeLimit}`,
+      { method: "GET" },
+      this.timeoutMs
+    );
+    if (!res.ok) await classifyError(res, "getRecentOrderEvents");
+    const data = (await res.json()) as { events?: KgiOrderEventRaw[] };
+    return Array.isArray(data.events) ? data.events : [];
+  }
+
   /**
    * GET /position
    * Gateway calls api.Order.get_position() (pandas DataFrame → JSON list).

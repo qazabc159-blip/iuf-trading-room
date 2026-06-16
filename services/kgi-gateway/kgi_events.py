@@ -12,6 +12,8 @@ Source: brokerport_golden_2026-04-23.md §117-123
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from datetime import datetime, timezone
 import json
 import logging
 import threading
@@ -36,6 +38,7 @@ class KgiOrderEventManager:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._event_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=500)
         self._ws_clients: set = set()
+        self._recent_events: deque[dict] = deque(maxlen=500)
         self._attached: bool = False
         self._lock = threading.Lock()
 
@@ -47,6 +50,11 @@ class KgiOrderEventManager:
 
     def unregister_ws_client(self, ws) -> None:
         self._ws_clients.discard(ws)
+
+    def recent_events(self, limit: int = 100) -> list[dict]:
+        safe_limit = max(1, min(limit, 500))
+        with self._lock:
+            return list(self._recent_events)[-safe_limit:]
 
     # ------------------------------------------------------------------
     # Attach listener to api.Order.set_event
@@ -65,6 +73,9 @@ class KgiOrderEventManager:
             """Single-param callback. data is the raw KGI event object."""
             try:
                 event_dict = _order_event_to_dict(data)
+                event_dict["received_at"] = datetime.now(timezone.utc).isoformat()
+                with self._lock:
+                    self._recent_events.append(event_dict)
                 if self._loop and self._loop.is_running():
                     asyncio.run_coroutine_threadsafe(
                         self._event_queue.put(event_dict), self._loop

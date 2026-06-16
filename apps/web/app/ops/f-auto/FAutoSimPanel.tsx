@@ -439,10 +439,11 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimRawOrderItem[]> }) 
               <tr>
                 <th>代碼</th>
                 <th>方向</th>
-                <th className="_fauto-tbl-r">數量</th>
-                <th className="_fauto-tbl-r">價格</th>
+                <th className="_fauto-tbl-r">委託 / 成交</th>
+                <th className="_fauto-tbl-r">成交均價</th>
                 <th>狀態</th>
-                <th className="_fauto-tbl-r">時間</th>
+                <th>確認來源</th>
+                <th className="_fauto-tbl-r">確認時間</th>
               </tr>
             </thead>
             <tbody>
@@ -453,18 +454,24 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimRawOrderItem[]> }) 
                     {ord.side === "buy" ? "買進" : "賣出"}
                   </td>
                   <td className="_fauto-tbl-r">
-                    {ord.effectiveQtyShares.toLocaleString("zh-TW")}
-                    <span className="_fauto-unit">{ord.quantityUnit === "LOT" ? "張" : "股"}</span>
+                    {ord.requestedQty.toLocaleString("zh-TW")} / {ord.filledQty.toLocaleString("zh-TW")}
+                    <span className="_fauto-unit">股</span>
+                    {ord.remainingQty > 0 && (
+                      <span className="_fauto-unit"> 餘 {ord.remainingQty.toLocaleString("zh-TW")}</span>
+                    )}
                   </td>
                   <td className="_fauto-tbl-r">
-                    {ord.price != null ? ord.price.toFixed(2) : "市價"}
+                    {ord.avgFillPrice != null ? ord.avgFillPrice.toFixed(2) : "--"}
                   </td>
                   <td>
                     <span className={`_fauto-ord-status _fauto-ord-${ord.status.toLowerCase()}`}>
                       {orderStatusLabel(ord.status)}
                     </span>
                   </td>
-                  <td className="_fauto-tbl-r _fauto-ts">{fmtDatetime(ord.submittedAt)}</td>
+                  <td className="_fauto-ts">
+                    {ord.settlementConfirmed ? sourceLabel(ord.settlementSource) : "待券商回報"}
+                  </td>
+                  <td className="_fauto-tbl-r _fauto-ts">{fmtDatetime(ord.confirmedAt ?? ord.submittedAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -667,11 +674,21 @@ function pnlClass(value: number | null | undefined): string {
 function orderStatusLabel(status: string): string {
   const s = status.toUpperCase();
   if (s === "FILLED") return "已成交";
+  if (s === "PARTIALLY_FILLED") return "部分成交";
   if (s === "ACCEPTED" || s === "CONFIRMED") return "已送出 / 成交待確認";
+  if (s === "UNCONFIRMED") return "已送出 / 尚未對帳";
   if (s === "PENDING") return "處理中";
   if (s === "REJECTED") return "已拒絕";
   if (s === "CANCELLED") return "已取消";
   return status;
+}
+
+function sourceLabel(source: string | null | undefined): string {
+  if (source === "deal") return "成交明細";
+  if (source === "order_event") return "券商事件";
+  if (source === "trade_report") return "委託回報";
+  if (source === "submission_only") return "送出紀錄";
+  return "--";
 }
 
 // ─── Date selector ────────────────────────────────────────────────────────────
