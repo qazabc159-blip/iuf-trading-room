@@ -15488,6 +15488,31 @@ test("KGI-SIM-UNLOCK-5: kgi-gateway-client classifyError distinguishes NOT_LOGGE
   );
 });
 
+test("KGI-SIM-UNLOCK-6: account read paths can bypass quote uptime guard", () => {
+  const clientSrc = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
+  assert.ok(
+    clientSrc.includes("ignoreScheduleGuard?: boolean"),
+    "KGI-SIM-UNLOCK-6: KgiGatewayClient config must expose ignoreScheduleGuard"
+  );
+  assert.ok(
+    clientSrc.includes("!ignoreScheduleGuard && isKgiGatewayScheduledOff()"),
+    "KGI-SIM-UNLOCK-6: scheduled-off guard must remain active unless explicitly bypassed"
+  );
+  assert.ok(
+    clientSrc.includes("this.ignoreScheduleGuard"),
+    "KGI-SIM-UNLOCK-6: account read methods must pass instance-level bypass flag"
+  );
+});
+
+test("KGI-SIM-UNLOCK-7: SIM positions/orders/funds use account-read bypass, not quote fast-fail", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  const accountReadClientCount = (src.match(/new KgiGatewayClient\(\{ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true \}\)/g) ?? []).length;
+  assert.ok(
+    accountReadClientCount >= 6,
+    "KGI-SIM-UNLOCK-7: KGI SIM account read endpoints must bypass scheduled-off quote guard"
+  );
+});
+
 test("BULK-SEED-1: server.ts registers POST /api/v1/admin/companies/bulk-seed", () => {
   const src = readFileSync("apps/api/src/server.ts", "utf8");
   assert.ok(

@@ -56,6 +56,16 @@ export interface KgiGatewayClientConfig {
   connectTimeoutMs?: number;
 
   /**
+   * Bypass the weekday 08:15-14:20 TST scheduled-off guard.
+   *
+   * Keep this false for quote/UI fast-fallback paths. Use true only for
+   * account read paths (positions/trades/deals/events) where the EC2 gateway
+   * can be manually kept alive after hours and users still need SIM
+   * reconciliation.
+   */
+  ignoreScheduleGuard?: boolean;
+
+  /**
    * Whether to use mTLS cert for gateway connection.
    * Path B W2: cert loading implementation.
    */
@@ -152,13 +162,14 @@ export interface GatewayErrorEnvelope {
 async function gatewayFetch(
   url: string,
   options: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
+  ignoreScheduleGuard = false
 ): Promise<Response> {
   // EventBridge uptime guard: outside the gateway's weekday 08:20-14:10 TST
   // window every connect is dead air — short-circuit so fallback chains fire in
   // milliseconds instead of after 6-11s timeouts (Bruce latency profile 6/11).
   const { isKgiGatewayScheduledOff, noteKgiGatewayAlive, KGI_SCHEDULED_OFF_MESSAGE } = await import("./kgi-gateway-schedule.js");
-  if (isKgiGatewayScheduledOff()) {
+  if (!ignoreScheduleGuard && isKgiGatewayScheduledOff()) {
     throw new KgiGatewayUnreachableError(url, new Error(KGI_SCHEDULED_OFF_MESSAGE));
   }
 
@@ -232,6 +243,7 @@ export class KgiGatewayClient {
   private readonly wsUrl: string;
   private readonly timeoutMs: number;
   private readonly config: KgiGatewayClientConfig;
+  private readonly ignoreScheduleGuard: boolean;
 
   private tickCallback: ((tick: Tick) => void) | null = null;
   private bidAskCallback: ((bidask: BidAsk) => void) | null = null;
@@ -245,6 +257,7 @@ export class KgiGatewayClient {
     this.baseUrl  = config.gatewayBaseUrl?.replace(/\/$/, "") ?? DEFAULT_BASE_URL;
     this.wsUrl    = config.gatewayWsUrl?.replace(/\/$/, "") ?? DEFAULT_WS_URL;
     this.timeoutMs = config.connectTimeoutMs ?? DEFAULT_TIMEOUT;
+    this.ignoreScheduleGuard = config.ignoreScheduleGuard === true;
   }
 
   // -------------------------------------------------------------------------
@@ -453,7 +466,7 @@ export class KgiGatewayClient {
   async getTrades(full: true): Promise<KgiTradesFullRaw>;
   async getTrades(full?: boolean): Promise<KgiTradeRaw | KgiTradesFullRaw> {
     const url = `${this.baseUrl}/trades?full=${full === true ? "true" : "false"}`;
-    const res = await gatewayFetch(url, { method: "GET" }, this.timeoutMs);
+    const res = await gatewayFetch(url, { method: "GET" }, this.timeoutMs, this.ignoreScheduleGuard);
     if (!res.ok) await classifyError(res, "getTrades");
     const data = (await res.json()) as { trades: KgiTradeRaw | KgiTradesFullRaw };
     return data.trades;
@@ -463,7 +476,8 @@ export class KgiGatewayClient {
     const res = await gatewayFetch(
       `${this.baseUrl}/deals`,
       { method: "GET" },
-      this.timeoutMs
+      this.timeoutMs,
+      this.ignoreScheduleGuard
     );
     if (!res.ok) await classifyError(res, "getDeals");
     const data = (await res.json()) as { deals: KgiDealsRaw };
@@ -475,7 +489,8 @@ export class KgiGatewayClient {
     const res = await gatewayFetch(
       `${this.baseUrl}/events/order/recent?limit=${safeLimit}`,
       { method: "GET" },
-      this.timeoutMs
+      this.timeoutMs,
+      this.ignoreScheduleGuard
     );
     if (!res.ok) await classifyError(res, "getRecentOrderEvents");
     const data = (await res.json()) as { events?: KgiOrderEventRaw[] };
@@ -495,7 +510,8 @@ export class KgiGatewayClient {
     const res = await gatewayFetch(
       `${this.baseUrl}/position`,
       { method: "GET" },
-      this.timeoutMs
+      this.timeoutMs,
+      this.ignoreScheduleGuard
     );
     if (!res.ok) await classifyError(res, "getPosition");
 
@@ -640,7 +656,8 @@ export class KgiGatewayClient {
     const res = await gatewayFetch(
       `${this.baseUrl}/health`,
       { method: "GET" },
-      this.timeoutMs
+      this.timeoutMs,
+      this.ignoreScheduleGuard
     );
     if (!res.ok) await classifyError(res, "health");
     return res.json() as Promise<{ status: string; kgi_logged_in: boolean; account_set: boolean }>;

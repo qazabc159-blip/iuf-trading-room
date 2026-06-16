@@ -5296,7 +5296,7 @@ app.get("/api/v1/kgi/sim/positions", async (c) => {
   const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
     await import("./broker/kgi-gateway-client.js");
 
-  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
 
   try {
     const rawPositions = await client.getPosition();
@@ -5350,7 +5350,7 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
     await import("./broker/kgi-gateway-client.js");
   const { reconcileKgiOrders } = await import("./broker/kgi-order-reconciliation.js");
 
-  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
 
   type _S1OrderSubmitResult = {
     schema: string;
@@ -5517,7 +5517,7 @@ app.get("/api/v1/kgi/sim/balance", async (c) => {
   const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
     await import("./broker/kgi-gateway-client.js");
 
-  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
 
   try {
     const rawPositions = await client.getPosition();
@@ -6064,7 +6064,7 @@ app.get("/api/v1/paper/orders", async (c) => {
       process.env["KGI_GATEWAY_BASE_URL"] ??
       "http://127.0.0.1:8787";
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
-    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
     try {
       const trades = await client.getTrades(false);
       const ordersArr = Object.entries(trades as Record<string, unknown>).map(([orderId, order]) => ({
@@ -6104,7 +6104,7 @@ app.get("/api/v1/paper/positions", async (c) => {
       process.env["KGI_GATEWAY_BASE_URL"] ??
       "http://127.0.0.1:8787";
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
-    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
     try {
       const rawPositions = await client.getPosition();
       // Map KgiPosition → Position-compatible shape for UI
@@ -13355,7 +13355,7 @@ app.get("/api/v1/paper/funds", async (c) => {
       process.env["KGI_GATEWAY_BASE_URL"] ??
       "http://127.0.0.1:8787";
     const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
-    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+    const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
     try {
       const rawPositions = await client.getPosition();
       const totalUnrealized = rawPositions.reduce((acc, p) => acc + (p.unrealized ?? 0), 0);
@@ -17947,7 +17947,7 @@ function startSchedulers(workspaceSlug: string): void {
       if (gatewayUrl) {
         try {
           const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
-          const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
+          const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
           const rawPositions = await client.getPosition();
           const filtered = rawPositions.filter((p) => p.netQuantity !== 0);
           if (filtered.length > 0) {
