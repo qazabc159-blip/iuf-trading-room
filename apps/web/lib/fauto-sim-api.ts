@@ -151,6 +151,15 @@ export type KgiSimRawOrderItem = {
   symbol: string;
   side: "buy" | "sell";
   qty: number;
+  requestedQty: number;
+  filledQty: number;
+  remainingQty: number;
+  avgFillPrice: number | null;
+  brokerReportConfirmed: boolean;
+  settlementConfirmed: boolean;
+  settlementSource: string | null;
+  confirmedAt: string | null;
+  matchStrategy: string | null;
   quantityUnit: "SHARE" | "LOT";
   effectiveQtyShares: number;
   price: number | null;
@@ -236,6 +245,9 @@ type DailySmokeHistoryRaw = {
       loggedIn?: boolean;
       subscribed?: boolean;
       tickReceived?: boolean;
+      productQuoteProvider?: string | null;
+      productQuoteUsable?: boolean;
+      kgiQuoteCapability?: string | null;
       error?: string | null;
     } | null;
     tradeCheck?: {
@@ -498,12 +510,24 @@ export async function getKgiSimOrders() {
       const sideRaw = String(row.side ?? row.action ?? "").toLowerCase();
       const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw.includes("short") ? "sell" : "buy";
       const qty = Number(row.qty ?? row.quantity ?? row.shares ?? row.effectiveQtyShares ?? 0);
+      const requestedQty = Number(row.requestedQty ?? qty);
+      const filledQty = Number(row.filledQty ?? 0);
+      const remainingQty = Number(row.remainingQty ?? Math.max(0, requestedQty - filledQty));
       return {
         tradeId: row.tradeId ?? row.trade_id ?? `kgi-sim-order-${index}`,
         status: String(row.status ?? "unknown"),
         symbol: String(row.symbol ?? "--"),
         side,
         qty,
+        requestedQty,
+        filledQty,
+        remainingQty,
+        avgFillPrice: typeof row.avgFillPrice === "number" ? row.avgFillPrice : row.price ?? null,
+        brokerReportConfirmed: row.brokerReportConfirmed === true,
+        settlementConfirmed: row.settlementConfirmed === true,
+        settlementSource: typeof row.settlementSource === "string" ? row.settlementSource : null,
+        confirmedAt: typeof row.confirmedAt === "string" ? row.confirmedAt : null,
+        matchStrategy: typeof row.matchStrategy === "string" ? row.matchStrategy : null,
         quantityUnit: row.quantityUnit === "LOT" ? "LOT" : "SHARE",
         effectiveQtyShares: Number(row.effectiveQtyShares ?? qty),
         price: row.price ?? null,
@@ -537,12 +561,22 @@ export async function getDailySmokeHistory() {
             ? rawStatus
             : "pending";
         const quote = entry.quoteCheck;
+        const productQuote =
+          quote?.productQuoteUsable === true
+            ? `產品行情可用 (${quote.productQuoteProvider ?? "unknown"})`
+            : "產品行情不可用";
+        const kgiCapability =
+          quote?.kgiQuoteCapability === "external_unavailable"
+            ? "KGI 行情權限未開，已改用正式 TWSE MIS 行情"
+            : quote?.kgiQuoteCapability === "available"
+              ? "KGI 行情權限可用"
+              : null;
         const quoteState = quote
           ? [
               quote.gatewayReachable ? "gateway 可連" : "gateway 不可連",
               quote.loggedIn ? "已登入" : "未登入",
-              quote.subscribed ? "行情已訂閱" : "行情未訂閱",
-              quote.tickReceived ? "已收到 tick" : "未收到 tick",
+              productQuote,
+              kgiCapability,
             ].join(" / ")
           : null;
         const rawError = entry.quoteCheck?.error ?? entry.tradeCheck?.error ?? null;

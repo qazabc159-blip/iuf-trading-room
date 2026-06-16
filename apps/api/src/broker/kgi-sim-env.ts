@@ -22,6 +22,8 @@
 import { randomUUID } from "node:crypto";
 import { isDatabaseMode, getDb, auditLogs } from "@iuf-trading-room/db";
 import { and, desc, eq, gte, like } from "drizzle-orm";
+import { getTwseMisQuoteSnapshot } from "../data-sources/twse-mis-quote-client.js";
+import { extractKgiTradeId, reconcileKgiOrder } from "./kgi-order-reconciliation.js";
 
 // ---------------------------------------------------------------------------
 // Env helpers — never export raw credentials
@@ -202,6 +204,19 @@ export interface QuoteSmokeResult {
   tickReceived: boolean;
   /** Partial tick data — price/volume only, no session info. */
   tickSample: { close?: number; volume?: number; datetime?: string } | null;
+  productQuoteProvider: "kgi" | "twse_mis" | "unavailable";
+  productQuoteUsable: boolean;
+  productQuoteSample: {
+    lastPrice: number;
+    previousClose: number | null;
+    changePct: number | null;
+    volume: number | null;
+    tradeDate: string;
+    tradeTime: string;
+    marketState: "LIVE" | "CLOSE";
+  } | null;
+  kgiQuoteCapability: "available" | "external_unavailable" | "error";
+  kgiQuoteError: string | null;
   /** Sanitised gateway health summary (no credentials). */
   gatewaySummary: { status?: string; kgi_logged_in?: boolean; account_set?: boolean } | null;
   error: string | null;
@@ -226,6 +241,14 @@ export interface TradeSmokeResult {
   orderReportReceived: boolean;
   /** ISO timestamp when the order report was received (null if not received). */
   orderReportAt: string | null;
+  brokerOrderStatus: string;
+  requestedQty: number;
+  filledQty: number;
+  remainingQty: number;
+  avgFillPrice: number | null;
+  settlementConfirmed: boolean;
+  settlementSource: string;
+  matchedTradeIdTail: string | null;
   error: string | null;
 }
 
@@ -409,6 +432,11 @@ export async function runSimQuoteSmoke(params: {
     subscribed: false,
     tickReceived: false,
     tickSample: null,
+    productQuoteProvider: "unavailable",
+    productQuoteUsable: false,
+    productQuoteSample: null,
+    kgiQuoteCapability: "error",
+    kgiQuoteError: null,
     gatewaySummary: null,
     error: null,
   };
@@ -442,33 +470,58 @@ export async function runSimQuoteSmoke(params: {
         body: JSON.stringify({ symbol, odd_lot: false }),
       }
     );
-    if (!sub.ok) {
-      result.error = `subscribe_failed: HTTP ${sub.status}${gatewayErrorSuffix(sub.body)}`;
-      return finalise(result, t0);
-    }
-    result.subscribed = true;
+    if (sub.ok) {
+      result.subscribed = true;
+      result.kgiQuoteCapability = "available";
 
-    // Step 3: poll for ticks (up to 3 attempts with 1s gap)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await new Promise<void>((r) => setTimeout(r, 1_000));
-      const ticks = await gwFetch(`${baseUrl}/quote/ticks?symbol=${encodeURIComponent(symbol)}&limit=1`);
-      if (ticks.ok) {
-        const tickBody = ticks.body as { ticks?: Array<{ close?: number; volume?: number; datetime?: string }> } | null;
-        const firstTick = tickBody?.ticks?.[0] ?? null;
-        if (firstTick) {
-          result.tickReceived = true;
-          result.tickSample = {
-            close: firstTick.close,
-            volume: firstTick.volume,
-            datetime: firstTick.datetime,
-          };
-          _state.lastQuoteTime = new Date().toISOString();
-          break;
+      // Step 3: poll for ticks (up to 3 attempts with 1s gap)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await new Promise<void>((r) => setTimeout(r, 1_000));
+        const ticks = await gwFetch(`${baseUrl}/quote/ticks?symbol=${encodeURIComponent(symbol)}&limit=1`);
+        if (ticks.ok) {
+          const tickBody = ticks.body as { ticks?: Array<{ close?: number; volume?: number; datetime?: string }> } | null;
+          const firstTick = tickBody?.ticks?.[0] ?? null;
+          if (firstTick) {
+            result.tickReceived = true;
+            result.tickSample = {
+              close: firstTick.close,
+              volume: firstTick.volume,
+              datetime: firstTick.datetime,
+            };
+            result.productQuoteProvider = "kgi";
+            result.productQuoteUsable = true;
+            _state.lastQuoteTime = new Date().toISOString();
+            break;
+          }
         }
       }
+      if (!result.tickReceived) result.kgiQuoteError = "tick_not_received_after_subscribe";
+    } else {
+      result.kgiQuoteError = `subscribe_failed: HTTP ${sub.status}${gatewayErrorSuffix(sub.body)}`;
+      result.kgiQuoteCapability = /KGI_QUOTE_AUTH_UNAVAILABLE/i.test(result.kgiQuoteError)
+        ? "external_unavailable"
+        : "error";
     }
-    if (!result.tickReceived) {
-      result.error = "tick_not_received_after_subscribe";
+
+    if (!result.productQuoteUsable) {
+      const mis = await getTwseMisQuoteSnapshot(symbol);
+      if (mis) {
+        result.productQuoteProvider = "twse_mis";
+        result.productQuoteUsable = true;
+        result.productQuoteSample = {
+          lastPrice: mis.lastPrice,
+          previousClose: mis.previousClose,
+          changePct: mis.changePct,
+          volume: mis.volume,
+          tradeDate: mis.tradeDate,
+          tradeTime: mis.tradeTime,
+          marketState: mis.marketState,
+        };
+        result.error = null;
+        _state.lastQuoteTime = new Date().toISOString();
+      } else {
+        result.error = result.kgiQuoteError ?? "product_quote_unavailable";
+      }
     }
 
   } catch (err) {
@@ -493,6 +546,11 @@ export async function runSimQuoteSmoke(params: {
       logged_in: finalResult.loggedIn,
       subscribed: finalResult.subscribed,
       tick_received: finalResult.tickReceived,
+      product_quote_provider: finalResult.productQuoteProvider,
+      product_quote_usable: finalResult.productQuoteUsable,
+      product_quote_sample: finalResult.productQuoteSample,
+      kgi_quote_capability: finalResult.kgiQuoteCapability,
+      kgi_quote_error: finalResult.kgiQuoteError,
       // Sanitised tick sample (no session/account data)
       tick_sample: finalResult.tickSample,
       error: finalResult.error,
@@ -546,6 +604,14 @@ export async function runSimTradeSmoke(params: {
     orderDetail: null,
     orderReportReceived: false,
     orderReportAt: null,
+    brokerOrderStatus: "unconfirmed",
+    requestedQty: 1,
+    filledQty: 0,
+    remainingQty: 1,
+    avgFillPrice: null,
+    settlementConfirmed: false,
+    settlementSource: "submission_only",
+    matchedTradeIdTail: null,
     error: null,
   };
 
@@ -640,8 +706,17 @@ export async function runSimTradeSmoke(params: {
       _state.lastSimOrderStatus = "pass"; // 409 is expected/graceful in current phase
       _state.lastSimOrderDetail = result.orderDetail;
     } else if (order.ok) {
-      const orderBody = order.body as { ok?: boolean; trade_id?: string; status?: string } | null;
-      tradeId = orderBody?.trade_id ?? null;
+      const orderBody = order.body as {
+        ok?: boolean;
+        trade_id?: string;
+        broker_order_id?: string;
+        kgi_response_repr?: string;
+        status?: string;
+      } | null;
+      tradeId = orderBody?.trade_id
+        ?? orderBody?.broker_order_id
+        ?? extractKgiTradeId(orderBody?.kgi_response_repr)
+        ?? null;
       result.orderOutcome = "accepted";
       result.orderDetail = `order accepted: trade_id=${tradeId ?? "unknown"} status=${orderBody?.status ?? "unknown"}`;
       _state.lastSimOrderStatus = "pass";
@@ -653,15 +728,43 @@ export async function runSimTradeSmoke(params: {
       _state.lastSimOrderDetail = result.orderDetail;
     }
 
-    // Step 3: Poll for order report via GET /trades (up to 3 attempts, 1.5s gap)
-    // Confirms order lifecycle visible in broker. Skip only if gateway unreachable.
-    if (result.gatewayReachable) {
+    // Step 3: Poll and MATCH this exact order. A generic /trades HTTP 200 is
+    // not a broker report; it must match trade id or exact symbol/side/qty.
+    if (result.gatewayReachable && order.ok) {
       for (let attempt = 0; attempt < 3; attempt++) {
         await new Promise<void>((r) => setTimeout(r, 1_500));
-        const tradesRes = await gwFetch(`${baseUrl}/trades?full=false`);
-        if (tradesRes.ok) {
+        const [eventsRes, tradesRes, dealsRes] = await Promise.all([
+          gwFetch(`${baseUrl}/events/order/recent?limit=100`),
+          gwFetch(`${baseUrl}/trades?full=false`),
+          gwFetch(`${baseUrl}/deals`),
+        ]);
+        const reconciled = reconcileKgiOrder({
+          order: {
+            tradeId,
+            symbol,
+            side: "buy",
+            requestedQty: 1,
+            submittedAt: startedAt,
+          },
+          events: eventsRes.ok ? eventsRes.body : null,
+          trades: tradesRes.ok ? tradesRes.body : null,
+          deals: dealsRes.ok ? dealsRes.body : null,
+        });
+        result.brokerOrderStatus = reconciled.status;
+        result.filledQty = reconciled.filledQty;
+        result.remainingQty = reconciled.remainingQty;
+        result.avgFillPrice = reconciled.avgFillPrice;
+        result.settlementConfirmed = reconciled.settlementConfirmed;
+        result.settlementSource = reconciled.settlementSource;
+        result.matchedTradeIdTail = reconciled.tradeId ? reconciled.tradeId.slice(-4) : null;
+
+        if (reconciled.brokerReportConfirmed) {
           result.orderReportReceived = true;
           result.orderReportAt = new Date().toISOString();
+          result.orderOutcome = reconciled.status;
+          result.orderDetail =
+            `broker ${reconciled.status}: filled=${reconciled.filledQty}/${reconciled.requestedQty} ` +
+            `source=${reconciled.settlementSource} match=${reconciled.matchStrategy}`;
           _state.lastSimOrderReportAt = result.orderReportAt;
           await writeKgiAuditLog({
             workspaceId: submitWorkspaceId,
@@ -671,13 +774,27 @@ export async function runSimTradeSmoke(params: {
               sim_only: true,
               run_id: runId,
               symbol,
-              trade_id_tail: tradeId ? tradeId.slice(-4) : null,
+              trade_id_tail: result.matchedTradeIdTail,
               order_outcome: result.orderOutcome,
+              broker_order_status: result.brokerOrderStatus,
+              requested_qty: result.requestedQty,
+              filled_qty: result.filledQty,
+              remaining_qty: result.remainingQty,
+              avg_fill_price: result.avgFillPrice,
+              settlement_confirmed: result.settlementConfirmed,
+              settlement_source: result.settlementSource,
               report_at: result.orderReportAt,
             },
           });
           break;
         }
+      }
+      if (!result.orderReportReceived) {
+        result.orderOutcome = "unconfirmed";
+        result.orderDetail = `broker did not return a matching report for trade_id=${tradeId ?? "unknown"}`;
+        result.error = "matching_order_report_not_received";
+        _state.lastSimOrderStatus = "fail";
+        _state.lastSimOrderDetail = result.orderDetail;
       }
     }
 
@@ -708,6 +825,14 @@ export async function runSimTradeSmoke(params: {
       order_detail: finalResult.orderDetail,
       order_report_received: finalResult.orderReportReceived,
       order_report_at: finalResult.orderReportAt,
+      broker_order_status: finalResult.brokerOrderStatus,
+      requested_qty: finalResult.requestedQty,
+      filled_qty: finalResult.filledQty,
+      remaining_qty: finalResult.remainingQty,
+      avg_fill_price: finalResult.avgFillPrice,
+      settlement_confirmed: finalResult.settlementConfirmed,
+      settlement_source: finalResult.settlementSource,
+      matched_trade_id_tail: finalResult.matchedTradeIdTail,
       error: finalResult.error,
       duration_ms: finalResult.durationMs,
       confirmed_by_bruce: params.confirmedByBruce ?? false,
@@ -743,6 +868,9 @@ export interface DailySmokeHistoryEntry {
     loggedIn: boolean;
     subscribed: boolean;
     tickReceived: boolean;
+    productQuoteProvider: "kgi" | "twse_mis" | "unavailable";
+    productQuoteUsable: boolean;
+    kgiQuoteCapability: "available" | "external_unavailable" | "error";
     error: string | null;
   };
   /**
@@ -753,6 +881,9 @@ export interface DailySmokeHistoryEntry {
     gatewayReachable: boolean;
     loggedIn: boolean;
     orderOutcome: string;
+    brokerOrderStatus: string;
+    orderReportReceived: boolean;
+    settlementConfirmed: boolean;
     error: string | null;
   } | null;
   /**
@@ -805,6 +936,13 @@ function parseDailySmokeAuditPayload(payload: unknown): DailySmokeHistoryEntry |
       loggedIn: quoteCheck["loggedIn"] === true,
       subscribed: quoteCheck["subscribed"] === true,
       tickReceived: quoteCheck["tickReceived"] === true,
+      productQuoteProvider: ["kgi", "twse_mis"].includes(String(quoteCheck["productQuoteProvider"]))
+        ? quoteCheck["productQuoteProvider"] as "kgi" | "twse_mis"
+        : "unavailable",
+      productQuoteUsable: quoteCheck["productQuoteUsable"] === true,
+      kgiQuoteCapability: ["available", "external_unavailable"].includes(String(quoteCheck["kgiQuoteCapability"]))
+        ? quoteCheck["kgiQuoteCapability"] as "available" | "external_unavailable"
+        : "error",
       error: typeof quoteCheck["error"] === "string" ? quoteCheck["error"] : null,
     },
     tradeCheck,
@@ -914,6 +1052,7 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
     `[kgi-sim-daily-smoke] quote: reachable=${quoteResult.gatewayReachable} ` +
     `loggedIn=${quoteResult.loggedIn} subscribed=${quoteResult.subscribed} ` +
     `tickReceived=${quoteResult.tickReceived} ` +
+    `productProvider=${quoteResult.productQuoteProvider} productUsable=${quoteResult.productQuoteUsable} ` +
     `error=${quoteResult.error ?? "none"}`
   );
 
@@ -961,6 +1100,9 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
       gatewayReachable: tradeResult.gatewayReachable,
       loggedIn: tradeResult.loggedIn,
       orderOutcome: tradeResult.orderOutcome,
+      brokerOrderStatus: tradeResult.brokerOrderStatus,
+      orderReportReceived: tradeResult.orderReportReceived,
+      settlementConfirmed: tradeResult.settlementConfirmed,
       error: tradeResult.error,
     };
     console.log(
@@ -973,33 +1115,27 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
     console.log("[kgi-sim-daily-smoke] trade smoke skipped: dual-confirm not provided");
   }
 
-  // Compute overall status.
-  // KGI quote auth is intentionally NOT enabled on this account — product
-  // realtime runs on TWSE MIS, not KGI quote (owner ruling, Track B declined).
-  // A KGI_QUOTE_AUTH_UNAVAILABLE subscribe failure is therefore expected and
-  // must NOT fail the daily smoke: doing so paged R13 critical every single day
-  // (6/12-6/14 observed) for a known, accepted condition. The smoke's real
-  // subject is the SIM trade path + the no-real-order audit. A genuinely broken
-  // gateway / login still fails (different error, not auth-unavailable).
-  const quotePass = quoteResult.gatewayReachable && quoteResult.loggedIn && quoteResult.subscribed && quoteResult.tickReceived;
-  const quoteAuthExpectedOff =
-    quoteResult.gatewayReachable &&
-    quoteResult.loggedIn &&
-    !quoteResult.subscribed &&
-    typeof quoteResult.error === "string" &&
-    /KGI_QUOTE_AUTH_UNAVAILABLE/i.test(quoteResult.error);
-  const quoteUsable = quotePass || quoteAuthExpectedOff;
-  const tradePass = tradeCheck === null || ["accepted", "not_enabled"].includes(tradeCheck.orderOutcome);
+  // Compute overall status from the actual product paths:
+  // - quote lane passes only if the product can obtain a usable quote sample
+  //   (KGI quote entitlement or TWSE MIS fallback).
+  // - trade lane passes only if a submitted SIM order has a matching broker
+  //   lifecycle report; a plain /trades 200 is no longer enough.
+  const quotePass = quoteResult.productQuoteUsable;
+  const tradePass =
+    tradeCheck === null
+    || tradeCheck.orderOutcome === "not_enabled"
+    || (
+      tradeCheck.orderReportReceived &&
+      ["accepted", "filled", "partially_filled", "cancelled", "rejected"].includes(tradeCheck.brokerOrderStatus)
+    );
   const auditClean = prodBrokerAuditCount === 0;
   let overallStatus: DailySmokeHistoryEntry["overallStatus"];
   if (quotePass && tradePass && auditClean) {
     overallStatus = "pass";
-  } else if (!quoteUsable || !tradePass || !auditClean) {
+  } else if (!quotePass || !tradePass || !auditClean) {
     // genuinely broken gateway/login, a rejected trade, or a real-order audit hit
     overallStatus = "fail";
   } else {
-    // gateway + login OK, trade OK, audit clean — only the expectedly-off quote
-    // auth is degraded → partial, not a daily critical page.
     overallStatus = "partial";
   }
 
@@ -1015,6 +1151,9 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
       loggedIn: quoteResult.loggedIn,
       subscribed: quoteResult.subscribed,
       tickReceived: quoteResult.tickReceived,
+      productQuoteProvider: quoteResult.productQuoteProvider,
+      productQuoteUsable: quoteResult.productQuoteUsable,
+      kgiQuoteCapability: quoteResult.kgiQuoteCapability,
       error: quoteResult.error,
     },
     tradeCheck,

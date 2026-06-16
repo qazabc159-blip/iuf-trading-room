@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 
@@ -1204,6 +1205,15 @@ async def order_events_ws(websocket: WebSocket) -> None:
         order_event_manager.unregister_ws_client(websocket)
 
 
+@app.get("/events/order/recent")
+async def recent_order_events(limit: int = 100) -> dict[str, Any]:
+    """Read-only recent broker callbacks for durable API-side reconciliation."""
+    return {
+        "events": order_event_manager.recent_events(limit),
+        "sim_only": session.is_simulation is True,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Order create — 3-gate: NOT_LOGGED_IN / LIVE_ORDER_BLOCKED / SIM-only SDK call
 # ---------------------------------------------------------------------------
@@ -1331,12 +1341,32 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
             order_req.symbol, order_req.qty, order_req.action,
         )
         sdk_repr = str(sdk_response)[:500] if sdk_response is not None else None
+        trade_id = None
+        for attr in ("nid", "trade_id", "order_id", "ord_no", "seqno"):
+            value = getattr(sdk_response, attr, None)
+            if value not in (None, ""):
+                trade_id = str(value)
+                break
+        if trade_id is None and isinstance(sdk_response, dict):
+            for key in ("nid", "trade_id", "order_id", "ord_no", "seqno"):
+                if sdk_response.get(key) not in (None, ""):
+                    trade_id = str(sdk_response[key])
+                    break
+        if trade_id is None and sdk_repr:
+            match = re.search(
+                r"(?:nid|trade_id|order_id|ord_no|seqno)\s*[:=]\s*['\"]?([A-Za-z0-9_-]+)",
+                sdk_repr,
+                flags=re.IGNORECASE,
+            )
+            trade_id = match.group(1) if match else None
         return JSONResponse(
             status_code=200,
             content=OrderCreateResponse(
                 ok=True,
                 sim_only=True,
                 status="accepted",
+                trade_id=trade_id,
+                broker_order_id=trade_id,
                 kgi_response_repr=sdk_repr,
             ).model_dump(),
         )

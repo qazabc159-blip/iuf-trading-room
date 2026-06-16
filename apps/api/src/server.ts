@@ -5121,11 +5121,11 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
     );
     if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
       const rebuiltPositions = orderAudit.results
-        .filter((r) => r.status === "accepted")
+        .filter((r) => r.status === "filled" || r.status === "partially_filled")
         .map((r) => ({
           symbol: r.symbol,
-          shares: r.shares,
-          avg_cost: 0,
+          shares: r.filled_shares ?? r.shares,
+          avg_cost: r.avg_fill_price ?? 0,
           last_price: null,
           unrealized_pnl_twd: null,
           market_value_twd: null,
@@ -5137,10 +5137,18 @@ app.get("/api/v1/internal/s1-sim/eod-report", async (c) => {
           data_source: "orders_submitted_audit_rebuilt",
           notes: [
             ...(report.notes ?? []),
-            `positions_rebuilt_from_audit: ${rebuiltPositions.length} accepted orders from orders_submitted audit log (gateway unavailable at EOD time, order file ephemeral)`,
+            `positions_rebuilt_from_audit: ${rebuiltPositions.length} confirmed fills from orders_submitted audit log`,
           ],
         };
         positionsRebuilt = true;
+      } else {
+        report = {
+          ...report,
+          notes: [
+            ...(report.notes ?? []),
+            "orders_unconfirmed_not_positions: submitted orders exist, but no matching broker fill/deal report is available; not counted as holdings",
+          ],
+        };
       }
     }
   }
@@ -5340,20 +5348,106 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
 
   const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
     await import("./broker/kgi-gateway-client.js");
+  const { reconcileKgiOrders } = await import("./broker/kgi-order-reconciliation.js");
 
   const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000 });
 
+  type _S1OrderSubmitResult = {
+    schema: string;
+    submitted_at_tst: string;
+    trading_date: string;
+    results: Array<{
+      symbol: string;
+      shares: number;
+      status: string;
+      trade_id: string | null;
+      filled_shares?: number;
+      remaining_shares?: number;
+      avg_fill_price?: number | null;
+      settlement_source?: string;
+      settlement_confirmed?: boolean;
+      confirmed_at?: string | null;
+      error: string | null;
+    }>;
+  };
+  let auditOrders: _S1OrderSubmitResult["results"] = [];
+  let auditDate: string | null = null;
+  let auditSubmittedAt: string | null = null;
+  if (isDatabaseMode()) {
+    for (let daysBack = 0; daysBack <= 7; daysBack++) {
+      const tryDate = _s1TaipeiDateStr(-daysBack);
+      const orderAudit = await _readS1ObservationAudit<_S1OrderSubmitResult>(
+        session.workspace.id,
+        "s1_sim.orders_submitted",
+        tryDate,
+      );
+      if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
+        auditOrders = orderAudit.results;
+        auditDate = tryDate;
+        auditSubmittedAt = orderAudit.submitted_at_tst ?? null;
+        break;
+      }
+    }
+  }
+
+  const baseOrders = auditOrders
+    .filter((r) => r.status !== "skipped")
+    .map((r) => ({
+      tradeId: r.trade_id,
+      symbol: r.symbol,
+      side: "buy" as const,
+      requestedQty: r.shares,
+      submittedAt: auditSubmittedAt,
+    }));
+
   try {
-    const trades = await client.getTrades(false);
-    // trades is KgiTradeRaw (Record<string, unknown>) — pass through as-is
-    const ordersArr = Object.entries(trades as Record<string, unknown>).map(([orderId, order]) => ({
-      orderId,
-      ...(typeof order === "object" && order !== null ? order : { raw: String(order) }),
+    const [events, trades, deals] = await Promise.all([
+      client.getRecentOrderEvents(200).catch(() => []),
+      client.getTrades(false).catch(() => null),
+      client.getDeals().catch(() => null),
+    ]);
+    const reconciled = baseOrders.length > 0
+      ? reconcileKgiOrders({ orders: baseOrders, events, trades, deals })
+      : [];
+    const ordersArr = reconciled.map((order, index) => ({
+      tradeId: order.tradeId,
+      trade_id: order.tradeId,
+      status: order.status,
+      symbol: order.symbol,
+      side: order.side,
+      qty: order.requestedQty,
+      shares: order.requestedQty,
+      quantityUnit: "SHARE",
+      effectiveQtyShares: order.requestedQty,
+      requestedQty: order.requestedQty,
+      filledQty: order.filledQty,
+      remainingQty: order.remainingQty,
+      avgFillPrice: order.avgFillPrice,
+      price: order.avgFillPrice,
+      orderType: "market",
+      isOddLot: false,
+      submittedAt: auditSubmittedAt ?? auditDate ?? "",
+      submitted_at_tst: auditSubmittedAt,
+      trading_date: auditDate,
+      settlementConfirmed: order.settlementConfirmed,
+      settlementSource: order.settlementSource,
+      brokerReportConfirmed: order.brokerReportConfirmed,
+      confirmedAt: order.confirmedAt,
+      matchStrategy: order.matchStrategy,
+      row: index,
     }));
     return c.json({
       sim_only: true,
       prod_write_blocked: true,
-      data: { orders: ordersArr, source: "kgi_sim", fetchedAt: new Date().toISOString() },
+      data: {
+        orders: ordersArr,
+        source: baseOrders.length > 0 ? "audit_plus_kgi_reconciliation" : "kgi_sim",
+        auditDate,
+        note: baseOrders.length > 0
+          ? "Orders are reconstructed from durable S1 audit entries and reconciled against KGI recent events/trades/deals."
+          : "No recent S1 audit orders found; KGI raw trade report did not identify an F-AUTO order.",
+        fetchedAt: new Date().toISOString(),
+      },
     });
   } catch (err) {
     const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
@@ -5361,41 +5455,37 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
       ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable")
       : "gateway_error";
 
-    // Gateway not reachable — fall back to orders_submitted audit log.
-    // Look back up to 7 trading days for the most recent order submission.
-    // This lets traders see "what did F-AUTO do most recently" even when KGI SIM is offline.
-    let auditOrders: Array<{ symbol: string; shares: number; status: string; trade_id: string | null; error: string | null }> = [];
-    let auditDate: string | null = null;
-    if (isDatabaseMode()) {
-      for (let daysBack = 0; daysBack <= 7; daysBack++) {
-        const tryDate = _s1TaipeiDateStr(-daysBack);
-        type _S1OrderSubmitResult = { schema: string; submitted_at_tst: string; trading_date: string; results: Array<{ symbol: string; shares: number; status: string; trade_id: string | null; error: string | null }> };
-        const orderAudit = await _readS1ObservationAudit<_S1OrderSubmitResult>(
-          session.workspace.id,
-          "s1_sim.orders_submitted",
-          tryDate,
-        );
-        if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
-          auditOrders = orderAudit.results.map((r) => ({
-            symbol: r.symbol,
-            shares: r.shares,
-            status: r.status,
-            trade_id: r.trade_id,
-            error: r.error,
-            trading_date: orderAudit.trading_date ?? tryDate,
-            submitted_at_tst: orderAudit.submitted_at_tst ?? null,
-          }));
-          auditDate = tryDate;
-          break;
-        }
-      }
-    }
+    const auditRows = auditOrders.map((r) => ({
+      symbol: r.symbol,
+      shares: r.shares,
+      qty: r.shares,
+      requestedQty: r.shares,
+      filledQty: r.filled_shares ?? 0,
+      remainingQty: r.remaining_shares ?? r.shares,
+      avgFillPrice: r.avg_fill_price ?? null,
+      status: r.status,
+      trade_id: r.trade_id,
+      tradeId: r.trade_id,
+      settlementConfirmed: r.settlement_confirmed === true,
+      settlementSource: r.settlement_source ?? "submission_only",
+      confirmedAt: r.confirmed_at ?? null,
+      side: "buy",
+      quantityUnit: "SHARE",
+      effectiveQtyShares: r.shares,
+      price: r.avg_fill_price ?? null,
+      orderType: "market",
+      isOddLot: false,
+      error: r.error,
+      trading_date: auditDate,
+      submitted_at_tst: auditSubmittedAt,
+      submittedAt: auditSubmittedAt ?? auditDate ?? "",
+    }));
 
     return c.json({
       sim_only: true,
       prod_write_blocked: true,
       data: {
-        orders: auditOrders,
+        orders: auditRows,
         source: auditOrders.length > 0 ? "audit_log_fallback" : "kgi_sim",
         degraded: true,
         reason,

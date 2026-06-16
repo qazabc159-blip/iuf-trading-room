@@ -33,16 +33,64 @@ def _make_kgisuperpy_stub():
     md = types.ModuleType("kgisuperpy.marketdata")
     qd_pkg = types.ModuleType("kgisuperpy.marketdata.quote_data")
     qd_mod = types.ModuleType("kgisuperpy.marketdata.quote_data.quotedata")
+    trading_pkg = types.ModuleType("kgisuperpy.trading")
+    trade_base_mod = types.ModuleType("kgisuperpy.trading._trade_base")
 
     class _QuoteData:
         class QuoteVersion:
             v1 = "v1"
 
+    class _EnumLike:
+        def __init__(self, value: str):
+            self.value = value
+
+        def __repr__(self):
+            return self.value
+
+        def __eq__(self, other):
+            return other == self.value or getattr(other, "value", None) == self.value
+
+    class _Action:
+        Buy = _EnumLike("Buy")
+        Sell = _EnumLike("Sell")
+
+    class _TimeInForce:
+        ROD = _EnumLike("ROD")
+        IOC = _EnumLike("IOC")
+        FOK = _EnumLike("FOK")
+
+    class _OrderCond:
+        CASH = _EnumLike("Cash")
+        CASH_SELLING = _EnumLike("CashSelling")
+        MARGIN = _EnumLike("Margin")
+        MARGIN_DayTrade = _EnumLike("MarginDayTrade")
+        SHORT_SELLING = _EnumLike("ShortSelling")
+        Lend_SELLING = _EnumLike("LendSelling")
+
+    class _OddLot:
+        Common = _EnumLike("Common")
+        Fixing = _EnumLike("Fixing")
+        Odd = _EnumLike("Odd")
+        Odd_AfterMarket = _EnumLike("OddAfterMarket")
+
+    class _PriceType:
+        MKT = _EnumLike("MKT")
+        Reference = _EnumLike("Reference")
+        LimitUp = _EnumLike("LimitUp")
+        LimitDown = _EnumLike("LimitDown")
+
     qd_mod.QuoteData = _QuoteData
+    trade_base_mod.Action = _Action
+    trade_base_mod.TimeInForce = _TimeInForce
+    trade_base_mod.OrderCond = _OrderCond
+    trade_base_mod.OddLot = _OddLot
+    trade_base_mod.PriceType = _PriceType
     sys.modules.setdefault("kgisuperpy", pkg)
     sys.modules.setdefault("kgisuperpy.marketdata", md)
     sys.modules.setdefault("kgisuperpy.marketdata.quote_data", qd_pkg)
     sys.modules.setdefault("kgisuperpy.marketdata.quote_data.quotedata", qd_mod)
+    sys.modules.setdefault("kgisuperpy.trading", trading_pkg)
+    sys.modules.setdefault("kgisuperpy.trading._trade_base", trade_base_mod)
 
 
 _make_kgisuperpy_stub()
@@ -261,6 +309,7 @@ def test_c3_sim_session_full_normal_lot_payload_returns_200(order_client):
     body = resp.json()
     assert body["sim_only"] is True
     assert body["status"] == "accepted"
+    assert body["trade_id"] == "MOCK-0001"
     assert len(mock_api.Order.calls) == 1
 
 

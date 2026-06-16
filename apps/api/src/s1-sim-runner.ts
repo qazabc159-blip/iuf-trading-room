@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
+import { extractKgiTradeId, reconcileKgiOrder } from "./broker/kgi-order-reconciliation.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,8 +65,14 @@ export interface S1OrderSubmitResult {
   results: Array<{
     symbol: string;
     shares: number;
-    status: "accepted" | "rejected" | "skipped";
+    status: "accepted" | "rejected" | "skipped" | "filled" | "partially_filled" | "cancelled" | "unconfirmed";
     trade_id: string | null;
+    filled_shares?: number;
+    remaining_shares?: number;
+    avg_fill_price?: number | null;
+    settlement_source?: string;
+    settlement_confirmed?: boolean;
+    confirmed_at?: string | null;
     error: string | null;
   }>;
   failsafe_notes: string[];
@@ -830,6 +837,13 @@ export async function runS1OrderSubmitTick(): Promise<void> {
     // Retry loop: 3x with exponential backoff
     let accepted = false;
     let tradeId: string | null = null;
+    let brokerStatus: S1OrderSubmitResult["results"][number]["status"] = "unconfirmed";
+    let filledShares = 0;
+    let remainingShares = entry.target_shares;
+    let avgFillPrice: number | null = null;
+    let settlementSource = "submission_only";
+    let settlementConfirmed = false;
+    let confirmedAt: string | null = null;
     let lastError: string | null = null;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -845,12 +859,11 @@ export async function runS1OrderSubmitTick(): Promise<void> {
           name: "S1_SIM_AUTO"
         });
 
-        // Parse nid from kgi_response_repr
-        const kgiRepr = typeof (tradeRaw as Record<string, unknown>)["kgi_response_repr"] === "string"
-          ? (tradeRaw as Record<string, unknown>)["kgi_response_repr"] as string
-          : null;
-        const nidMatch = kgiRepr ? /\bnid=(\d+)/.exec(kgiRepr) : null;
-        tradeId = nidMatch ? nidMatch[1] : null;
+        const tradeRecord = tradeRaw as Record<string, unknown>;
+        tradeId = extractKgiTradeId(tradeRecord["trade_id"])
+          ?? extractKgiTradeId(tradeRecord["broker_order_id"])
+          ?? extractKgiTradeId(tradeRecord["kgi_response_repr"])
+          ?? extractKgiTradeId(tradeRecord);
 
         accepted = true;
         console.log(`[s1-order] ${entry.symbol} qty=${entry.target_shares} accepted tradeId=${tradeId ?? "null"}`);
@@ -869,12 +882,61 @@ export async function runS1OrderSubmitTick(): Promise<void> {
       }
     }
 
+    if (accepted) {
+      for (let poll = 0; poll < 3; poll++) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        try {
+          const [events, trades, deals] = await Promise.all([
+            client.getRecentOrderEvents(100).catch(() => []),
+            client.getTrades(false).catch(() => null),
+            client.getDeals().catch(() => null),
+          ]);
+          const reconciled = reconcileKgiOrder({
+            order: {
+              tradeId,
+              symbol: entry.symbol,
+              side: "buy",
+              requestedQty: entry.target_shares,
+            },
+            events,
+            trades,
+            deals,
+          });
+          brokerStatus = reconciled.status;
+          filledShares = reconciled.filledQty;
+          remainingShares = reconciled.remainingQty;
+          avgFillPrice = reconciled.avgFillPrice;
+          settlementSource = reconciled.settlementSource;
+          settlementConfirmed = reconciled.settlementConfirmed;
+          confirmedAt = reconciled.confirmedAt;
+          if (reconciled.brokerReportConfirmed) {
+            console.log(
+              `[s1-order] ${entry.symbol} broker ${reconciled.status} ` +
+              `filled=${reconciled.filledQty}/${reconciled.requestedQty} source=${reconciled.settlementSource}`
+            );
+            break;
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      if (!settlementConfirmed && brokerStatus === "unconfirmed") {
+        lastError = "matching_broker_report_not_received";
+      }
+    }
+
     orderResults.push({
       symbol: entry.symbol,
       shares: entry.target_shares,
-      status: accepted ? "accepted" : "rejected",
+      status: accepted ? brokerStatus : "rejected",
       trade_id: tradeId,
-      error: accepted ? null : lastError
+      filled_shares: filledShares,
+      remaining_shares: remainingShares,
+      avg_fill_price: avgFillPrice,
+      settlement_source: settlementSource,
+      settlement_confirmed: settlementConfirmed,
+      confirmed_at: confirmedAt,
+      error: accepted && brokerStatus === "unconfirmed" ? lastError : accepted ? null : lastError
     });
   }
 
@@ -885,7 +947,7 @@ export async function runS1OrderSubmitTick(): Promise<void> {
     trading_date: todayTst,
     basket_date: basketDate,
     orders_attempted: orderResults.filter((r) => r.status !== "skipped").length,
-    orders_accepted: orderResults.filter((r) => r.status === "accepted").length,
+    orders_accepted: orderResults.filter((r) => ["accepted", "filled", "partially_filled", "cancelled"].includes(r.status)).length,
     orders_rejected: orderResults.filter((r) => r.status === "rejected").length,
     results: orderResults,
     failsafe_notes
@@ -908,7 +970,7 @@ export async function runS1OrderSubmitTick(): Promise<void> {
     });
   }
 
-  const accepted = orderResults.filter((r) => r.status === "accepted").length;
+  const accepted = orderResults.filter((r) => ["accepted", "filled", "partially_filled", "cancelled"].includes(r.status)).length;
   const rejected = orderResults.filter((r) => r.status === "rejected").length;
   console.log(`[s1-order] DONE accepted=${accepted} rejected=${rejected} skipped=${orderResults.length - accepted - rejected}`);
 }
@@ -977,17 +1039,18 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   }
   const entryBySymbol = new Map((basketForResidual?.basket ?? []).map((e) => [e.symbol, e]));
 
-  const auditPositions: S1PositionRow[] = (latestOrdersAudit?.data.results ?? [])
-    .filter((r) => r.status === "accepted")
+  const auditPositionCandidates = latestOrdersAudit?.data.results ?? [];
+  const auditPositions: S1PositionRow[] = auditPositionCandidates
+    .filter((r) => r.status === "filled" || r.status === "partially_filled")
     .map((r) => ({
       symbol: r.symbol,
-      shares: r.shares,
-      // entry estimate from the basket's signal-time price (no fill confirmation in SIM)
-      avg_cost: entryBySymbol.get(r.symbol)?.latest_price ?? 0,
+      shares: r.filled_shares ?? r.shares,
+      avg_cost: r.avg_fill_price ?? entryBySymbol.get(r.symbol)?.latest_price ?? 0,
       last_price: null,
       unrealized_pnl_twd: null,
       market_value_twd: null,
     }));
+  const unconfirmedAuditOrders = auditPositionCandidates.filter((r) => r.status === "accepted" || r.status === "unconfirmed");
 
   // 1. Fetch positions from KGI gateway (live prices when the session still has them)
   const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
@@ -1014,7 +1077,9 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       // Gateway reachable but session is empty — ephemeral SIM positions reset.
       positions = auditPositions;
       dataSource = "audit_log_rebuild";
-      notes.push(`gateway_empty_rebuilt_from_audit: KGI SIM session positions are ephemeral; rebuilt ${auditPositions.length} positions from ${positionsDate} accepted orders`);
+      notes.push(`gateway_empty_rebuilt_from_audit: KGI SIM session positions are ephemeral; rebuilt ${auditPositions.length} positions from ${positionsDate} confirmed fills`);
+    } else if (positions.length === 0 && unconfirmedAuditOrders.length > 0) {
+      notes.push(`gateway_empty_unconfirmed_orders: ${unconfirmedAuditOrders.length} submitted orders exist, but no matching broker fill/deal report is available; not counted as holdings`);
     } else {
       console.log(`[s1-eod] fetched ${positions.length} positions from KGI gateway`);
     }
@@ -1026,7 +1091,9 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     if (auditPositions.length > 0) {
       positions = auditPositions;
       dataSource = "audit_log_fallback";
-      notes.push(`positions_from_audit_log: rebuilt ${auditPositions.length} positions from ${positionsDate} accepted orders`);
+      notes.push(`positions_from_audit_log: rebuilt ${auditPositions.length} positions from ${positionsDate} confirmed fills`);
+    } else if (unconfirmedAuditOrders.length > 0) {
+      notes.push(`orders_unconfirmed_not_positions: ${unconfirmedAuditOrders.length} submitted orders have no matching broker fill/deal report; not counted as holdings`);
     } else {
       // Legacy fallback: today's order submit file (ephemeral — may be gone after redeploy)
       dataSource = "order_file_fallback";
@@ -1036,11 +1103,11 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         const orderResult = JSON.parse(raw) as S1OrderSubmitResult;
         notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
         positions = orderResult.results
-          .filter((r) => r.status === "accepted")
+          .filter((r) => r.status === "filled" || r.status === "partially_filled")
           .map((r) => ({
             symbol: r.symbol,
-            shares: r.shares,
-            avg_cost: 0, // unknown without fill confirmation
+            shares: r.filled_shares ?? r.shares,
+            avg_cost: r.avg_fill_price ?? 0,
             last_price: null,
             unrealized_pnl_twd: null,
             market_value_twd: null

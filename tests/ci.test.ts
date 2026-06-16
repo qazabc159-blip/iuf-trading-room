@@ -10719,6 +10719,64 @@ test("DS5: daily smoke fails when login is healthy but quote subscribe fails", a
   }
 });
 
+test("DS5b: KGI quote auth off still passes product quote lane when TWSE MIS is usable", async () => {
+  _resetKgiSimState();
+
+  const originalFetch = globalThis.fetch;
+  const originalGatewayUrl = process.env["KGI_GATEWAY_URL"];
+  process.env["KGI_GATEWAY_URL"] = "http://kgi-gateway.test";
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://kgi-gateway.test/health") {
+      return json(200, { status: "ok", kgi_logged_in: true, account_set: true });
+    }
+    if (url === "http://kgi-gateway.test/quote/subscribe/tick") {
+      return json(502, {
+        detail: {
+          error: {
+            code: "KGI_QUOTE_AUTH_UNAVAILABLE",
+            message: "quote token entitlement unavailable",
+          },
+        },
+      });
+    }
+    if (url.startsWith("https://mis.twse.com.tw/stock/api/getStockInfo.jsp")) {
+      return json(200, {
+        rtcode: "0000",
+        msgArray: [{ c: "2330", z: "985.00", y: "970.00", v: "123456", d: "20260616", t: "09:31:05" }],
+      });
+    }
+    return json(500, { error: "unexpected test URL " + url });
+  }) as typeof fetch;
+
+  try {
+    const result = await runSimQuoteSmoke({ workspaceId: null, symbol: "2330" });
+    assert.equal(result.gatewayReachable, true, "DS5b: gateway was reachable");
+    assert.equal(result.loggedIn, true, "DS5b: gateway was logged in");
+    assert.equal(result.subscribed, false, "DS5b: KGI quote subscribe did not pass");
+    assert.equal(result.tickReceived, false, "DS5b: no KGI tick was received");
+    assert.equal(result.kgiQuoteCapability, "external_unavailable", "DS5b: KGI quote auth is external entitlement");
+    assert.equal(result.productQuoteProvider, "twse_mis", "DS5b: product quote provider falls back to TWSE MIS");
+    assert.equal(result.productQuoteUsable, true, "DS5b: product quote lane remains usable");
+    assert.equal(result.error, null, "DS5b: product health must not fail when MIS quote is usable");
+    assert.equal(result.productQuoteSample?.lastPrice, 985, "DS5b: MIS quote sample is attached");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalGatewayUrl === undefined) {
+      delete process.env["KGI_GATEWAY_URL"];
+    } else {
+      process.env["KGI_GATEWAY_URL"] = originalGatewayUrl;
+    }
+  }
+});
+
 test("DS6: runSimQuoteSmoke logs in and sets account before subscribing after gateway restart", async () => {
   _resetKgiSimState();
   const originalFetch = globalThis.fetch;
@@ -10856,6 +10914,51 @@ test("ORT4: runSimTradeSmoke with dual-confirm attempts order submit (gateway un
     const state = getKgiSimState();
     assert.notEqual(state.lastSimOrderStatus, "pending", "ORT4: lastSimOrderStatus updated after run");
   });
+});
+
+test("ORT5: KGI reconciliation does not confirm an unrelated broker report", async () => {
+  const { reconcileKgiOrder } = await import("../apps/api/src/broker/kgi-order-reconciliation.ts");
+  const result = reconcileKgiOrder({
+    order: { tradeId: "SIM-ORDER-001", symbol: "2330", side: "buy", requestedQty: 1000 },
+    trades: {
+      rows: [
+        { trade_id: "SIM-ORDER-999", symbol: "2330", side: "buy", qty: 1000, status: "accepted" },
+      ],
+    },
+  });
+
+  assert.equal(result.brokerReportConfirmed, false, "ORT5: mismatched trade_id must not confirm this order");
+  assert.equal(result.status, "unconfirmed", "ORT5: mismatched report remains unconfirmed");
+  assert.equal(result.matchStrategy, "none", "ORT5: mismatched trade_id blocks exact-request fallback");
+  assert.equal(result.settlementConfirmed, false, "ORT5: no fill/cancel/reject confirmation");
+});
+
+test("ORT6: KGI reconciliation promotes matched deals to filled position data", async () => {
+  const { reconcileKgiOrder } = await import("../apps/api/src/broker/kgi-order-reconciliation.ts");
+  const result = reconcileKgiOrder({
+    order: { tradeId: "SIM-ORDER-002", symbol: "2330", side: "buy", requestedQty: 1000 },
+    deals: {
+      rows: [
+        {
+          trade_id: "SIM-ORDER-002",
+          symbol: "2330",
+          side: "buy",
+          deal_qty: 1000,
+          deal_price: 985,
+          status: "filled",
+          deal_time: "2026-06-16T09:31:05+08:00",
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.brokerReportConfirmed, true, "ORT6: matching deal confirms broker report");
+  assert.equal(result.status, "filled", "ORT6: matching deal becomes filled");
+  assert.equal(result.filledQty, 1000, "ORT6: filled quantity comes from deal row");
+  assert.equal(result.remainingQty, 0, "ORT6: remaining quantity is zero after full fill");
+  assert.equal(result.avgFillPrice, 985, "ORT6: average fill price comes from deal row");
+  assert.equal(result.settlementConfirmed, true, "ORT6: matched deal is settlement-confirmed");
+  assert.equal(result.settlementSource, "deal", "ORT6: deal is strongest settlement source");
 });
 
 // ── P1-A Regression: institutional aggregateInstRows name-matching ─────────────
@@ -15927,18 +16030,22 @@ test("OTC-INDEX-POSTCLOSE: overview backfills today's 櫃買 index from MIS when
   assert.ok(otcBackfills.length >= 2, `expected >=2 otc_o00 backfill sites, got ${otcBackfills.length}`);
 });
 
-test("DAILY-SMOKE-AUTH-EXPECTED: KGI quote-auth-unavailable degrades to partial, not a daily critical fail", () => {
+test("DAILY-SMOKE-AUTH-EXPECTED: product quote lane must use MIS when KGI quote entitlement is off", () => {
   // 6/12-6/14: R13 paged critical every day because the smoke set
   // overallStatus=fail whenever KGI quote subscribe returned
   // KGI_QUOTE_AUTH_UNAVAILABLE — a known, accepted condition (product realtime
   // is TWSE MIS; KGI quote auth is intentionally off). That expected case must
   // degrade to partial so R13 (fires only on "fail") stops the daily noise.
   const src = readFileSync(path.join(process.cwd(), "apps/api/src/broker/kgi-sim-env.ts"), "utf8");
-  assert.match(src, /const quoteAuthExpectedOff =/);
+  assert.match(src, /getTwseMisQuoteSnapshot\(symbol\)/);
   assert.match(src, /KGI_QUOTE_AUTH_UNAVAILABLE/i);
-  assert.match(src, /const quoteUsable = quotePass \|\| quoteAuthExpectedOff;/);
+  assert.match(src, /productQuoteProvider = "twse_mis"/);
+  assert.match(src, /productQuoteUsable = true/);
+  assert.match(src, /const quotePass = quoteResult\.productQuoteUsable;/);
+  assert.doesNotMatch(src, /const quoteAuthExpectedOff =/);
+  assert.doesNotMatch(src, /const quoteUsable = quotePass \|\| quoteAuthExpectedOff;/);
   // the old unconditional "!quotePass → fail" branch must be gone
-  assert.match(src, /else if \(!quoteUsable \|\| !tradePass \|\| !auditClean\)/);
+  assert.match(src, /else if \(!quotePass \|\| !tradePass \|\| !auditClean\)/);
 });
 
 test("BOOT-WARM: market caches are pre-warmed after boot to kill first-request cold start", () => {
