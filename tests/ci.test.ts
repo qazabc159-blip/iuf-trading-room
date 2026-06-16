@@ -15941,6 +15941,19 @@ test("DAILY-SMOKE-AUTH-EXPECTED: KGI quote-auth-unavailable degrades to partial,
   assert.match(src, /else if \(!quoteUsable \|\| !tradePass \|\| !auditClean\)/);
 });
 
+test("BOOT-WARM: market caches are pre-warmed after boot to kill first-request cold start", () => {
+  // 6/15: the first /market/overview, /heatmap and /portfolio/f-auto hit after
+  // a deploy or cache expiry paid 4-9s cold start (0.3-0.5s once warm) — the
+  // owner's first page load each session felt slow. Pre-warm the shared caches
+  // shortly after boot and refresh under the heatmap TTL.
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /const warmMarketCaches = async/);
+  assert.match(src, /getTwseMarketOverview\(\),/);
+  assert.match(src, /getStockDayAllRows\(\),/);
+  assert.match(src, /getTpexMainboardCloseRows\(\),/);
+  assert.match(src, /setTimeout\(\(\) => \{ void warmMarketCaches\(\); \}, 8_000\)/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 

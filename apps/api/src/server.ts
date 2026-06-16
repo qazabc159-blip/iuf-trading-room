@@ -16380,6 +16380,31 @@ function startSchedulers(workspaceSlug: string): void {
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
   const INITIAL_STAGGER_MS = schedulerPositiveInt("FINMIND_SCHEDULER_INITIAL_STAGGER_MS", 15_000);
 
+  // Boot cache warm (6/16): the first request to /market/overview, /heatmap and
+  // /portfolio/f-auto after a deploy or cache expiry pays the full cold-start
+  // cost — measured 6/15 at 4-9s for the first hit, 0.3-0.5s once warm. The
+  // owner's first page load each session felt "slow" for exactly this reason.
+  // Pre-warm the shared upstream caches 8s after boot (and refresh every 4 min,
+  // just under the heatmap TTL) so a real request is almost always already hot.
+  // Fail-open: warming never throws into the boot path.
+  const warmMarketCaches = async () => {
+    try {
+      const { getTwseMarketOverview, getStockDayAllRows, getTpexMainboardCloseRows } =
+        await import("./data-sources/twse-openapi-client.js");
+      await Promise.allSettled([
+        getTwseMarketOverview(),
+        getStockDayAllRows(),
+        getTpexMainboardCloseRows(),
+        _getTwseOfficialIndustryMap(),
+      ]);
+      console.log("[boot-warm] market caches warmed (overview + STOCK_DAY_ALL + TPEX + industry map)");
+    } catch (e) {
+      console.warn("[boot-warm] warm failed (non-fatal):", e instanceof Error ? e.message : String(e));
+    }
+  };
+  setTimeout(() => { void warmMarketCaches(); }, 8_000);
+  ui(() => { void warmMarketCaches(); }, 4 * 60 * 1000);
+
   // F2: OHLCV sync — immediate first run then every 6h
   scheduleInitialSchedulerTick("ohlcv-scheduler", 0, () => runOhlcvSchedulerTick(workspaceSlug));
   ui(() => {
