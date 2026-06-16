@@ -1116,7 +1116,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         const orderResult = JSON.parse(raw) as S1OrderSubmitResult;
         notes.push("positions_from_order_file: avg_cost and last_price unknown without KGI fill confirmation");
         positions = orderResult.results
-          .filter((r) => r.status === "filled" || r.status === "partially_filled")
+          .filter((r) => HELD_STATUSES.has(r.status))
           .map((r) => ({
             symbol: r.symbol,
             shares: r.filled_shares ?? r.shares,
