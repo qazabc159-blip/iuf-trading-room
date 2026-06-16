@@ -15954,6 +15954,17 @@ test("BOOT-WARM: market caches are pre-warmed after boot to kill first-request c
   assert.match(src, /setTimeout\(\(\) => \{ void warmMarketCaches\(\); \}, 8_000\)/);
 });
 
+test("FIX-MARKET: company.market reconcile endpoint is owner-only, dry-run by default, and guards truncated lists", () => {
+  // 6/16 audit: 683 OTC stocks mislabelled market="TWSE". The reconcile endpoint
+  // must never mass-mislabel from a truncated upstream list, must default to a
+  // dry-run preview, and must be owner-gated (it writes the DB).
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /app\.post\("\/api\/v1\/admin\/companies\/fix-market"/);
+  assert.match(src, /const apply = body\.apply === true;/);
+  assert.match(src, /listed\.size < 500 \|\| otc\.size < 300/);
+  assert.match(src, /if \(session\.user\.role !== "Owner"\) return c\.json\(\{ error: "forbidden" \}, 403\);/);
+});
+
 test("S1-OBS-7: S1 signal basket excludes zero-share board-lot candidates", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 

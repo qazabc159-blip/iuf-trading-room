@@ -15103,6 +15103,72 @@ const CANONICAL_COMPANIES_SEED: Array<{
   }
 ];
 
+// POST /api/v1/admin/companies/fix-market — Owner-only. Reconcile company.market
+// against the official TWSE (STOCK_DAY_ALL) + TPEX (mainboard) listings.
+// 6/16 audit: 683 OTC stocks were mislabelled market="TWSE" (import default),
+// breaking the 上市/上櫃 label everywhere. dry-run by default; { apply: true }
+// executes the UPDATE. Reversible (market field only); never touches prices.
+app.post("/api/v1/admin/companies/fix-market", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner") return c.json({ error: "forbidden" }, 403);
+
+  const body = await c.req.json().catch(() => ({})) as { apply?: boolean };
+  const apply = body.apply === true;
+
+  if (!isDatabaseMode()) return c.json({ error: "memory_mode_no_db" }, 503);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
+  const [twseRows, tpexRows] = await Promise.all([getStockDayAllRows(), getTpexMainboardCloseRows()]);
+  const isCommon = (code: string) => /^[1-9]\d{3}$/.test(code);
+  const listed = new Set(twseRows.map((r) => (r.Code ?? "").trim()).filter(isCommon));
+  const otc = new Set(tpexRows.map((r) => (r.SecuritiesCompanyCode ?? "").trim()).filter(isCommon));
+  // Guard: never reconcile against a truncated upstream list (would mislabel en masse).
+  if (listed.size < 500 || otc.size < 300) {
+    return c.json({ error: "official_lists_unavailable", listedSize: listed.size, otcSize: otc.size }, 503);
+  }
+
+  const rawRows = await db.execute(
+    drizzleSql`SELECT ticker, market FROM companies WHERE workspace_id = ${session.workspace.id}`
+  );
+  const companies = (Array.isArray(rawRows) ? rawRows : (rawRows as { rows?: unknown[] }).rows ?? []) as Array<{ ticker?: string; market?: string }>;
+
+  const toOtc: string[] = [];
+  const toListed: string[] = [];
+  for (const co of companies) {
+    const t = (co.ticker ?? "").trim();
+    const m = co.market ?? "";
+    if (!isCommon(t)) continue;
+    if (otc.has(t) && !listed.has(t) && (m === "TWSE" || m === "上市")) toOtc.push(t);
+    else if (listed.has(t) && !otc.has(t) && m === "上櫃") toListed.push(t);
+  }
+
+  let applied = 0;
+  if (apply) {
+    if (toOtc.length > 0) {
+      await db.execute(drizzleSql`UPDATE companies SET market = '上櫃' WHERE workspace_id = ${session.workspace.id} AND ticker IN (${drizzleSql.join(toOtc.map((t) => drizzleSql`${t}`), drizzleSql`, `)})`);
+      applied += toOtc.length;
+    }
+    if (toListed.length > 0) {
+      await db.execute(drizzleSql`UPDATE companies SET market = 'TWSE' WHERE workspace_id = ${session.workspace.id} AND ticker IN (${drizzleSql.join(toListed.map((t) => drizzleSql`${t}`), drizzleSql`, `)})`);
+      applied += toListed.length;
+    }
+    console.info(`[admin/companies/fix-market] applied: ${toOtc.length} → 上櫃, ${toListed.length} → TWSE (owner uid=${session.user.id})`);
+  }
+
+  return c.json({
+    dryRun: !apply,
+    listedSize: listed.size,
+    otcSize: otc.size,
+    toOtcCount: toOtc.length,
+    toListedCount: toListed.length,
+    applied,
+    sampleToOtc: toOtc.slice(0, 30),
+    sampleToListed: toListed.slice(0, 30),
+  });
+});
+
 app.post("/api/v1/admin/companies/seed", async (c) => {
   const session = c.get("session");
   if (session.user.role !== "Owner" && session.user.role !== "Admin") {
