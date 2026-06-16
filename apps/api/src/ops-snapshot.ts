@@ -69,6 +69,47 @@ export type OpsSnapshot = {
   };
 };
 
+// BUG-04 fix: sanitize English-heavy signal/plan labels so the frontend
+// `cleanExternalHeadline` fallback ("資料列尚未完成中文整理") does not fire.
+const _SIGNAL_CATEGORY_ZH: Record<string, string> = {
+  price: "技術訊號",
+  macro: "總體經濟訊號",
+  industry: "產業訊號",
+  company: "個股訊號",
+  portfolio: "投組訊號"
+};
+const _SIGNAL_DIRECTION_ZH: Record<string, string> = {
+  bullish: "偏多",
+  bearish: "偏空",
+  neutral: "中性"
+};
+const _PLAN_STATUS_ZH: Record<string, string> = {
+  draft: "草稿",
+  ready: "已就緒",
+  active: "執行中",
+  reduced: "縮倉",
+  closed: "已平倉",
+  cancelled: "已取消"
+};
+
+function _sanitizeSignalLabel(signal: { title: string; category: string; direction: string }): string {
+  const title = signal.title?.trim() ?? "";
+  const latin = (title.match(/[A-Za-z]/g) ?? []).length;
+  const cjk = (title.match(/[一-鿿]/g) ?? []).length;
+  const isEnglishHeavy = latin >= 16 && latin > Math.max(8, cjk * 2);
+  if (!isEnglishHeavy && cjk > 0) return title; // already has meaningful Chinese
+  const cat = _SIGNAL_CATEGORY_ZH[signal.category] ?? "訊號";
+  const dir = _SIGNAL_DIRECTION_ZH[signal.direction] ?? signal.direction;
+  return `${cat}（${dir}）`;
+}
+
+function _sanitizePlanLabel(plan: { status: string; riskReward?: number | null }): string {
+  const statusZh = _PLAN_STATUS_ZH[plan.status] ?? plan.status;
+  return plan.riskReward != null
+    ? `交易計畫 風報比 ${plan.riskReward} · ${statusZh}`
+    : `交易計畫 · ${statusZh}`;
+}
+
 function byIsoDesc<T>(items: T[], getIso: (item: T) => string | undefined) {
   return [...items].sort((left, right) => {
     const leftValue = getIso(left) ?? "";
@@ -177,8 +218,8 @@ export function buildOpsSnapshotView(input: {
         (signal) => signal.createdAt,
         (signal) => ({
           id: signal.id,
-          label: signal.title,
-          subtitle: `${signal.category} / ${signal.direction} / confidence ${signal.confidence}`,
+          label: _sanitizeSignalLabel(signal),
+          subtitle: `${_SIGNAL_CATEGORY_ZH[signal.category] ?? signal.category} / ${_SIGNAL_DIRECTION_ZH[signal.direction] ?? signal.direction} / 信心度 ${signal.confidence}`,
           timestamp: signal.createdAt
         })
       ),
@@ -188,8 +229,8 @@ export function buildOpsSnapshotView(input: {
         (plan) => plan.updatedAt,
         (plan) => ({
           id: plan.id,
-          label: `Trade plan ${plan.riskReward ? `RR ${plan.riskReward}` : plan.status}`,
-          subtitle: `status / ${plan.status}`,
+          label: _sanitizePlanLabel(plan),
+          subtitle: `狀態 / ${_PLAN_STATUS_ZH[plan.status] ?? plan.status}`,
           timestamp: plan.updatedAt
         })
       ),
