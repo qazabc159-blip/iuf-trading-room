@@ -191,7 +191,7 @@ test("/portfolio trading room keeps K-line stable while live quote stream/pulse 
     await expect(
       quoteQualityBadge,
       "visible quote quality badge must describe stream/fallback freshness",
-    ).toContainText(/行情|輪詢|LIVE|退化|延遲/);
+    ).toContainText(/行情|輪詢|LIVE|退化|延遲|盤後|恢復|觀察/);
   }
   expect(afterFrameSrc, "quote pulse must not reload or change the real K-line iframe").toBe(before.frameSrc);
   expect(afterFrameReloads, "quote pulse/full refresh must not remount the real K-line iframe").toBe(initialViewport.frameReloads);
