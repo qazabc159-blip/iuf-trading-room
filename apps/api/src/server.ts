@@ -3741,8 +3741,8 @@ app.get("/api/v1/openalice/jobs", async (c) => {
         id: `brief:${row.id}`,
         workspaceSlug,
         deviceId: undefined,
-        status: row.status === "published" ? "completed" : row.status === "draft" ? "draft_ready" : "queued",
-        taskType: "daily_brief_pipeline",
+        status: row.status === "published" ? "published" : row.status === "draft" ? "draft_ready" : "queued",
+        taskType: "daily_brief",
         instructions: `每日簡報 ${row.date} (${row.marketState ?? ""}) — ${row.generatedBy ?? "system"}`,
         contextRefs: [],
         result: undefined,
@@ -3751,7 +3751,9 @@ app.get("/api/v1/openalice/jobs", async (c) => {
         completedAt: row.status === "published" ? row.createdAt.toISOString() : undefined,
         attemptCount: 1,
         maxAttempts: 1,
-        error: undefined
+        error: undefined,
+        lastHeartbeatAt: undefined,
+        leaseExpiresAt: undefined
       }));
     } catch {
       // brief lookup is best-effort — never block the jobs endpoint

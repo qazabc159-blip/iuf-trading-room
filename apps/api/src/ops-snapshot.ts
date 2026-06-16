@@ -103,7 +103,7 @@ function _sanitizeSignalLabel(signal: { title: string; category: string; directi
   return `${cat}（${dir}）`;
 }
 
-function _sanitizePlanLabel(plan: { status: string; riskReward?: number | null }): string {
+function _sanitizePlanLabel(plan: { status: string; riskReward?: number | string | null }): string {
   const statusZh = _PLAN_STATUS_ZH[plan.status] ?? plan.status;
   return plan.riskReward != null
     ? `交易計畫 風報比 ${plan.riskReward} · ${statusZh}`
