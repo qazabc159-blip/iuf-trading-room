@@ -15941,6 +15941,17 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
   assert.match(runnerSource, /mark_to_market/);
 });
 
+test("S1-OBS-7c: SIM holdings rebuild counts accepted/unconfirmed orders, not just filled", () => {
+  // 6/17 regression: #1089 filtered audit positions to filled/partially_filled
+  // only, but KGI SIM never returns a broker fill report → orders stay
+  // accepted/unconfirmed forever → F-AUTO showed 0 positions. SIM-accepted IS
+  // the simulated holding; only rejected/skipped/cancelled are excluded.
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+  assert.match(runnerSource, /HELD_STATUSES = new Set\(\["filled", "partially_filled", "accepted", "unconfirmed"\]\)/);
+  assert.match(runnerSource, /\.filter\(\(r\) => HELD_STATUSES\.has\(r\.status\)\)/);
+  assert.doesNotMatch(runnerSource, /\.filter\(\(r\) => r\.status === "filled" \|\| r\.status === "partially_filled"\)/);
+});
+
 test("S1-OBS-7b: mark-to-market covers OTC (TPEX) symbols, not just TWSE-listed", () => {
   const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
 
