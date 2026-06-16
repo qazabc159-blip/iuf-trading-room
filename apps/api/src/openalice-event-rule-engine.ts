@@ -613,7 +613,7 @@ const RULES: EventRule[] = [
     severity: "warning",
     trigger: async () => {
       try {
-        const { getThemeRefreshStatus, themeRefreshTaipeiDate } = await import("./theme-refresh.js");
+        const { themeRefreshTaipeiDate } = await import("./theme-refresh.js");
 
         const now = Date.now();
         const taipei = new Date(now + 8 * 60 * 60 * 1000);
@@ -624,8 +624,20 @@ const RULES: EventRule[] = [
         if (hhmm < 1830) return []; // window not closed yet
 
         const todayDate = themeRefreshTaipeiDate(now);
-        const status = getThemeRefreshStatus();
-        if (status.successDate === todayDate) return [];
+        // DB-derived (was in-memory getThemeRefreshStatus, reset on every process
+        // restart → false「未完成」alerts on days with several deploys; 6/16
+        // repro: 4 deploys wiped successDate to null though 25 themes refreshed).
+        // theme-refresh sets themes.updated_at on every rewritten theme, so a
+        // theme updated today proves the refresh ran — independent of restarts.
+        if (!isDatabaseMode()) return [];
+        const db = getDb();
+        if (!db) return [];
+        const rows = await db.execute(drizzleSql`SELECT MAX(updated_at) AS latest FROM themes`);
+        const latest = execRows<{ latest?: string | Date | null }>(rows)[0]?.latest ?? null;
+        const latestTpe = latest
+          ? new Date(latest).toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" })
+          : null;
+        if (latestTpe === todayDate) return [];
 
         return [{
           ruleId: "R14_THEME_REFRESH_STALE",
@@ -634,9 +646,7 @@ const RULES: EventRule[] = [
           ticker: null,
           payload: {
             date: todayDate,
-            successDate: status.successDate,
-            lastError: status.lastError,
-            attemptsToday: status.attemptsToday
+            latestThemeUpdate: latestTpe,
           }
         }];
       } catch {
