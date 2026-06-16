@@ -29,6 +29,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
+import { getTaiexDailyCloses } from "./data-sources/twse-openapi-client.js";
 import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
 import {
   appendPersistedQuoteEntries,
@@ -1452,16 +1453,58 @@ function dailyBarToContextRow(input: {
 }
 
 async function loadFinMindTaiexIndexContext(): Promise<{ row: DailyBarContextRow | null; history: IndexOhlcHistoryRow[] }> {
-  if (!process.env.FINMIND_API_TOKEN) return { row: null, history: [] };
+  // BUG-09 fix: Build TAIEX OHLCV history from TWSE MI_5MINS_HIST official daily
+  // closes (always current, free) instead of relying solely on FinMind which may
+  // return stale data when the token is on a free plan or quota-limited.
+  // Strategy:
+  //   1. Try FinMind for full OHLCV bars (open/high/low/close/volume) — richer.
+  //   2. Use TWSE getTaiexDailyCloses for close-only history — always up-to-date.
+  //   3. Merge: FinMind bars take precedence for dates they cover; TWSE fills gaps
+  //      and extends to the latest trading day.
 
+  const today = daysAgoIsoDate(0);
+  const historyStartDate = daysAgoIsoDate(140);
+
+  // Attempt FinMind (best-effort, may be stale or unavailable)
+  let finmindBars: { dt: string; open: number; high: number; low: number; close: number; volume: number }[] = [];
+  let latestFinmindDate: string | null = null;
+  if (process.env.FINMIND_API_TOKEN) {
+    try {
+      const raw = await getFinMindClient().getStockPriceAdj("TAIEX", historyStartDate, null);
+      finmindBars = raw;
+      latestFinmindDate = raw.at(-1)?.dt ?? null;
+    } catch {
+      // FinMind unavailable — fall through to TWSE-only
+    }
+  }
+
+  // Always fetch TWSE MI_5MINS_HIST for official close history (last 140 days)
+  let twseCloses: { date: string; close: number }[] = [];
   try {
-    const bars = await getFinMindClient().getStockPriceAdj("TAIEX", daysAgoIsoDate(140), null);
-    if (bars.length === 0) return { row: null, history: [] };
-    const latest = bars.at(-1);
-    const previous = bars.length > 1 ? bars.at(-2) : null;
-    if (!latest) return { row: null, history: [] };
+    twseCloses = await getTaiexDailyCloses(historyStartDate, today);
+  } catch {
+    // TWSE unavailable — use FinMind only
+  }
 
-    const history = bars.slice(-70).map((bar) => ({
+  // Build close map from FinMind (richer) and TWSE (authoritative)
+  const closeMapByDate = new Map<string, IndexOhlcHistoryRow>();
+
+  // First populate with TWSE closes (close-only bars)
+  for (const row of twseCloses) {
+    closeMapByDate.set(row.date, {
+      date: row.date,
+      open: null,
+      high: null,
+      low: null,
+      close: finiteNumber(row.close),
+      volume: null,
+      source: "twse:MI_5MINS_HIST"
+    });
+  }
+
+  // Then overlay FinMind bars (with full OHLCV) where available
+  for (const bar of finmindBars) {
+    closeMapByDate.set(bar.dt, {
       date: bar.dt,
       open: finiteNumber(bar.open),
       high: finiteNumber(bar.high),
@@ -1469,21 +1512,50 @@ async function loadFinMindTaiexIndexContext(): Promise<{ row: DailyBarContextRow
       close: finiteNumber(bar.close),
       volume: finiteNumber(bar.volume),
       source: "finmind:TaiwanStockPrice"
-    }));
+    });
+  }
 
-    const row = dailyBarToContextRow({
+  const history = [...closeMapByDate.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-70);
+
+  // Build the DailyBarContextRow for the latest bar
+  // Prefer FinMind if it has data up to within 7 days; otherwise use TWSE close
+  let row: DailyBarContextRow | null = null;
+  const latestBar = history.at(-1);
+  const previousBar = history.length > 1 ? history.at(-2) : null;
+
+  if (latestBar?.close) {
+    const isFinmindFresh = latestFinmindDate != null && latestFinmindDate >= daysAgoIsoDate(7);
+    const source = isFinmindFresh ? "finmind:TaiwanStockPrice" : "twse:MI_5MINS_HIST";
+    const prevClose = previousBar?.close ?? null;
+    const change = prevClose != null && latestBar.close != null ? latestBar.close - prevClose : null;
+    const changePct = prevClose != null && prevClose > 0 && latestBar.close != null
+      ? ((latestBar.close - prevClose) / prevClose) * 100
+      : null;
+    row = {
       symbol: "TAIEX",
       market: "TW_INDEX",
       name: "加權指數",
-      latest,
-      previous: previous ? { close: previous.close } : null,
-      source: "finmind:TaiwanStockPrice"
-    });
-
-    return { row, history };
-  } catch {
-    return { row: null, history: [] };
+      sector: null,
+      date: latestBar.date,
+      open: latestBar.open,
+      high: latestBar.high,
+      low: latestBar.low,
+      close: latestBar.close,
+      last: latestBar.close,
+      prevClose,
+      change,
+      changePct,
+      volume: latestBar.volume,
+      timestamp: dateToTaipeiIso(latestBar.date),
+      weight: 0,
+      source
+    };
   }
+
+  if (history.length === 0 && !row) return { row: null, history: [] };
+  return { row, history };
 }
 
 async function loadDailyBarRowsFromDb(input: {

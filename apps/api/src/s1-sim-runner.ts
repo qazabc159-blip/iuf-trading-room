@@ -1066,7 +1066,10 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       .map((p) => ({
         symbol: p.symbol,
         shares: p.netQuantity,
-        avg_cost: p.lastPrice ?? 0,
+        // BUG-11 fix: KGI gateway `lastPrice` is the current market price, NOT the
+        // entry cost. Use basket entry price as avg_cost when available; fall back
+        // to gateway lastPrice only if no basket data exists.
+        avg_cost: entryBySymbol.get(p.symbol)?.latest_price ?? p.lastPrice ?? 0,
         last_price: p.lastPrice ?? null,
         unrealized_pnl_twd: p.unrealized !== undefined ? p.unrealized : null,
         market_value_twd: p.lastPrice !== undefined && p.lastPrice !== null
@@ -1118,11 +1121,18 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     }
   }
 
-  // 1b. Mark-to-market audit-rebuilt positions with EOD closes (best effort).
+  // 1b. Mark-to-market all positions with EOD closes (best effort).
+  // Runs for both audit-rebuilt AND gateway-sourced positions:
+  //   - For audit_log_rebuild/fallback: last_price is null, must be filled.
+  //   - For kgi_gateway: BUG-11 fix — after EC2 stops at 14:10, gateway
+  //     `lastPrice` may be a mid-session tick, not the official closing price.
+  //     Overwrite last_price with TWSE/TPEX EOD close for accurate valuation.
+  //     Also recalculate unrealized_pnl_twd from (close - avg_cost) * shares
+  //     so it's consistent with the official close, not the gateway's unrealized.
   // S1 holdings span listed (TWSE) and OTC (TPEX) symbols — a TWSE-only price
   // map leaves OTC positions (e.g. 5701) permanently un-priced (last_price=null
   // forever), which in turn nulls out the whole-portfolio totals below.
-  if (dataSource !== "kgi_gateway" && positions.length > 0) {
+  if (positions.length > 0) {
     try {
       // TPEX closes via the shared cached getter — the 6/11 inline fetch used
       // a 3s timeout on the ~4MB payload, which silently timed out from

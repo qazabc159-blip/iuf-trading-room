@@ -3702,9 +3702,78 @@ app.post("/api/v1/openalice/devices/cleanup", async (c) => {
 app.get("/api/v1/openalice/jobs", async (c) => {
   const denial = requireOpenAliceAdmin(c);
   if (denial) return denial;
-  return c.json({
-    data: await listOpenAliceJobs(c.get("session").workspace.slug)
-  });
+
+  const session = c.get("session");
+  const workspaceSlug = session.workspace.slug;
+  const jobs = await listOpenAliceJobs(workspaceSlug);
+
+  // BUG-05 fix: supplement old openalice jobs list with recent daily_briefs so
+  // the BRF-JOBS workflow panel shows the current pipeline (v2 published briefs)
+  // rather than stale 5/13 openAliceJobs table rows.
+  // Map each daily_brief (published, last 30 days, limit 20) to a pseudo-job
+  // with taskType="daily_brief_pipeline" and status="completed".
+  const db = getDb();
+  let briefPseudoJobs: typeof jobs = [];
+  if (db) {
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const briefRows = await db
+        .select({
+          id: dailyBriefs.id,
+          workspaceId: dailyBriefs.workspaceId,
+          date: dailyBriefs.date,
+          status: dailyBriefs.status,
+          generatedBy: dailyBriefs.generatedBy,
+          marketState: dailyBriefs.marketState,
+          createdAt: dailyBriefs.createdAt
+        })
+        .from(dailyBriefs)
+        .where(
+          and(
+            eq(dailyBriefs.workspaceId, session.workspace.id),
+            gte(dailyBriefs.createdAt, thirtyDaysAgo)
+          )
+        )
+        .orderBy(desc(dailyBriefs.createdAt))
+        .limit(20);
+
+      briefPseudoJobs = briefRows.map((row) => ({
+        id: `brief:${row.id}`,
+        workspaceSlug,
+        deviceId: undefined,
+        status: row.status === "published" ? "published" : row.status === "draft" ? "draft_ready" : "queued",
+        taskType: "daily_brief",
+        instructions: `每日簡報 ${row.date} (${row.marketState ?? ""}) — ${row.generatedBy ?? "system"}`,
+        contextRefs: [],
+        result: undefined,
+        createdAt: row.createdAt.toISOString(),
+        claimedAt: undefined,
+        completedAt: row.status === "published" ? row.createdAt.toISOString() : undefined,
+        attemptCount: 1,
+        maxAttempts: 1,
+        error: undefined,
+        lastHeartbeatAt: undefined,
+        leaseExpiresAt: undefined
+      }));
+    } catch {
+      // brief lookup is best-effort — never block the jobs endpoint
+    }
+  }
+
+  // Merge: deduplicate by id prefix, prefer brief pseudo-jobs for activity log
+  // but keep any non-brief openalice jobs that are recent (last 30 days) or active.
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const recentJobs = jobs.filter((j) =>
+    j.createdAt >= cutoff || j.status === "queued" || j.status === "running"
+  );
+
+  const merged = [...briefPseudoJobs, ...recentJobs].sort(
+    (a, b) => (b.completedAt ?? b.claimedAt ?? b.createdAt).localeCompare(
+      a.completedAt ?? a.claimedAt ?? a.createdAt
+    )
+  );
+
+  return c.json({ data: merged });
 });
 
 app.patch("/api/v1/openalice/jobs/:jobId/review", async (c) => {
@@ -4123,6 +4192,21 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
     timestamp: timestampValidation.normalizedTimestamp
   });
 
+  // BUG-02 fix: resolve TV ticker → company UUID so signals link to a company.
+  // TradingView sends tickers like "TWSE:2330", "TPEX:6533", or bare "2330".
+  // Strip the exchange prefix and do a workspace-scoped ticker lookup.
+  // Only attempt link when the payload doesn't already specify companyIds.
+  const resolvedCompanyIds: string[] = [...(payload.companyIds ?? [])];
+  if (resolvedCompanyIds.length === 0) {
+    try {
+      const rawTicker = payload.ticker.includes(":") ? payload.ticker.split(":")[1]! : payload.ticker;
+      const resolved = rawTicker ? await resolveCompany(repo, rawTicker, opts) : null;
+      if (resolved?.id) resolvedCompanyIds.push(resolved.id);
+    } catch {
+      // ticker resolution is best-effort — never block signal ingestion
+    }
+  }
+
   let signal;
   try {
     signal = await repo.createSignal(
@@ -4133,7 +4217,7 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
         summary: summaryParts.join("\n").slice(0, 2000),
         confidence,
         themeIds: payload.themeIds ?? [],
-        companyIds: payload.companyIds ?? []
+        companyIds: resolvedCompanyIds
       },
       opts
     );
