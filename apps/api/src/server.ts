@@ -19114,11 +19114,21 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
   const latest = await getLatestAiRecommendationV3RunForRead();
   const latestRunAgeMs = latest ? getV3RunAgeMs(latest.generatedAt) : null;
   const latestStaleRunning = latest ? isV3RunningStale(latest.status, latest.generatedAt) : false;
+  // cron_success_date is held in a module-level var that resets on every process
+  // restart — so a day with several deploys showed null even though the
+  // recommendation had shipped (6/15 repro). Derive from the DB: a complete run
+  // dated today means today's recommendation is out, regardless of redeploys.
+  const tpeDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  const todayTpe = tpeDate(new Date());
+  const latestTpe = latest?.generatedAt ? tpeDate(new Date(latest.generatedAt)) : null;
+  const cronSuccessDate = _aiRecV3CronSuccessDate
+    ?? (latest?.status === "complete" && latestTpe === todayTpe ? todayTpe : null);
   return c.json({
     cron_running: _aiRecV3CronRunning,
     cron_last_fired_at: _aiRecV3CronLastFiredAt,
     cron_last_error: _aiRecV3CronLastError,
-    cron_success_date: _aiRecV3CronSuccessDate,
+    cron_success_date: cronSuccessDate,
+    cron_success_date_source: _aiRecV3CronSuccessDate ? "in_memory" : (cronSuccessDate ? "db_derived" : "none"),
     cron_attempts_today: _aiRecV3AttemptDate === null ? 0 : _aiRecV3AttemptCount,
     cron_max_attempts_per_day: AI_REC_V3_MAX_ATTEMPTS_PER_DAY,
     latest_run_id: latest?.runId ?? null,
