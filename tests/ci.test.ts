@@ -15954,6 +15954,17 @@ test("BOOT-WARM: market caches are pre-warmed after boot to kill first-request c
   assert.match(src, /setTimeout\(\(\) => \{ void warmMarketCaches\(\); \}, 8_000\)/);
 });
 
+test("V3-CRON-STATUS-DB: cron_success_date is DB-derived so it survives a deploy reset", () => {
+  // 6/15: cron_success_date lives in a module-level var reset on every process
+  // restart — a day with several deploys showed null even though the run had
+  // shipped. The status endpoint must fall back to the DB (today's complete
+  // run) so it matches reality. R11 was already DB-derived; this aligns status.
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /const cronSuccessDate = _aiRecV3CronSuccessDate\s*\?\?\s*\(latest\?\.status === "complete" && latestTpe === todayTpe \? todayTpe : null\);/);
+  assert.match(src, /cron_success_date: cronSuccessDate,/);
+  assert.match(src, /cron_success_date_source:/);
+});
+
 test("FIX-MARKET: company.market reconcile endpoint is owner-only, dry-run by default, and guards truncated lists", () => {
   // 6/16 audit: 683 OTC stocks mislabelled market="TWSE". The reconcile endpoint
   // must never mass-mislabel from a truncated upstream list, must default to a
