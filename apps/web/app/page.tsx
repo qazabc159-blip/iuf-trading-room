@@ -53,7 +53,7 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
-import { isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
+import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
@@ -727,12 +727,16 @@ async function loadBrokerAccessState(): Promise<LoadState<BrokerAccessDashboard 
     const data = brokerAccessFromStatus(await getKgiQuoteStatus());
     return { state: "LIVE", data, updatedAt, source: "正式券商只讀狀態" };
   } catch {
+    const offHours = isKgiGatewayScheduledOff(new Date());
+    const reason = offHours
+      ? "EC2 排程 14:10 關機（正常）；明日 09:00 自動開機。"
+      : "正式券商只讀狀態暫時無法確認；首頁仍維持紙上交易與風控流程。";
     return {
       state: "EMPTY",
       data: null,
       updatedAt,
       source: "正式券商只讀狀態",
-      reason: "正式券商只讀狀態暫時無法確認；首頁仍維持紙上交易與風控流程。"
+      reason,
     };
   }
 }

@@ -398,6 +398,8 @@ export default async function SignalsPage() {
   const neutralCount = displaySignals.filter((signal) => signal.direction === "neutral").length;
   const highConfidenceCount = displaySignals.filter((signal) => signal.confidence >= 4).length;
   const categories = new Set(displaySignals.map((signal) => signal.category));
+  // BUG-12: show signals actually linked to themes, not total theme count
+  const linkedSignalCount = displaySignals.filter((signal) => signal.themeIds.length > 0 || signal.companyIds.length > 0).length;
 
   return (
     <PageFrame
@@ -457,8 +459,8 @@ export default async function SignalsPage() {
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">主題連結</span>
-          <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.themes.length : "--"}</span>
-          <span className="parity-kpi-sub">關聯主題</span>
+          <span className="parity-kpi-value">{countsAvailable ? linkedSignalCount : "--"}</span>
+          <span className="parity-kpi-sub">已連結訊號</span>
         </div>
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">公司池</span>

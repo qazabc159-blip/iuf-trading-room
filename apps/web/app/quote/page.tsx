@@ -284,7 +284,7 @@ function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null 
   if (!realtime || realtime.state === "BLOCKED" || realtime.state === "NO_DATA") {
     const reason = realtime?.reason ?? realtime?.note ?? "目前沒有可用報價來源。";
     return (
-      <Panel code="QTE-REALTIME" title="即時報價" right="source=BLOCKED">
+      <Panel code="QTE-REALTIME" title="即時報價" right="暫停">
         <div className="state-panel">
           <span className="badge badge-red">報價不可用</span>
           <span className="tg soft">KGI / TWSE 來源都沒有可顯示資料</span>
@@ -445,7 +445,7 @@ export default async function QuotePage({
       code="QTE"
       title={`台股報價 ${symbol}`}
       sub="報價 / K 線 / 五檔與逐筆"
-      note="此頁只顯示正式資料；KGI EC2 即時報價標示 source=LIVE；未接上的欄位會清楚標示暫停。"
+      note="此頁只顯示正式資料；凱基即時連線時顯示即時報價；未接上的欄位會清楚標示暫停。"
     >
       <Panel code="QTE-SRC" title="股票查詢" right={generatedAt ? `更新 ${formatDateTime(generatedAt)}` : "市場資料"}>
         <form action="/quote" className="filter-row">
@@ -502,12 +502,12 @@ export default async function QuotePage({
           <BlockedMarketPanel
             code="QTE-BA"
             title="五檔委買委賣"
-            reason="凱基唯讀五檔資料尚未接上；目前不顯示假五檔。"
+            reason="盤後暫停，下一交易日 09:00 恢復。"
           />
           <BlockedMarketPanel
             code="QTE-T"
             title="逐筆成交"
-            reason="逐筆資料等待凱基唯讀串流或後端快取啟用；目前不顯示假逐筆。"
+            reason="盤後暫停，下一交易日 09:00 恢復。"
           />
         </div>
       </div>

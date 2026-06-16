@@ -545,9 +545,13 @@ export async function GET(
   } catch (error) {
     const message = error instanceof Error ? error.message : "RENDER_FAILED";
     console.error(`[ui-final-v031] render error for screen=${screen}:`, error);
-    return NextResponse.json(
-      { ok: false, error: "RENDER_FAILED", detail: message, screen },
-      { status: 500, headers: NO_STORE_HEADERS }
-    );
+    // Return HTML error page so the iframe renders a visible message instead of blank/JSON
+    const safeScreen = screen.replace(/[^a-z0-9-]/g, "");
+    const safeMessage = message.replace(/[<>&"]/g, (ch: string) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[ch] ?? ch));
+    const errorHtml = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>載入失敗</title><style>body{margin:0;background:#080b10;color:#91a0b5;font:14px/1.6 monospace;display:flex;align-items:center;justify-content:center;min-height:100vh}.box{max-width:480px;padding:32px;border:1px solid rgba(220,228,240,0.12);border-radius:6px;background:rgba(255,255,255,0.03)}.code{font-size:11px;color:#e2b85c;letter-spacing:.06em;margin-bottom:12px}.msg{color:#c6d0de;font-size:15px;font-weight:600;margin-bottom:8px}.detail{font-size:12px;color:#566276}</style></head><body><div class="box"><div class="code">IUF / ${safeScreen.toUpperCase()} / 載入失敗</div><div class="msg">頁面暫時無法載入</div><div class="detail">${safeMessage}<br><br>請重新整理，或稍後再試。</div></div></body></html>`;
+    return new NextResponse(errorHtml, {
+      status: 500,
+      headers: { ...NO_STORE_HEADERS, "Content-Type": "text/html; charset=utf-8" }
+    });
   }
 }

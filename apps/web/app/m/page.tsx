@@ -2,15 +2,15 @@ import Link from "next/link";
 
 import {
   getBriefs,
+  getAiRecommendationsV3,
   getKillSwitch,
   getMarketDataOverview,
-  getStrategyIdeas,
   getThemes,
+  type AiRecommendationV3Item,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, briefFreshnessForDate, briefFreshnessLabel, briefFreshnessTone } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
-import { reasonLabel } from "@/lib/strategy-vocab";
 import { MobileKgiWatchlist } from "./MobileKgiWatchlist";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +19,12 @@ const ACCOUNT_ID = "paper-default";
 
 type BriefRow = Awaited<ReturnType<typeof getBriefs>>["data"][number];
 type ThemeRow = Awaited<ReturnType<typeof getThemes>>["data"][number];
-type IdeaRow = Awaited<ReturnType<typeof getStrategyIdeas>>["data"]["items"][number];
 type MarketOverview = Awaited<ReturnType<typeof getMarketDataOverview>>["data"];
 type KillState = Awaited<ReturnType<typeof getKillSwitch>>["data"];
 type MobileData = {
   briefs: BriefRow[];
   themes: ThemeRow[];
-  ideas: IdeaRow[];
+  aiRecs: AiRecommendationV3Item[];
   overview: MarketOverview | null;
   kill: KillState | null;
 };
@@ -37,7 +36,7 @@ type LoadState =
 const emptyData: MobileData = {
   briefs: [],
   themes: [],
-  ideas: [],
+  aiRecs: [],
   overview: null,
   kill: null,
 };
@@ -47,21 +46,21 @@ async function loadMobileBrief(): Promise<LoadState> {
   const updatedAt = new Date().toISOString();
 
   try {
-    const [briefsEnvelope, themesEnvelope, ideasEnvelope, overviewEnvelope, killEnvelope] = await Promise.all([
+    const [briefsEnvelope, themesEnvelope, aiRecsEnvelope, overviewEnvelope, killEnvelope] = await Promise.all([
       getBriefs(),
       getThemes(),
-      getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 8, sort: "score" }),
+      getAiRecommendationsV3().catch(() => null),
       getMarketDataOverview(),
       getKillSwitch(ACCOUNT_ID),
     ]);
     const data: MobileData = {
       briefs: briefsEnvelope.data,
       themes: themesEnvelope.data,
-      ideas: ideasEnvelope.data.items,
+      aiRecs: aiRecsEnvelope?.items ?? [],
       overview: overviewEnvelope.data,
       kill: killEnvelope.data,
     };
-    if (data.briefs.length === 0 && data.themes.length === 0 && data.ideas.length === 0) {
+    if (data.briefs.length === 0 && data.themes.length === 0 && data.aiRecs.length === 0) {
       return {
         state: "EMPTY",
         data,
@@ -110,18 +109,6 @@ function modeLabel(mode: string | null | undefined) {
   return "未知";
 }
 
-function directionLabel(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "偏多";
-  if (direction === "bearish") return "偏空";
-  return "中性";
-}
-
-function decisionLabel(decision: IdeaRow["marketData"]["decision"]) {
-  if (decision === "allow") return "可觀察";
-  if (decision === "review") return "待審";
-  return "阻擋";
-}
-
 function marketLabel(value: string | null | undefined) {
   if (value === "Attack") return "進攻";
   if (value === "Selective Attack") return "選擇性進攻";
@@ -160,17 +147,6 @@ function mobileThemeName(theme: ThemeRow) {
   if (slugLabel) return slugLabel;
   const cleaned = cleanExternalHeadline(theme.name, "主題");
   return cleaned.replace(/^\[[^\]]+\]\s*/, "").trim() || "主題";
-}
-
-function signed(value: number | null | undefined, digits = 2) {
-  if (typeof value !== "number") return "--";
-  return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-}
-
-function directionTone(direction: IdeaRow["direction"]) {
-  if (direction === "bullish") return "up";
-  if (direction === "bearish") return "down";
-  return "muted";
 }
 
 const MOB_CSS = `
@@ -344,7 +320,7 @@ export default async function MobileBrief() {
   const latestBriefAgeDays = briefAgeDays(latestBrief?.date);
   const latestBriefFreshness = result.state === "LIVE" ? briefFreshnessForDate(latestBrief?.date) : "BLOCKED";
   const themes = result.data.themes.slice().sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)).slice(0, 5);
-  const ideas = result.data.ideas.slice(0, 4);
+  const aiRecs = result.data.aiRecs.slice(0, 5);
   const overview = result.data.overview;
   const activeSource = overview?.quotes.readiness.connectedSources.join("/") || "none";
   const mobileLive = result.state === "LIVE";
@@ -494,34 +470,42 @@ export default async function MobileBrief() {
         })}
       </section>
 
-      {/* Ideas */}
+      {/* AI 推薦 (BUG-14: switched from legacy strategy ideas to today's AI recommendations) */}
       <section className="_bty-mob-section">
         <div className="_bty-mob-section-head">
-          <span className="_bty-mob-section-code">IDA / 模擬策略想法</span>
-          <span className="_bty-mob-section-right">{mobileLive ? `${ideas.length} 筆` : stateLabel(result.state)}</span>
+          <span className="_bty-mob-section-code">IDA / 今日 AI 推薦</span>
+          <span className="_bty-mob-section-right">{mobileLive ? `${aiRecs.length} 筆` : stateLabel(result.state)}</span>
         </div>
         {!mobileLive && (
           <div className="_bty-mob-card">
             <div className={`tg ${stateTone(result.state)}`} style={{ fontWeight: 600 }}>{stateLabel(result.state)}</div>
-            <div className="tc soft" style={{ marginTop: 8, fontSize: 13 }}>模擬策略想法先隱藏，等待行動簡報資料恢復正常。</div>
+            <div className="tc soft" style={{ marginTop: 8, fontSize: 13 }}>AI 推薦先隱藏，等待行動簡報資料恢復正常。</div>
           </div>
         )}
-        {mobileLive && ideas.length === 0 && (
+        {mobileLive && aiRecs.length === 0 && (
           <div className="_bty-mob-card">
-            <div className="tg gold" style={{ fontWeight: 600 }}>無資料</div>
-            <div className="tc soft" style={{ marginTop: 8, fontSize: 13 }}>目前沒有模擬策略想法。</div>
+            <div className="tg gold" style={{ fontWeight: 600 }}>等待中</div>
+            <div className="tc soft" style={{ marginTop: 8, fontSize: 13 }}>今日 AI 推薦尚未產出，排程於每日開盤前自動執行。</div>
           </div>
         )}
-        {mobileLive && ideas.map((idea) => (
-          <Link className="_bty-mob-card" href={`/companies/${idea.symbol}`} key={`${idea.companyId}-${idea.symbol}`}>
-            <div className="_bty-mob-card-row">
-              <span className="_bty-mob-symbol">{idea.symbol}</span>
-              <span className={`_bty-mob-dir-pill ${directionTone(idea.direction)}`}>{directionLabel(idea.direction)}</span>
-            </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginTop: 4 }}>{reasonLabel(idea.rationale.primaryReason)}</div>
-            <div className="tg soft" style={{ fontSize: 12, marginTop: 7 }}>判斷 {decisionLabel(idea.marketData.decision)} / 分數 {idea.score.toFixed(1)} / 信心 {signed(idea.confidence * 100, 0)}%</div>
-          </Link>
-        ))}
+        {mobileLive && aiRecs.map((rec) => {
+          const ticker = rec.ticker ?? "";
+          const name = rec.companyName ?? rec.company_name ?? "";
+          const score = rec.totalScore != null ? rec.totalScore.toFixed(1) : (rec.confidence != null ? (rec.confidence * 100).toFixed(0) + "%" : "--");
+          const bucket = rec.bucket ?? "";
+          const rationale = rec.rationale ?? (Array.isArray(rec.why_buy) ? rec.why_buy[0] : rec.why_buy) ?? "";
+          return (
+            <Link className="_bty-mob-card" href={`/companies/${ticker}`} key={rec.id ?? ticker}>
+              <div className="_bty-mob-card-row">
+                <span className="_bty-mob-symbol">{ticker}</span>
+                {bucket && <span className="_bty-mob-dir-pill up">{bucket}</span>}
+              </div>
+              {name && <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{name}</div>}
+              {rationale && <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginTop: 4 }}>{String(rationale).slice(0, 60)}</div>}
+              <div className="tg soft" style={{ fontSize: 12, marginTop: 7 }}>AI 推薦 / 分數 {score}</div>
+            </Link>
+          );
+        })}
       </section>
 
       {/* KGI Realtime Quote Watchlist (PR brief-search-mobile-kgi-quote) */}

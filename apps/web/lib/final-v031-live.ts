@@ -1857,25 +1857,32 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const age = quoteAgeText(lastMessageAt);
     const upstream = options.upstream || null;
     const blocked = upstream && (upstream.bidAsk?.status === 401 || upstream.ticks?.status === 401);
+    // Off-hours: EC2 gateway is scheduled off (08:20-14:10 TST weekday only)
+    const _now = new Date();
+    const _dow = _now.getDay();
+    const _taipeiMs = _now.getTime() + _now.getTimezoneOffset() * 60000 + 8 * 3600000;
+    const _taipeiDate = new Date(_taipeiMs);
+    const _tMin = _taipeiDate.getUTCHours() * 60 + _taipeiDate.getUTCMinutes();
+    const _isScheduledOff = _dow === 0 || _dow === 6 || _tMin < 8 * 60 + 20 || _tMin > 14 * 60 + 10;
     let label = "行情串流連線中";
     let className = "badge read quote-quality-badge";
     if (mode === "stream" && !degraded) {
       label = "行情串流 LIVE · " + age;
       className = "badge iso quote-quality-badge";
     } else if (mode === "stream" && degraded) {
-      label = blocked ? "行情需登入 · " + age : "行情串流退化 · " + age;
-      className = blocked ? "badge locked quote-quality-badge" : "badge read quote-quality-badge";
+      label = _isScheduledOff ? "盤後 · 明日 09:00 恢復" : (blocked ? "行情需登入 · " + age : "行情串流退化 · " + age);
+      className = _isScheduledOff ? "badge read quote-quality-badge" : (blocked ? "badge locked quote-quality-badge" : "badge read quote-quality-badge");
     } else if (mode === "fallback") {
-      label = degraded ? "輪詢備援退化 · " + age : "輪詢備援 LIVE · " + age;
+      label = _isScheduledOff ? "盤後 · 明日 09:00 恢復" : (degraded ? "輪詢備援退化 · " + age : "輪詢備援 LIVE · " + age);
       className = degraded ? "badge read quote-quality-badge" : "badge iso quote-quality-badge";
     } else if (mode === "reconnecting") {
-      label = "行情串流重連中 · " + age;
+      label = _isScheduledOff ? "盤後 · 明日 09:00 恢復" : ("行情串流重連中 · " + age);
       className = "badge read quote-quality-badge";
     } else if (mode === "stale") {
-      label = "行情延遲 · " + age;
+      label = _isScheduledOff ? "盤後 · 明日 09:00 恢復" : "行情延遲 · " + age;
       className = "badge locked quote-quality-badge";
     } else if (mode === "blocked") {
-      label = "行情暫不可用";
+      label = _isScheduledOff ? "盤後 · 明日 09:00 恢復" : "行情暫不可用";
       className = "badge locked quote-quality-badge";
     }
     badge.className = className;
