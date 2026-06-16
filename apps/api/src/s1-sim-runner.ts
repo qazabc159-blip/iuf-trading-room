@@ -1040,8 +1040,15 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   const entryBySymbol = new Map((basketForResidual?.basket ?? []).map((e) => [e.symbol, e]));
 
   const auditPositionCandidates = latestOrdersAudit?.data.results ?? [];
+  // S1 runs in KGI SIM only (prod_write_blocked=true). The SIM gateway accepts
+  // orders but never returns a broker fill/deal report, so an order stays
+  // "accepted"/"unconfirmed" forever — in SIM that IS the simulated holding.
+  // #1089's filled-only filter therefore zeroed the whole F-AUTO portfolio
+  // (6/17 repro: 8 accepted 6/16 orders → 0 positions). Count accepted/
+  // unconfirmed as held in SIM; prefer a real fill's shares/price when present.
+  const HELD_STATUSES = new Set(["filled", "partially_filled", "accepted", "unconfirmed"]);
   const auditPositions: S1PositionRow[] = auditPositionCandidates
-    .filter((r) => r.status === "filled" || r.status === "partially_filled")
+    .filter((r) => HELD_STATUSES.has(r.status))
     .map((r) => ({
       symbol: r.symbol,
       shares: r.filled_shares ?? r.shares,
@@ -1050,7 +1057,10 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       unrealized_pnl_twd: null,
       market_value_twd: null,
     }));
-  const unconfirmedAuditOrders = auditPositionCandidates.filter((r) => r.status === "accepted" || r.status === "unconfirmed");
+  // Only genuinely non-held outcomes are excluded from the holdings rebuild.
+  const unconfirmedAuditOrders = auditPositionCandidates.filter(
+    (r) => r.status === "rejected" || r.status === "skipped" || r.status === "cancelled"
+  );
 
   // 1. Fetch positions from KGI gateway (live prices when the session still has them)
   const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
