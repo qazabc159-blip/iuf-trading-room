@@ -16455,15 +16455,20 @@ function startSchedulers(workspaceSlug: string): void {
   // Fail-open: warming never throws into the boot path.
   const warmMarketCaches = async () => {
     try {
-      const { getTwseMarketOverview, getStockDayAllRows, getTpexMainboardCloseRows } =
+      const { getTwseMarketOverview, getStockDayAllRows, getTpexMainboardCloseRows, getTwseIndustryHeatmap } =
         await import("./data-sources/twse-openapi-client.js");
+      // The heatmap aggregation cache (getTwseIndustryHeatmap) sits one layer
+      // above STOCK_DAY_ALL + the industry map — warming only its inputs still
+      // left /market/heatmap/twse paying ~3.3s for the first aggregation after a
+      // restart (6/16 measured). Warm the aggregation itself too.
+      const industryMap = await _getTwseOfficialIndustryMap();
       await Promise.allSettled([
         getTwseMarketOverview(),
         getStockDayAllRows(),
         getTpexMainboardCloseRows(),
-        _getTwseOfficialIndustryMap(),
+        getTwseIndustryHeatmap(industryMap),
       ]);
-      console.log("[boot-warm] market caches warmed (overview + STOCK_DAY_ALL + TPEX + industry map)");
+      console.log("[boot-warm] market caches warmed (overview + STOCK_DAY_ALL + TPEX + industry heatmap)");
     } catch (e) {
       console.warn("[boot-warm] warm failed (non-fatal):", e instanceof Error ? e.message : String(e));
     }
