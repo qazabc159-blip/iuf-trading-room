@@ -534,8 +534,10 @@ export class KgiGatewayClient {
       const unrealized = Number(row["unrealized"] ?? 0);
       const realized   = Number(row["realized"]   ?? 0);
 
+      const quantityOddTd    = qTd[0] ?? 0;
       const quantityCashTd   = qTd[1] ?? 0;
       const quantityMarginTd = qTd[2] ?? 0;
+      const quantityShortTd  = qTd[3] ?? 0;
 
       return {
         symbol,
@@ -543,10 +545,10 @@ export class KgiGatewayClient {
         quantityCashYd:     qYd[1] ?? 0,
         quantityMarginYd:   qYd[2] ?? 0,
         quantityShortYd:    qYd[3] ?? 0,
-        quantityOddTd:      qTd[0] ?? 0,
+        quantityOddTd,
         quantityCashTd,
         quantityMarginTd,
-        quantityShortTd:    qTd[3] ?? 0,
+        quantityShortTd,
         quantityBoughtOdd:    qB[0] ?? 0,
         quantityBoughtCash:   qB[1] ?? 0,
         quantityBoughtMargin: qB[2] ?? 0,
@@ -561,7 +563,7 @@ export class KgiGatewayClient {
         // Adapter-side enrichment — boardLot / netQuantity
         // boardLot: default 1000 (regular lot); kgi-contract-rules.ts refines per symbol
         boardLot: 1000,
-        netQuantity: quantityCashTd + quantityMarginTd,
+        netQuantity: quantityOddTd + quantityCashTd + quantityMarginTd - quantityShortTd,
       } satisfies KgiPosition;
     });
   }

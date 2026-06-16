@@ -216,7 +216,7 @@ export interface KgiPosition {
   unrealized: number;
   // Adapter-side enrichment (kgi-contract-rules.ts):
   boardLot: number;             // 1000 for regular, 1 for odd-lot symbol
-  netQuantity: number;          // sum of cash+margin holdings (today)
+  netQuantity: number;          // odd+cash+margin-short holdings in shares (today)
 }
 
 // ---------------------------------------------------------------------------
