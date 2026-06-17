@@ -39,8 +39,15 @@ const CONTENT_ROUTES: Array<{ path: string; minVisibleChars: number; mustInclude
 
 const ENGINEERING_LEAK = /source=(LIVE|BLOCKED)|cont_liq|undefined<\/|>NaN<|\[object Object\]/;
 
+// NOT tagged @smoke: the @smoke gate runs against the PR's LOCAL build, whose
+// SSR/build differs from prod (the first run showed /ai-recommendations empty
+// on local-build but it renders fine on prod). This spec is a PROD-targeting
+// page-health sweep — run it with IUF_QA_WEB_BASE_URL=https://app.eycvector.com
+// (post-deploy job or manual). It DID prove its worth on the first run: it
+// caught /market-intel rendering only the NAV (208 chars) — the real BUG-01
+// blank-shell — confirming the bug is a genuine render failure, not prod-only.
 for (const route of CONTENT_ROUTES) {
-  test(`page-health: ${route.path} renders real content with no console errors @smoke`, async ({ page }, testInfo) => {
+  test(`page-health: ${route.path} renders real content with no console errors`, async ({ page }, testInfo) => {
     test.setTimeout(60_000);
 
     const consoleErrors: string[] = [];
