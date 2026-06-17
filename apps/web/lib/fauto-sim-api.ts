@@ -168,6 +168,44 @@ export type KgiSimRawOrderItem = {
   submittedAt: string;
 };
 
+export type KgiSimReconciliation = {
+  auditOrderCount: number;
+  brokerReportConfirmedCount: number;
+  settlementConfirmedCount: number;
+  filledCount: number;
+  unconfirmedCount: number;
+  evidence: {
+    orderEventRows: number;
+    tradeReportRows: number;
+    dealRows: number;
+    rowsWithTradeId: number;
+    rowsWithSymbol: number;
+  };
+  fetch: {
+    orderEvents: "ok" | "error" | string;
+    tradeReports: "ok" | "error" | string;
+    deals: "ok" | "error" | string;
+    errors: Array<{ source: string; message: string }>;
+  };
+  fetchedAt: string | null;
+  closureState:
+    | "no_strategy_orders"
+    | "awaiting_broker_report"
+    | "partially_confirmed"
+    | "broker_confirmed"
+    | "gateway_unavailable"
+    | string;
+};
+
+export type KgiSimOrdersResult = {
+  orders: KgiSimRawOrderItem[];
+  reconciliation: KgiSimReconciliation | null;
+  auditDate: string | null;
+  source: string | null;
+  note: string | null;
+  fetchedAt: string | null;
+};
+
 type PaperSimPositionRaw = {
   symbol?: string;
   quantity?: number | null;
@@ -209,6 +247,11 @@ type KgiSimOrdersRaw =
         trading_date?: string | null;
         trade_id?: string | null;
       }>;
+      reconciliation?: Partial<KgiSimReconciliation> | null;
+      auditDate?: string | null;
+      source?: string | null;
+      note?: string | null;
+      fetchedAt?: string | null;
     };
 
 export type KgiSimBalance = {
@@ -493,6 +536,7 @@ export async function getKgiSimRawPositions() {
 export async function getKgiSimOrders() {
   const result = await apiFetch<KgiSimOrdersRaw>("/api/v1/kgi/sim/orders");
   if (!result.ok) return result;
+  const raw = Array.isArray(result.data) ? null : result.data;
   const rows = (Array.isArray(result.data) ? result.data : (result.data.orders ?? [])) as Array<
     Partial<KgiSimRawOrderItem> & {
       action?: string | null;
@@ -504,38 +548,72 @@ export async function getKgiSimOrders() {
       trade_id?: string | null;
     }
   >;
+  const normalizedReconciliation = raw?.reconciliation
+    ? {
+        auditOrderCount: Number(raw.reconciliation.auditOrderCount ?? 0),
+        brokerReportConfirmedCount: Number(raw.reconciliation.brokerReportConfirmedCount ?? 0),
+        settlementConfirmedCount: Number(raw.reconciliation.settlementConfirmedCount ?? 0),
+        filledCount: Number(raw.reconciliation.filledCount ?? 0),
+        unconfirmedCount: Number(raw.reconciliation.unconfirmedCount ?? 0),
+        evidence: {
+          orderEventRows: Number(raw.reconciliation.evidence?.orderEventRows ?? 0),
+          tradeReportRows: Number(raw.reconciliation.evidence?.tradeReportRows ?? 0),
+          dealRows: Number(raw.reconciliation.evidence?.dealRows ?? 0),
+          rowsWithTradeId: Number(raw.reconciliation.evidence?.rowsWithTradeId ?? 0),
+          rowsWithSymbol: Number(raw.reconciliation.evidence?.rowsWithSymbol ?? 0),
+        },
+        fetch: {
+          orderEvents: String(raw.reconciliation.fetch?.orderEvents ?? "unknown"),
+          tradeReports: String(raw.reconciliation.fetch?.tradeReports ?? "unknown"),
+          deals: String(raw.reconciliation.fetch?.deals ?? "unknown"),
+          errors: (raw.reconciliation.fetch?.errors ?? []).map((err) => ({
+            source: String(err.source ?? "unknown"),
+            message: String(err.message ?? ""),
+          })),
+        },
+        fetchedAt: typeof raw.reconciliation.fetchedAt === "string" ? raw.reconciliation.fetchedAt : null,
+        closureState: String(raw.reconciliation.closureState ?? "unknown"),
+      } satisfies KgiSimReconciliation
+    : null;
   return {
     ok: true as const,
-    data: rows.map((row, index) => {
-      const sideRaw = String(row.side ?? row.action ?? "").toLowerCase();
-      const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw.includes("short") ? "sell" : "buy";
-      const qty = Number(row.qty ?? row.quantity ?? row.shares ?? row.effectiveQtyShares ?? 0);
-      const requestedQty = Number(row.requestedQty ?? qty);
-      const filledQty = Number(row.filledQty ?? 0);
-      const remainingQty = Number(row.remainingQty ?? Math.max(0, requestedQty - filledQty));
-      return {
-        tradeId: row.tradeId ?? row.trade_id ?? `kgi-sim-order-${index}`,
-        status: String(row.status ?? "unknown"),
-        symbol: String(row.symbol ?? "--"),
-        side,
-        qty,
-        requestedQty,
-        filledQty,
-        remainingQty,
-        avgFillPrice: typeof row.avgFillPrice === "number" ? row.avgFillPrice : row.price ?? null,
-        brokerReportConfirmed: row.brokerReportConfirmed === true,
-        settlementConfirmed: row.settlementConfirmed === true,
-        settlementSource: typeof row.settlementSource === "string" ? row.settlementSource : null,
-        confirmedAt: typeof row.confirmedAt === "string" ? row.confirmedAt : null,
-        matchStrategy: typeof row.matchStrategy === "string" ? row.matchStrategy : null,
-        quantityUnit: row.quantityUnit === "LOT" ? "LOT" : "SHARE",
-        effectiveQtyShares: Number(row.effectiveQtyShares ?? qty),
-        price: row.price ?? null,
-        orderType: row.orderType === "limit" ? "limit" : "market",
-        isOddLot: row.isOddLot === true,
-        submittedAt: row.submittedAt ?? row.submitted_at_tst ?? row.submitted_at ?? row.trading_date ?? "",
-      } satisfies KgiSimRawOrderItem;
-    }),
+    data: {
+      orders: rows.map((row, index) => {
+        const sideRaw = String(row.side ?? row.action ?? "").toLowerCase();
+        const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw.includes("short") ? "sell" : "buy";
+        const qty = Number(row.qty ?? row.quantity ?? row.shares ?? row.effectiveQtyShares ?? 0);
+        const requestedQty = Number(row.requestedQty ?? qty);
+        const filledQty = Number(row.filledQty ?? 0);
+        const remainingQty = Number(row.remainingQty ?? Math.max(0, requestedQty - filledQty));
+        return {
+          tradeId: row.tradeId ?? row.trade_id ?? `kgi-sim-order-${index}`,
+          status: String(row.status ?? "unknown"),
+          symbol: String(row.symbol ?? "--"),
+          side,
+          qty,
+          requestedQty,
+          filledQty,
+          remainingQty,
+          avgFillPrice: typeof row.avgFillPrice === "number" ? row.avgFillPrice : row.price ?? null,
+          brokerReportConfirmed: row.brokerReportConfirmed === true,
+          settlementConfirmed: row.settlementConfirmed === true,
+          settlementSource: typeof row.settlementSource === "string" ? row.settlementSource : null,
+          confirmedAt: typeof row.confirmedAt === "string" ? row.confirmedAt : null,
+          matchStrategy: typeof row.matchStrategy === "string" ? row.matchStrategy : null,
+          quantityUnit: row.quantityUnit === "LOT" ? "LOT" : "SHARE",
+          effectiveQtyShares: Number(row.effectiveQtyShares ?? qty),
+          price: row.price ?? null,
+          orderType: row.orderType === "limit" ? "limit" : "market",
+          isOddLot: row.isOddLot === true,
+          submittedAt: row.submittedAt ?? row.submitted_at_tst ?? row.submitted_at ?? row.trading_date ?? "",
+        } satisfies KgiSimRawOrderItem;
+      }),
+      reconciliation: normalizedReconciliation,
+      auditDate: raw?.auditDate ?? null,
+      source: raw?.source ?? null,
+      note: raw?.note ?? null,
+      fetchedAt: raw?.fetchedAt ?? null,
+    } satisfies KgiSimOrdersResult,
   };
 }
 

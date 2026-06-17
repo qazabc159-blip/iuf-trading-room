@@ -28,6 +28,7 @@ import {
   type SimFunds,
   type FAutoPortfolio,
   type KgiSimRawOrderItem,
+  type KgiSimOrdersResult,
   type DailySmokeHistory,
   type S1SimStatus,
   type S1EodReport,
@@ -420,7 +421,7 @@ function BasketPanel({
   );
 }
 
-function SimOrdersPanel({ state }: { state: AsyncState<KgiSimRawOrderItem[]> }) {
+function SimOrdersPanel({ state }: { state: AsyncState<KgiSimOrdersResult> }) {
   return (
     <div className="_fauto-panel">
       <div className="_fauto-panel-head">
@@ -434,48 +435,83 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimRawOrderItem[]> }) 
         {state.phase === "empty" && <PanelEmpty label="尚無 S1 委託稽核紀錄" />}
         {state.phase === "pending_backend" && <PanelPending label="委託記錄" />}
         {state.phase === "live" && (
-          <table className="_fauto-tbl">
-            <thead>
-              <tr>
-                <th>代碼</th>
-                <th>方向</th>
-                <th className="_fauto-tbl-r">委託 / 成交</th>
-                <th className="_fauto-tbl-r">成交均價</th>
-                <th>狀態</th>
-                <th>確認來源</th>
-                <th className="_fauto-tbl-r">確認時間</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.data.slice(0, 30).map((ord, i) => (
-                <tr key={ord.tradeId ?? `ord-${i}`}>
-                  <td className="_fauto-symbol">{ord.symbol}</td>
-                  <td className={ord.side === "buy" ? "_fauto-side-buy" : "_fauto-side-sell"}>
-                    {ord.side === "buy" ? "買進" : "賣出"}
-                  </td>
-                  <td className="_fauto-tbl-r">
-                    {ord.requestedQty.toLocaleString("zh-TW")} / {ord.filledQty.toLocaleString("zh-TW")}
-                    <span className="_fauto-unit">股</span>
-                    {ord.remainingQty > 0 && (
-                      <span className="_fauto-unit"> 餘 {ord.remainingQty.toLocaleString("zh-TW")}</span>
-                    )}
-                  </td>
-                  <td className="_fauto-tbl-r">
-                    {ord.avgFillPrice != null ? ord.avgFillPrice.toFixed(2) : "--"}
-                  </td>
-                  <td>
-                    <span className={`_fauto-ord-status _fauto-ord-${ord.status.toLowerCase()}`}>
-                      {orderStatusLabel(ord.status)}
-                    </span>
-                  </td>
-                  <td className="_fauto-ts">
-                    {ord.settlementConfirmed ? sourceLabel(ord.settlementSource) : "待券商回報"}
-                  </td>
-                  <td className="_fauto-tbl-r _fauto-ts">{fmtDatetime(ord.confirmedAt ?? ord.submittedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            {state.data.reconciliation && (
+              <div className="_fauto-recon-card">
+                <div className="_fauto-recon-head">
+                  <span className={`_fauto-recon-pill _fauto-recon-${state.data.reconciliation.closureState}`}>
+                    {closureStateLabel(state.data.reconciliation.closureState)}
+                  </span>
+                  <span className="_fauto-ts">
+                    對帳時間 {fmtDatetime(state.data.reconciliation.fetchedAt ?? state.data.fetchedAt)}
+                  </span>
+                </div>
+                <div className="_fauto-recon-grid">
+                  <div><span>策略帳本</span><strong>{state.data.reconciliation.auditOrderCount}</strong><small>筆委託</small></div>
+                  <div><span>券商回報</span><strong>{state.data.reconciliation.brokerReportConfirmedCount}</strong><small>筆已對上</small></div>
+                  <div><span>成交確認</span><strong>{state.data.reconciliation.filledCount}</strong><small>筆成交/部分成交</small></div>
+                  <div><span>待確認</span><strong>{state.data.reconciliation.unconfirmedCount}</strong><small>筆等待回報</small></div>
+                </div>
+                <div className="_fauto-recon-sources">
+                  <span>券商事件 {state.data.reconciliation.evidence.orderEventRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.orderEvents)}</span>
+                  <span>委託回報 {state.data.reconciliation.evidence.tradeReportRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.tradeReports)}</span>
+                  <span>成交明細 {state.data.reconciliation.evidence.dealRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.deals)}</span>
+                </div>
+                {state.data.reconciliation.fetch.errors.length > 0 && (
+                  <div className="_fauto-note">
+                    券商資料源錯誤：{state.data.reconciliation.fetch.errors.map((err) => `${err.source}: ${err.message}`).join(" / ")}
+                  </div>
+                )}
+                {state.data.note && <div className="_fauto-note">{state.data.note}</div>}
+              </div>
+            )}
+            {state.data.orders.length > 0 ? (
+              <table className="_fauto-tbl">
+                <thead>
+                  <tr>
+                    <th>代碼</th>
+                    <th>方向</th>
+                    <th className="_fauto-tbl-r">委託 / 成交</th>
+                    <th className="_fauto-tbl-r">成交均價</th>
+                    <th>狀態</th>
+                    <th>確認來源</th>
+                    <th className="_fauto-tbl-r">確認時間</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.data.orders.slice(0, 30).map((ord, i) => (
+                    <tr key={ord.tradeId ?? `ord-${i}`}>
+                      <td className="_fauto-symbol">{ord.symbol}</td>
+                      <td className={ord.side === "buy" ? "_fauto-side-buy" : "_fauto-side-sell"}>
+                        {ord.side === "buy" ? "買進" : "賣出"}
+                      </td>
+                      <td className="_fauto-tbl-r">
+                        {ord.requestedQty.toLocaleString("zh-TW")} / {ord.filledQty.toLocaleString("zh-TW")}
+                        <span className="_fauto-unit">股</span>
+                        {ord.remainingQty > 0 && (
+                          <span className="_fauto-unit"> 餘 {ord.remainingQty.toLocaleString("zh-TW")}</span>
+                        )}
+                      </td>
+                      <td className="_fauto-tbl-r">
+                        {ord.avgFillPrice != null ? ord.avgFillPrice.toFixed(2) : "--"}
+                      </td>
+                      <td>
+                        <span className={`_fauto-ord-status _fauto-ord-${ord.status.toLowerCase()}`}>
+                          {orderStatusLabel(ord.status)}
+                        </span>
+                      </td>
+                      <td className="_fauto-ts">
+                        {ord.settlementConfirmed ? sourceLabel(ord.settlementSource) : "待券商回報"}
+                      </td>
+                      <td className="_fauto-tbl-r _fauto-ts">{fmtDatetime(ord.confirmedAt ?? ord.submittedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <PanelEmpty label="尚無 S1 委託稽核紀錄" />
+            )}
+          </>
         )}
       </div>
     </div>
@@ -689,6 +725,21 @@ function sourceLabel(source: string | null | undefined): string {
   if (source === "trade_report") return "委託回報";
   if (source === "submission_only") return "送出紀錄";
   return "--";
+}
+
+function closureStateLabel(state: string): string {
+  if (state === "broker_confirmed") return "券商已完整對帳";
+  if (state === "partially_confirmed") return "部分已對帳";
+  if (state === "awaiting_broker_report") return "等待券商回報";
+  if (state === "gateway_unavailable") return "Gateway 暫不可讀";
+  if (state === "no_strategy_orders") return "尚無策略委託";
+  return state;
+}
+
+function fetchStateLabel(state: string): string {
+  if (state === "ok") return "可讀";
+  if (state === "error") return "讀取錯誤";
+  return state;
 }
 
 // ─── Date selector ────────────────────────────────────────────────────────────
@@ -1038,6 +1089,87 @@ const FAUTO_CSS = `
 ._fauto-green { color: #4adb88; }
 ._fauto-red   { color: #ff6b77; }
 ._fauto-amber { color: #f4bd55; }
+
+/* Reconciliation */
+._fauto-recon-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(200,148,63,0.18);
+  background: linear-gradient(135deg, rgba(200,148,63,0.07), rgba(8,11,16,0.45));
+}
+._fauto-recon-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+._fauto-recon-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(244,189,85,0.36);
+  color: #f4bd55;
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  font-weight: 800;
+}
+._fauto-recon-broker_confirmed {
+  border-color: rgba(74,219,136,0.35);
+  color: #4adb88;
+}
+._fauto-recon-partially_confirmed {
+  border-color: rgba(244,189,85,0.42);
+  color: #f4bd55;
+}
+._fauto-recon-awaiting_broker_report,
+._fauto-recon-gateway_unavailable {
+  border-color: rgba(255,107,119,0.35);
+  color: #ff6b77;
+}
+._fauto-recon-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 10px;
+  background: rgba(220,228,240,0.08);
+}
+._fauto-recon-grid > div {
+  background: rgba(8,11,16,0.74);
+  padding: 9px 10px;
+}
+._fauto-recon-grid span,
+._fauto-recon-grid small {
+  display: block;
+  color: rgba(145,160,181,0.62);
+  font-size: 10px;
+}
+._fauto-recon-grid strong {
+  display: block;
+  margin: 2px 0;
+  color: #e6edf7;
+  font-size: 20px;
+  line-height: 1.1;
+  font-family: var(--mono, monospace);
+}
+._fauto-recon-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+._fauto-recon-sources span {
+  border: 1px solid rgba(220,228,240,0.10);
+  background: rgba(12,17,24,0.72);
+  color: rgba(220,228,240,0.72);
+  padding: 4px 7px;
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+}
+@media (max-width: 720px) {
+  ._fauto-recon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  ._fauto-recon-head { align-items: flex-start; flex-direction: column; }
+}
 
 /* Order status badges */
 ._fauto-ord-status {
