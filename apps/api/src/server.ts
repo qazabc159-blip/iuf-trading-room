@@ -5457,7 +5457,7 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
 
   const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
     await import("./broker/kgi-gateway-client.js");
-  const { reconcileKgiOrders } = await import("./broker/kgi-order-reconciliation.js");
+  const { reconcileKgiOrders, summarizeKgiReconciliationEvidence } = await import("./broker/kgi-order-reconciliation.js");
 
   const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
 
@@ -5509,15 +5509,41 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
       submittedAt: auditSubmittedAt,
     }));
 
+  const orderAuditCount = baseOrders.length;
+  const fetchEvidence = async <T>(
+    name: "order_events" | "trade_reports" | "deals",
+    fn: () => Promise<T>,
+  ): Promise<{ name: string; ok: true; value: T; error: null } | { name: string; ok: false; value: null; error: string }> => {
+    try {
+      return { name, ok: true, value: await fn(), error: null };
+    } catch (error) {
+      return {
+        name,
+        ok: false,
+        value: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   try {
-    const [events, trades, deals] = await Promise.all([
-      client.getRecentOrderEvents(200).catch(() => []),
-      client.getTrades(false).catch(() => null),
-      client.getDeals().catch(() => null),
+    const [eventsResult, tradesResult, dealsResult] = await Promise.all([
+      fetchEvidence("order_events", () => client.getRecentOrderEvents(200)),
+      fetchEvidence("trade_reports", () => client.getTrades(false)),
+      fetchEvidence("deals", () => client.getDeals()),
     ]);
+    const events = eventsResult.ok ? eventsResult.value : [];
+    const trades = tradesResult.ok ? tradesResult.value : null;
+    const deals = dealsResult.ok ? dealsResult.value : null;
     const reconciled = baseOrders.length > 0
       ? reconcileKgiOrders({ orders: baseOrders, events, trades, deals })
       : [];
+    const evidenceSummary = summarizeKgiReconciliationEvidence({ events, trades, deals });
+    const brokerReportConfirmedCount = reconciled.filter((order) => order.brokerReportConfirmed).length;
+    const settlementConfirmedCount = reconciled.filter((order) => order.settlementConfirmed).length;
+    const filledCount = reconciled.filter((order) => order.status === "filled" || order.status === "partially_filled").length;
+    const unconfirmedCount = reconciled.filter((order) => order.status === "unconfirmed").length;
+    const fetchedAt = new Date().toISOString();
     const ordersArr = reconciled.map((order, index) => ({
       tradeId: order.tradeId,
       trade_id: order.tradeId,
@@ -5552,10 +5578,41 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
         orders: ordersArr,
         source: baseOrders.length > 0 ? "audit_plus_kgi_reconciliation" : "kgi_sim",
         auditDate,
+        reconciliation: {
+          auditOrderCount: orderAuditCount,
+          brokerReportConfirmedCount,
+          settlementConfirmedCount,
+          filledCount,
+          unconfirmedCount,
+          evidence: {
+            orderEventRows: evidenceSummary.orderEventRows,
+            tradeReportRows: evidenceSummary.tradeReportRows,
+            dealRows: evidenceSummary.dealRows,
+            rowsWithTradeId: evidenceSummary.rowsWithTradeId,
+            rowsWithSymbol: evidenceSummary.rowsWithSymbol,
+          },
+          fetch: {
+            orderEvents: eventsResult.ok ? "ok" : "error",
+            tradeReports: tradesResult.ok ? "ok" : "error",
+            deals: dealsResult.ok ? "ok" : "error",
+            errors: [eventsResult, tradesResult, dealsResult]
+              .filter((result) => !result.ok)
+              .map((result) => ({ source: result.name, message: result.error })),
+          },
+          fetchedAt,
+          closureState:
+            orderAuditCount === 0
+              ? "no_strategy_orders"
+              : brokerReportConfirmedCount === orderAuditCount
+                ? "broker_confirmed"
+                : brokerReportConfirmedCount > 0
+                  ? "partially_confirmed"
+                  : "awaiting_broker_report",
+        },
         note: baseOrders.length > 0
           ? "Orders are reconstructed from durable S1 audit entries and reconciled against KGI recent events/trades/deals."
           : "No recent S1 audit orders found; KGI raw trade report did not identify an F-AUTO order.",
-        fetchedAt: new Date().toISOString(),
+        fetchedAt,
       },
     });
   } catch (err) {
@@ -5599,6 +5656,28 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
         degraded: true,
         reason,
         auditDate: auditDate,
+        reconciliation: {
+          auditOrderCount: auditRows.length,
+          brokerReportConfirmedCount: auditRows.filter((row) => row.settlementConfirmed).length,
+          settlementConfirmedCount: auditRows.filter((row) => row.settlementConfirmed).length,
+          filledCount: auditRows.filter((row) => Number(row.filledQty ?? 0) > 0).length,
+          unconfirmedCount: auditRows.filter((row) => !row.settlementConfirmed).length,
+          evidence: {
+            orderEventRows: 0,
+            tradeReportRows: 0,
+            dealRows: 0,
+            rowsWithTradeId: 0,
+            rowsWithSymbol: 0,
+          },
+          fetch: {
+            orderEvents: "error",
+            tradeReports: "error",
+            deals: "error",
+            errors: [{ source: "gateway", message: reason }],
+          },
+          fetchedAt: new Date().toISOString(),
+          closureState: auditRows.length > 0 ? "gateway_unavailable" : "no_strategy_orders",
+        },
         note: auditOrders.length > 0
           ? `KGI SIM gateway unavailable (${reason}). Showing last F-AUTO order submission from audit log (${auditDate}). Settlement status unknown — these orders were submitted to KGI SIM but confirmation was not received.`
           : `KGI SIM gateway unavailable (${reason}). No recent F-AUTO order activity found in audit log.`,

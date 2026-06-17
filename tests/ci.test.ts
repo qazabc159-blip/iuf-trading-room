@@ -10963,6 +10963,34 @@ test("ORT6: KGI reconciliation promotes matched deals to filled position data", 
   assert.equal(result.settlementSource, "deal", "ORT6: deal is strongest settlement source");
 });
 
+test("ORT7: KGI reconciliation evidence summary exposes broker closure inputs", async () => {
+  const { summarizeKgiReconciliationEvidence } = await import("../apps/api/src/broker/kgi-order-reconciliation.ts");
+  const summary = summarizeKgiReconciliationEvidence({
+    events: {
+      rows: [
+        { trade_id: "SIM-001", symbol: "2330", side: "buy", qty: 1000, status: "accepted" },
+      ],
+    },
+    trades: {
+      rows: [
+        { trade_id: "SIM-001", symbol: "2330", side: "buy", qty: 1000, status: "accepted" },
+      ],
+    },
+    deals: {
+      rows: [
+        { trade_id: "SIM-001", symbol: "2330", side: "buy", deal_qty: 1000, deal_price: 985 },
+        { trade_id: "SIM-002", symbol: "2317", side: "buy", deal_qty: 1000, deal_price: 160 },
+      ],
+    },
+  });
+
+  assert.equal(summary.orderEventRows, 1, "ORT7: counts order event rows");
+  assert.equal(summary.tradeReportRows, 1, "ORT7: counts trade report rows");
+  assert.equal(summary.dealRows, 2, "ORT7: counts deal rows");
+  assert.equal(summary.rowsWithTradeId, 4, "ORT7: tracks rows carrying broker trade ids");
+  assert.equal(summary.rowsWithSymbol, 4, "ORT7: tracks symbol-bearing rows");
+});
+
 // ── P1-A Regression: institutional aggregateInstRows name-matching ─────────────
 // Validates that the aggregation correctly maps FinMind/DB name values to buckets.
 // Cycle 10: mirrors the widened classifyInstName regex from server.ts.

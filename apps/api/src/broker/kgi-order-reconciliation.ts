@@ -30,6 +30,14 @@ export type ReconciledKgiOrder = {
   matchStrategy: "trade_id" | "exact_request" | "none";
 };
 
+export type KgiReconciliationEvidenceSummary = {
+  orderEventRows: number;
+  tradeReportRows: number;
+  dealRows: number;
+  rowsWithTradeId: number;
+  rowsWithSymbol: number;
+};
+
 type NormalizedEvidence = {
   tradeId: string | null;
   symbol: string | null;
@@ -225,4 +233,22 @@ export function reconcileKgiOrders(params: {
   events?: unknown;
 }): ReconciledKgiOrder[] {
   return params.orders.map((order) => reconcileKgiOrder({ ...params, order }));
+}
+
+export function summarizeKgiReconciliationEvidence(params: {
+  trades?: unknown;
+  deals?: unknown;
+  events?: unknown;
+}): KgiReconciliationEvidenceSummary {
+  const eventRows = flattenEvidence(params.events, "order_event").map((row) => normalizeEvidence(row, "order_event"));
+  const tradeRows = flattenEvidence(params.trades, "trade_report").map((row) => normalizeEvidence(row, "trade_report"));
+  const dealRows = flattenEvidence(params.deals, "deal").map((row) => normalizeEvidence(row, "deal"));
+  const allRows = [...eventRows, ...tradeRows, ...dealRows];
+  return {
+    orderEventRows: eventRows.length,
+    tradeReportRows: tradeRows.length,
+    dealRows: dealRows.length,
+    rowsWithTradeId: allRows.filter((row) => row.tradeId).length,
+    rowsWithSymbol: allRows.filter((row) => row.symbol).length,
+  };
 }

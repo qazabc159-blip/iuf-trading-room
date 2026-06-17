@@ -18,7 +18,13 @@ describe("F-AUTO S1 product observability", () => {
   it("maps the persisted order share count and Taipei timestamp", () => {
     expect(apiSource).toContain("row.shares");
     expect(apiSource).toContain("row.submitted_at_tst");
+    expect(apiSource).toContain("KgiSimOrdersResult");
+    expect(apiSource).toContain("normalizedReconciliation");
     expect(panelSource).toContain("已送出 / 成交待確認");
+    expect(panelSource).toContain("券商回報");
+    expect(panelSource).toContain("成交確認");
+    expect(panelSource).toContain("等待券商回報");
+    expect(panelSource).toContain("closureStateLabel");
   });
 
   it("normalizes daily smoke diagnostics into actionable product copy", () => {
