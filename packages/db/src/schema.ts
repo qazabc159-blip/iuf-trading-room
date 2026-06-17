@@ -256,6 +256,28 @@ export const reviewEntries = pgTable("review_entries", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
+// User-managed watchlist for the trade desk. Replaces the hardcoded default
+// watchlist — each user curates their own symbols (add/remove, persisted).
+export const userWatchlist = pgTable(
+  "user_watchlist",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    symbol: text("symbol").notNull(),
+    name: text("name").default("").notNull(),
+    sortOrder: real("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    userSymbolUidx: uniqueIndex("user_watchlist_user_symbol_uidx").on(
+      table.workspaceId,
+      table.userId,
+      table.symbol
+    )
+  })
+);
+
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
