@@ -68,7 +68,7 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
-import { isDatabaseMode, getDb, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
   getTradingRoomRepository,
@@ -6240,6 +6240,64 @@ app.get("/api/v1/paper/orders/:id", async (c) => {
 // GET /api/v1/paper/orders — list orders for the current user (optional ?status=).
 // When KGI_ENV=sim (or ?source=sim), proxies to KGI SIM gateway trades.
 // When KGI_ENV=paper (or ?source=paper), returns paper-broker in-memory orders.
+// =============================================================================
+// User-managed watchlist (trade desk) — replaces the hardcoded default symbols.
+// Each user curates their own list (add/remove, persisted per workspace+user).
+// =============================================================================
+
+// GET /api/v1/watchlist — the current user's saved symbols
+app.get("/api/v1/watchlist", async (c) => {
+  const session = c.get("session");
+  if (!isDatabaseMode()) return c.json({ data: [] });
+  const db = getDb();
+  if (!db) return c.json({ data: [] });
+  const rows = dbExecRows<{ symbol: string; name: string }>(
+    await db.execute(drizzleSql`
+      SELECT symbol, name
+      FROM user_watchlist
+      WHERE workspace_id = ${session.workspace.id} AND user_id = ${session.user.id}
+      ORDER BY sort_order ASC, created_at ASC
+    `)
+  );
+  return c.json({ data: rows.map((r) => ({ symbol: r.symbol, name: r.name || r.symbol })) });
+});
+
+// POST /api/v1/watchlist — add a symbol { symbol, name? } (idempotent upsert)
+app.post("/api/v1/watchlist", async (c) => {
+  const session = c.get("session");
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const symbol = String((body as Record<string, unknown>).symbol ?? "").trim().toUpperCase();
+  const name = String((body as Record<string, unknown>).name ?? "").trim().slice(0, 40);
+  if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return c.json({ error: "invalid_symbol" }, 400);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+  await db.execute(drizzleSql`
+    INSERT INTO user_watchlist (workspace_id, user_id, symbol, name, sort_order)
+    VALUES (${session.workspace.id}, ${session.user.id}, ${symbol}, ${name}, ${Date.now()})
+    ON CONFLICT (workspace_id, user_id, symbol)
+      DO UPDATE SET name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE user_watchlist.name END
+  `);
+  return c.json({ ok: true, symbol });
+});
+
+// POST /api/v1/watchlist/remove — remove a symbol { symbol }
+// (POST, not DELETE: the same-origin trade-desk proxy only allowlists GET/POST.)
+app.post("/api/v1/watchlist/remove", async (c) => {
+  const session = c.get("session");
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const symbol = String((body as Record<string, unknown>).symbol ?? "").trim().toUpperCase();
+  if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return c.json({ error: "invalid_symbol" }, 400);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+  await db.execute(drizzleSql`
+    DELETE FROM user_watchlist
+    WHERE workspace_id = ${session.workspace.id} AND user_id = ${session.user.id} AND symbol = ${symbol}
+  `);
+  return c.json({ ok: true, symbol });
+});
+
 app.get("/api/v1/paper/orders", async (c) => {
   const session = c.get("session");
   const sourceOverride = c.req.query("source");

@@ -1237,7 +1237,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, brokersResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, watchlistResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
@@ -1245,15 +1245,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score")),
-      soft(apiGetRaw("/api/v1/portfolio/f-auto"))
+      soft(apiGetRaw("/api/v1/portfolio/f-auto")),
+      soft(apiGet("/api/v1/watchlist"))
     ]);
     const fauto = fautoResult.ok ? fautoResult.data : null;
-    // Phase 1 broker strip uses the STATIC catalog baked into the HTML (KGI + Paper,
-    // which is the real catalog today). The live /api/v1/uta/adapters fetch is
-    // deferred to Phase 2: it 403s for some sessions and a 403 resource error is
-    // browser-logged (uncatchable by soft()), tripping the portfolio smoke's
-    // no-auth-error gate. Wire the live catalog once that 403 is resolved.
+    // Phase 1 broker strip uses the STATIC catalog baked into the HTML (KGI + Paper).
     const brokers = [];
+    // User-managed watchlist (replaces the hardcoded default symbols). { data: [{symbol,name}] }.
+    const myWatchlist = (watchlistResult.ok
+      ? ((watchlistResult.data?.data) || (Array.isArray(watchlistResult.data) ? watchlistResult.data : []))
+      : []) || [];
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
@@ -1288,16 +1289,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const prefillSymbol = String(prefill?.symbol || "").trim().toUpperCase();
     const selectedSymbolUpper = String(selectedSymbol || "").trim().toUpperCase();
     const prefillMatchesSelected = !!prefill?.enabled && selectedSymbolUpper && (!prefillSymbol || prefillSymbol === selectedSymbolUpper);
-    const defaultWatchlist = [
-      { symbol:"2330", name:"台積電", meta:"核心觀察" },
-      { symbol:"1514", name:"亞力", meta:"電機設備" },
-      { symbol:"1560", name:"中砂", meta:"半導體設備" },
-      { symbol:"1590", name:"亞德客-KY", meta:"自動化設備" },
-      { symbol:"1721", name:"三晃", meta:"化學材料" },
-      { symbol:"1723", name:"中碳", meta:"材料 / 能源" },
-      { symbol:"1809", name:"中釉", meta:"材料" },
-      { symbol:"2066", name:"世德", meta:"車用零組件" }
-    ].map((item) => ({ symbol:item.symbol, name:item.name, meta:item.meta, price:sameSym(item.symbol, selectedSymbol) ? lastPrice : null, changePct:sameSym(item.symbol, selectedSymbol) ? changePct : null }));
+    // User-managed watchlist drives the desk's symbol universe (was a hardcoded 8).
+    // A brand-new user with an empty list gets 2330 as a starting seed.
+    const myWatchlistSeed = myWatchlist.length ? myWatchlist : [{ symbol: "2330", name: "台積電" }];
+    const defaultWatchlist = myWatchlistSeed.map((item) => ({ symbol:item.symbol, name:item.name || item.symbol, meta:"自選", price:sameSym(item.symbol, selectedSymbol) ? lastPrice : null, changePct:sameSym(item.symbol, selectedSymbol) ? changePct : null }));
     const prefillWatch = prefillMatchesSelected ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
@@ -1311,6 +1306,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       fauto,
       selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
+      myWatchlist: defaultWatchlist,
+      myWatchlistCount: myWatchlist.length,
       ideas,
       portfolio,
       orders,
@@ -2294,6 +2291,34 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }).join('');
   }
 
+  // Wire the 自選 add box + per-row remove buttons to the watchlist CRUD API,
+  // then refresh the desk so the change is reflected immediately.
+  function attachWatchlistManage() {
+    const addBtn = $("#wl-add-btn");
+    const addInput = $("#wl-add-input");
+    const doAdd = async () => {
+      const sym = String((addInput && addInput.value) || "").trim().toUpperCase();
+      if (!/^[0-9A-Z._-]{2,16}$/.test(sym)) return;
+      if (addBtn) addBtn.disabled = true;
+      try {
+        await apiPost("/api/v1/watchlist", { symbol: sym });
+        if (addInput) addInput.value = "";
+        await refreshClientLive();
+      } catch (_err) { /* keep desk usable on failure */ }
+      finally { if (addBtn) addBtn.disabled = false; }
+    };
+    if (addBtn) addBtn.addEventListener("click", doAdd);
+    if (addInput) addInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    $$("#wl-my .wldel").forEach((btn) => btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const sym = btn.dataset && btn.dataset.del;
+      if (!sym) return;
+      btn.disabled = true;
+      try { await apiPost("/api/v1/watchlist/remove", { symbol: sym }); await refreshClientLive(); }
+      catch (_err) { btn.disabled = false; }
+    }));
+  }
+
   function applyPaperPrefill(selected) {
     const prefill = paperPrefill();
     const existing = $("#rec-prefill-box");
@@ -2456,8 +2481,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (stats[4]) stats[4].textContent = selected.volume == null ? "—" : n(selected.volume) + " 股";
     const wl = $("#wl-my");
     if (wl) {
-      const wlItems = live.watchlist || [];
-      if (wlItems.length === 0) { wl.innerHTML = '<div class="group">\u8cc7\u6599\u672a\u8f09\u5165</div><div class="wrow" data-search-result="1"><span class="sym">DATA</span><div class="body"><div class="nm">\u7b49\u5f85\u81ea\u9078\u3001\u6a21\u64ec\u5eab\u5b58\u6216\u7b56\u7565\u5019\u9078\u56de\u50b3</div><div class="meta">\u4e0d\u4fdd\u7559\u9810\u8a2d\u5047\u5019\u9078</div></div></div>'; } else if (false) {
+      const myItems = live.myWatchlist || [];
+      if (false) {
         // P1-1 fallback: keep SSR static rows, update group label only
         const groupEl = wl.querySelector(".group");
         if (groupEl) groupEl.textContent = "ideas pool 整備中，預設展示熱門 5 檔";
@@ -2469,12 +2494,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           }
         }));
       } else {
-        wl.innerHTML = '<div class="group">'+esc(wlItems.length)+' 檔自選 / 候選</div>' + wlItems.map((item) => '<div class="wrow '+(sameSym(item.symbol, selected.symbol)?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'</div>').join("");
+        // 自選 tab: user-managed — add box + per-row remove, from live.myWatchlist.
+        const addBar = '<div class="wladd"><input id="wl-add-input" maxlength="16" placeholder="加股票代碼，如 2330" /><button type="button" id="wl-add-btn">加入</button></div>';
+        const rows = myItems.map((item) => '<div class="wrow '+(sameSym(item.symbol, selected.symbol)?'on':'')+'" data-sym="'+esc(item.symbol)+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="nm">'+esc(item.name)+'</div><div class="meta">'+esc(item.meta)+'</div></div>'+rowPrice(item)+'<button type="button" class="wldel" data-del="'+esc(item.symbol)+'" title="從自選移除">×</button></div>').join("");
+        const emptyRow = '<div class="wrow" data-search-result="1"><span class="sym">＋</span><div class="body"><div class="nm">自選清單是空的</div><div class="meta">在上方輸入代碼加入</div></div></div>';
+        wl.innerHTML = addBar + '<div class="group">'+esc(myItems.length)+' 檔自選</div>' + (rows || emptyRow);
+        attachWatchlistManage();
       }
     }
     attachPaperRowHandlers();
     attachPaperSearch();
-    const wtMy = $('#wtabs button[data-tab="my"] .c'); if (wtMy) wtMy.textContent = String((live.watchlist || []).length);
+    const wtMy = $('#wtabs button[data-tab="my"] .c'); if (wtMy) wtMy.textContent = String((live.myWatchlist || []).length);
     const wtSig = $('#wtabs button[data-tab="sig"] .c'); if (wtSig) wtSig.textContent = String((live.ideas || []).length);
     const wtPaper = $('#wtabs button[data-tab="paper"] .c'); if (wtPaper) wtPaper.textContent = String((live.ideas || []).filter((idea) => String(idea.status || "").toLowerCase() !== "block").length);
     const symInput = $("#t-sym"); if (symInput) { symInput.value = (selected.symbol || "") + "　" + (selected.name || ""); symInput.setAttribute("value", symInput.value); }

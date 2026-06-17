@@ -29,11 +29,15 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/internal\/kgi\/sim\/daily-smoke-status(?:\?|$)/,
   /^\/api\/v1\/internal\/s1-sim\/(?:status|basket|eod-report)(?:\?|$)/,
   /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
+  /^\/api\/v1\/watchlist(?:\?|$)/,
 ];
 
 const POST_ALLOWLIST = [
   /^\/api\/v1\/paper\/(?:preview|submit)(?:\?|$)/,
   /^\/api\/v1\/kgi\/sim\/order(?:\?|$)/,
+  // User watchlist add + remove (remove is POST, not DELETE — this proxy has no
+  // DELETE allowlist, and add/remove through one verb keeps the surface minimal).
+  /^\/api\/v1\/watchlist(?:\/remove)?(?:\?|$)/,
 ];
 
 function isAllowed(method: string, path: string) {
