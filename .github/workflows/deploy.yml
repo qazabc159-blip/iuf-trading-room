@@ -333,3 +333,17 @@ jobs:
           }
 
           Write-Host "::notice::Migration count verified: $count/$expectedMigrationCount OK"
+
+      # Post-deploy core-surface verification (root-cause class 4, 2026-06-17).
+      # Automates the manual f-auto/quote/overview/brief checks Elva ran by hand.
+      # The 6/17 F-AUTO "0 positions" regression (#1089) only showed on the live
+      # API after deploy — CI never saw it. This fails the deploy on a core
+      # regression instead of waiting for the owner to open the site and find it.
+      - name: Verify core product surfaces (api only)
+        if: steps.gate.outputs.skip != 'true' && matrix.service == 'api'
+        env:
+          SEED_OWNER_EMAIL: ${{ secrets.SEED_OWNER_EMAIL }}
+          SEED_OWNER_PASSWORD: ${{ secrets.SEED_OWNER_PASSWORD }}
+        run: |
+          Start-Sleep -Seconds 20
+          node scripts/post-deploy-verify.mjs
