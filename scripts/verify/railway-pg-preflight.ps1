@@ -17,17 +17,32 @@ function Write-WarningLine([string]$Message) {
 }
 
 function Invoke-RailwayJson([string[]]$Arguments) {
-  $raw = & railway @Arguments 2>&1
-  $exitCode = $LASTEXITCODE
-  if ($exitCode -ne 0) {
-    throw "railway $($Arguments -join ' ') failed with exit code $exitCode. Output: $raw"
+  # Railway's API intermittently returns a non-JSON body ("error decoding response
+  # body" / "expected value at line 1 column 1") or a transient non-zero exit. That
+  # is NOT a disk-full signal — it's an upstream hiccup, and hard-failing on it
+  # blocked a legit API deploy on 2026-06-17. Retry transient failures; only throw
+  # after exhausting attempts (a persistent failure still blocks, so we never deploy
+  # blind to a genuinely full/unhealthy DB).
+  $maxAttempts = 4
+  $lastError = $null
+  for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    $raw = & railway @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+      try {
+        return $raw | ConvertFrom-Json
+      } catch {
+        $lastError = "railway $($Arguments -join ' ') did not return valid JSON. Output: $raw"
+      }
+    } else {
+      $lastError = "railway $($Arguments -join ' ') failed with exit code $exitCode. Output: $raw"
+    }
+    if ($attempt -lt $maxAttempts) {
+      Write-WarningLine "Transient Railway CLI error (attempt $attempt/$maxAttempts), retrying in $(5 * $attempt)s: $lastError"
+      Start-Sleep -Seconds (5 * $attempt)
+    }
   }
-
-  try {
-    return $raw | ConvertFrom-Json
-  } catch {
-    throw "railway $($Arguments -join ' ') did not return valid JSON. Output: $raw"
-  }
+  throw "$lastError (after $maxAttempts attempts)"
 }
 
 if ([string]::IsNullOrWhiteSpace($env:RAILWAY_TOKEN) -and $env:GITHUB_ACTIONS -eq "true") {
