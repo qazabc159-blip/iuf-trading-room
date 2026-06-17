@@ -245,7 +245,7 @@ function enrichPosition(pos: KgiPosition): KgiPosition {
   return {
     ...pos,
     boardLot: getBoardLot(pos.symbol),
-    netQuantity: pos.quantityCashTd + pos.quantityMarginTd,
+    netQuantity: pos.quantityOddTd + pos.quantityCashTd + pos.quantityMarginTd - pos.quantityShortTd,
   };
 }
 
@@ -317,6 +317,10 @@ export function normaliseRawPosition(
     realized,
     unrealized,
     boardLot:    getBoardLot(symbol),
-    netQuantity: getQuantityByLabel(quantityTd, "cash") + getQuantityByLabel(quantityTd, "margin"),
+    netQuantity:
+      getQuantityByLabel(quantityTd, "odd")
+      + getQuantityByLabel(quantityTd, "cash")
+      + getQuantityByLabel(quantityTd, "margin")
+      - getQuantityByLabel(quantityTd, "short"),
   };
 }

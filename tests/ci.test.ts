@@ -15513,6 +15513,19 @@ test("KGI-SIM-UNLOCK-7: SIM positions/orders/funds use account-read bypass, not 
   );
 });
 
+test("KGI-SIM-UNLOCK-8: KGI SIM netQuantity includes odd-lot shares", () => {
+  const clientSrc = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
+  assert.ok(
+    clientSrc.includes("quantityOddTd + quantityCashTd + quantityMarginTd - quantityShortTd"),
+    "KGI-SIM-UNLOCK-8: gateway client must count odd-lot shares in displayed netQuantity"
+  );
+  const brokerSrc = readFileSync("apps/api/src/broker/kgi-broker.ts", "utf8");
+  assert.ok(
+    brokerSrc.includes("getQuantityByLabel(quantityTd, \"odd\")"),
+    "KGI-SIM-UNLOCK-8: broker adapter normalizer must count odd-lot shares"
+  );
+});
+
 test("BULK-SEED-1: server.ts registers POST /api/v1/admin/companies/bulk-seed", () => {
   const src = readFileSync("apps/api/src/server.ts", "utf8");
   assert.ok(
