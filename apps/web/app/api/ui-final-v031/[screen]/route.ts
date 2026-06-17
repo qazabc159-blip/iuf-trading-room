@@ -97,11 +97,26 @@ function contentShellOverrides(screen: ScreenKey) {
     text-overflow: ellipsis !important;
   }
 
+  /* Broker strip is a fixed 30px row in embedded mode; .troom subtracts it so the
+     desk keeps its exact viewport fit (psafe 32 + brokerstrip 30 = 62). */
+  .brokerstrip {
+    position: sticky;
+    top: 32px;
+    z-index: 29;
+    height: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    overflow: hidden;
+    flex-wrap: nowrap !important;
+    white-space: nowrap !important;
+    padding: 4px 12px !important;
+  }
+
   .troom {
     box-sizing: border-box !important;
     width: 100vw !important;
     max-width: 100vw !important;
-    height: calc(100dvh - 32px) !important;
+    height: calc(100dvh - 62px) !important;
     min-height: 0 !important;
     margin: 0 !important;
     padding: 6px !important;
@@ -295,8 +310,17 @@ function contentShellOverrides(screen: ScreenKey) {
       padding-bottom: 4px !important;
     }
 
+    .brokerstrip {
+      top: 28px;
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
+      padding-top: 3px !important;
+      padding-bottom: 3px !important;
+    }
+
     .troom {
-      height: calc(100dvh - 28px) !important;
+      height: calc(100dvh - 56px) !important;
     }
 
     .symhead {

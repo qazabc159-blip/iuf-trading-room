@@ -64,6 +64,44 @@
 .psafe b{color:var(--fg-0);font-weight:500}
 .psafe .sep{color:var(--fg-3)}
 
+/* ===== Broker strip (multi-broker, Phase 1: display-only) ===== */
+.brokerstrip{
+  display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;
+  padding:7px 14px;
+  background:var(--bg-2);
+  border-bottom:1px solid var(--line);
+}
+.brokerstrip .blabel{
+  align-self:center;
+  font:600 10px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--fg-3);
+  margin-right:2px
+}
+.brokerstrip .bchip{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:5px 11px;border-radius:4px;
+  background:var(--bg-1);border:1px solid var(--line);
+  font:11.5px/1.3 var(--sans);color:var(--fg-2);
+  opacity:.62;transition:opacity .15s,border-color .15s
+}
+.brokerstrip .bchip.active{
+  opacity:1;
+  background:var(--brand-bg);border-color:var(--brand-line);
+  box-shadow:0 0 0 1px var(--brand-line),0 0 12px -4px var(--brand)
+}
+.brokerstrip .bchip .bname{font-weight:600;color:var(--fg-1)}
+.brokerstrip .bchip.active .bname{color:var(--fg-0)}
+.brokerstrip .bchip .bcaps{display:inline-flex;gap:4px}
+.brokerstrip .bchip .bcap{
+  font:600 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+  padding:2px 5px;border-radius:2px;
+  background:var(--bg-2);color:var(--fg-3);border:1px solid var(--line)
+}
+.brokerstrip .bchip.active .bcap{background:rgba(200,148,63,.1);color:var(--brand);border-color:var(--brand-line)}
+.brokerstrip .bchip .bstate{
+  font:600 9px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)
+}
+.brokerstrip .bchip.active .bstate{color:var(--brand)}
+
 /* ============ left panel ============ */
 .lpane{
   position:sticky;top:62px;align-self:start;
