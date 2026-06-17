@@ -15941,6 +15941,24 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
   assert.match(runnerSource, /mark_to_market/);
 });
 
+test("ALERT-RULES-DB-DERIVED: system-health alerts must not read deploy-wiped in-memory state", () => {
+  // Root-cause class 2 (6/16-17): module-level cron state (_aiRecV3CronSuccessDate,
+  // theme refresh _status.successDate) resets on every process restart, so any
+  // alert that read it false-fired after a deploy (R11 v3-cron #1087, R14 theme
+  // #1090). The fix was to derive every health alert from the DB. This guard
+  // keeps it that way — the rule engine must reach for DB evidence, never the
+  // in-memory snapshots.
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/openalice-event-rule-engine.ts"), "utf8");
+  // R11/R13/R14/R15 each pull DB-backed evidence
+  assert.match(src, /getLatestAiRecommendationV3RunForRead/);   // R11
+  assert.match(src, /getDailySmokeHistoryDurable/);             // R13
+  assert.match(src, /MAX\(updated_at\) AS latest FROM themes/); // R14 (themes.updated_at)
+  assert.match(src, /buildS1PositionsSnapshot/);                // R15
+  // and must NOT read the deploy-wiped in-memory cron/theme snapshots
+  assert.doesNotMatch(src, /getThemeRefreshStatus\(\)/);
+  assert.doesNotMatch(src, /_aiRecV3CronSuccessDate/);
+});
+
 test("S1-OBS-7c: SIM holdings rebuild counts accepted/unconfirmed orders, not just filled", () => {
   // 6/17 regression: #1089 filtered audit positions to filled/partially_filled
   // only, but KGI SIM never returns a broker fill report → orders stay
