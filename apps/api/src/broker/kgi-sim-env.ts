@@ -999,10 +999,11 @@ export function _resetDailySmokeHistory(): void {
  *   2. Prod-write audit check (broker.* audit_log entries in last 24h == 0)
  *   3. Trade smoke (only if env=sim AND confirmedByBruce AND confirmedByJason)
  *
- * Window: 08:25-08:55 TST (00:25-00:55 UTC). Call from 15-min polling cron.
- * The EC2 gateway starts on an EventBridge schedule at 08:20 TST — firing before
- * that (the old 08:00-08:30 window hit ~08:03) made the smoke fail every day and
- * buried real failures in alert fatigue (audit R5).
+ * Window: 09:05-09:35 TST (01:05-01:35 UTC). Call from 15-min polling cron.
+ * The EC2 gateway starts on an EventBridge schedule at 08:20 TST, but product
+ * quote verification needs the TWSE MIS lane after open. The old pre-open smoke
+ * confused missing MIS data plus KGI quote-token entitlement issues with a
+ * product outage, creating daily false-red alert fatigue.
  * Idempotent: skips if already fired today (TST wall-clock date).
  * forceRun=true bypasses window+idempotency (manual trigger / tests).
  *
@@ -1017,13 +1018,13 @@ export async function runKgiSimDailySmokeSchedulerTick(params: {
   confirmedByJason?: boolean;
   forceRun?: boolean;
 }): Promise<DailySmokeHistoryEntry | null> {
-  // Window check: 08:25-08:55 TST = 00:25-00:55 UTC (after the EC2 gateway's
-  // 08:20 EventBridge start — see audit R5: 08:03 fire vs 08:20 boot = always FAIL)
+  // Window check: 09:05-09:35 TST = 01:05-01:35 UTC. This is after both the
+  // EC2 gateway 08:20 boot and the 08:55 TWSE MIS quote-cron warmup.
   if (!params.forceRun) {
     const now = new Date();
     const hourUTC = now.getUTCHours();
     const minUTC = now.getUTCMinutes();
-    const inWindow = hourUTC === 0 && minUTC >= 25 && minUTC < 55;
+    const inWindow = hourUTC === 1 && minUTC >= 5 && minUTC < 35;
     if (!inWindow) return null;
 
     // Idempotent: skip if already fired today (TST wall-clock)

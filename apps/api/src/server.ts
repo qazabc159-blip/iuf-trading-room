@@ -4846,7 +4846,7 @@ app.get("/api/v1/internal/kgi/sim/daily-smoke-status", async (c) => {
     lastRunStatus: last?.overallStatus ?? null,
     lastProdBrokerAuditCount: last?.prodBrokerAuditCount ?? null,
     history,
-    scheduledWindow: "08:00-08:30 TST (00:00-00:30 UTC) daily",
+    scheduledWindow: "09:05-09:35 TST (01:05-01:35 UTC) daily",
     auditAction: "kgi.sim.daily_smoke",
   });
 });
@@ -17152,7 +17152,7 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, SIX_HOURS_FULL_INGEST_MS);
 
-  // KGI SIM daily smoke cron: 08:25-08:55 TST (00:25-00:55 UTC), polls every 15min.
+  // KGI SIM daily smoke cron: 09:05-09:35 TST (01:05-01:35 UTC), polls every 15min.
   // Window starts after the EC2 gateway's 08:20 EventBridge boot (audit R5).
   // Window + idempotency guard inside runKgiSimDailySmokeSchedulerTick.
   // Steps: quote smoke + prod-broker audit (broker.* in 24h == 0) + trade smoke (dual-confirm gated).
@@ -17897,7 +17897,7 @@ function startSchedulers(workspaceSlug: string): void {
     "P0-2 health-watchdog (30min) + " +
     "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
     "BLOCK#SIGNAL strategy(15min,13:45-14:30TST) + news(15min,4-window) + quote.breakout(30min,09:00-13:30TST) + " +
-    "KGI-SIM-DAILY-SMOKE (15min poll, fires 08:00-08:30 TST) + " +
+    "KGI-SIM-DAILY-SMOKE (15min poll, fires 09:05-09:35 TST) + " +
     "TWSE-ANN-INGEST (60min poll, fires 09:00-15:00 TST weekdays) + " +
     "MARKET-OVERVIEW-CRON (5min cache pre-warm, fires 09:00-13:35 TST weekdays) + " +
     "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +

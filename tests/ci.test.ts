@@ -10646,11 +10646,13 @@ test("DS4: runKgiSimDailySmokeSchedulerTick outside window (forceRun=false) retu
   const now = new Date();
   const hourUTC = now.getUTCHours();
   const minUTC = now.getUTCMinutes();
-  const inWindow = hourUTC === 0 && minUTC < 30;
+  const inWindow = hourUTC === 1 && minUTC >= 5 && minUTC < 35;
   if (!inWindow) {
-    // Outside 08:00-08:30 TST window: must return null without running
+    // Outside 09:05-09:35 TST window: must return null without running.
+    // Running after open avoids false-red product quote checks before MIS data
+    // is reliably available.
     const result = await runKgiSimDailySmokeSchedulerTick({ forceRun: false });
-    assert.equal(result, null, "DS4: returns null when outside 08:00-08:30 TST window");
+    assert.equal(result, null, "DS4: returns null when outside 09:05-09:35 TST window");
     // Ring buffer must remain empty (no run fired)
     const hist = getDailySmokeHistory();
     assert.equal(hist.length, 0, "DS4: ring buffer empty when skipped outside window");
