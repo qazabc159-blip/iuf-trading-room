@@ -4921,6 +4921,10 @@ function _s1TaipeiDateStr(offsetDays = 0): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
 }
 
+function _s1RecentDateWindow(daysBack = 7): string[] {
+  return Array.from({ length: daysBack + 1 }, (_unused, index) => _s1TaipeiDateStr(-index));
+}
+
 function _isValidS1DateParam(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [yearRaw, monthRaw, dayRaw] = value.split("-");
@@ -4960,12 +4964,14 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
     await import("./s1-sim-runner.js");
   const capitalConfig = await resolveS1SimCapitalTwd(session.workspace.id);
 
-  // Read today's basket (try today, yesterday, day-before)
+  const recentS1Dates = _s1RecentDateWindow(7);
+
+  // Read the latest basket in the current S1 observation window.
   type S1BasketLite = { signal_date: string; regime: string; exposure_weight: number; basket: unknown[]; generated_at_tst: string };
   let latestBasket: S1BasketLite | null = null;
   let latestBasketDate: string | null = null;
   let latestBasketSource: "file" | "audit_log" | null = null;
-  for (const tryDate of [todayTst, _s1TaipeiDateStr(-1), _s1TaipeiDateStr(-2)]) {
+  for (const tryDate of recentS1Dates) {
     const p = pathJoin(base, "s1_sim_basket", `${tryDate}.json`);
     let d = await _readJsonSafe<S1BasketLite>(p);
     let source: "file" | "audit_log" = "file";
@@ -4976,24 +4982,37 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
     if (d) { latestBasket = d; latestBasketDate = tryDate; latestBasketSource = source; break; }
   }
 
-  // Read today's order submit file (today only — no fallback for status)
+  // Read the latest order submit record. S1 is weekly, so a Wednesday status
+  // screen must still show Tuesday's submitted orders instead of looking blank.
   type S1OrderLite = { submitted_at_tst: string; trading_date: string; orders_attempted: number; orders_accepted: number; orders_rejected: number };
-  const orderPath = pathJoin(base, "s1_sim_daily", `${todayTst}_orders.json`);
-  let latestOrders = await _readJsonSafe<S1OrderLite>(orderPath);
-  let latestOrdersSource: "file" | "audit_log" | null = latestOrders ? "file" : null;
-  if (!latestOrders) {
-    latestOrders = await _readS1ObservationAudit<S1OrderLite>(session.workspace.id, "s1_sim.orders_submitted", todayTst);
-    latestOrdersSource = latestOrders ? "audit_log" : null;
+  let latestOrders: S1OrderLite | null = null;
+  let latestOrdersDate: string | null = null;
+  let latestOrdersSource: "file" | "audit_log" | null = null;
+  for (const tryDate of recentS1Dates) {
+    const orderPath = pathJoin(base, "s1_sim_daily", `${tryDate}_orders.json`);
+    let d = await _readJsonSafe<S1OrderLite>(orderPath);
+    let source: "file" | "audit_log" = "file";
+    if (!d) {
+      d = await _readS1ObservationAudit<S1OrderLite>(session.workspace.id, "s1_sim.orders_submitted", tryDate);
+      source = "audit_log";
+    }
+    if (d) { latestOrders = d; latestOrdersDate = tryDate; latestOrdersSource = source; break; }
   }
 
-  // Read today's EOD report
+  // Read the latest EOD report in the same observation window.
   type S1EodLite = { trading_date: string; generated_at_tst: string; total_unrealized_pnl_twd: number | null; total_market_value_twd: number | null; data_source: string; positions: unknown[] };
-  const eodPath = pathJoin(base, "s1_sim_daily", `${todayTst}.json`);
-  let latestEod = await _readJsonSafe<S1EodLite>(eodPath);
-  let latestEodSource: "file" | "audit_log" | null = latestEod ? "file" : null;
-  if (!latestEod) {
-    latestEod = await _readS1ObservationAudit<S1EodLite>(session.workspace.id, "s1_sim.eod_generated", todayTst);
-    latestEodSource = latestEod ? "audit_log" : null;
+  let latestEod: S1EodLite | null = null;
+  let latestEodDate: string | null = null;
+  let latestEodSource: "file" | "audit_log" | null = null;
+  for (const tryDate of recentS1Dates) {
+    const eodPath = pathJoin(base, "s1_sim_daily", `${tryDate}.json`);
+    let d = await _readJsonSafe<S1EodLite>(eodPath);
+    let source: "file" | "audit_log" = "file";
+    if (!d) {
+      d = await _readS1ObservationAudit<S1EodLite>(session.workspace.id, "s1_sim.eod_generated", tryDate);
+      source = "audit_log";
+    }
+    if (d) { latestEod = d; latestEodDate = tryDate; latestEodSource = source; break; }
   }
 
   return c.json({
@@ -5023,8 +5042,10 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
     capital_subscription_created_at: capitalConfig.createdAt,
     observation_storage: {
       latest_basket: latestBasketSource,
-      today_orders: latestOrdersSource,
-      today_eod: latestEodSource,
+      latest_orders: latestOrdersSource,
+      latest_eod: latestEodSource,
+      today_orders: latestOrdersDate === todayTst ? latestOrdersSource : null,
+      today_eod: latestEodDate === todayTst ? latestEodSource : null,
     },
     latest_basket: latestBasket ? {
       date: latestBasketDate,
@@ -5034,17 +5055,21 @@ app.get("/api/v1/internal/s1-sim/status", async (c) => {
       generated_at_tst: latestBasket.generated_at_tst,
     } : null,
     today_orders: latestOrders ? {
+      date: latestOrdersDate,
       submitted_at_tst: latestOrders.submitted_at_tst,
       orders_attempted: latestOrders.orders_attempted,
       orders_accepted: latestOrders.orders_accepted,
       orders_rejected: latestOrders.orders_rejected,
+      source: latestOrdersSource,
     } : null,
     today_eod: latestEod ? {
+      date: latestEodDate,
       generated_at_tst: latestEod.generated_at_tst,
       total_unrealized_pnl_twd: latestEod.total_unrealized_pnl_twd,
       total_market_value_twd: latestEod.total_market_value_twd,
       position_count: Array.isArray(latestEod.positions) ? latestEod.positions.length : 0,
       data_source: latestEod.data_source,
+      source: latestEodSource,
     } : null,
   });
 });
