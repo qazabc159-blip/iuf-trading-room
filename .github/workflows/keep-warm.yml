@@ -1,0 +1,50 @@
+name: Keep Warm (anti cold-start)
+
+# Why: the homepage took ~14.7s on a COLD container vs ~2.1s warm (measured
+# 2026-06-17, logged-in Playwright: cold domcontentloaded=14745ms / `/` doc=3126ms;
+# warm=2136ms). Prod Next.js is pre-built (no per-route compile), so the lag is
+# pure container cold-boot — Railway evicts an idle container and the next visitor
+# pays the boot. The owner opening the site after idle (or right after a deploy)
+# hits exactly this. A cheap periodic ping keeps both containers resident.
+#
+# Deliberately on GitHub-hosted ubuntu (NOT the self-hosted Taipei EC2 runner,
+# which EventBridge stops at 14:10 TST — a probe scheduled on it would silently
+# never run). Non-failing: warming is best-effort, never alerts.
+
+on:
+  schedule:
+    # Every 10 min, 00:00–06:50 UTC weekdays = 08:00–14:50 TST (pre-open through
+    # post-close review — the window the owner actually uses the product).
+    - cron: '*/10 0-6 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Warm web + api containers
+        shell: bash
+        run: |
+          warm() {
+            local name="$1" url="$2"
+            # Two hits a few seconds apart: the first may pay cold boot, the second
+            # confirms warm. Generous timeout so a cold boot doesn't fail the curl.
+            local t1 t2
+            t1=$(curl -s -o /dev/null -w "%{time_total}" --max-time 40 "$url" || echo "ERR")
+            sleep 3
+            t2=$(curl -s -o /dev/null -w "%{time_total}" --max-time 40 "$url" || echo "ERR")
+            echo "  $name  cold=${t1}s  warm=${t2}s  ($url)"
+          }
+          echo "== keep-warm $(date -u +%FT%TZ) =="
+          warm "web " "https://app.eycvector.com/"
+          warm "api " "https://api.eycvector.com/health"
+          # Always succeed — warming must never page anyone.
+          exit 0
