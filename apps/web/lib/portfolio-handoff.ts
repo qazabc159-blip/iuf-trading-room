@@ -135,7 +135,10 @@ export function buildPaperRoomSrc(params: PortfolioSearchParams | undefined) {
     }
   }
 
-  query.set("rev", revParts.length ? `handoff-${revParts.join("|")}` : "portfolio");
+  // Time-bucketed rev for the default (no-handoff) load so a fresh visit always
+  // pulls the latest desk HTML after a deploy (handoff loads keep a stable
+  // param-based rev so re-navigating to the same handoff doesn't remount).
+  query.set("rev", revParts.length ? `handoff-${revParts.join("|")}` : `portfolio-${Date.now().toString(36)}`);
   return `/api/ui-final-v031/paper-trading-room?${query.toString()}`;
 }
 

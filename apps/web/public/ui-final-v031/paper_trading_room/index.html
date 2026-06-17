@@ -399,20 +399,16 @@ body[data-screen-label="Trading Room v1"] .tnote{
   <span>本頁所有委託皆走模擬通道，<b>不會送出實單</b>；KGI 連線僅供讀取庫存對照。</span>
 </div>
 
-<!-- ============ BROKER STRIP (multi-broker, Phase 1: display-only) ============ -->
-<!-- Hydrated from /api/v1/uta/adapters; static fallback below keeps it non-blank. -->
+<!-- ============ BROKER SELECTOR ============ -->
+<!-- Product-grade broker picker. Phase 1: selection is display-only (orders stay
+     on the SIM channel); switching + 富邦 + real-money ship in later gated phases. -->
 <div class="brokerstrip" id="broker-strip">
-  <span class="blabel">券商</span>
-  <span class="bchip active" data-broker="kgi">
-    <span class="bname">凱基證券 (KGI)</span>
-    <span class="bcaps"><span class="bcap">零股</span><span class="bcap">融資</span><span class="bcap">做空</span><span class="bcap">SIM</span></span>
-    <span class="bstate">使用中 · SIM</span>
-  </span>
-  <span class="bchip" data-broker="paper" title="券商切換即將開放；目前所有委託仍走 SIM／模擬通道">
-    <span class="bname">Paper Trading</span>
-    <span class="bcaps"><span class="bcap">SIM</span></span>
-    <span class="bstate">即將開放</span>
-  </span>
+  <span class="bblabel">交易券商</span>
+  <button type="button" class="bbtn active" data-broker="kgi">凱基 <span class="bsub">KGI</span></button>
+  <button type="button" class="bbtn" data-broker="paper" title="券商切換即將開放">模擬 <span class="bsub">Paper</span></button>
+  <button type="button" class="bbtn soon" data-broker="fubon" disabled title="富邦證券接入中，敬請期待">富邦 <span class="bsoon">即將開放</span></button>
+  <span class="bbgap"></span>
+  <span class="bbmode"><i></i>模擬模式 · 本頁不送實單</span>
 </div>
 
 <!-- ============ MAIN ============ -->
