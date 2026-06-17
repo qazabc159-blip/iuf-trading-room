@@ -849,12 +849,6 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (!res.ok) throw new Error((json && (json.error || json.message)) || ("api_" + res.status));
     return unwrap(json);
   };
-  const apiDelete = async (path) => {
-    const res = await apiFetch(path, { method: "DELETE" });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) throw new Error((json && (json.error || json.message)) || ("api_" + res.status));
-    return unwrap(json);
-  };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
   const softState = (result) => result && result.ok ? "live" : "blocked";
   function shouldFetchRawKgiQuote(quote) {
@@ -2320,7 +2314,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const sym = btn.dataset && btn.dataset.del;
       if (!sym) return;
       btn.disabled = true;
-      try { await apiDelete("/api/v1/watchlist/" + encodeURIComponent(sym)); await refreshClientLive(); }
+      try { await apiPost("/api/v1/watchlist/remove", { symbol: sym }); await refreshClientLive(); }
       catch (_err) { btn.disabled = false; }
     }));
   }

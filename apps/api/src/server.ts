@@ -6281,11 +6281,13 @@ app.post("/api/v1/watchlist", async (c) => {
   return c.json({ ok: true, symbol });
 });
 
-// DELETE /api/v1/watchlist/:symbol — remove a symbol
-app.delete("/api/v1/watchlist/:symbol", async (c) => {
+// POST /api/v1/watchlist/remove — remove a symbol { symbol }
+// (POST, not DELETE: the same-origin trade-desk proxy only allowlists GET/POST.)
+app.post("/api/v1/watchlist/remove", async (c) => {
   const session = c.get("session");
   if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
-  const symbol = String(c.req.param("symbol") ?? "").trim().toUpperCase();
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const symbol = String((body as Record<string, unknown>).symbol ?? "").trim().toUpperCase();
   if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return c.json({ error: "invalid_symbol" }, 400);
   const db = getDb();
   if (!db) return c.json({ error: "db_unavailable" }, 503);
