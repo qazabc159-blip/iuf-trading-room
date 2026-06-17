@@ -18357,17 +18357,21 @@ app.get("/api/v1/market/breadth/twse", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
-  // NOTE (2026-06-17): deliberately NOT routed to FinMind same-day yet. FinMind
-  // whole-market breadth counts the ENTIRE instrument universe (warrants + ETFs),
-  // giving up/down/flat ≈ 8215/7132/4104 (~19k) vs the ~1361 listed-stock universe
-  // TWSE STOCK_DAY_ALL reports. Showing "8215 advancing" is worse than a clean
-  // 1-day-lagged count. TWSE EOD stays primary here until FinMind breadth is
-  // filtered to listed stocks (4-digit codes). See heatmap/twse, which IS same-day
-  // because it filters via the official industry map.
+  // Same-day fix (2026-06-17): FinMind whole-market is same-day at the close while
+  // TWSE STOCK_DAY_ALL is EOD-only and lags a day right after close. getFinMindMarketBreadth
+  // now filters to the listed-stock universe (4-digit + 00-prefixed ETFs), excluding
+  // the ~17k 6-digit warrants that previously inflated up/down to ~8000. Verified at
+  // source: filtered = 1323/851/271 (~2.4k listed) vs dirty 8335/7333/4121 (~19k).
+  // FinMind primary → TWSE EOD fallback. (No consumer reads this endpoint's topGainers.)
+  const { getFinMindMarketBreadth, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
   const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
-  const result = await getTwseMarketBreadth();
 
-  return c.json(result);
+  if (finMindAggregateHasToken()) {
+    const finmind = await getFinMindMarketBreadth();
+    if (finmind) return c.json(finmind);
+  }
+
+  return c.json(await getTwseMarketBreadth());
 });
 
 // GET /api/v1/market/leaders/twse

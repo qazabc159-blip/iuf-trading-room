@@ -399,6 +399,18 @@ export async function getFinMindIndustryHeatmap(
  * Compute advance/decline/flat counts from TaiwanStockPrice.
  * Returns null when FinMind token absent.
  */
+/**
+ * Taiwan listed-stock universe filter for breadth.
+ * FinMind TaiwanStockPrice whole-market returns the ENTIRE instrument universe —
+ * ~17k 6-digit warrants/options dwarf the ~2.4k real stocks, inflating any naive
+ * advance/decline count to ~8000 up (verified 2026-06-17). Listed common stocks
+ * are 4-digit (2330, 0050); ETFs are 00-prefixed (00878, 006208). Warrants are
+ * 6-digit and never start "00", so this cleanly excludes them.
+ */
+function isListedStockId(stockId: string): boolean {
+  return /^\d{4}$/.test(stockId) || /^00\d{2,4}$/.test(stockId);
+}
+
 export async function getFinMindMarketBreadth(
   date?: string
 ): Promise<FinMindBreadthResult | null> {
@@ -412,6 +424,7 @@ export async function getFinMindMarketBreadth(
   let asOf: string | null = null;
 
   for (const row of rows) {
+    if (!isListedStockId(String(row.stock_id))) continue; // exclude warrants/options
     if (!isFinite(row.close) || row.close <= 0) continue;
     const changePct = spreadToChangePct(row.close, row.spread);
     if (changePct > 0) up++;
