@@ -12185,23 +12185,43 @@ app.get("/api/v1/market/heatmap/twse", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
-  const { getTwseIndustryHeatmap, getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+  const { getTwseIndustryHeatmap, getStockDayAllRows, rocDateToTaipeiTs } = await import("./data-sources/twse-openapi-client.js");
+  const { getFinMindIndustryHeatmap, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   // Task C fix: use official TWSE 産業別 classification (t187ap03_L) instead of
   // companies.chain_position (per-stock Yahoo Finance labels). This ensures each tile
   // groups 10-100+ stocks per industry (e.g. 半導體業, 電子零組件業) rather than
   // single-stock micro-categories (e.g. "Electronics Distribution stockCount:1").
-  const [officialIndustryMap] = await Promise.all([
-    _getTwseOfficialIndustryMap(),
-    getStockDayAllRows().catch(() => {}), // pre-warm shared cache
-  ]);
+  const officialIndustryMap = await _getTwseOfficialIndustryMap();
 
-  const tiles = await getTwseIndustryHeatmap(officialIndustryMap);
+  // Same-day fix (2026-06-17): TWSE STOCK_DAY_ALL is EOD-only and publishes late,
+  // so right after the close it still serves YESTERDAY's market (the "heatmap stuck
+  // on 6/16" bug — confirmed: STOCK_DAY_ALL latest Date was 1150616 while FinMind
+  // already had 6/17). FinMind whole-market price is same-day at 13:30, so use it as
+  // primary (with the SAME official industry map) and keep TWSE EOD as fallback.
+  const finmindTiles = finMindAggregateHasToken()
+    ? await getFinMindIndustryHeatmap(officialIndustryMap)
+    : null;
+  let source = "finmind";
+  let asOf: string | null = `${_s1TaipeiDateStr(0)}T13:30:00+08:00`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let tiles: any[];
+
+  if (finmindTiles && finmindTiles.length > 0) {
+    tiles = finmindTiles;
+  } else {
+    const rows = await getStockDayAllRows().catch(() => [] as Array<{ Date?: string }>);
+    tiles = await getTwseIndustryHeatmap(officialIndustryMap);
+    source = "twse_openapi";
+    asOf = rows[0]?.Date ? rocDateToTaipeiTs(rows[0].Date) : null;
+  }
+
   const normalizedTiles = normalizeAndMergeTwseHeatmapTiles(tiles);
 
   return c.json({
     data: normalizedTiles,
-    source: "twse_openapi",
+    source,
+    asOf,
     staleAfterSec: 60,
     industryCount: normalizedTiles.length,
     mappedTickers: officialIndustryMap.size,
@@ -18337,6 +18357,13 @@ app.get("/api/v1/market/breadth/twse", async (c) => {
   const role = c.get("session").user.role;
   if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
+  // NOTE (2026-06-17): deliberately NOT routed to FinMind same-day yet. FinMind
+  // whole-market breadth counts the ENTIRE instrument universe (warrants + ETFs),
+  // giving up/down/flat ≈ 8215/7132/4104 (~19k) vs the ~1361 listed-stock universe
+  // TWSE STOCK_DAY_ALL reports. Showing "8215 advancing" is worse than a clean
+  // 1-day-lagged count. TWSE EOD stays primary here until FinMind breadth is
+  // filtered to listed stocks (4-digit codes). See heatmap/twse, which IS same-day
+  // because it filters via the official industry map.
   const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
   const result = await getTwseMarketBreadth();
 
