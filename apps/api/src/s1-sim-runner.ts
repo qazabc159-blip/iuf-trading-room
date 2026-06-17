@@ -1071,7 +1071,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
 
   try {
     const rawPositions = await client.getPosition();
-    positions = rawPositions
+    const gatewayPositions = rawPositions
       .filter((p) => p.netQuantity !== 0)
       .map((p) => ({
         symbol: p.symbol,
@@ -1086,13 +1086,46 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
           ? p.netQuantity * p.lastPrice
           : null,
       }));
-    if (positions.length === 0 && auditPositions.length > 0) {
-      // Gateway reachable but session is empty — ephemeral SIM positions reset.
-      positions = auditPositions;
-      dataSource = "audit_log_rebuild";
-      notes.push(`gateway_empty_rebuilt_from_audit: KGI SIM session positions are ephemeral; rebuilt ${auditPositions.length} positions from ${positionsDate} confirmed fills`);
-    } else if (positions.length === 0 && unconfirmedAuditOrders.length > 0) {
-      notes.push(`gateway_empty_unconfirmed_orders: ${unconfirmedAuditOrders.length} submitted orders exist, but no matching broker fill/deal report is available; not counted as holdings`);
+
+    if (auditPositions.length > 0) {
+      // S1/F-AUTO is a strategy portfolio, not a raw KGI-account viewer. A
+      // gateway account may contain unrelated manual odd-lot SIM positions
+      // (6/17 repro: raw 0050 x2) and must not hide the Tuesday S1 basket.
+      // Use durable S1 audit as the holdings set, then enrich same-symbol rows
+      // with gateway last price / PnL when available.
+      const gatewayBySymbol = new Map(gatewayPositions.map((p) => [p.symbol, p]));
+      let enriched = 0;
+      positions = auditPositions.map((auditPosition) => {
+        const gatewayPosition = gatewayBySymbol.get(auditPosition.symbol);
+        if (!gatewayPosition) return auditPosition;
+        enriched += 1;
+        const lastPrice = gatewayPosition.last_price ?? auditPosition.last_price;
+        return {
+          ...auditPosition,
+          last_price: lastPrice,
+          unrealized_pnl_twd: gatewayPosition.unrealized_pnl_twd ?? auditPosition.unrealized_pnl_twd,
+          market_value_twd:
+            lastPrice == null ? auditPosition.market_value_twd : auditPosition.shares * lastPrice,
+        };
+      });
+      dataSource = enriched > 0 ? "audit_log_rebuild_with_gateway_marks" : "audit_log_rebuild";
+      notes.push(`s1_audit_primary: rebuilt ${auditPositions.length} S1 holdings from ${positionsDate} submitted SIM orders`);
+      if (enriched > 0) {
+        notes.push(`gateway_marks_applied: enriched ${enriched}/${auditPositions.length} S1 holdings with matching KGI gateway rows`);
+      }
+      const strategySymbols = new Set(auditPositions.map((p) => p.symbol));
+      const extraGatewaySymbols = gatewayPositions
+        .map((p) => p.symbol)
+        .filter((symbol) => !strategySymbols.has(symbol));
+      if (extraGatewaySymbols.length > 0) {
+        notes.push(`gateway_extra_positions_ignored_for_s1: ${extraGatewaySymbols.join(",")}`);
+      }
+    } else if (gatewayPositions.length > 0) {
+      positions = gatewayPositions;
+      dataSource = "kgi_gateway";
+      notes.push(`gateway_positions_without_s1_audit: ${gatewayPositions.length} gateway positions shown because no S1 audit holdings were found`);
+    } else if (unconfirmedAuditOrders.length > 0) {
+      notes.push(`gateway_empty_nonheld_orders: ${unconfirmedAuditOrders.length} rejected/skipped/cancelled submitted orders exist; not counted as holdings`);
     } else {
       console.log(`[s1-eod] fetched ${positions.length} positions from KGI gateway`);
     }
@@ -1104,9 +1137,9 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     if (auditPositions.length > 0) {
       positions = auditPositions;
       dataSource = "audit_log_fallback";
-      notes.push(`positions_from_audit_log: rebuilt ${auditPositions.length} positions from ${positionsDate} confirmed fills`);
+      notes.push(`positions_from_audit_log: rebuilt ${auditPositions.length} S1 holdings from ${positionsDate} submitted SIM orders`);
     } else if (unconfirmedAuditOrders.length > 0) {
-      notes.push(`orders_unconfirmed_not_positions: ${unconfirmedAuditOrders.length} submitted orders have no matching broker fill/deal report; not counted as holdings`);
+      notes.push(`orders_not_held: ${unconfirmedAuditOrders.length} rejected/skipped/cancelled orders are not counted as holdings`);
     } else {
       // Legacy fallback: today's order submit file (ephemeral — may be gone after redeploy)
       dataSource = "order_file_fallback";

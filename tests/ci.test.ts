@@ -15947,9 +15947,11 @@ test("S1-OBS-7: mid-week EOD rebuilds weekly positions from audit window (audit 
   // orders, not just today's (which don't exist Wed–Mon).
   assert.match(runnerSource, /readLatestS1ObservationAuditInWindow/);
   assert.match(runnerSource, /taipeiDateStr\(-7\)/);
-  // Gateway reachable-but-empty must trigger the rebuild (KGI SIM session
-  // positions are ephemeral — empty is not "no positions").
-  assert.match(runnerSource, /gateway_empty_rebuilt_from_audit/);
+  // F-AUTO is the S1 strategy observer: durable S1 audit defines holdings.
+  // Gateway rows may only enrich matching symbols; unrelated manual/leftover
+  // KGI positions must not hide the weekly S1 basket.
+  assert.match(runnerSource, /s1_audit_primary/);
+  assert.match(runnerSource, /gateway_extra_positions_ignored_for_s1/);
   // Rebuilt positions are marked to market from TWSE EOD closes.
   assert.match(runnerSource, /mark_to_market/);
 });
@@ -15981,6 +15983,33 @@ test("S1-OBS-7c: SIM holdings rebuild counts accepted/unconfirmed orders, not ju
   assert.match(runnerSource, /HELD_STATUSES = new Set\(\["filled", "partially_filled", "accepted", "unconfirmed"\]\)/);
   assert.match(runnerSource, /\.filter\(\(r\) => HELD_STATUSES\.has\(r\.status\)\)/);
   assert.doesNotMatch(runnerSource, /\.filter\(\(r\) => r\.status === "filled" \|\| r\.status === "partially_filled"\)/);
+});
+
+test("S1-OBS-7d: F-AUTO holdings prefer S1 audit over unrelated KGI account positions", () => {
+  // 6/17 production repro: KGI gateway returned a manual/leftover 0050 odd-lot
+  // position, so /portfolio/f-auto displayed only 0050 and hid the 8 S1 orders
+  // submitted from the latest Tuesday basket. The F-AUTO page is a strategy
+  // observer: durable S1 audit defines the holdings set; gateway rows may only
+  // enrich matching symbols with marks/PnL.
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+  assert.match(runnerSource, /s1_audit_primary/);
+  assert.match(runnerSource, /gateway_extra_positions_ignored_for_s1/);
+  assert.match(runnerSource, /audit_log_rebuild_with_gateway_marks/);
+  assert.match(runnerSource, /const gatewayBySymbol = new Map\(gatewayPositions\.map/);
+  assert.doesNotMatch(runnerSource, /if \(positions\.length === 0 && auditPositions\.length > 0\)/);
+});
+
+test("S1-OBS-7e: S1 status uses a 7-day observation window for orders and EOD", () => {
+  // S1 is weekly. A Wednesday status page must still show Tuesday's latest
+  // basket/orders/EOD instead of returning today_orders=null and making the
+  // product look idle.
+  const serverSource = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(serverSource, /function _s1RecentDateWindow\(daysBack = 7\)/);
+  assert.match(serverSource, /for \(const tryDate of recentS1Dates\)/);
+  assert.match(serverSource, /latest_orders: latestOrdersSource/);
+  assert.match(serverSource, /latest_eod: latestEodSource/);
+  assert.match(serverSource, /date: latestOrdersDate/);
+  assert.match(serverSource, /date: latestEodDate/);
 });
 
 test("S1-OBS-7b: mark-to-market covers OTC (TPEX) symbols, not just TWSE-listed", () => {
