@@ -461,7 +461,10 @@ export async function getFinMindLeaders(
   let asOf: string | null = null;
 
   const enriched = rows
-    .filter(row => isFinite(row.close) && row.close > 0)
+    // Listed stocks only: without this, 6-digit warrants (leveraged) dominate the
+    // gainers/losers with absurd moves like +2316% — and the homepage shows
+    // topGainers as "強勢股". Same universe filter as breadth.
+    .filter(row => isListedStockId(String(row.stock_id)) && isFinite(row.close) && row.close > 0)
     .map(row => {
       if (!asOf && row.date) asOf = `${row.date}T13:30:00+08:00`;
       return {
