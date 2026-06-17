@@ -532,7 +532,7 @@ function parseRocDate(rocDate: string): string {
 /**
  * Parse "1150512" → Taipei market-close ISO timestamp (T13:30:00+08:00)
  */
-function rocDateToTaipeiTs(rocDate: string): string {
+export function rocDateToTaipeiTs(rocDate: string): string {
   const iso = parseRocDate(rocDate);
   return `${iso}T13:30:00+08:00`;
 }
