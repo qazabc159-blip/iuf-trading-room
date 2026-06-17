@@ -1245,16 +1245,15 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score")),
-      soft(apiGetRaw("/api/v1/portfolio/f-auto")),
-      soft(apiGetRaw("/api/v1/uta/adapters"))
+      soft(apiGetRaw("/api/v1/portfolio/f-auto"))
     ]);
     const fauto = fautoResult.ok ? fautoResult.data : null;
-    // UTA multi-broker catalog (Phase 1): surface the real broker adapters so the
-    // trade desk reflects multi-broker support. Display-only — order routing is
-    // unchanged (still SIM/paper). Envelope shape: { data: { adapters: [...] } }.
-    const brokers = brokersResult.ok
-      ? ((brokersResult.data?.data?.adapters) || (brokersResult.data?.adapters) || [])
-      : [];
+    // Phase 1 broker strip uses the STATIC catalog baked into the HTML (KGI + Paper,
+    // which is the real catalog today). The live /api/v1/uta/adapters fetch is
+    // deferred to Phase 2: it 403s for some sessions and a 403 resource error is
+    // browser-logged (uncatchable by soft()), tripping the portfolio smoke's
+    // no-auth-error gate. Wire the live catalog once that 403 is resolved.
+    const brokers = [];
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
