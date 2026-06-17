@@ -40,18 +40,8 @@
 import { randomUUID } from "node:crypto";
 
 import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
-import { getDb, isDatabaseMode, auditLogs } from "@iuf-trading-room/db";
+import { getDb, isDatabaseMode, auditLogs, execRows } from "@iuf-trading-room/db";
 
-/**
- * Normalize db.execute() results. This repo's driver is drizzle-orm/postgres-js,
- * whose execute() returns the row array DIRECTLY — there is no `.rows` wrapper.
- * Accept both shapes defensively (see ai-rec-perf-store.ts for the same pattern).
- */
-function execRows<T>(res: unknown): T[] {
-  if (Array.isArray(res)) return res as T[];
-  const wrapped = res as { rows?: T[] };
-  return Array.isArray(wrapped?.rows) ? wrapped.rows : [];
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

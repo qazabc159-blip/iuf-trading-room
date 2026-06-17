@@ -18,7 +18,7 @@
  *   - stale_panels populated for every panel that throws or returns fallback data
  */
 
-import { isDatabaseMode, getDb } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, execRows } from "@iuf-trading-room/db";
 import { getTradingRoomRepository } from "@iuf-trading-room/domain";
 import { sql as drizzleSql } from "drizzle-orm";
 
@@ -101,14 +101,6 @@ export function sanitizePanelError(raw: string): string {
   // Truncate
   s = s.slice(0, 80).trim();
   return s.length > 0 ? s : "panel_fetch_failed";
-}
-
-// ── execRows helper (mirrors server.ts pattern for drizzle-orm/postgres-js) ───
-
-function execRows<T>(result: unknown): T[] {
-  if (Array.isArray(result)) return result as T[];
-  const r = result as { rows?: T[] };
-  return r.rows ?? [];
 }
 
 // ── Panel fetchers ─────────────────────────────────────────────────────────────
