@@ -1237,7 +1237,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, brokersResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
@@ -1245,9 +1245,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score")),
-      soft(apiGetRaw("/api/v1/portfolio/f-auto"))
+      soft(apiGetRaw("/api/v1/portfolio/f-auto")),
+      soft(apiGetRaw("/api/v1/uta/adapters"))
     ]);
     const fauto = fautoResult.ok ? fautoResult.data : null;
+    // UTA multi-broker catalog (Phase 1): surface the real broker adapters so the
+    // trade desk reflects multi-broker support. Display-only — order routing is
+    // unchanged (still SIM/paper). Envelope shape: { data: { adapters: [...] } }.
+    const brokers = brokersResult.ok
+      ? ((brokersResult.data?.data?.adapters) || (brokersResult.data?.adapters) || [])
+      : [];
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
@@ -1323,6 +1330,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
+      brokers,
       prefill,
       _companyId: company?.id ?? null,
     };
@@ -2256,6 +2264,37 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI 唯讀</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
   }
 
+  // Phase 1 (multi-broker, 2026-06-17): render the real UTA broker catalog in the
+  // safety bar so the desk reflects multi-broker support. DISPLAY-ONLY — all orders
+  // still route through the SIM/paper channel; broker switching ships in a later
+  // phase (gated, customer-side gateway model). Keeps the static fallback if the
+  // catalog is empty.
+  function hydrateBrokerStrip() {
+    const strip = $('#broker-strip');
+    if (!strip) return;
+    const brokers = (live.brokers || []).filter((b) => b && b.adapterKey);
+    if (!brokers.length) return; // keep static fallback
+    // KGI SIM is the desk's current target (the submit button reads "送出 KGI SIM").
+    const activeKey = brokers.some((b) => b.adapterKey === 'kgi') ? 'kgi' : brokers[0].adapterKey;
+    const capChips = (caps) => {
+      const out = [];
+      if (caps && caps.oddLot) out.push('零股');
+      if (caps && caps.marginTrading) out.push('融資');
+      if (caps && caps.shortSelling) out.push('做空');
+      if (caps && caps.simModeAvailable) out.push('SIM');
+      return out.map((c) => '<span class="bcap">' + esc(c) + '</span>').join('');
+    };
+    strip.innerHTML = '<span class="blabel">券商</span>' + brokers.map((b) => {
+      const active = b.adapterKey === activeKey;
+      return '<span class="bchip' + (active ? ' active' : '') + '" data-broker="' + esc(b.adapterKey) + '"'
+        + (active ? '' : ' title="券商切換即將開放；目前所有委託仍走 SIM／模擬通道"') + '>'
+        + '<span class="bname">' + esc(b.displayName || b.adapterKey) + '</span>'
+        + '<span class="bcaps">' + capChips(b.capabilities) + '</span>'
+        + '<span class="bstate">' + (active ? '使用中 · SIM' : '即將開放') + '</span>'
+        + '</span>';
+    }).join('');
+  }
+
   function applyPaperPrefill(selected) {
     const prefill = paperPrefill();
     const existing = $("#rec-prefill-box");
@@ -2495,6 +2534,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         + '　·　現金 <b style="color:var(--fg-1);font-weight:500">' + n(f.cash_residual_estimated_twd) + '</b>　·　來源 ' + srcText;
     })();
     hydrateKgiReadinessNote();
+    hydrateBrokerStrip();
     const depth = $("#depth");
     if (depth) {
       if (live.bidAsk) {

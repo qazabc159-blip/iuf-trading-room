@@ -399,6 +399,22 @@ body[data-screen-label="Trading Room v1"] .tnote{
   <span>本頁所有委託皆走模擬通道，<b>不會送出實單</b>；KGI 連線僅供讀取庫存對照。</span>
 </div>
 
+<!-- ============ BROKER STRIP (multi-broker, Phase 1: display-only) ============ -->
+<!-- Hydrated from /api/v1/uta/adapters; static fallback below keeps it non-blank. -->
+<div class="brokerstrip" id="broker-strip">
+  <span class="blabel">券商</span>
+  <span class="bchip active" data-broker="kgi">
+    <span class="bname">凱基證券 (KGI)</span>
+    <span class="bcaps"><span class="bcap">零股</span><span class="bcap">融資</span><span class="bcap">做空</span><span class="bcap">SIM</span></span>
+    <span class="bstate">使用中 · SIM</span>
+  </span>
+  <span class="bchip" data-broker="paper" title="券商切換即將開放；目前所有委託仍走 SIM／模擬通道">
+    <span class="bname">Paper Trading</span>
+    <span class="bcaps"><span class="bcap">SIM</span></span>
+    <span class="bstate">即將開放</span>
+  </span>
+</div>
+
 <!-- ============ MAIN ============ -->
 <div class="troom">
 
