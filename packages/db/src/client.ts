@@ -61,3 +61,20 @@ export async function closeDb() {
     drizzleClient = null;
   }
 }
+
+/**
+ * Canonical normalizer for `db.execute()` results.
+ *
+ * This repo's driver is drizzle-orm/postgres-js, whose `execute()` returns the
+ * row array DIRECTLY — there is NO `.rows` wrapper. Reading `result.rows` on it
+ * yields `undefined`, which silently degrades to an empty result and has caused
+ * a whole class of "0 rows forever" bugs (ai-rec perf store, alerts engine,
+ * heatmap, etc). ALWAYS pass `db.execute(...)` results through this helper
+ * instead of reading `.rows`. Accepts both shapes defensively so it also works
+ * if a node-postgres client is ever introduced.
+ */
+export function execRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  const wrapped = result as { rows?: T[] } | null | undefined;
+  return Array.isArray(wrapped?.rows) ? (wrapped!.rows as T[]) : [];
+}

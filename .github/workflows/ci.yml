@@ -72,6 +72,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Root-cause guard (2026-06-17): block the postgres-js ".rows silent-zero"
+      # bug class — db.execute() returns a bare array, so reading .rows is a
+      # silent empty. Forces execRows() from @iuf-trading-room/db instead.
+      - name: DB execRows guard
+        run: pnpm check:db-execrows
+
       - name: Build
         run: pnpm build
 

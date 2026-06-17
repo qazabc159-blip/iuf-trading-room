@@ -21,7 +21,7 @@
  */
 
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
+import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import type { StockDayAllRow } from "../data-sources/twse-openapi-client.js";
 
 export interface QuantCandidate {
@@ -45,13 +45,6 @@ const MOMENTUM_TOP_N = 12;
 const INSTITUTIONAL_TOP_N = 12;
 const LIQUIDITY_FLOOR_TWD = 150_000_000; // 1.5 億成交額 — skip illiquid names
 const MIN_POOL_SIZE = 5;
-
-/** Normalize db.execute results (drizzle-orm/postgres-js returns a bare array). */
-function execRows<T>(res: unknown): T[] {
-  if (Array.isArray(res)) return res as T[];
-  const wrapped = res as { rows?: T[] };
-  return Array.isArray(wrapped?.rows) ? wrapped.rows : [];
-}
 
 function parseNum(raw: string | undefined | null): number | null {
   const n = Number(String(raw ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
