@@ -82,6 +82,11 @@ export interface S1EodReport {
   schema: "s1_eod_report_v1";
   trading_date: string;
   generated_at_tst: string;
+  completion_status: "complete" | "partial";
+  pricing_coverage: {
+    priced_positions: number;
+    total_positions: number;
+  };
   positions: Array<{
     symbol: string;
     shares: number;
@@ -412,6 +417,7 @@ let _signalLastFiredDate = "";
 let _orderSubmitLastFiredDate = "";
 let _eodLastFiredDate = "";
 let _signalRunInFlight: Promise<void> | null = null;
+let _eodRunInFlight: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // A. cont_liq signal runner + regime classifier + order sizing
@@ -1001,6 +1007,8 @@ export interface S1PositionsSnapshot {
   cashResidualTwd: number;
   totalUnrealizedPnlTwd: number | null;
   totalMarketValueTwd: number | null;
+  pricedPositionCount: number;
+  pricingComplete: boolean;
 }
 
 /**
@@ -1175,6 +1183,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   // S1 holdings span listed (TWSE) and OTC (TPEX) symbols — a TWSE-only price
   // map leaves OTC positions (e.g. 5701) permanently un-priced (last_price=null
   // forever), which in turn nulls out the whole-portfolio totals below.
+  let officialCloseMarkedCount = 0;
   if (positions.length > 0) {
     try {
       // TPEX closes via the shared cached getter — the 6/11 inline fetch used
@@ -1208,6 +1217,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
           marked++;
         }
       }
+      officialCloseMarkedCount = marked;
       if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE+TPEX EOD closes`);
     } catch {
       notes.push("mark_to_market_unavailable: TWSE/TPEX EOD fetch failed");
@@ -1218,6 +1228,10 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   // coverage — an OTC symbol with no price for the day no longer nulls out
   // the whole portfolio's market value / unrealized P&L.
   const pricedPositions = positions.filter((p) => p.last_price !== null);
+  // Completion is stricter than "a price exists": gateway rows can carry an
+  // intraday lastPrice. An official EOD report is complete only when every
+  // current holding was marked from the TWSE/TPEX closing-price datasets.
+  const pricingComplete = officialCloseMarkedCount === positions.length;
   const unrealizedKnownPositions = positions.filter((p) => p.unrealized_pnl_twd !== null);
   const totalUnrealized = unrealizedKnownPositions.length > 0
     ? unrealizedKnownPositions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
@@ -1246,17 +1260,32 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     cashResidualTwd: cashResidual,
     totalUnrealizedPnlTwd: totalUnrealized,
     totalMarketValueTwd: totalMarketValue,
+    pricedPositionCount: officialCloseMarkedCount,
+    pricingComplete,
   };
 }
 
 export async function runS1EodReportTick(): Promise<void> {
+  if (_eodRunInFlight) {
+    console.log("[s1-eod] EOD run already in flight, waiting");
+    await _eodRunInFlight;
+    return;
+  }
+
+  _eodRunInFlight = runS1EodReportTickOnce().finally(() => {
+    _eodRunInFlight = null;
+  });
+
+  await _eodRunInFlight;
+}
+
+async function runS1EodReportTickOnce(): Promise<void> {
   const todayTst = taipeiDateStr();
 
   if (_eodLastFiredDate === todayTst) {
-    console.log("[s1-eod] already fired today, skipping");
+    console.log("[s1-eod] complete report already generated today, skipping");
     return;
   }
-  _eodLastFiredDate = todayTst;
 
   console.log(`[s1-eod] START trading_date=${todayTst}`);
   const snapshot = await buildS1PositionsSnapshot();
@@ -1264,36 +1293,61 @@ export async function runS1EodReportTick(): Promise<void> {
   const totalUnrealized = snapshot.totalUnrealizedPnlTwd;
   const totalMarketValue = snapshot.totalMarketValueTwd;
   const cashResidual = snapshot.cashResidualTwd;
+  const completionStatus = snapshot.pricingComplete ? "complete" : "partial";
+  const reportNotes = [...notes];
+  if (!snapshot.pricingComplete) {
+    reportNotes.push(
+      `eod_partial_retry_pending: ${snapshot.pricedPositionCount}/${positions.length} positions priced; automatic scheduler will retry within the EOD window`,
+    );
+  }
 
   // 2. Write JSON report
   const report: S1EodReport = {
     schema: "s1_eod_report_v1",
     trading_date: todayTst,
     generated_at_tst: new Date().toLocaleString("sv-SE", { timeZone: "Asia/Taipei" }).replace(" ", "T") + "+08:00",
+    completion_status: completionStatus,
+    pricing_coverage: {
+      priced_positions: snapshot.pricedPositionCount,
+      total_positions: positions.length,
+    },
     positions,
     total_unrealized_pnl_twd: totalUnrealized,
     total_market_value_twd: totalMarketValue,
     cash_residual_estimated_twd: cashResidual,
     data_source: dataSource,
-    notes
+    notes: reportNotes,
   };
 
-  const reportJsonPath = join(reportsBase(), "s1_sim_daily", `${todayTst}.json`);
-  const reportMdPath = join(reportsBase(), "s1_sim_daily", `${todayTst}.md`);
+  // A partial mark is diagnostic evidence, not the official EOD result. Keep it
+  // under a provisional filename so status/read endpoints cannot mistake a
+  // 4/8 snapshot for the completed report. The canonical filename is written
+  // only after every current holding has a closing price.
+  const reportSuffix = snapshot.pricingComplete ? "" : "_partial";
+  const reportJsonPath = join(reportsBase(), "s1_sim_daily", `${todayTst}${reportSuffix}.json`);
+  const reportMdPath = join(reportsBase(), "s1_sim_daily", `${todayTst}${reportSuffix}.md`);
 
+  let jsonWritten = false;
   try {
     await writeJson(reportJsonPath, report);
+    jsonWritten = true;
   } catch (e) {
     console.error("[s1-eod] failed to write JSON report:", e instanceof Error ? e.message : String(e));
   }
-  const workspaceId = await resolveS1WorkspaceId();
-  if (workspaceId) {
-    await writeS1ObservationAudit({
-      workspaceId,
-      action: S1_AUDIT_ACTIONS.eodGenerated,
-      tradingDate: todayTst,
-      data: report,
-    });
+
+  // Only complete reports enter the durable "eod_generated" audit stream.
+  // Partial attempts remain provisional and retryable instead of surfacing as
+  // a completed EOD observation after a redeploy.
+  if (snapshot.pricingComplete) {
+    const workspaceId = await resolveS1WorkspaceId();
+    if (workspaceId) {
+      await writeS1ObservationAudit({
+        workspaceId,
+        action: S1_AUDIT_ACTIONS.eodGenerated,
+        tradingDate: todayTst,
+        data: report,
+      });
+    }
   }
 
   // Markdown report
@@ -1301,6 +1355,7 @@ export async function runS1EodReportTick(): Promise<void> {
     `# S1 SIM Day EOD Report — ${todayTst}`,
     ``,
     `Generated: ${report.generated_at_tst}  `,
+    `Completion: ${report.completion_status} (${report.pricing_coverage.priced_positions}/${report.pricing_coverage.total_positions} positions priced)  `,
     `Data source: ${dataSource}  `,
     `Mode: KGI SIM forward observation (S1_IUF_LS_OMNI_SIM_OBSERVATION_PRODUCT_V0)`,
     ``,
@@ -1318,7 +1373,7 @@ export async function runS1EodReportTick(): Promise<void> {
     ``,
     `## Notes`,
     ``,
-    ...(notes.length > 0 ? notes.map((n) => `- ${n}`) : ["- No issues"]),
+    ...(reportNotes.length > 0 ? reportNotes.map((n) => `- ${n}`) : ["- No issues"]),
     ``,
     `---`,
     `*S1 SIM observation only. No fill confirmation, no return claim, no L5/L10 evidence. Per Yang ACK 22:34 TST 2026-05-19.*`
@@ -1331,7 +1386,22 @@ export async function runS1EodReportTick(): Promise<void> {
     console.error("[s1-eod] failed to write MD report:", e instanceof Error ? e.message : String(e));
   }
 
-  console.log(`[s1-eod] DONE positions=${positions.length} unrealized=${totalUnrealized?.toFixed(0) ?? "unknown"}`);
+  if (snapshot.pricingComplete && jsonWritten) {
+    _eodLastFiredDate = todayTst;
+    console.log(
+      `[s1-eod] COMPLETE positions=${positions.length} priced=${snapshot.pricedPositionCount}/${positions.length} unrealized=${totalUnrealized?.toFixed(0) ?? "unknown"}`,
+    );
+    return;
+  }
+
+  if (snapshot.pricingComplete) {
+    console.warn("[s1-eod] complete snapshot was not persisted; leaving retry enabled");
+    return;
+  }
+
+  console.warn(
+    `[s1-eod] PARTIAL priced=${snapshot.pricedPositionCount}/${positions.length}; provisional report kept and retry remains enabled`,
+  );
 }
 
 // ---------------------------------------------------------------------------
