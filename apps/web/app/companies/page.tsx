@@ -85,8 +85,9 @@ function registryBadge(state: RegistryState) {
 }
 
 function marketLabel(value: string) {
-  if (value === "TWSE") return "上市";
-  if (value === "TPEX" || value === "TPEx" || value === "OTC") return "上櫃";
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "TWSE" || value.includes("上市")) return "上市";
+  if (normalized === "TPEX" || normalized === "TWO" || normalized === "OTC" || value.includes("上櫃")) return "上櫃";
   return value;
 }
 
@@ -226,8 +227,8 @@ export default function CompaniesPage() {
     }
   }, [sortField]);
 
-  const twseCount = companies.filter((company) => company.market === "TWSE").length;
-  const tpexCount = companies.filter((company) => company.market === "TPEX" || company.market === "TPEx").length;
+  const twseCount = companies.filter((company) => marketLabel(company.market) === "上市").length;
+  const tpexCount = companies.filter((company) => marketLabel(company.market) === "上櫃").length;
   const coreCount = companies.filter((company) => company.beneficiaryTier === "Core").length;
   const state: RegistryState = loading
     ? "LOADING"
