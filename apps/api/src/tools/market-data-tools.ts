@@ -501,6 +501,15 @@ export interface CompanyFundamentalsResult {
   source: string;
 }
 
+export function revenuePeriodKey(row: { date: string; revenue_year?: number; revenue_month?: number }): string {
+  const year = Number(row.revenue_year);
+  const month = Number(row.revenue_month);
+  if (Number.isInteger(year) && year >= 1900 && Number.isInteger(month) && month >= 1 && month <= 12) {
+    return `${year}-${String(month).padStart(2, "0")}`;
+  }
+  return row.date.slice(0, 7);
+}
+
 /**
  * Fetches fundamental data for a specific ticker from FinMind:
  *   - Monthly revenue (last 6 months, YoY / MoM computed)
@@ -546,10 +555,11 @@ export async function getCompanyFundamentals(ticker: string): Promise<CompanyFun
     // Sort descending
     const sortedRevenue = [...revenueRows].sort((a, b) => b.date.localeCompare(a.date));
 
-    // Build month→revenue map (key = 'YYYY-MM')
+    // FinMind row.date is the publication date. revenue_year/revenue_month is
+    // the actual accounting period and must drive user-facing month labels.
     const revenueByMonth = new Map<string, number>();
     for (const row of sortedRevenue) {
-      const monthKey = row.date.slice(0, 7);
+      const monthKey = revenuePeriodKey(row);
       if (!revenueByMonth.has(monthKey)) {
         revenueByMonth.set(monthKey, row.revenue);
       }

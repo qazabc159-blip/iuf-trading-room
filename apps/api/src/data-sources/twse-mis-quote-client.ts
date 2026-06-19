@@ -72,6 +72,26 @@ async function fetchExchangeSnapshot(
   };
 }
 
+async function fetchExchangeSnapshotWithRetry(
+  symbol: string,
+  exchange: "tse" | "otc",
+  fetchImpl: typeof fetch,
+  attempts = 2,
+): Promise<TwseMisQuoteSnapshot | null> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const snapshot = await fetchExchangeSnapshot(symbol, exchange, fetchImpl);
+      if (snapshot) return snapshot;
+    } catch {
+      // A transient MIS timeout must not turn the once-daily product smoke red.
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  return null;
+}
+
 /**
  * Fetches the product's official quote source. The KGI SIM account may not
  * include the optional market-data entitlement, but that must not make the
@@ -84,12 +104,8 @@ export async function getTwseMisQuoteSnapshot(
   const normalized = symbol.trim();
   if (!/^\d{4,6}$/.test(normalized)) return null;
 
-  try {
-    return (
-      await fetchExchangeSnapshot(normalized, "tse", fetchImpl)
-      ?? await fetchExchangeSnapshot(normalized, "otc", fetchImpl)
-    );
-  } catch {
-    return null;
-  }
+  return (
+    await fetchExchangeSnapshotWithRetry(normalized, "tse", fetchImpl)
+    ?? await fetchExchangeSnapshotWithRetry(normalized, "otc", fetchImpl)
+  );
 }
