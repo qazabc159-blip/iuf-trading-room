@@ -27,7 +27,8 @@ import {
   runMonthlyRevenueSync,
   runFinancialStatementsSync,
   runBalanceSheetSync,
-  runCashFlowsSync
+  runCashFlowsSync,
+  revenueYearMonth,
 } from "./fundamentals-finmind-sync.js";
 
 // ── T1: killswitch blocks monthly revenue ─────────────────────────────────────
@@ -156,4 +157,12 @@ test("T8: cadence helpers isMonthlyRevenueBurstDay + isWeeklyTriggerDay return b
   const weeklyTrigger = isWeeklyTriggerDay();
   assert.equal(typeof burstDay, "boolean");
   assert.equal(typeof weeklyTrigger, "boolean");
+});
+
+test("T9: monthly revenue persistence keys by accounting period, not publication date", () => {
+  assert.equal(revenueYearMonth({
+    date: "2026-06-10",
+    revenue_year: 2026,
+    revenue_month: 5,
+  }), "2026-05");
 });

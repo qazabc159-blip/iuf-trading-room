@@ -149,6 +149,12 @@ function isInternalTestSignal(signal: SignalRow) {
   return /bruce|dryrun|smoke|test signal|verify/.test(text);
 }
 
+function isFormalSignal(signal: SignalRow) {
+  const value = `${signal.title || ""}${signal.summary ? ` / ${signal.summary}` : ""}`;
+  const linked = signal.themeIds.length > 0 || signal.companyIds.length > 0;
+  return linked && !isInternalTestSignal(signal) && !hasBrokenText(value) && !isEnglishHeavy(value);
+}
+
 function signalTitle(signal: SignalRow) {
   const value = `${signal.title || "未命名訊號"}${signal.summary ? ` / ${signal.summary}` : ""}`;
   if (hasBrokenText(value)) return "訊號文字待整理；保留來源紀錄，不作交易解讀。";
@@ -390,7 +396,7 @@ const SIGNALS_CSS = `
 export default async function SignalsPage() {
   const result = await loadSignals();
   const signals = result.data.signals.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  const displaySignals = signals.filter((signal) => !isInternalTestSignal(signal));
+  const displaySignals = signals.filter(isFormalSignal);
   const hiddenInternalCount = signals.length - displaySignals.length;
   const countsAvailable = result.state !== "BLOCKED";
   const bullCount = displaySignals.filter((signal) => signal.direction === "bullish").length;
@@ -478,7 +484,7 @@ export default async function SignalsPage() {
         <SourceLine result={result} />
         {hiddenInternalCount > 0 && (
           <div className="terminal-note compact">
-            驗證訊號 {hiddenInternalCount} 筆已收納，不放入正式訊號清單；正式清單只顯示可連結主題或公司的資料列。
+            待整理或未連結訊號 {hiddenInternalCount} 筆已收納，不放入正式訊號清單；正式清單只顯示已連結且可判讀的資料列。
           </div>
         )}
         <EmptyOrBlocked result={result} />

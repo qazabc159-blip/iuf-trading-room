@@ -1,14 +1,5 @@
 import type { ReactNode } from "react";
-
-function formatTpeParts(date: Date) {
-  return {
-    date: date.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }),
-    time: date.toLocaleTimeString("zh-TW", {
-      timeZone: "Asia/Taipei",
-      hour12: false,
-    }),
-  };
-}
+import { TaipeiClock } from "@/components/TaipeiClock";
 
 export function statusLabel(value: "LIVE" | "EMPTY" | "BLOCKED" | "LOADING" | string) {
   if (value === "LIVE") return "即時";
@@ -109,8 +100,6 @@ export function PageFrame({
   exec?: boolean;
   note?: ReactNode;
 }) {
-  const generatedAt = formatTpeParts(new Date());
-
   return (
     <main className="page-frame">
       {exec && <div className="exec-band" aria-hidden />}
@@ -122,7 +111,7 @@ export function PageFrame({
         </div>
         <div className="tg meta-strip" suppressHydrationWarning>
           <span>
-            台北 / <b suppressHydrationWarning>{generatedAt.date} {generatedAt.time}</b>
+            台北 / <TaipeiClock />
           </span>
           <span>資料 / <b className="gold">正式資料</b></span>
           <span>模式 / <b>{exec ? "模擬交易" : "觀察與研究"}</b></span>

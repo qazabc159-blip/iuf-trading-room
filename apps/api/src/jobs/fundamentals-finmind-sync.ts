@@ -102,9 +102,13 @@ function daysAgoIso(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Returns 'YYYY-MM' for a given date string 'YYYY-MM-DD'
-function toYearMonth(dateStr: string): string {
-  return dateStr.slice(0, 7);
+export function revenueYearMonth(row: { date: string; revenue_year?: number; revenue_month?: number }): string {
+  const year = Number(row.revenue_year);
+  const month = Number(row.revenue_month);
+  if (Number.isInteger(year) && year >= 1900 && Number.isInteger(month) && month >= 1 && month <= 12) {
+    return `${year}-${String(month).padStart(2, "0")}`;
+  }
+  return row.date.slice(0, 7);
 }
 
 // ── Table existence guard ─────────────────────────────────────────────────────
@@ -219,15 +223,21 @@ export async function runMonthlyRevenueSync(
         continue;
       }
 
-      const revenueYearMonth = toYearMonth(row.date);
+      const revenuePeriod = revenueYearMonth(row);
 
       try {
+        await db.execute(drizzleSql`
+          DELETE FROM tw_monthly_revenue
+          WHERE stock_id = ${row.stock_id}
+            AND revenue_date = ${row.date}
+            AND revenue_year_month <> ${revenuePeriod}
+        `);
         await db.execute(drizzleSql`
           INSERT INTO tw_monthly_revenue
             (stock_id, revenue_year_month, revenue_date, revenue, revenue_month, revenue_year,
              country, fetched_at, source)
           VALUES
-            (${row.stock_id}, ${revenueYearMonth}, ${row.date}, ${row.revenue},
+            (${row.stock_id}, ${revenuePeriod}, ${row.date}, ${row.revenue},
              ${row.revenue_month}, ${row.revenue_year}, ${row.country ?? "TW"},
              ${fetchedAt}, 'finmind')
           ON CONFLICT (stock_id, revenue_year_month)

@@ -330,8 +330,8 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("keeps the trading-room quick-switch watchlist available after live hydration", () => {
     expect(liveHydration).toContain("DEFAULT_TRADING_ROOM_WATCHLIST");
-    expect(liveHydration).toContain('symbol:"1514", name:"亞力"');
-    expect(liveHydration).toContain('symbol:"2066", name:"世德"');
+    expect(liveHydration).toContain('symbol: "1514", name: "亞力"');
+    expect(liveHydration).toContain('symbol: "2066", name: "世德"');
     expect(liveHydration).not.toMatch(/[�-]/u);
     expect(liveHydration).toContain(".concat(defaultWatchlist)");
     expect(liveHydration).toContain("sameSym(other.symbol, item.symbol)");
@@ -349,7 +349,7 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("overflow-y: hidden !important;");
     expect(routeSource).toContain("height: 32px;");
     expect(routeSource).toContain("overflow: hidden;");
-    expect(routeSource).toContain("height: calc(100dvh - 32px) !important;");
+    expect(routeSource).toContain("height: calc(100dvh - 62px) !important;");
     expect(ticketHtml).toContain("overflow:hidden;");
     expect(ticketHtml).toContain("grid-template-columns:clamp(220px,13.5vw,252px) minmax(0,1fr) clamp(344px,20.5vw,392px);");
     expect(ticketHtml).toContain("gap:6px;");
@@ -402,7 +402,24 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("paperQuotePulseBlockedUntil = Date.now() + 15000");
     expect(liveHydration).toContain("window.__IUF_FINAL_V031_QUOTE_PULSE_ERROR__");
     expect(liveHydration).toContain("if (!sameSym(symbol, paperPulseSymbol())) return;");
+    expect(liveHydration).toContain("sameSym(live._companyIdSymbol, symbol)");
+    expect(liveHydration).toContain('closePaperQuoteStream("symbol_changing")');
     expect(liveHydration).not.toContain("refreshPaperQuotePulse();\n    window.updateRealChartFrame");
+  });
+
+  it("keeps watchlist remove controls out of the row symbol-switch capture handler", () => {
+    expect(liveHydration).toContain('event.target?.closest?.(".wldel, .wladd")');
+    expect(liveHydration).toContain("e.stopImmediatePropagation()");
+  });
+
+  it("rehydrates market-intel search, detail drawer, and real theme navigation", () => {
+    const marketIntelHtml = readFileSync(new URL("../public/ui-final-v031/market_intel/index.html", import.meta.url), "utf8");
+    expect(marketIntelHtml).toContain("window.__IUF_APPLY_MARKET_FILTERS__=applyFeedFilters");
+    expect(marketIntelHtml).toContain("window.__IUF_MARKET_FEED_ITEMS__||[]");
+    expect(marketIntelHtml).toContain("row.dataset.feedIndex");
+    expect(marketIntelHtml).toContain('target="_top" href="/themes"');
+    expect(liveHydration).toContain("window.__IUF_MARKET_FEED_ITEMS__ = items");
+    expect(liveHydration).toContain("data-feed-index=\"'+i+'\"");
   });
 
   it("keeps trading-room OHLC and change math tied to quote semantics instead of reusing last price as open", () => {
