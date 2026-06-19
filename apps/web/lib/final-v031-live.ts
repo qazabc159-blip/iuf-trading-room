@@ -622,6 +622,8 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
     bidAsk: null,
     ticks: [],
     prefill,
+    _companyId: null,
+    _companyIdSymbol: null,
   };
 }
 
@@ -762,6 +764,8 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     bidAsk,
     ticks: ticks?.ticks ?? [],
     prefill,
+    _companyId: company?.id ?? null,
+    _companyIdSymbol: selectedSymbol,
   };
 }
 
@@ -1329,16 +1333,26 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       brokers,
       prefill,
       _companyId: company?.id ?? null,
+      _companyIdSymbol: selectedSymbol,
     };
   }
 
   async function selectPaperSymbol(symbol) {
     const normalized = String(symbol || '').trim().toUpperCase();
     if (!/^[0-9A-Z._-]{2,16}$/.test(normalized)) return;
+    closePaperQuoteStream("symbol_changing");
     const activePrefill = paperPrefill();
     const activePrefillSymbol = String(activePrefill?.symbol || "").trim().toUpperCase();
     const shouldClearPrefill = !!activePrefill?.enabled && activePrefillSymbol && activePrefillSymbol !== normalized;
     currentPaperSymbol = normalized;
+    live = Object.assign({}, live, {
+      selected: { symbol: normalized, name: "載入中", quoteState: "LOADING" },
+      bidAsk: null,
+      ticks: [],
+      _companyId: null,
+      _companyIdSymbol: null,
+    });
+    window.__IUF_FINAL_V031_LIVE__ = live;
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('symbol', normalized);
@@ -1390,6 +1404,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (row.dataset.iufEnhanced === '1') return;
       row.dataset.iufEnhanced = '1';
       row.addEventListener('click', (event) => {
+        if (event.target?.closest?.(".wldel, .wladd")) return;
         const sym = row.dataset.sym;
         if (!sym) return;
         event.preventDefault();
@@ -1556,7 +1571,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (live.screen === "paper-trading-room" && next?.selected) {
         next.selected = mergePaperSelectedWithLastGoodQuote(next.selected);
       }
-      live = Object.assign({}, live, next);
+      live = Object.assign({}, live, next, live.screen === "paper-trading-room" ? { fastShell:false } : {});
       window.__IUF_FINAL_V031_LIVE__ = live;
       if (live.screen === "market-intel") hydrateMarket();
       if (live.screen === "strategy-ideas") hydrateIdeas();
@@ -1583,6 +1598,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (feed) {
       const items = live.items || [];
       const feedState = live.feedState || {};
+      window.__IUF_MARKET_FEED_ITEMS__ = items;
       feed.removeAttribute("data-static-placeholder");
       feed.innerHTML = items.length ? items.map((item, i) => {
         const links = [
@@ -1590,8 +1606,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           item.topicHref ? '<a target="_top" href="'+esc(item.topicHref)+'">查看主題</a>' : '',
           item.recommendationHref ? '<a target="_top" href="'+esc(item.recommendationHref)+'">查看推薦</a>' : ''
         ].filter(Boolean).join('<span>·</span>');
-        return '<div class="feedrow" style="--i:'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') + (links ? '<span>·</span>' + links : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>';
+        return '<div class="feedrow" style="--i:'+i+'" data-feed-index="'+i+'" data-cat="'+esc(item.category || "all")+'"><span class="sym">'+esc(item.symbol)+'</span><div class="body"><div class="t">'+esc(item.title)+'</div><div class="m"><span>'+esc(item.source)+'</span><span>·</span><span><b>'+esc(item.tag)+'</b></span>'+ (item.name ? '<span>·</span><span>'+esc(item.name)+'</span>' : '') + (links ? '<span>·</span>' + links : '') +'</div></div><div class="why"><b>為什麼重要</b>　'+esc(item.why)+'</div><span class="age">'+esc(item.age)+'</span><span class="arr">›</span></div>';
       }).join("") : '<div class="feedrow" data-cat="all"><span class="sym">DATA</span><div class="body"><div class="t">'+esc(feedState.summary || "目前沒有可呈現的正式 AI 精選市場情報")+'</div><div class="m"><span>AI 精選排程尚未回傳</span><span>·</span><span>不顯示示意新聞</span></div></div><div class="why"><b>狀態</b>　'+esc(feedState.nextAction || "等待下一輪市場情報同步；前端不顯示示意資料。")+'</div><span class="age">EMPTY</span><span class="arr">›</span></div>';
+      if (typeof window.__IUF_APPLY_MARKET_FILTERS__ === "function") {
+        window.__IUF_APPLY_MARKET_FILTERS__();
+      }
     }
     const feedState = live.feedState || {};
     const feedPill = $("#market-feed-state-pill");
@@ -2014,7 +2033,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (paperQuoteStream && paperQuoteStreamSymbol === symbol) return true;
     closePaperQuoteStream("symbol_changed");
     const params = new URLSearchParams({ symbol });
-    if (live._companyId) params.set("companyId", String(live._companyId));
+    if (live._companyId && sameSym(live._companyIdSymbol, symbol)) {
+      params.set("companyId", String(live._companyId));
+    }
     const url = "/api/ui-final-v031/quote-stream?" + params.toString();
     try {
       const stream = new EventSource(url);
@@ -2133,7 +2154,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (!/^[0-9A-Z._-]{2,16}$/.test(symbol)) return;
     paperQuotePulseBusy = true;
     try {
-      const companyId = live._companyId || null;
+      const companyId = live._companyId && sameSym(live._companyIdSymbol, symbol)
+        ? live._companyId
+        : null;
       const quoteResult = companyId
         ? await soft(apiGet("/api/v1/companies/" + encodeURIComponent(companyId) + "/quote/realtime"))
         : { ok:true, data:null };
@@ -2310,7 +2333,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (addBtn) addBtn.addEventListener("click", doAdd);
     if (addInput) addInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
     $$("#wl-my .wldel").forEach((btn) => btn.addEventListener("click", async (e) => {
+      e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       const sym = btn.dataset && btn.dataset.del;
       if (!sym) return;
       btn.disabled = true;

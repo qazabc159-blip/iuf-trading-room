@@ -213,7 +213,7 @@
     <span class="l">下一步</span>
     <span class="t">看完今日重點？前往 <b>策略想法</b> 查看 AI 已挑出的候選清單。</span>
     <a class="btn primary" target="_top" href="/ideas">策略想法 <span class="arr">→</span></a>
-    <a class="btn" href="#">主題板</a>
+    <a class="btn" target="_top" href="/themes">主題板</a>
   </div>
 
 </main>
@@ -327,29 +327,54 @@ updAge();setInterval(updAge,1000);
 // — bars
 setTimeout(()=>document.querySelectorAll('[data-bar]').forEach(b=>b.style.width=b.dataset.bar+'%'),120);
 
-// — filter
-const FEED_MAP={};
-document.querySelectorAll('#topicseg button').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('#topicseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-  const f=b.dataset.f;const rows=document.querySelectorAll('#feed .feedrow');
-  rows.forEach((r,i)=>{
-    const ok=(f==='all')||(r.dataset.cat===f);
-    r.style.transition='opacity .2s,transform .2s';
-    if(ok){r.style.display='grid';r.style.opacity='0';r.style.transform='translateY(4px)';setTimeout(()=>{r.style.opacity='1';r.style.transform='translateY(0)'},20+i*40)}
-    else{r.style.opacity='0';setTimeout(()=>r.style.display='none',150)}
+// — combined topic + text filter (works for rows replaced by live hydration)
+const FEED_SEARCH=document.querySelector('.filterbar .search input');
+function applyFeedFilters(){
+  const active=document.querySelector('#topicseg button.on');
+  const filter=active?.dataset.f||'all';
+  const query=String(FEED_SEARCH?.value||'').trim().toLowerCase();
+  const rows=[...document.querySelectorAll('#feed .feedrow')];
+  let visible=0;
+  rows.forEach((row,index)=>{
+    const categoryOk=filter==='all'||row.dataset.cat===filter;
+    const textOk=!query||String(row.textContent||'').toLowerCase().includes(query);
+    const show=categoryOk&&textOk;
+    row.style.transition='opacity .2s,transform .2s';
+    if(show){
+      visible+=1;
+      row.style.display='grid';
+      row.style.opacity='0';
+      row.style.transform='translateY(4px)';
+      setTimeout(()=>{row.style.opacity='1';row.style.transform='translateY(0)'},20+index*30);
+    }else{
+      row.style.opacity='0';
+      row.style.display='none';
+    }
   });
+  const summary=document.getElementById('market-feed-summary');
+  const first=summary?.querySelector('span');
+  if(first)first.textContent='顯示 '+visible+' / '+rows.length+' 則 AI 精選';
+}
+window.__IUF_APPLY_MARKET_FILTERS__=applyFeedFilters;
+document.querySelectorAll('#topicseg button').forEach(button=>button.addEventListener('click',()=>{
+  document.querySelectorAll('#topicseg button').forEach(node=>node.classList.remove('on'));
+  button.classList.add('on');
+  applyFeedFilters();
 }));
+FEED_SEARCH?.addEventListener('input',applyFeedFilters);
 
 // — drawer
-function openDrawer(sym){
-  const d=FEED_MAP[sym];if(!d)return;
-  document.getElementById('d-sym').textContent=sym;
-  document.getElementById('d-nm').textContent=d.nm;
-  document.getElementById('d-meta').textContent=d.meta;
-  document.getElementById('d-score').textContent=d.score;
-  document.getElementById('d-conf').textContent=d.conf;
-  const age=document.getElementById('d-age');age.textContent=d.age;age.className='v '+d.ageClass;
-  document.getElementById('d-why').innerHTML='<b>為什麼重要</b>　'+d.why;
+function openDrawer(index){
+  const items=window.__IUF_MARKET_FEED_ITEMS__||[];
+  const item=items[Number(index)];
+  if(!item)return;
+  document.getElementById('d-sym').textContent=item.symbol||'市場';
+  document.getElementById('d-nm').textContent=item.title||'市場情報';
+  document.getElementById('d-meta').textContent=[item.source,item.tag,item.name].filter(Boolean).join(' · ');
+  document.getElementById('d-score').textContent=item.rank?'#'+item.rank:'—';
+  document.getElementById('d-conf').textContent=item.confidence||'正式精選';
+  const age=document.getElementById('d-age');age.textContent=item.age||'剛剛';age.className='v ok';
+  document.getElementById('d-why').textContent=item.why||'請搭配來源狀態與策略想法交叉判讀。';
   document.getElementById('scrim').classList.add('open');
   document.getElementById('drawer').classList.add('open');
 }
@@ -359,10 +384,13 @@ function closeDrawer(){
 }
 document.getElementById('scrim').addEventListener('click',closeDrawer);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
-document.querySelectorAll('#feed .feedrow').forEach(r=>r.addEventListener('click',()=>{
-  r.classList.add('flash');setTimeout(()=>r.classList.remove('flash'),350);
-  openDrawer(r.querySelector('.sym').textContent.trim());
-}));
+document.getElementById('feed').addEventListener('click',event=>{
+  if(event.target?.closest?.('a'))return;
+  const row=event.target?.closest?.('.feedrow');
+  if(!row)return;
+  row.classList.add('flash');setTimeout(()=>row.classList.remove('flash'),350);
+  openDrawer(row.dataset.feedIndex);
+});
 </script>
 </body>
 </html>
