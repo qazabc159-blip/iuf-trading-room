@@ -8,6 +8,7 @@
 import { useCallback, useState, useRef } from "react";
 import Link from "next/link";
 import { searchBriefs, type BriefSearchResult } from "@/lib/api";
+import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 
 type SearchState =
   | { status: "idle" }
@@ -206,19 +207,23 @@ export function BriefSearchPanel() {
                   命中：{matchedInLabel(result.matchedIn)}
                 </span>
               </div>
-              {result.sections.slice(0, 1).map((section, i) => (
-                <div key={i} style={resultSnippetStyle}>
-                  <strong>
-                    <HighlightText text={section.heading} keyword={state.query} />
-                  </strong>
-                  <p style={snippetBodyStyle}>
-                    <HighlightText
-                      text={section.body.slice(0, 160) + (section.body.length > 160 ? "…" : "")}
-                      keyword={state.query}
-                    />
-                  </p>
-                </div>
-              ))}
+              {result.sections.slice(0, 1).map((section, i) => {
+                const heading = cleanExternalHeadline(section.heading);
+                const body = cleanNarrativeText(section.body);
+                return (
+                  <div key={i} style={resultSnippetStyle}>
+                    <strong>
+                      <HighlightText text={heading} keyword={state.query} />
+                    </strong>
+                    <p style={snippetBodyStyle}>
+                      <HighlightText
+                        text={body.slice(0, 160) + (body.length > 160 ? "…" : "")}
+                        keyword={state.query}
+                      />
+                    </p>
+                  </div>
+                );
+              })}
             </Link>
           ))}
         </div>
