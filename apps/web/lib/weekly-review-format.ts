@@ -71,7 +71,9 @@ export function signTone(value: number | null): "ok" | "bad" | "dim" {
  */
 export function fAutoDataSourceLabel(dataSource: string | null): string {
   if (dataSource === "kgi_gateway") return "即時讀取";
-  if (dataSource === "audit_log_rebuild") return "依成交紀錄重建";
+  if (dataSource?.includes("audit") || dataSource === "orders_submitted_audit_rebuilt") {
+    return "依稽核成交紀錄重建";
+  }
   return "資料來源待確認";
 }
 

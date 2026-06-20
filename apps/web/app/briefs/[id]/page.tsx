@@ -95,7 +95,7 @@ function statusParityClass(status: string) {
 
 function auditVerdictLabel(value: string | null | undefined) {
   if (value === "OK") return "通過";
-  if (value === "INTERCEPTED") return "攔截";
+  if (value === "WARNING") return "風險警示";
   if (value === "PARTIAL_HALLUCINATED") return "部分需查核";
   if (value === "HALLUCINATED") return "未通過";
   return "尚未完成";
@@ -103,6 +103,7 @@ function auditVerdictLabel(value: string | null | undefined) {
 
 function auditVerdictParityClass(value: string | null | undefined) {
   if (value === "OK") return "ok";
+  if (value === "WARNING") return "warn";
   if (value === "PARTIAL_HALLUCINATED") return "warn";
   if (value) return "bad";
   return "dim";

@@ -98,6 +98,23 @@ export function resolveReviewWeek(anchor?: string): { weekStart: string; weekEnd
   return { weekStart, weekEnd: addDays(weekStart, 4) };
 }
 
+export function deriveBriefDeliveryDays(
+  taiexDates: string[],
+  publishedBriefDates: string[],
+  weekStart: string,
+  weekEnd: string,
+): { tradingDays: string[]; published: string[]; missing: string[] } {
+  const inWeek = (date: string) => date >= weekStart && date <= weekEnd;
+  const publishedInWeek = publishedBriefDates.filter(inWeek);
+  const tradingDays = [...new Set([
+    ...taiexDates.filter(inWeek),
+    ...publishedInWeek,
+  ])].sort();
+  const published = [...new Set(publishedInWeek.filter((date) => tradingDays.includes(date)))].sort();
+  const missing = tradingDays.filter((date) => !published.includes(date));
+  return { tradingDays, published, missing };
+}
+
 export async function buildWeeklyReview(opts: {
   anchorDate?: string;
   workspaceId: string;
@@ -177,9 +194,12 @@ export async function buildWeeklyReview(opts: {
   ]);
 
   // 4. Brief delivery vs trading days
-  const tradingDays = days.map((d) => d.date);
-  const published = opts.publishedBriefDates.filter((d) => d >= weekStart && d <= weekEnd).sort();
-  const missing = tradingDays.filter((d) => !published.includes(d));
+  const { tradingDays, published, missing } = deriveBriefDeliveryDays(
+    days.map((d) => d.date),
+    opts.publishedBriefDates,
+    weekStart,
+    weekEnd,
+  );
 
   return {
     schema: "weekly_review_v1",

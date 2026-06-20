@@ -88,6 +88,23 @@ export type EventRule = {
   trigger: (state: EngineStateSnapshot) => Promise<Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[]>;
 };
 
+export function shouldEmitDailySmokeFailure(
+  last: { firedAt: string; overallStatus: string } | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!last || last.overallStatus !== "fail") return false;
+  const taipeiNow = new Date(nowMs + 8 * 60 * 60 * 1_000);
+  const day = taipeiNow.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const hhmm = taipeiNow.getUTCHours() * 100 + taipeiNow.getUTCMinutes();
+  if (hhmm < 900) return false;
+
+  const firedAtMs = Date.parse(last.firedAt);
+  if (!Number.isFinite(firedAtMs)) return false;
+  const firedDate = new Date(firedAtMs + 8 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+  return firedDate === taipeiNow.toISOString().slice(0, 10);
+}
+
 // ── Rule definitions ───────────────────────────────────────────────────────────
 // Stub design: each rule checks for DB table existence before querying.
 // When tables are not migrated, rules return [] gracefully (DEGRADED, not crash).
@@ -578,7 +595,7 @@ const RULES: EventRule[] = [
 
         const history = await getDailySmokeHistoryDurable(workspaceId);
         const last = history[0];
-        if (!last || last.overallStatus !== "fail") return [];
+        if (!shouldEmitDailySmokeFailure(last)) return [];
 
         return [{
           ruleId: "R13_DAILY_SMOKE_FAILED",
