@@ -14,6 +14,7 @@ import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.
 import {
   buildDailyBriefContractInstructions,
   buildMarketOverviewSourceEntryFromSnapshot,
+  formatLiveMarketSnapshotForPrompt,
   buildSourceOnlyBriefPayload,
   classifyDraftTier,
   DAILY_BRIEF_REQUIRED_SECTION_IDS,
@@ -236,6 +237,21 @@ test("daily brief source pack market overview uses live market snapshot", () => 
   assert.deepEqual(entry.sampleRows?.[0]?.heatmapTop3, [
     { industry: "半導體", avgChangePct: 1.2, direction: "up" },
   ]);
+});
+
+test("daily brief prompt labels FinMind margin balance totals as shares, not lots", () => {
+  const prompt = formatLiveMarketSnapshotForPrompt({
+    taiex: { value: null, change: null, changePct: null, sourceState: null, asOf: null },
+    heatmapTop3: [],
+    topGainers: [],
+    topLosers: [],
+    institutional: { foreign: null, trust: null, dealer: null, date: null },
+    margin: { balanceChange: -4_395_439, shortChange: -80_724, date: "2026-06-18" },
+  });
+
+  assert.match(prompt, /-4395439 股/);
+  assert.match(prompt, /-80724 股/);
+  assert.doesNotMatch(prompt, /-4395439 張/);
 });
 
 test("daily brief source pack rejects a contradictory TAIEX tuple", () => {

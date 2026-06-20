@@ -71,6 +71,18 @@ function applyKnownCopy(value: string) {
 
 function replaceKnownSourceTerms(value: string) {
   return value
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(
+      /((?:融資|融券)餘額(?:變化)?)(為|：)\s*([+-]?\d{5,})\s*張/g,
+      (_match, label: string, connector: string, rawShares: string) => {
+        const shares = Number(rawShares);
+        if (!Number.isFinite(shares)) return `${label}${connector}${rawShares} 張`;
+        const lots = Math.round(shares / 1_000);
+        return connector === "為"
+          ? `${label}約為 ${lots.toLocaleString("zh-TW")} 張`
+          : `${label}：約 ${lots.toLocaleString("zh-TW")} 張`;
+      },
+    )
     .replace(/\bAudit Trail Live Check\b/g, "稽核軌跡即時檢查")
     .replace(/\bAudit Trail\b/gi, "稽核軌跡")
     .replace(/\bAudit verification theme\b/gi, "稽核驗證主題")

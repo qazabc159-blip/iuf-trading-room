@@ -68,6 +68,7 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
+import { dedupeNotificationItems, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
@@ -11409,7 +11410,7 @@ app.get("/api/v1/briefs/:id", async (c) => {
   // ── Parse adversarial review from audit rows ───────────────────────────────
   type AdversarialReviewResult = {
     ran: boolean;
-    verdict: "OK" | "INTERCEPTED";
+    verdict: "OK" | "WARNING";
     severityScore: number | null;
     flags: string[];
     reviewerModel: string;
@@ -11423,7 +11424,7 @@ app.get("/api/v1/briefs/:id", async (c) => {
     const score = typeof p?.["severityScore"] === "number" ? (p["severityScore"] as number) : null;
     adversarialReview = {
       ran: true,
-      verdict: (score !== null && score >= 7) ? "INTERCEPTED" : "OK",
+      verdict: (score !== null && score >= 7) ? "WARNING" : "OK",
       severityScore: score,
       flags: Array.isArray(p?.["adversarialFlags"]) ? (p["adversarialFlags"] as string[]) : [],
       reviewerModel: typeof p?.["model"] === "string" ? (p["model"] as string) : (process.env["OPENAI_ADVERSARIAL_REVIEWER_MODEL"] ?? "gpt-4.1"),
@@ -19788,9 +19789,9 @@ app.get("/api/v1/themes/wiki/:token/companies", async (c) => {
 //                 system-health producer rules (R11-R15). Unified feed: this is
 //                 the same store /api/v1/alerts reads, so the header notification
 //                 center and the /alerts page never diverge again.
-// read state: audit_logs/briefs items v1 always false (no user_notification_read
-//             table yet); iuf_events items use the table's own `acknowledged` flag.
-// mark-read: logs to audit_logs action=notifications.mark_read, returns 204
+// read state: audit_logs/brief-derived items replay notifications.mark_read audit
+//             rows; iuf_events items use the table's own `acknowledged` flag.
+// mark-read: logs to audit_logs action=notifications.mark_read, returns 204.
 // =============================================================================
 
 type NotificationItem = {
@@ -19802,6 +19803,7 @@ type NotificationItem = {
   read: boolean;
   severity: "info" | "warn" | "critical";
   actionUrl?: string;
+  dedupeKey?: string;
 };
 
 // Product-language (繁中, no engineering jargon) copy for iuf_events rule ids.
@@ -19841,6 +19843,27 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
   if (!db) return [];
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const markReadRows = await db
+    .select({ payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, "notifications.mark_read"),
+        gte(auditLogs.createdAt, sevenDaysAgo),
+      )
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(500)
+    .catch(() => [] as Array<{ payload: unknown }>);
+  const markedReadIds = new Set(
+    markReadRows.flatMap((row) => {
+      const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+        ? row.payload as Record<string, unknown>
+        : null;
+      return typeof payload?.["notificationId"] === "string" ? [payload["notificationId"]] : [];
+    }),
+  );
 
   // ── 1. audit_logs query ──────────────────────────────────────────────────
   // Pull only the 4 action strings we care about (excludes kgi.gateway.health heartbeat noise)
@@ -19889,7 +19912,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
           title: "委託拒絕",
           body: `${symbol} ${sideLabel}${qty ? " " + qty + " 股" : ""} 紙本委託遭拒`,
           timestamp: ts,
-          read: false,
+          read: markedReadIds.has(row.id),
           severity: "warn",
           actionUrl: "/paper"
         });
@@ -19900,7 +19923,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
           title: "成交回報",
           body: `${symbol} ${sideLabel}${qty ? " " + qty + " 股" : ""} 紙本委託成交`,
           timestamp: ts,
-          read: false,
+          read: markedReadIds.has(row.id),
           severity: "info",
           actionUrl: "/paper"
         });
@@ -19916,7 +19939,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
         title: "風控警示",
         body: "Kill Switch 已觸發，所有新委託暫停",
         timestamp: ts,
-        read: false,
+        read: markedReadIds.has(row.id),
         severity: "critical",
         actionUrl: "/risk"
       });
@@ -19934,7 +19957,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
         title: "KGI SIM 訂單",
         body: `${symbol} SIM 委託 ${outcomeLabel}`,
         timestamp: ts,
-        read: false,
+        read: markedReadIds.has(row.id),
         severity: "info"
       });
       continue;
@@ -19971,9 +19994,10 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
         title: "今日簡報已發布",
         body: firstHeading,
         timestamp: brief.createdAt.toISOString(),
-        read: false,
+        read: markedReadIds.has(`brief-${brief.id}`),
         severity: "info",
-        actionUrl: `/briefs/${brief.id}`
+        actionUrl: `/briefs/${brief.id}`,
+        dedupeKey: `brief_published:${brief.date}`,
       });
     }
   } catch {
@@ -19994,7 +20018,10 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
         timestamp: ev.triggeredAt,
         read: ev.acknowledged,
         severity: iufEventSeverityToNotification(ev.severity),
-        actionUrl: "/alerts"
+        actionUrl: "/alerts",
+        ...(ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
+          ? { dedupeKey: `brief_published:${taipeiDateFromIso(ev.triggeredAt)}` }
+          : {}),
       });
     }
   } catch {
@@ -20002,8 +20029,9 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
   }
 
   // ── 4. merge, sort newest-first, limit 50 ───────────────────────────────
-  notifications.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  return notifications.slice(0, 50);
+  const deduped = dedupeNotificationItems(notifications);
+  deduped.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return deduped.slice(0, 50).map(({ dedupeKey: _dedupeKey, ...item }) => item);
 }
 
 // GET /api/v1/notifications?limit=50
@@ -20027,8 +20055,8 @@ app.get("/api/v1/notifications", async (c) => {
 });
 
 // POST /api/v1/notifications/:id/mark-read
-// v1: log to audit_logs (notifications.mark_read) — no read-state DB persistence yet
-// for audit_logs/brief-derived items. `event-<uuid>` ids (iuf_events unified feed,
+// audit_logs/brief-derived items persist read state by replaying this audit action.
+// `event-<uuid>` ids (iuf_events unified feed,
 // 2026-06-12) additionally persist via acknowledgeEvent() — same store /alerts uses.
 app.post("/api/v1/notifications/:id/mark-read", async (c) => {
   const session = c.get("session");

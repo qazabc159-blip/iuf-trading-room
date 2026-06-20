@@ -113,7 +113,9 @@ describe("fAutoDataSourceLabel", () => {
     expect(fAutoDataSourceLabel("kgi_gateway")).toBe("即時讀取");
   });
   it("translates audit_log_rebuild", () => {
-    expect(fAutoDataSourceLabel("audit_log_rebuild")).toBe("依成交紀錄重建");
+    expect(fAutoDataSourceLabel("audit_log_rebuild")).toBe("依稽核成交紀錄重建");
+    expect(fAutoDataSourceLabel("audit_log_fallback")).toBe("依稽核成交紀錄重建");
+    expect(fAutoDataSourceLabel("orders_submitted_audit_rebuilt")).toBe("依稽核成交紀錄重建");
   });
   it("falls back for unknown/null", () => {
     expect(fAutoDataSourceLabel(null)).toBe("資料來源待確認");

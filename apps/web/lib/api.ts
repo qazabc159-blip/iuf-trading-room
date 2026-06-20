@@ -538,7 +538,7 @@ export type BriefDetailAuditChain = {
   };
   adversarialReview: {
     ran: boolean;
-    verdict: "OK" | "INTERCEPTED";
+    verdict: "OK" | "WARNING";
     severityScore: number | null;
     flags: string[];
     reviewerModel: string;
@@ -1575,6 +1575,60 @@ export type BriefSearchResponse = {
   fallback: boolean;
 };
 
+type BriefSearchApiItem = {
+  id?: unknown;
+  date?: unknown;
+  status?: unknown;
+  title?: unknown;
+  summary_preview?: unknown;
+  matched_in?: unknown;
+  rank?: unknown;
+};
+
+export function normalizeBriefSearchResponse(
+  payload: unknown,
+  params: { q: string; from?: string; to?: string; limit?: number; offset?: number },
+): BriefSearchResponse | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const root = payload as Record<string, unknown>;
+  const nested = root.data && typeof root.data === "object" && !Array.isArray(root.data)
+    ? root.data as Record<string, unknown>
+    : root;
+
+  if (Array.isArray(nested.results)) {
+    return nested as unknown as BriefSearchResponse;
+  }
+
+  if (!Array.isArray(nested.items)) return null;
+  const results = nested.items.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const item = value as BriefSearchApiItem;
+    if (typeof item.id !== "string" || typeof item.date !== "string") return [];
+    const title = typeof item.title === "string" ? item.title : `Brief ${item.date}`;
+    const body = typeof item.summary_preview === "string" ? item.summary_preview : "";
+    return [{
+      id: item.id,
+      date: item.date,
+      status: typeof item.status === "string" ? item.status : "published",
+      sections: [{ heading: title, body }],
+      rank: typeof item.rank === "number" ? item.rank : 0,
+      matchedIn: typeof item.matched_in === "string" ? item.matched_in : "body",
+      createdAt: item.date,
+    }];
+  });
+
+  return {
+    query: params.q,
+    from: params.from ?? "",
+    to: params.to ?? "",
+    limit: typeof nested.limit === "number" ? nested.limit : params.limit ?? 20,
+    offset: typeof nested.offset === "number" ? nested.offset : params.offset ?? 0,
+    count: typeof nested.total === "number" ? nested.total : results.length,
+    results,
+    fallback: nested.search_mode === "ilike",
+  };
+}
+
 export async function searchBriefs(params: {
   q: string;
   from?: string;
@@ -1589,8 +1643,8 @@ export async function searchBriefs(params: {
   if (params.limit) query.set("limit", String(params.limit));
   if (params.offset) query.set("offset", String(params.offset));
   try {
-    const res = await request<BriefSearchResponse>(`/api/v1/briefs/search?${query.toString()}`);
-    return res.data;
+    const payload = await requestRaw<unknown>(`/api/v1/briefs/search?${query.toString()}`);
+    return normalizeBriefSearchResponse(payload, params);
   } catch {
     return null;
   }

@@ -571,7 +571,7 @@ async function collectLiveMarketSnapshot(
  * Render a LiveMarketSnapshot as a structured JSON block for LLM prompt injection.
  * Only emits fields that have real values — never outputs nulls as "data".
  */
-function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
+export function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
   const lines: string[] = [];
 
   if (hasConsistentTaiexSnapshot(snap.taiex)) {
@@ -610,8 +610,8 @@ function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): string {
 
   if (snap.margin.date && (snap.margin.balanceChange !== null || snap.margin.shortChange !== null)) {
     lines.push(`信用交易 (${snap.margin.date} vs 前一日):`);
-    if (snap.margin.balanceChange !== null) lines.push(`  - 融資餘額變化: ${snap.margin.balanceChange >= 0 ? "+" : ""}${snap.margin.balanceChange} 張`);
-    if (snap.margin.shortChange !== null) lines.push(`  - 融券餘額變化: ${snap.margin.shortChange >= 0 ? "+" : ""}${snap.margin.shortChange} 張`);
+    if (snap.margin.balanceChange !== null) lines.push(`  - 融資餘額變化: ${snap.margin.balanceChange >= 0 ? "+" : ""}${snap.margin.balanceChange} 股`);
+    if (snap.margin.shortChange !== null) lines.push(`  - 融券餘額變化: ${snap.margin.shortChange >= 0 ? "+" : ""}${snap.margin.shortChange} 股`);
   }
 
   return lines.length > 0 ? lines.join("\n") : "(未能取得即時市場數據，以下僅供資料狀態參考)";

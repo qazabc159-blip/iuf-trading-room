@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBriefSourceTrail } from "./operator-copy";
+import { cleanNarrativeText, formatBriefSourceTrail } from "./operator-copy";
 
 describe("formatBriefSourceTrail", () => {
   it("turns raw brief source trails into readable Chinese source status", () => {
@@ -18,5 +18,17 @@ describe("formatBriefSourceTrail", () => {
 
   it("keeps an honest degraded message when source trail is absent", () => {
     expect(formatBriefSourceTrail(null)).toBe("來源紀錄尚未完整，這段不作投資依據。");
+  });
+});
+
+describe("cleanNarrativeText", () => {
+  it("removes leaked wikilink markers without damaging the underlying word", () => {
+    expect(cleanNarrativeText("Other Industrial [[Meta]]ls & Mining 上漲 4.99%"))
+      .toBe("Other Industrial Metals & Mining 上漲 4.99%");
+  });
+
+  it("converts FinMind margin share totals into Taiwan board lots for display", () => {
+    expect(cleanNarrativeText("融資餘額變化為 -4395439 張，融券餘額變化為 -80724 張"))
+      .toBe("融資餘額變化約為 -4,395 張，融券餘額變化約為 -81 張");
   });
 });
