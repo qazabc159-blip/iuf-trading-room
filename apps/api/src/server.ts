@@ -68,7 +68,7 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
-import { dedupeNotificationItems, taipeiDateFromIso } from "./notification-feed.js";
+import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
@@ -20010,16 +20010,19 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
     const events = await listEvents({ limit: 50 });
     for (const ev of events) {
       const copy = IUF_EVENT_NOTIFICATION_COPY[ev.ruleId];
+      const eventTiming = notificationEventTiming(ev.ruleId, ev.triggeredAt, ev.payload);
       notifications.push({
         id: `event-${ev.id}`,
         type: "system",
         title: copy?.title ?? ev.ruleName,
         body: copy?.body(ev.payload) ?? ev.ruleName,
-        timestamp: ev.triggeredAt,
+        timestamp: eventTiming.timestamp,
         read: ev.acknowledged,
         severity: iufEventSeverityToNotification(ev.severity),
         actionUrl: "/alerts",
-        ...(ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
+        ...(eventTiming.dedupeKey
+          ? { dedupeKey: eventTiming.dedupeKey }
+          : ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
           ? { dedupeKey: `brief_published:${taipeiDateFromIso(ev.triggeredAt)}` }
           : {}),
       });
