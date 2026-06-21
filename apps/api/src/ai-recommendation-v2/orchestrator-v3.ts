@@ -419,6 +419,16 @@ export function classifyV3SynthesisStatus(input: {
   return "complete";
 }
 
+export function normalizePersistedV3Status(
+  status: AiRecommendationV3RunResult["status"],
+  report: string | null | undefined,
+): AiRecommendationV3RunResult["status"] {
+  if (status === "synthesis_format_error" && hasStructuredSynthesisReport(report)) {
+    return "insufficient_tools";
+  }
+  return status;
+}
+
 // gpt-5.5 (reasoning model) synthesis over the candidate set takes 75–90s+ —
 // the old 75s/90s timeout aborted it exactly at the limit (FETCH_ERROR,
 // completionTokens=0 → empty content → deterministic fallback). Reasoning models
@@ -664,7 +674,10 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
     const finalReportMarkdown = row.finalReportMarkdown ?? "";
     const result: AiRecommendationV3RunResult = {
       runId: row.runId,
-      status: row.status as AiRecommendationV3RunResult["status"],
+      status: normalizePersistedV3Status(
+        row.status as AiRecommendationV3RunResult["status"],
+        finalReportMarkdown,
+      ),
       generatedAt: row.generatedAt.toISOString(),
       items: (row.items ?? []) as AiStockRecommendationV2[],
       reactTrace: (row.reactTrace ?? []) as unknown[],
