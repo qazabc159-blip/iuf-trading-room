@@ -68,7 +68,7 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
-import { dedupeNotificationItems, taipeiDateFromIso } from "./notification-feed.js";
+import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
@@ -19354,6 +19354,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const {
     getLatestAiRecommendationV3RunForRead,
     getV3RunAgeMs,
+    hasStructuredSynthesisReport,
     isV3RunningStale,
     V3_RUNNING_STALE_AFTER_MS,
   } = await import("./ai-recommendation-v2/orchestrator-v3.js");
@@ -19398,6 +19399,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
   const synthesisFallbackUsed =
     latest.synthesisFallbackUsed ?? (latest.status === "synthesis_format_error" && latest.items.length >= 5);
+  const fullAiReportParsed = hasStructuredSynthesisReport(latest.finalReportMarkdown);
   const runAgeMs = getV3RunAgeMs(latest.generatedAt);
   const staleRunning = isV3RunningStale(latest.status, latest.generatedAt);
   const runDiagnostics = {
@@ -19424,7 +19426,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     sourceStates: latest.sourceStates,
     officialAnnouncementSourceState: latest.officialAnnouncementSourceState,
     officialAnnouncementsSourceState: latest.officialAnnouncementSourceState,
-    fullAiReportParsed: latest.status !== "synthesis_format_error",
+    fullAiReportParsed,
     synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
@@ -19444,7 +19446,9 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
       : (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
       ? {
           hint: latest.status === "synthesis_format_error"
-            ? "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present."
+            ? fullAiReportParsed
+              ? "Synthesis JSON parsed successfully, but deterministic tool-data validation left fewer than five actionable cards; valid AI cards were preserved and missing slots were filled from verified fallback data."
+              : "Synthesis output did not parse into a full item set; deterministic fallback may be present."
             : "Parser found 0 items. See finalReportMarkdown for raw LLM output to diagnose format mismatch.",
           usedFallback: synthesisFallbackUsed,
           reportLength: latest.finalReportMarkdown.length,
@@ -20010,16 +20014,19 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
     const events = await listEvents({ limit: 50 });
     for (const ev of events) {
       const copy = IUF_EVENT_NOTIFICATION_COPY[ev.ruleId];
+      const eventTiming = notificationEventTiming(ev.ruleId, ev.triggeredAt, ev.payload);
       notifications.push({
         id: `event-${ev.id}`,
         type: "system",
         title: copy?.title ?? ev.ruleName,
         body: copy?.body(ev.payload) ?? ev.ruleName,
-        timestamp: ev.triggeredAt,
+        timestamp: eventTiming.timestamp,
         read: ev.acknowledged,
         severity: iufEventSeverityToNotification(ev.severity),
         actionUrl: "/alerts",
-        ...(ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
+        ...(eventTiming.dedupeKey
+          ? { dedupeKey: eventTiming.dedupeKey }
+          : ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
           ? { dedupeKey: `brief_published:${taipeiDateFromIso(ev.triggeredAt)}` }
           : {}),
       });

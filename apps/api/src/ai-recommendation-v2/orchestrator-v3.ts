@@ -361,6 +361,46 @@ function isActionableRecommendationItem(item: AiStockRecommendationV2): boolean 
 function completeItemCount(items: AiStockRecommendationV2[]): number {
   return items.filter(isActionableRecommendationItem).length;
 }
+
+export function fillActionableSynthesisWithFallback(
+  synthesisItems: AiStockRecommendationV2[],
+  fallbackItems: AiStockRecommendationV2[],
+  targetCount = MIN_V3_RECOMMENDATION_ITEMS,
+): AiStockRecommendationV2[] {
+  const merged = synthesisItems
+    .filter(isActionableRecommendationItem)
+    .slice(0, targetCount);
+  const seenTickers = new Set(merged.map((item) => item.ticker));
+
+  for (const item of fallbackItems) {
+    if (merged.length >= targetCount) break;
+    if (!isActionableRecommendationItem(item) || seenTickers.has(item.ticker)) continue;
+    merged.push(item);
+    seenTickers.add(item.ticker);
+  }
+
+  return merged;
+}
+
+export function synthesisReportShowsRetry(report: string | null | undefined): boolean {
+  return typeof report === "string" && /\bretryUsed=true\b/.test(report);
+}
+
+export function hasStructuredSynthesisReport(report: string | null | undefined): boolean {
+  if (!report) return false;
+  const rawReport = report.split(/\n---\nDeterministic fallback applied/, 1)[0]?.trim();
+  if (!rawReport) return false;
+
+  try {
+    const parsed = JSON.parse(rawReport) as unknown;
+    if (Array.isArray(parsed)) return parsed.length > 0;
+    if (!parsed || typeof parsed !== "object") return false;
+    return Array.isArray((parsed as Record<string, unknown>)["items"]);
+  } catch {
+    return false;
+  }
+}
+
 // gpt-5.5 (reasoning model) synthesis over the candidate set takes 75–90s+ —
 // the old 75s/90s timeout aborted it exactly at the limit (FETCH_ERROR,
 // completionTokens=0 → empty content → deterministic fallback). Reasoning models
@@ -603,19 +643,20 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       .limit(10);
     const row = pickAiRecommendationV3RunForRead(rows);
     if (!row) return null;
+    const finalReportMarkdown = row.finalReportMarkdown ?? "";
     const result: AiRecommendationV3RunResult = {
       runId: row.runId,
       status: row.status as AiRecommendationV3RunResult["status"],
       generatedAt: row.generatedAt.toISOString(),
       items: (row.items ?? []) as AiStockRecommendationV2[],
       reactTrace: (row.reactTrace ?? []) as unknown[],
-      finalReportMarkdown: row.finalReportMarkdown ?? "",
+      finalReportMarkdown,
       totalCostUsd: Number(row.costUsd ?? 0),
       totalTokens: row.totalTokens ?? 0,
       marketState: null,
       marketRiskOffScore: null,
       programmaticRiskOff: null,
-      synthesisRetryUsed: false,
+      synthesisRetryUsed: synthesisReportShowsRetry(finalReportMarkdown),
       synthesisFallbackUsed:
         row.status === "synthesis_format_error" &&
         ((row.items ?? []) as unknown[]).length >= MIN_V3_RECOMMENDATION_ITEMS,
@@ -3131,13 +3172,14 @@ ${programmaticRiskOff.signals.taiexBelowEma60 ? `- S6: TAIEX(${programmaticRiskO
           detectedMarketState ?? "trend"
         );
         if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
-          console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${items.length} items after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
-          items = fallbackItems;
+          const synthesisActionableCount = completeItemCount(items);
+          items = fillActionableSynthesisWithFallback(items, fallbackItems);
+          console.warn(`[v3-orchestrator] run ${runId}: LLM returned ${synthesisActionableCount} actionable items after ${companyTechnicalCallCount} technical calls; filled to ${items.length} with deterministic fallback`);
           synthesisFallbackUsed = true;
           report = `${report}
 
 ---
-Deterministic fallback applied after synthesis format retry: the LLM returned fewer than ${MIN_V3_RECOMMENDATION_ITEMS} structured recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
+Deterministic fallback applied after synthesis validation: the LLM returned ${synthesisActionableCount} actionable recommendations after deterministic tool-data rescoring, below the required ${MIN_V3_RECOMMENDATION_ITEMS}. Valid synthesis cards were preserved and only missing slots were filled from verified get_company_technical observations. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
         }
       }
 
@@ -3259,13 +3301,14 @@ Deterministic fallback applied after synthesis format retry: the LLM returned fe
       detectedMarketState ?? "trend"
     );
     if (completeItemCount(fallbackItems) >= MIN_V3_RECOMMENDATION_ITEMS) {
-      console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with completeItems=${completeItemCount(items)}/${items.length} after ${companyTechnicalCallCount} technical calls; using deterministic fallback (${fallbackItems.length} items)`);
-      items = fallbackItems;
+      const synthesisActionableCount = completeItemCount(items);
+      items = fillActionableSynthesisWithFallback(items, fallbackItems);
+      console.warn(`[v3-orchestrator] run ${runId}: max rounds reached with actionableItems=${synthesisActionableCount}/${items.length} after ${companyTechnicalCallCount} technical calls; filled missing slots with deterministic fallback`);
       synthesisFallbackUsed = true;
       report = `${report}
 
 ---
-Deterministic fallback applied after synthesis format retry: max rounds ended with fewer than ${MIN_V3_RECOMMENDATION_ITEMS} complete-scored recommendations even though programmatic risk_off_score=${progScore} and verified get_company_technical observations were available. Items were generated from those tool observations only. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
+Deterministic fallback applied after synthesis validation: max rounds ended with ${synthesisActionableCount} actionable recommendations after deterministic tool-data rescoring, below the required ${MIN_V3_RECOMMENDATION_ITEMS}. Valid synthesis cards were preserved and only missing slots were filled from verified get_company_technical observations. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
     }
   }
   const insufficientFinal =

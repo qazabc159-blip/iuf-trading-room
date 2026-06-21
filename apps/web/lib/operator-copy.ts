@@ -35,6 +35,10 @@ const knownEnglishCopy: Array<{ pattern: RegExp; text: string }> = [
     pattern: /ajinomoto build-up film/i,
     text: "ABF 載板為高階 IC 封裝材料，需觀察 AI、伺服器與庫存循環。",
   },
+  {
+    pattern: /correct thesis on yield improvement.*entry timing was good.*10ma bounce/i,
+    text: "殖利率改善的判斷方向正確；進場時機良好，掌握 10 日均線反彈。",
+  },
 ];
 
 const knownTradePlanCopy: Array<{ pattern: RegExp; text: string }> = [
