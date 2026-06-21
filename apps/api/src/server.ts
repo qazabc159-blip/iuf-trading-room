@@ -19354,6 +19354,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const {
     getLatestAiRecommendationV3RunForRead,
     getV3RunAgeMs,
+    hasStructuredSynthesisReport,
     isV3RunningStale,
     V3_RUNNING_STALE_AFTER_MS,
   } = await import("./ai-recommendation-v2/orchestrator-v3.js");
@@ -19398,6 +19399,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
   const includeTrace = c.req.query("debug") === "true" || true; // always include for now — Bruce needs it
   const synthesisFallbackUsed =
     latest.synthesisFallbackUsed ?? (latest.status === "synthesis_format_error" && latest.items.length >= 5);
+  const fullAiReportParsed = hasStructuredSynthesisReport(latest.finalReportMarkdown);
   const runAgeMs = getV3RunAgeMs(latest.generatedAt);
   const staleRunning = isV3RunningStale(latest.status, latest.generatedAt);
   const runDiagnostics = {
@@ -19424,7 +19426,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     sourceStates: latest.sourceStates,
     officialAnnouncementSourceState: latest.officialAnnouncementSourceState,
     officialAnnouncementsSourceState: latest.officialAnnouncementSourceState,
-    fullAiReportParsed: latest.status !== "synthesis_format_error",
+    fullAiReportParsed,
     synthesisRetryUsed: latest.synthesisRetryUsed ?? false,
     synthesisFallbackUsed,
     usedFallback: synthesisFallbackUsed,
@@ -19444,7 +19446,9 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
       : (latest.status === "synthesis_format_error" || latest.items.length === 0) && latest.finalReportMarkdown
       ? {
           hint: latest.status === "synthesis_format_error"
-            ? "Synthesis output did not parse into a full item set after one retry; deterministic fallback may be present."
+            ? fullAiReportParsed
+              ? "Synthesis JSON parsed successfully, but deterministic tool-data validation left fewer than five actionable cards; valid AI cards were preserved and missing slots were filled from verified fallback data."
+              : "Synthesis output did not parse into a full item set; deterministic fallback may be present."
             : "Parser found 0 items. See finalReportMarkdown for raw LLM output to diagnose format mismatch.",
           usedFallback: synthesisFallbackUsed,
           reportLength: latest.finalReportMarkdown.length,
