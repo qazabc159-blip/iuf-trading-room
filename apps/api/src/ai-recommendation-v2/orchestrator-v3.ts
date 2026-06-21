@@ -386,6 +386,11 @@ export function synthesisReportShowsRetry(report: string | null | undefined): bo
   return typeof report === "string" && /\bretryUsed=true\b/.test(report);
 }
 
+export function synthesisReportShowsFallback(report: string | null | undefined): boolean {
+  return typeof report === "string" &&
+    /Deterministic fallback applied after synthesis (?:validation|format retry):/.test(report);
+}
+
 export function hasStructuredSynthesisReport(report: string | null | undefined): boolean {
   if (!report) return false;
   const rawReport = report.split(/\n---\nDeterministic fallback applied/, 1)[0]?.trim();
@@ -399,6 +404,19 @@ export function hasStructuredSynthesisReport(report: string | null | undefined):
   } catch {
     return false;
   }
+}
+
+export function classifyV3SynthesisStatus(input: {
+  structuredOutputParsed: boolean;
+  fallbackUsed: boolean;
+  insufficientItems: boolean;
+  insufficientTools: boolean;
+}): AiRecommendationV3RunResult["status"] {
+  if (!input.structuredOutputParsed) return "synthesis_format_error";
+  if (input.fallbackUsed || input.insufficientItems || input.insufficientTools) {
+    return "insufficient_tools";
+  }
+  return "complete";
 }
 
 // gpt-5.5 (reasoning model) synthesis over the candidate set takes 75–90s+ —
@@ -605,7 +623,7 @@ async function finalizeV3Run(
     ...result,
     items: await canonicalizeAiRecommendationV3Items(result.items, workspaceId),
     sourceState: {
-      state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
+      state: result.status === "complete" ? "live" : result.items.length > 0 ? "degraded" : "pending",
       source: "ai_recommendations_runs",
       reason: result.status === "complete"
         ? "V3 推薦已完成，且股票卡片欄位已由後端統一正規化。"
@@ -657,9 +675,7 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       marketRiskOffScore: null,
       programmaticRiskOff: null,
       synthesisRetryUsed: synthesisReportShowsRetry(finalReportMarkdown),
-      synthesisFallbackUsed:
-        row.status === "synthesis_format_error" &&
-        ((row.items ?? []) as unknown[]).length >= MIN_V3_RECOMMENDATION_ITEMS,
+      synthesisFallbackUsed: synthesisReportShowsFallback(finalReportMarkdown),
       dbRowId: row.id,
       // Restore score_breakdown from DB (migration 0043 column)
       scoreBreakdown: row.scoreBreakdown ? (row.scoreBreakdown as unknown as AiRecRunScoreBreakdown) : undefined,
@@ -672,7 +688,7 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
       ...result,
       items: await canonicalizeAiRecommendationV3Items(result.items, row.workspaceId ?? null),
       sourceState: {
-        state: result.status === "complete" ? "live" : result.status === "synthesis_format_error" ? "degraded" : "pending",
+        state: result.status === "complete" ? "live" : result.items.length > 0 ? "degraded" : "pending",
         source: "ai_recommendations_runs",
         reason: result.status === "complete"
           ? "V3 推薦已從資料庫載入，且股票卡片欄位已由後端統一正規化。"
@@ -2638,6 +2654,7 @@ interface V3ParsedSynthesis {
   costUsd: number;
   retryUsed: boolean;
   initialItemCount: number;
+  structuredOutputParsed: boolean;
   /** First 2000 chars of the raw synthesis LLM content — for diagnostic even when parser fails. */
   rawSynthesisPreview: string;
 }
@@ -2754,11 +2771,13 @@ async function synthesizeAndParseReportV3(
   // unlikely with strict mode; we still fall through to markdown parser as last-resort safety net.
   let items = enrichV3Items(parseV3JsonSynthesis(report, dateStr), trace);
   const usedJsonParser = items.length > 0;
+  let structuredOutputParsed = usedJsonParser;
 
   if (!usedJsonParser) {
     // ── Secondary: markdown parser (safety net — should not fire with json_schema strict mode) ─
     console.warn("[v3-synthesis] JSON parse returned 0 items after json_schema strict mode — falling back to markdown parser (unexpected)");
     items = enrichV3Items(parseAiReportToRecommendationsV3(report, dateStr), trace);
+    structuredOutputParsed = items.length > 0;
   } else {
     console.info(`[v3-synthesis] JSON parser succeeded (json_schema strict mode): ${items.length} items parsed`);
   }
@@ -2803,6 +2822,7 @@ async function synthesizeAndParseReportV3(
     if (retryItems.length === 0) {
       retryItems = enrichV3Items(parseAiReportToRecommendationsV3(retry.markdown, dateStr), trace);
     }
+    structuredOutputParsed ||= retryItems.length > 0;
     totalTokens += retry.totalTokens;
     costUsd += retry.costUsd;
     retryUsed = true;
@@ -2813,7 +2833,16 @@ async function synthesizeAndParseReportV3(
     }
   }
 
-  return { report, items, totalTokens, costUsd, retryUsed, initialItemCount, rawSynthesisPreview };
+  return {
+    report,
+    items,
+    totalTokens,
+    costUsd,
+    retryUsed,
+    initialItemCount,
+    structuredOutputParsed,
+    rawSynthesisPreview,
+  };
 }
 
 // ── Core runAiRecommendationV3 ────────────────────────────────────────────────
@@ -3188,11 +3217,6 @@ Deterministic fallback applied after synthesis validation: the LLM returned ${sy
       const insufficientItems = completeCount < MIN_V3_RECOMMENDATION_ITEMS;
       const insufficientTools =
         companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
-      const unresolvedSynthesisFormatError =
-        companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
-        synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
-        completeCount < MIN_V3_RECOMMENDATION_ITEMS;
-
       if ((insufficientItems || insufficientTools) && round < maxRounds - 1) {
         // Still have rounds left — force continuation with correction
         console.warn(`[v3-orchestrator] round ${round}: insufficient output (completeItems=${completeCount}/${items.length}, get_company_technical calls=${companyTechnicalCallCount}) — forcing continuation`);
@@ -3207,9 +3231,12 @@ Deterministic fallback applied after synthesis validation: the LLM returned ${sy
       }
 
       // Accept result (either sufficient or no rounds left)
-      const status: AiRecommendationV3RunResult["status"] = synthesisFallbackUsed || unresolvedSynthesisFormatError
-        ? "synthesis_format_error"
-        : (insufficientItems || insufficientTools) ? "insufficient_tools" : "complete";
+      const status = classifyV3SynthesisStatus({
+        structuredOutputParsed: synthesis.structuredOutputParsed,
+        fallbackUsed: synthesisFallbackUsed,
+        insufficientItems,
+        insufficientTools,
+      });
       if (status === "insufficient_tools") {
         console.warn(`[v3-orchestrator] run ${runId} finished with insufficient_tools: items=${items.length}, get_company_technical calls=${companyTechnicalCallCount}`);
       } else if (status === "synthesis_format_error") {
@@ -3311,19 +3338,15 @@ Deterministic fallback applied after synthesis validation: the LLM returned ${sy
 Deterministic fallback applied after synthesis validation: max rounds ended with ${synthesisActionableCount} actionable recommendations after deterministic tool-data rescoring, below the required ${MIN_V3_RECOMMENDATION_ITEMS}. Valid synthesis cards were preserved and only missing slots were filled from verified get_company_technical observations. initialParsedItems=${synthesis.initialItemCount}; retryUsed=${synthesis.retryUsed}.`;
     }
   }
-  const insufficientFinal =
-    completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS ||
-    companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS;
-  const unresolvedSynthesisFormatError =
-    companyTechnicalCallCount >= MIN_V3_TECHNICAL_CALLS &&
-    synthesis.initialItemCount < MIN_V3_RECOMMENDATION_ITEMS &&
-    completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS;
   const scoreBreakdown = computeScoreBreakdown(items);
   const result: AiRecommendationV3RunResult = {
     runId,
-    status: synthesisFallbackUsed || unresolvedSynthesisFormatError
-      ? "synthesis_format_error"
-      : insufficientFinal ? "insufficient_tools" : "complete",
+    status: classifyV3SynthesisStatus({
+      structuredOutputParsed: synthesis.structuredOutputParsed,
+      fallbackUsed: synthesisFallbackUsed,
+      insufficientItems: completeItemCount(items) < MIN_V3_RECOMMENDATION_ITEMS,
+      insufficientTools: companyTechnicalCallCount < MIN_V3_TECHNICAL_CALLS,
+    }),
     generatedAt,
     items,
     reactTrace: trace,
