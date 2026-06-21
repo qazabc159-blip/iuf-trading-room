@@ -324,7 +324,7 @@ export default async function ReviewsPage({
                       <div className="_rev-detail-item">
                         <span className="_rev-detail-label">歸因</span>
                         <span className="_rev-detail-text">
-                          {cleanNarrativeText(review.attribution, "歸因尚未完成中文整理。")}
+                          {cleanNarrativeText(review.attribution, "尚無可驗證的結構化歸因。")}
                         </span>
                       </div>
                     )}
@@ -332,7 +332,7 @@ export default async function ReviewsPage({
                       <div className="_rev-detail-item">
                         <span className="_rev-detail-label">教訓</span>
                         <span className="_rev-detail-text">
-                          {cleanNarrativeText(review.lesson, "教訓尚未完成中文整理。")}
+                          {cleanNarrativeText(review.lesson, "尚無可驗證的結構化教訓。")}
                         </span>
                       </div>
                     )}
