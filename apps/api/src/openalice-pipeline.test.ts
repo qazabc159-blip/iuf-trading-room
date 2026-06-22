@@ -531,6 +531,30 @@ test("classifyDraftTier returns green for clean content", () => {
   assert.equal(tier, "green");
 });
 
+test("classifyDraftTier ignores advisory keywords that only appear in source-trail metadata", () => {
+  const tier = classifyDraftTier({
+    date: "2026-06-22",
+    marketState: "Balanced",
+    sections: [{
+      heading: "Market overview",
+      body: "Markets remained mixed and the brief is for observation only.",
+      sourceTrail: "strategy metrics ranking source metadata"
+    }]
+  });
+  assert.equal(tier, "green");
+});
+
+test("classifyDraftTier still holds advisory keywords in reader-facing brief content", () => {
+  const tier = classifyDraftTier({
+    date: "2026-06-22",
+    sections: [{
+      heading: "Market overview",
+      body: "This strategy ranking requires manual review."
+    }]
+  });
+  assert.equal(tier, "yellow");
+});
+
 test("classifyDraftTier keeps institutional buy/sell source labels green", () => {
   const tier = classifyDraftTier({
     date: "2026-05-06",
