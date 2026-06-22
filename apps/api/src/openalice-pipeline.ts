@@ -2023,8 +2023,38 @@ function neutralizeSafeResearchDisclaimers(text: string): string {
  * Yellow: strategy/ranking/metrics content (conservative).
  * Green: passes all checks.
  */
+function extractDraftPolicyText(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return JSON.stringify(payload ?? "").toLowerCase();
+  }
+
+  const sections = (payload as Record<string, unknown>)["sections"];
+  if (!Array.isArray(sections)) {
+    return JSON.stringify(payload).toLowerCase();
+  }
+
+  const contentSections = sections.flatMap((section) => {
+    if (!section || typeof section !== "object" || Array.isArray(section)) return [];
+    const record = section as Record<string, unknown>;
+    return [{
+      heading:
+        typeof record["heading"] === "string"
+          ? record["heading"]
+          : typeof record["title"] === "string"
+            ? record["title"]
+            : "",
+      body: typeof record["body"] === "string" ? record["body"] : ""
+    }];
+  });
+
+  return JSON.stringify(contentSections).toLowerCase();
+}
+
 export function classifyDraftTier(payload: unknown): PublishGateTier {
-  const text = JSON.stringify(payload ?? "").toLowerCase();
+  // Daily-brief sourceTrail is audit metadata, not reader-facing advice. Scanning
+  // the whole payload made harmless source notes such as "strategy metrics" turn
+  // an otherwise green brief yellow after the AI reviewer had approved it.
+  const text = extractDraftPolicyText(payload);
   const policyText = text
     .replace(/taiwanstockinstitutionalinvestorsbuysell/g, "institutional_flow_dataset")
     .replace(/tw_institutional_buysell/g, "institutional_flow_dataset")
