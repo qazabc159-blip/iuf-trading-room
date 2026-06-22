@@ -10,12 +10,13 @@
  * API key: read from env, NEVER logged.
  */
 
-import { auditLogs, contentDrafts, getDb, isDatabaseMode } from "@iuf-trading-room/db";
-import { eq } from "drizzle-orm";
+import { auditLogs, contentDrafts, getDb, isDatabaseMode, openAliceJobs } from "@iuf-trading-room/db";
+import { and, eq, or } from "drizzle-orm";
 
-import { approveContentDraft, rejectContentDraft } from "./content-draft-store.js";
+import { rejectContentDraft } from "./content-draft-store.js";
 import {
   recordReviewerVerdict,
+  classifyDraftTier,
   lookupJobSourcePackSummary,
   loadSourcePackForDraft,
   loadSourcePackForDraftPersisted,
@@ -35,6 +36,7 @@ const OPENAI_MODEL = process.env["OPENAI_MODEL"] ?? "gpt-4o-mini";
 const AI_REVIEWER_ID = `ai-reviewer:${OPENAI_MODEL}`;
 const CALL_TIMEOUT_MS = 10_000;
 const MAX_TOKENS = 300;
+const MAX_PRIMARY_REVIEW_ATTEMPTS = 2;
 
 // ── Feature-flag check ────────────────────────────────────────────────────────
 
@@ -54,6 +56,25 @@ export type AiReviewResult = {
   flagged_issues: string[];
   confidence: number;
 };
+
+export type DirectiveRejectRecovery = "none" | "retry_green" | "hold_yellow";
+
+export function classifyDirectiveRejectRecovery(
+  payload: unknown,
+  result: AiReviewResult
+): DirectiveRejectRecovery {
+  if (result.verdict !== "reject") return "none";
+  const reviewText = `${result.reason} ${result.flagged_issues.join(" ")}`.toLowerCase();
+  const directiveOnly =
+    /(directive trading advice|commands? the reader|trading action word|rule 1)/i.test(reviewText) &&
+    !/(target price|price target|guarantee|hallucinat|source url|fallback|shorter than|date mismatch|rule [2-7])/i.test(reviewText);
+  if (!directiveOnly) return "none";
+
+  const tier = classifyDraftTier(payload);
+  if (tier === "green") return "retry_green";
+  if (tier === "yellow") return "hold_yellow";
+  return "none";
+}
 
 // ── Debug surface (last reviewer error per draft — in-memory, non-critical) ───
 
@@ -218,6 +239,41 @@ async function writeAiReviewAuditLog(input: {
   }
 }
 
+async function syncSourceJobReviewStatus(input: {
+  sourceJobId: string | null;
+  status: "published" | "rejected";
+  note: string;
+}): Promise<void> {
+  if (!input.sourceJobId || !isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db
+      .update(openAliceJobs)
+      .set({
+        status: input.status,
+        error: input.status === "rejected" ? input.note.slice(0, 1000) : null,
+        completedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(openAliceJobs.id, input.sourceJobId),
+          or(
+            eq(openAliceJobs.status, "draft_ready"),
+            eq(openAliceJobs.status, "validation_failed"),
+            eq(openAliceJobs.status, input.status)
+          )
+        )
+      );
+  } catch (e) {
+    console.warn(
+      `[ai-reviewer] Failed to sync source job ${input.sourceJobId} to ${input.status}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
 // ── Adversarial audit log writer ───────────────────────────────────────────────
 
 async function writeAdversarialAuditLog(input: {
@@ -305,7 +361,7 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     createdAt: draftRow.createdAt.toISOString()
   });
 
-  const result = await callOpenAiReviewer(prompt);
+  let result = await callOpenAiReviewer(prompt);
 
   if (!result) {
     // Timeout / key missing / parse error → leave awaiting_review for human
@@ -313,7 +369,49 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     return;
   }
 
+  let originalDirectiveReject: AiReviewResult | null = null;
+  const recovery = classifyDirectiveRejectRecovery(draftRow.payload, result);
+  if (recovery === "hold_yellow") {
+    originalDirectiveReject = result;
+    result = {
+      verdict: "manual_review",
+      reason: `Directive-only AI rejection conflicted with deterministic yellow-tier policy; held for review. Original: ${result.reason}`,
+      flagged_issues: result.flagged_issues,
+      confidence: result.confidence,
+    };
+  } else if (recovery === "retry_green") {
+    originalDirectiveReject = result;
+    const retryPrompt = `${prompt}
+
+## Mandatory False-Positive Recheck
+The deterministic policy scan found no direct buy/sell command in this draft.
+Review the actual sentence context again. If you still reject under Rule 1, quote
+the exact imperative command that tells the reader to execute a trade. Descriptive
+market conditions, risk observations, and historical institutional flows are allowed.`;
+    const retryResult = MAX_PRIMARY_REVIEW_ATTEMPTS > 1
+      ? await callOpenAiReviewer(retryPrompt)
+      : null;
+    if (retryResult) result = retryResult;
+
+    if (classifyDirectiveRejectRecovery(draftRow.payload, result) === "retry_green") {
+      result = {
+        verdict: "approve",
+        reason: "Directive-only reviewer rejection was overridden after deterministic green-tier verification and one reviewer retry.",
+        flagged_issues: [],
+        confidence: Math.max(0.75, result.confidence),
+      };
+    }
+  }
+
   const workspaceId = draftRow.workspaceId;
+  if (originalDirectiveReject) {
+    await writeAiReviewAuditLog({
+      workspaceId,
+      draftId,
+      action: "content_draft.ai_reviewer_retry",
+      result: originalDirectiveReject,
+    });
+  }
 
   // Bruce PR #230 F1 fix: wire 3-tier publish gate. Even when AI says approve,
   // a Red-tier classification (buy/sell/target price/guarantee/Sharpe/勝率) MUST
@@ -336,6 +434,11 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
       _lastReviewerErrors.set(draftId, `red_override_reject_failed: ${rejectResult.error}`);
       return;
     }
+    await syncSourceJobReviewStatus({
+      sourceJobId: draftRow.sourceJobId,
+      status: "rejected",
+      note: `red_tier_override:${result.reason}`,
+    });
     await writeAiReviewAuditLog({
       workspaceId,
       draftId,
@@ -410,9 +513,8 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     //   `if (draftContentForFactual && sourcePack)` was always false → 0% activation.
     // Now: loadSourcePackForDraft(sourceJobId) retrieves the full SourcePack registered
     //   during generateDailyBrief (registerJobSourcePack), keyed by sourceJobId.
-    // Graceful fallback: null if non-pipeline draft or process restarted since generation.
-    //   null → gate still runs (BROKEN scan + single-pass RAG fallback); Layer 5 also
-    //   gracefully degrades (rawSources=[] → skip factual reviewer per cost-guard).
+    // Persisted fallback: process restarts recover parameters.sourcePack from openAliceJobs.
+    // A still-missing source pack causes numeric briefs to be held by the factual gate.
     // Important: evaluatePipelinePublishGate re-reads the draft from DB for its own checks.
     // It does NOT re-read the AI audit log we just wrote — the timing is fine because we call
     // evaluatePipelinePublishGate BEFORE approveContentDraft, which is correct order.
@@ -439,6 +541,11 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
         console.info(
           `[ai-reviewer] Draft ${draftId} GATE REJECTED by evaluatePipelinePublishGate: ${gateResult.reason}`
         );
+        await syncSourceJobReviewStatus({
+          sourceJobId: draftRow.sourceJobId,
+          status: "rejected",
+          note: gateResult.reason ?? "pipeline_gate_rejected",
+        });
         return; // draft already rejected by gate; do not call approveContentDraft
       }
 
@@ -472,42 +579,45 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
         console.info(
           `[ai-reviewer] Draft ${draftId} AUTO-APPROVED via pipeline gate (briefId=${gateResult.briefId ?? "none"})`
         );
+        await syncSourceJobReviewStatus({
+          sourceJobId: draftRow.sourceJobId,
+          status: "published",
+          note: `briefId=${gateResult.briefId ?? "none"}`,
+        });
         return; // gate already handled approval
       }
 
-      // gateResult.action === "skipped" (memory_mode / db_unavailable / draft_not_found / status mismatch)
-      // Fall through to direct approveContentDraft below — gate was not applicable.
-      if (gateResult.action !== "skipped") {
-        // Unexpected action — safe default: proceed with direct approve
-        console.warn(`[ai-reviewer] Unexpected gate action=${gateResult.action} for draft ${draftId} — proceeding with direct approve`);
-      }
+      // Gate skipped means the complete safety chain could not be evaluated.
+      await writeAiReviewAuditLog({
+        workspaceId,
+        draftId,
+        action: "content_draft.ai_yellow_held",
+        result: {
+          verdict: "manual_review",
+          reason: `[pipeline-gate] ${gateResult.reason ?? "gate_skipped"}`,
+          flagged_issues: [`pipeline_gate_unavailable: ${gateResult.reason ?? "unknown"}`],
+          confidence: result.confidence,
+        },
+      });
+      return;
     } catch (gateErr) {
-      // Gate threw unexpectedly — safe default: proceed with direct approve (do not block pipeline)
+      // Gate threw unexpectedly — fail closed and keep the draft awaiting review.
       console.warn(
         `[ai-reviewer] evaluatePipelinePublishGate threw for draft ${draftId}: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}`
       );
-    }
-
-    // Gate skipped or threw — fall through to direct approveContentDraft
-    const approveResult = await approveContentDraft({
-      draftId,
-      reviewerId: null // AI reviewer — no user UUID; identity stored in audit log
-    });
-
-    if ("error" in approveResult) {
-      _lastReviewerErrors.set(draftId, `approve_failed: ${approveResult.error}`);
+      await writeAiReviewAuditLog({
+        workspaceId,
+        draftId,
+        action: "content_draft.ai_yellow_held",
+        result: {
+          verdict: "manual_review",
+          reason: `[pipeline-gate] exception: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}`,
+          flagged_issues: ["pipeline_gate_exception"],
+          confidence: result.confidence,
+        },
+      });
       return;
     }
-
-    await writeAiReviewAuditLog({
-      workspaceId,
-      draftId,
-      action: "content_draft.ai_approved",
-      result
-    });
-
-    console.info(`[ai-reviewer] Draft ${draftId} AUTO-APPROVED (Green tier, confidence=${result.confidence})`);
-    return;
   }
 
   if (result.verdict === "reject") {
@@ -527,6 +637,11 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
       draftId,
       action: "content_draft.ai_rejected",
       result
+    });
+    await syncSourceJobReviewStatus({
+      sourceJobId: draftRow.sourceJobId,
+      status: "rejected",
+      note: result.reason,
     });
 
     console.info(`[ai-reviewer] Draft ${draftId} AUTO-REJECTED: ${result.reason}`);

@@ -8144,6 +8144,7 @@ test("api-gap Item 3b: ActivityEvent slug generation from path", () => {
 
 import {
   _getLastReviewerError,
+  classifyDirectiveRejectRecovery,
   fireAiReviewerForDraft,
   resolveDraftReviewDate,
   type AiReviewResult
@@ -8226,6 +8227,46 @@ test("ai-reviewer: parses reject verdict for buy/sell keyword violation", () => 
   assert.equal(result!.verdict, "reject");
   assert.ok(result!.flagged_issues.length > 0, "should have flagged issues");
   assert.ok(result!.flagged_issues[0]!.includes("Rule 1"), "should name the rule");
+});
+
+test("ai-reviewer: retries directive-only false positives when deterministic policy is green", () => {
+  const result: AiReviewResult = {
+    verdict: "reject",
+    reason: "Contains directive trading advice that commands the reader to trade.",
+    flagged_issues: ["Rule 1"],
+    confidence: 0.91,
+  };
+  const payload = {
+    date: "2026-06-22",
+    sections: [
+      {
+        heading: "市場總覽",
+        body: "盤中關鍵條件在於指數能否維持承接，並觀察前強族群是否延續量能。",
+      },
+    ],
+  };
+  assert.equal(classifyDirectiveRejectRecovery(payload, result), "retry_green");
+});
+
+test("ai-reviewer: never overrides a real directive or another hard-reject rule", () => {
+  const directive: AiReviewResult = {
+    verdict: "reject",
+    reason: "Contains directive trading advice that commands the reader to trade.",
+    flagged_issues: ["Rule 1"],
+    confidence: 0.99,
+  };
+  assert.equal(classifyDirectiveRejectRecovery({
+    sections: [{ body: "建議現在買進台積電並立即加碼。" }],
+  }, directive), "none");
+
+  assert.equal(classifyDirectiveRejectRecovery({
+    sections: [{ body: "市場維持震盪。" }],
+  }, {
+    verdict: "reject",
+    reason: "Contains a specific target price.",
+    flagged_issues: ["Rule 2"],
+    confidence: 0.99,
+  }), "none");
 });
 
 test("ai-reviewer: rejects when fallback_template=true (rule 5)", () => {
