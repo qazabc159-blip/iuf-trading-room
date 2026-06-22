@@ -33,6 +33,7 @@ import {
   getDb,
   isDatabaseMode,
   openAliceDevices,
+  openAliceJobs,
   workspaces
 } from "@iuf-trading-room/db";
 
@@ -262,6 +263,67 @@ export function registerJobSourcePack(jobId: string, pack: SourcePack): void {
 export function loadSourcePackForDraft(draftSourceJobId: string | null | undefined): SourcePack | null {
   if (!draftSourceJobId) return null;
   return _jobSourcePackMap.get(draftSourceJobId) ?? null;
+}
+
+export function parseSourcePackFromJobParameters(parameters: unknown): SourcePack | null {
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return null;
+  const sourcePack = (parameters as Record<string, unknown>)["sourcePack"];
+  if (!sourcePack || typeof sourcePack !== "object" || Array.isArray(sourcePack)) return null;
+  const pack = sourcePack as Record<string, unknown>;
+  const validTicks: SourcePack["tick"][] = ["pre_market", "close_watch", "close_brief"];
+  if (
+    typeof pack["packId"] !== "string" ||
+    !validTicks.includes(pack["tick"] as SourcePack["tick"]) ||
+    typeof pack["tradingDate"] !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(pack["tradingDate"]) ||
+    !Array.isArray(pack["sources"]) ||
+    typeof pack["trailComplete"] !== "boolean"
+  ) {
+    return null;
+  }
+
+  const sources = (pack["sources"] as unknown[]).filter((entry): entry is SourcePackEntry => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const row = entry as Record<string, unknown>;
+    return typeof row["source"] === "string" && typeof row["status"] === "string";
+  });
+  if (sources.length !== (pack["sources"] as unknown[]).length) return null;
+
+  return {
+    packId: pack["packId"],
+    tick: pack["tick"] as SourcePack["tick"],
+    collectedAt: typeof pack["collectedAt"] === "string" ? pack["collectedAt"] : new Date().toISOString(),
+    tradingDate: pack["tradingDate"],
+    sources,
+    trailComplete: pack["trailComplete"],
+  };
+}
+
+/**
+ * Recover a source pack after an API restart. Enqueued OpenAlice jobs already
+ * persist the complete pack in parameters.sourcePack, so factual review should
+ * not depend on an in-memory registry surviving until the device submits.
+ */
+export async function loadSourcePackForDraftPersisted(
+  draftSourceJobId: string | null | undefined
+): Promise<SourcePack | null> {
+  const cached = loadSourcePackForDraft(draftSourceJobId);
+  if (cached || !draftSourceJobId || !isDatabaseMode()) return cached;
+  const db = getDb();
+  if (!db) return null;
+
+  try {
+    const [job] = await db
+      .select({ parameters: openAliceJobs.parameters })
+      .from(openAliceJobs)
+      .where(eq(openAliceJobs.id, draftSourceJobId))
+      .limit(1);
+    const recovered = parseSourcePackFromJobParameters(job?.parameters);
+    if (recovered) registerJobSourcePack(draftSourceJobId, recovered);
+    return recovered;
+  } catch {
+    return null;
+  }
 }
 
 // ── Taipei time helpers ───────────────────────────────────────────────────────
@@ -2048,6 +2110,17 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
   return "green";
 }
 
+export function hasHighImpactNumericClaims(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const sections = (payload as Record<string, unknown>)["sections"];
+  if (!Array.isArray(sections)) return false;
+  return sections.some((section) => {
+    if (!section || typeof section !== "object" || Array.isArray(section)) return false;
+    const body = (section as Record<string, unknown>)["body"];
+    return typeof body === "string" && /\d(?:[\d,.]*)(?:%|點|張|股|元|億|萬|日|月|年)?/.test(body);
+  });
+}
+
 /**
  * Apply publisher gate after AI reviewer verdict.
  * Returns an action to take on the draft.
@@ -2721,8 +2794,16 @@ export async function evaluatePipelinePublishGate(
   // FACTUAL_FALSE  → force reject + audit_log type=content_draft.factual_reject
   // FACTUAL_DRIFT  → manual_review queue (same threshold as adversarial score>=7)
   // FACTUAL_OK     → pass through to auto-publish
-  // null (skipped or error) → safe-default: pass through (never block on null)
+  // null (skipped or error) → hold numeric briefs for review; do not silently publish
   const factualApiKey = process.env["OPENAI_API_KEY"];
+  const requiresFactualReview = hasHighImpactNumericClaims(draft.payload);
+  if (requiresFactualReview && !sourcePack) {
+    return {
+      action: "queued_for_review",
+      briefId: null,
+      reason: "factual_source_pack_unavailable"
+    };
+  }
   if (factualApiKey) {
     const draftContentForFactual =
       draft.payload &&
@@ -2825,13 +2906,25 @@ export async function evaluatePipelinePublishGate(
           }
           // FACTUAL_OK → fall through to auto-publish
         }
-        // null (skipped / no real rows / API error) → safe-default: fall through
+        if (!factualResult && requiresFactualReview) {
+          return {
+            action: "queued_for_review",
+            briefId: null,
+            reason: "factual_review_unavailable_for_numeric_claims"
+          };
+        }
       } catch (factualErr) {
-        // Factual reviewer threw unexpectedly — safe-default: pass through (do not block publish)
+        // Factual reviewer threw unexpectedly — numeric claims must not auto-publish.
         console.warn(
           `[pipeline-gate] factual-reviewer threw: ${factualErr instanceof Error ? factualErr.message : String(factualErr)}`
         );
-        // Do NOT return here — let publish proceed
+        if (requiresFactualReview) {
+          return {
+            action: "queued_for_review",
+            briefId: null,
+            reason: `factual_review_exception: ${factualErr instanceof Error ? factualErr.message : String(factualErr)}`
+          };
+        }
       }
     }
   }

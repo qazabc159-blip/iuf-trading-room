@@ -21,12 +21,14 @@ import {
   DAILY_BRIEF_REQUIRED_SECTION_IDS,
   evaluatePublishGate,
   filterSourcePackEntries,
+  hasHighImpactNumericClaims,
   isDailyBriefV2ContractCompliant,
   isBriefBootRecoveryWindow,
   loadSourcePackForDraft,
   loadStrategySnapshot,
   lookupJobSourcePackSummary,
   parseDirectBriefPayload,
+  parseSourcePackFromJobParameters,
   registerJobSourcePack,
   registerJobSourcePackSummary,
   runBatchAiReviewer,
@@ -81,6 +83,21 @@ test("institutional market aggregate uses FinMind name/buy/sell rows", () => {
     dealer: -150,
     date: "2026-06-19",
   });
+});
+
+test("source pack can be recovered from persisted OpenAlice job parameters", () => {
+  const pack = makePack();
+  assert.deepEqual(parseSourcePackFromJobParameters({ sourcePack: pack }), pack);
+  assert.equal(parseSourcePackFromJobParameters({ sourcePack: { packId: "broken" } }), null);
+});
+
+test("numeric daily brief claims require factual review", () => {
+  assert.equal(hasHighImpactNumericClaims({
+    sections: [{ body: "TAIEX 收在 46,465.2 點，漲幅 1.28%。" }],
+  }), true);
+  assert.equal(hasHighImpactNumericClaims({
+    sections: [{ body: "市場情緒偏中性，等待更多來源確認。" }],
+  }), false);
 });
 
 test("daily brief contract accepts all required section ids", () => {

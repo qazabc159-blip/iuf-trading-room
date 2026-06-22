@@ -18,6 +18,7 @@ import {
   recordReviewerVerdict,
   lookupJobSourcePackSummary,
   loadSourcePackForDraft,
+  loadSourcePackForDraftPersisted,
   evaluatePipelinePublishGate
 } from "./openalice-pipeline.js";
 import { runAdversarialReview, type AdversarialReviewResult } from "./openalice-adversarial-reviewer.js";
@@ -416,7 +417,9 @@ export async function fireAiReviewerForDraft(draftId: string): Promise<void> {
     // It does NOT re-read the AI audit log we just wrote — the timing is fine because we call
     // evaluatePipelinePublishGate BEFORE approveContentDraft, which is correct order.
     const sourceJobId = draftRow.sourceJobId ?? null;
-    const sourcePack = loadSourcePackForDraft(sourceJobId) ?? loadSourcePackForDraft(draftId);
+    const sourcePack =
+      await loadSourcePackForDraftPersisted(sourceJobId) ??
+      loadSourcePackForDraft(draftId);
     try {
       const gateResult = await evaluatePipelinePublishGate(draftId, sourcePack, result);
 
