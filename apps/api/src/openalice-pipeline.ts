@@ -3261,6 +3261,31 @@ export async function runPipelineMissedDayCatchUp(workspaceSlug: string): Promis
 
     const existingDates = new Set(existingBriefRows.map((r) => r.date));
 
+    // A held or rejected historical draft is still a completed automatic
+    // catch-up attempt. Without this check every API restart retries the same
+    // dates, creating duplicate review noise for workspaces whose source trail
+    // cannot satisfy the historical publish gate. Owner force-backfill remains
+    // the explicit retry path and deletes these drafts before regenerating.
+    const recentCandidateDates = Array.from({ length: 5 }, (_, index) => {
+      const candidate = new Date(now);
+      candidate.setDate(candidate.getDate() - (index + 1));
+      return getTaipeiDate(candidate);
+    });
+    const existingDraftRows = await db
+      .select({ date: contentDrafts.targetEntityId })
+      .from(contentDrafts)
+      .where(
+        and(
+          eq(contentDrafts.workspaceId, workspace.id),
+          eq(contentDrafts.targetTable, "daily_briefs"),
+          inArray(contentDrafts.targetEntityId, recentCandidateDates)
+        )
+      )
+      .catch(() => [] as { date: string | null }[]);
+    for (const row of existingDraftRows) {
+      if (row.date) existingDates.add(row.date);
+    }
+
     // Collect all prior trading days in the last 7 calendar days (oldest first)
     const missedTradingDays: string[] = [];
     for (let i = 5; i >= 1; i--) {
