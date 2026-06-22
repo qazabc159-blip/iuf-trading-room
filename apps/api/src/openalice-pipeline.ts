@@ -2127,12 +2127,25 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
     }
   }
 
-  // Yellow tier (advisory — may contain strategy/ranking)
+  // Market breadth can legitimately describe heatmap, sector, volume, gain, or
+  // loss rankings. Those are observations, not a ranked list of trade ideas.
+  const yellowPolicyText = text.replace(
+    /(?:熱力|漲幅|跌幅|成交量|族群|產業)(?:圖)?排名/g,
+    "market_observation_order"
+  );
+
+  // Yellow tier (advisory — may contain strategy/recommendation ranking)
   const yellowPatterns = [
-    /ranking/, /rank \d/, /strategy/, /策略/, /排名/, /metrics/
+    /ranking/,
+    /rank \d/,
+    /strategy/,
+    /策略/,
+    /(?:推薦|選股|標的|個股).{0,12}排名/,
+    /排名.{0,12}(?:推薦|選股|標的|個股|策略)/,
+    /metrics/
   ];
   for (const p of yellowPatterns) {
-    if (p.test(text)) {
+    if (p.test(yellowPolicyText)) {
       return "yellow";
     }
   }

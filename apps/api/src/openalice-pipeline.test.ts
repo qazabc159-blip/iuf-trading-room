@@ -555,6 +555,28 @@ test("classifyDraftTier still holds advisory keywords in reader-facing brief con
   assert.equal(tier, "yellow");
 });
 
+test("classifyDraftTier keeps market heatmap ranking observations green", () => {
+  const tier = classifyDraftTier({
+    date: "2026-06-22",
+    sections: [{
+      heading: "市場總覽",
+      body: "光學零組件與網路零售持續在熱力排名中占優，族群排名僅用來描述市場廣度。"
+    }]
+  });
+  assert.equal(tier, "green");
+});
+
+test("classifyDraftTier still holds ranked stock recommendations", () => {
+  const tier = classifyDraftTier({
+    date: "2026-06-22",
+    sections: [{
+      heading: "選股",
+      body: "今日推薦標的排名依序如下。"
+    }]
+  });
+  assert.equal(tier, "yellow");
+});
+
 test("classifyDraftTier keeps institutional buy/sell source labels green", () => {
   const tier = classifyDraftTier({
     date: "2026-05-06",
