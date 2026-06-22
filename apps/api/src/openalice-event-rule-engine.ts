@@ -88,6 +88,37 @@ export type EventRule = {
   trigger: (state: EngineStateSnapshot) => Promise<Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[]>;
 };
 
+type V3RecommendationDelivery = {
+  status?: string | null;
+  generatedAt?: string | null;
+  items?: unknown[] | null;
+};
+
+function isActionableV3RecommendationItem(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const ticker = typeof item["ticker"] === "string" ? item["ticker"].trim() : "";
+  const action = typeof item["action"] === "string" ? item["action"] : "";
+  const bucket = typeof item["bucket"] === "string" ? item["bucket"].toUpperCase() : "";
+  if (!ticker || bucket === "C") return false;
+  return !/(高風險排除|資料不足|暫不推薦|不推薦)/.test(action);
+}
+
+/**
+ * A same-day degraded run is still a delivered recommendation product when it
+ * contains usable cards. R11 is reserved for true zero-delivery failures.
+ */
+export function hasUsableV3RecommendationDelivery(
+  latest: V3RecommendationDelivery | null | undefined,
+  todayTaipeiDate: string
+): boolean {
+  if (!latest?.generatedAt) return false;
+  const latestDate = taipeiDateStr(new Date(latest.generatedAt).getTime());
+  if (latestDate !== todayTaipeiDate) return false;
+  if (latest.status === "complete") return true;
+  return Array.isArray(latest.items) && latest.items.some(isActionableV3RecommendationItem);
+}
+
 export function shouldEmitDailySmokeFailure(
   last: { firedAt: string; overallStatus: string } | null | undefined,
   nowMs = Date.now(),
@@ -483,10 +514,10 @@ const RULES: EventRule[] = [
     }
   },
 
-  // ── Rule 11: AI 推薦每日 cron 當日 attempts 用盡仍無 success ──────────────
-  // Cron window 08:30-09:15 TST weekdays. After the window closes, if today's
-  // Taipei date has no "complete" v3 run, surface it (no per-day attempt
-  // counter dependency — uses durable run rows so it survives restarts).
+  // ── Rule 11: AI 推薦每日 cron 結束仍無可用輸出 ─────────────────────────────
+  // Cron window 08:30-09:15 TST weekdays. After the window closes, alert only
+  // when today's durable run rows contain no usable recommendation delivery.
+  // A degraded/insufficient_tools run with valid cards is not "尚未產出".
   {
     id: "R11_V3_REC_CRON_EXHAUSTED",
     name: "AI 推薦今日尚無成功結果",
@@ -508,9 +539,7 @@ const RULES: EventRule[] = [
 
         const todayDate = taipeiDateOf(now);
         const latest = await getLatestAiRecommendationV3RunForRead();
-        const latestTaipeiDate = latest ? taipeiDateOf(new Date(latest.generatedAt).getTime()) : null;
-        const hasSuccessToday = latest?.status === "complete" && latestTaipeiDate === todayDate;
-        if (hasSuccessToday) return [];
+        if (hasUsableV3RecommendationDelivery(latest, todayDate)) return [];
 
         return [{
           ruleId: "R11_V3_REC_CRON_EXHAUSTED",
@@ -520,7 +549,8 @@ const RULES: EventRule[] = [
           payload: {
             date: todayDate,
             latestStatus: latest?.status ?? null,
-            latestGeneratedAt: latest?.generatedAt ?? null
+            latestGeneratedAt: latest?.generatedAt ?? null,
+            latestItemCount: latest?.items?.length ?? 0
           }
         }];
       } catch {

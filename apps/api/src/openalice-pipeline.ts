@@ -33,6 +33,7 @@ import {
   getDb,
   isDatabaseMode,
   openAliceDevices,
+  openAliceJobs,
   workspaces
 } from "@iuf-trading-room/db";
 
@@ -264,6 +265,67 @@ export function loadSourcePackForDraft(draftSourceJobId: string | null | undefin
   return _jobSourcePackMap.get(draftSourceJobId) ?? null;
 }
 
+export function parseSourcePackFromJobParameters(parameters: unknown): SourcePack | null {
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return null;
+  const sourcePack = (parameters as Record<string, unknown>)["sourcePack"];
+  if (!sourcePack || typeof sourcePack !== "object" || Array.isArray(sourcePack)) return null;
+  const pack = sourcePack as Record<string, unknown>;
+  const validTicks: SourcePack["tick"][] = ["pre_market", "close_watch", "close_brief"];
+  if (
+    typeof pack["packId"] !== "string" ||
+    !validTicks.includes(pack["tick"] as SourcePack["tick"]) ||
+    typeof pack["tradingDate"] !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(pack["tradingDate"]) ||
+    !Array.isArray(pack["sources"]) ||
+    typeof pack["trailComplete"] !== "boolean"
+  ) {
+    return null;
+  }
+
+  const sources = (pack["sources"] as unknown[]).filter((entry): entry is SourcePackEntry => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const row = entry as Record<string, unknown>;
+    return typeof row["source"] === "string" && typeof row["status"] === "string";
+  });
+  if (sources.length !== (pack["sources"] as unknown[]).length) return null;
+
+  return {
+    packId: pack["packId"],
+    tick: pack["tick"] as SourcePack["tick"],
+    collectedAt: typeof pack["collectedAt"] === "string" ? pack["collectedAt"] : new Date().toISOString(),
+    tradingDate: pack["tradingDate"],
+    sources,
+    trailComplete: pack["trailComplete"],
+  };
+}
+
+/**
+ * Recover a source pack after an API restart. Enqueued OpenAlice jobs already
+ * persist the complete pack in parameters.sourcePack, so factual review should
+ * not depend on an in-memory registry surviving until the device submits.
+ */
+export async function loadSourcePackForDraftPersisted(
+  draftSourceJobId: string | null | undefined
+): Promise<SourcePack | null> {
+  const cached = loadSourcePackForDraft(draftSourceJobId);
+  if (cached || !draftSourceJobId || !isDatabaseMode()) return cached;
+  const db = getDb();
+  if (!db) return null;
+
+  try {
+    const [job] = await db
+      .select({ parameters: openAliceJobs.parameters })
+      .from(openAliceJobs)
+      .where(eq(openAliceJobs.id, draftSourceJobId))
+      .limit(1);
+    const recovered = parseSourcePackFromJobParameters(job?.parameters);
+    if (recovered) registerJobSourcePack(draftSourceJobId, recovered);
+    return recovered;
+  } catch {
+    return null;
+  }
+}
+
 // ── Taipei time helpers ───────────────────────────────────────────────────────
 
 function getTaipeiDate(now: Date = new Date()): string {
@@ -364,6 +426,39 @@ export type LiveMarketSnapshot = {
     date: string | null;
   };
 };
+
+export type InstitutionalFlowRow = {
+  date?: unknown;
+  name?: unknown;
+  buy?: unknown;
+  sell?: unknown;
+};
+
+export function aggregateInstitutionalFlowRows(rows: InstitutionalFlowRow[]): LiveMarketSnapshot["institutional"] {
+  let foreign: number | null = null;
+  let trust: number | null = null;
+  let dealer: number | null = null;
+  let date: string | null = null;
+
+  for (const row of rows) {
+    if (!date && typeof row.date === "string") date = row.date;
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    const buy = Number(row.buy);
+    const sell = Number(row.sell);
+    if (!name || !Number.isFinite(buy) || !Number.isFinite(sell)) continue;
+    const net = buy - sell;
+
+    if (/外.*資|foreign/i.test(name)) {
+      foreign = (foreign ?? 0) + net;
+    } else if (/投信|investment.?trust/i.test(name)) {
+      trust = (trust ?? 0) + net;
+    } else if (/自營商|dealer/i.test(name)) {
+      dealer = (dealer ?? 0) + net;
+    }
+  }
+
+  return { foreign, trust, dealer, date };
+}
 
 function hasConsistentTaiexSnapshot(taiex: LiveMarketSnapshot["taiex"]): boolean {
   return taiex.value !== null
@@ -498,26 +593,22 @@ async function collectLiveMarketSnapshot(
     if (db) {
       const instRows = await db.execute(
         drizzleSql.raw(
-          `SELECT date,
-            SUM(CASE WHEN investor_type='Foreign_Investor' THEN net_buy_sell ELSE 0 END) AS foreign_net,
-            SUM(CASE WHEN investor_type='Investment_Trust' THEN net_buy_sell ELSE 0 END) AS trust_net,
-            SUM(CASE WHEN investor_type='Dealer' THEN net_buy_sell ELSE 0 END) AS dealer_net
+          `SELECT date, name, buy, sell
            FROM tw_institutional_buysell
            WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
            ${dateCapSql}
-           GROUP BY date ORDER BY date DESC LIMIT 1`
+           AND date = (
+             SELECT MAX(date)
+             FROM tw_institutional_buysell
+             WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+             ${dateCapSql}
+           )
+           ORDER BY name, stock_id`
         )
       );
-      const ir = ((instRows as { rows?: Record<string, unknown>[] }).rows
-        ?? (Array.isArray(instRows) ? (instRows as Record<string, unknown>[]) : []))[0];
-      if (ir) {
-        snapshot.institutional = {
-          foreign: ir["foreign_net"] != null ? Number(ir["foreign_net"]) : null,
-          trust: ir["trust_net"] != null ? Number(ir["trust_net"]) : null,
-          dealer: ir["dealer_net"] != null ? Number(ir["dealer_net"]) : null,
-          date: typeof ir["date"] === "string" ? ir["date"] : null,
-        };
-      }
+      const rows = ((instRows as { rows?: InstitutionalFlowRow[] }).rows
+        ?? (Array.isArray(instRows) ? (instRows as InstitutionalFlowRow[]) : []));
+      snapshot.institutional = aggregateInstitutionalFlowRows(rows);
     }
   } catch {
     // non-fatal — table may not exist
@@ -880,18 +971,31 @@ export function filterSourcePackEntries(sources: SourcePackEntry[]): SourcePackE
   });
 }
 
+const TABLE_SOURCE_DATE_COLUMNS = {
+  tw_monthly_revenue: "revenue_date",
+  tw_institutional_buysell: "date",
+  tw_margin_short: "date",
+} as const;
+
+type TableSourceName = keyof typeof TABLE_SOURCE_DATE_COLUMNS;
+
+export function tableSourceDateColumn(tableName: TableSourceName): string {
+  return TABLE_SOURCE_DATE_COLUMNS[tableName];
+}
+
 async function collectTableSource(
   db: NonNullable<ReturnType<typeof getDb>>,
   sources: SourcePackEntry[],
-  tableName: string,
+  tableName: TableSourceName,
   workspaceId: string,
   staleThreshold: Date,
   staleThresholdDays: number
 ) {
   try {
+    const dateColumn = tableSourceDateColumn(tableName);
     // Raw SQL to avoid requiring schema table references for DRAFT tables
     const rows = await db.execute(
-      drizzleSql.raw(`SELECT COUNT(*) AS cnt, MAX(date) AS latest FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') LIMIT 1`)
+      drizzleSql.raw(`SELECT COUNT(*) AS cnt, MAX(${dateColumn}) AS latest FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') LIMIT 1`)
     );
     const _rowArr = (rows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows
       ?? (Array.isArray(rows) ? (rows as Array<{ cnt?: string | number; latest?: string }>) : []);
@@ -911,7 +1015,7 @@ async function collectTableSource(
     if (count > 0) {
       try {
         const sampleRes = await db.execute(
-          drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY date DESC LIMIT 3`)
+          drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY ${dateColumn} DESC LIMIT 3`)
         );
         sampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows
           ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []));
@@ -2006,6 +2110,17 @@ export function classifyDraftTier(payload: unknown): PublishGateTier {
   return "green";
 }
 
+export function hasHighImpactNumericClaims(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const sections = (payload as Record<string, unknown>)["sections"];
+  if (!Array.isArray(sections)) return false;
+  return sections.some((section) => {
+    if (!section || typeof section !== "object" || Array.isArray(section)) return false;
+    const body = (section as Record<string, unknown>)["body"];
+    return typeof body === "string" && /\d(?:[\d,.]*)(?:%|點|張|股|元|億|萬|日|月|年)?/.test(body);
+  });
+}
+
 /**
  * Apply publisher gate after AI reviewer verdict.
  * Returns an action to take on the draft.
@@ -2679,8 +2794,16 @@ export async function evaluatePipelinePublishGate(
   // FACTUAL_FALSE  → force reject + audit_log type=content_draft.factual_reject
   // FACTUAL_DRIFT  → manual_review queue (same threshold as adversarial score>=7)
   // FACTUAL_OK     → pass through to auto-publish
-  // null (skipped or error) → safe-default: pass through (never block on null)
+  // null (skipped or error) → hold numeric briefs for review; do not silently publish
   const factualApiKey = process.env["OPENAI_API_KEY"];
+  const requiresFactualReview = hasHighImpactNumericClaims(draft.payload);
+  if (requiresFactualReview && !sourcePack) {
+    return {
+      action: "queued_for_review",
+      briefId: null,
+      reason: "factual_source_pack_unavailable"
+    };
+  }
   if (factualApiKey) {
     const draftContentForFactual =
       draft.payload &&
@@ -2783,13 +2906,25 @@ export async function evaluatePipelinePublishGate(
           }
           // FACTUAL_OK → fall through to auto-publish
         }
-        // null (skipped / no real rows / API error) → safe-default: fall through
+        if (!factualResult && requiresFactualReview) {
+          return {
+            action: "queued_for_review",
+            briefId: null,
+            reason: "factual_review_unavailable_for_numeric_claims"
+          };
+        }
       } catch (factualErr) {
-        // Factual reviewer threw unexpectedly — safe-default: pass through (do not block publish)
+        // Factual reviewer threw unexpectedly — numeric claims must not auto-publish.
         console.warn(
           `[pipeline-gate] factual-reviewer threw: ${factualErr instanceof Error ? factualErr.message : String(factualErr)}`
         );
-        // Do NOT return here — let publish proceed
+        if (requiresFactualReview) {
+          return {
+            action: "queued_for_review",
+            briefId: null,
+            reason: `factual_review_exception: ${factualErr instanceof Error ? factualErr.message : String(factualErr)}`
+          };
+        }
       }
     }
   }
