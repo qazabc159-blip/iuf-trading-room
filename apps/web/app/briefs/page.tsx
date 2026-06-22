@@ -17,11 +17,16 @@ import {
   type OpenAliceObservability,
 } from "@/lib/api";
 import { contentDraftSections, contentDraftTitle } from "@/lib/content-draft-view";
+import {
+  contentDraftStatusBadge,
+  contentDraftStatusLabel,
+} from "@/lib/content-draft-view";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { briefAgeCopy, briefAgeDays, type BriefFreshness } from "@/lib/freshness";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 import { evaluateBriefQuality } from "./briefQuality";
+import { latestTodayDraftOutcome } from "./brief-surface";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +39,7 @@ type DailyBriefSurface =
   | { state: "PUBLISHED"; today: string; brief: DailyBrief; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "TEMPLATE_BLOCKED"; today: string; brief: DailyBrief; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "AWAITING_REVIEW"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
+  | { state: "REJECTED"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "MISSING"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[] }
   | { state: "BLOCKED"; today: string; latest: DailyBrief | null; drafts: ContentDraftEntry[]; reason: string };
 
@@ -108,7 +114,9 @@ function buildSurface(params: {
 }): DailyBriefSurface {
   const latest = params.briefs[0] ?? null;
   const todayBrief = params.briefs.find((brief) => brief.date.slice(0, 10) === params.today && brief.status === "published") ?? null;
-  const todayDrafts = params.drafts.filter((draft) => isTodayDailyBriefDraft(draft, params.today));
+  const todayDrafts = params.drafts
+    .filter((draft) => isTodayDailyBriefDraft(draft, params.today))
+    .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)));
 
   if (params.error) return { state: "BLOCKED", today: params.today, latest, drafts: todayDrafts, reason: params.error };
   if (todayBrief) {
@@ -116,7 +124,22 @@ function buildSurface(params: {
     if (!quality.displayable) return { state: "TEMPLATE_BLOCKED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
     return { state: "PUBLISHED", today: params.today, brief: todayBrief, latest, drafts: todayDrafts };
   }
-  if (todayDrafts.length > 0) return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
+  const draftOutcome = latestTodayDraftOutcome(todayDrafts);
+  if (draftOutcome === "awaiting_review") {
+    return { state: "AWAITING_REVIEW", today: params.today, latest, drafts: todayDrafts };
+  }
+  if (draftOutcome === "rejected") {
+    return { state: "REJECTED", today: params.today, latest, drafts: todayDrafts };
+  }
+  if (draftOutcome === "approved_unpublished") {
+    return {
+      state: "BLOCKED",
+      today: params.today,
+      latest,
+      drafts: todayDrafts,
+      reason: "今日草稿已核准，但正式簡報尚未完成回寫；請檢查發布工作與資料庫狀態。",
+    };
+  }
   return { state: "MISSING", today: params.today, latest, drafts: todayDrafts };
 }
 
@@ -124,6 +147,7 @@ function surfaceLabel(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "已發布";
   if (state === "TEMPLATE_BLOCKED") return "模板未通過";
   if (state === "AWAITING_REVIEW") return "待審核";
+  if (state === "REJECTED") return "審核退回";
   if (state === "MISSING") return "未產生";
   return "需處理";
 }
@@ -131,14 +155,14 @@ function surfaceLabel(state: DailyBriefSurface["state"]) {
 function surfaceTone(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "status-ok";
   if (state === "TEMPLATE_BLOCKED") return "gold";
-  if (state === "BLOCKED") return "status-bad";
+  if (state === "BLOCKED" || state === "REJECTED") return "status-bad";
   return "gold";
 }
 
 function surfaceBadge(state: DailyBriefSurface["state"]) {
   if (state === "PUBLISHED") return "badge-green";
   if (state === "TEMPLATE_BLOCKED") return "badge-yellow";
-  if (state === "BLOCKED") return "badge-red";
+  if (state === "BLOCKED" || state === "REJECTED") return "badge-red";
   return "badge-yellow";
 }
 
@@ -295,13 +319,13 @@ async function loadDrafts(): Promise<LoadState<ContentDraftEntry[]>> {
   const updatedAt = nowIso();
   const today = todayTaipeiDate();
   try {
-    const response = await getContentDrafts({ status: "awaiting_review", limit: 100 });
+    const response = await getContentDrafts({ limit: 100 });
     const drafts = (response.data ?? [])
       .filter((draft) => isTodayDailyBriefDraft(draft, today))
       .sort((a, b) => Date.parse(draftTime(b)) - Date.parse(draftTime(a)))
       .slice(0, 20);
     if (drafts.length === 0) {
-      return { state: "EMPTY", data: [], updatedAt, source: "今日每日簡報草稿", reason: "今天沒有等待審核的每日簡報草稿。舊草稿保留在內容審核後台，不影響今日正式簡報。" };
+      return { state: "EMPTY", data: [], updatedAt, source: "今日每日簡報草稿", reason: "今天尚未產生每日簡報草稿。" };
     }
     return { state: "LIVE", data: drafts, updatedAt, source: "今日每日簡報草稿" };
   } catch (error) {
@@ -445,6 +469,9 @@ function customerBriefNextStep(surface: DailyBriefSurface, freshness: BriefFresh
   if (surface.state === "AWAITING_REVIEW") {
     return "今日簡報正在審核中；完成前只顯示等待狀態，不把草稿當作正式內容。";
   }
+  if (surface.state === "REJECTED") {
+    return "今日草稿已遭審核退回；系統應自動重試或清楚揭露退回原因，不把它誤報成尚未產生。";
+  }
   if (surface.state === "BLOCKED") {
     return "今日簡報資料通道異常，請先看市場情報、AI 推薦與公司頁，不依賴這份簡報。";
   }
@@ -466,6 +493,8 @@ function CustomerBriefReadinessPanel({
       ? "待重產"
       : surface.state === "AWAITING_REVIEW"
         ? "審核中"
+        : surface.state === "REJECTED"
+          ? "已退回"
         : surface.state === "BLOCKED"
           ? "資料異常"
           : "等待產生";
@@ -514,6 +543,24 @@ function BriefStatePanel({ surface, ownerMode }: { surface: DailyBriefSurface; o
             </div>
           </>
         )}
+        {surface.state === "REJECTED" && (
+          <>
+            <p className="state-reason">
+              今日草稿已產生但遭審核退回；請查看最新退回原因，等待自動重試或修正後重新發布。
+            </p>
+            <div className="brief-today-drafts">
+              {surface.drafts.map((draft) => (
+                ownerMode ? (
+                  <Link href={`/admin/content-drafts/${draft.id}`} key={draft.id}>
+                    {contentDraftTitle(draft)} / {contentDraftStatusLabel(draft.status)}
+                  </Link>
+                ) : (
+                  <span key={draft.id}>{contentDraftTitle(draft)} / 已退回</span>
+                )
+              ))}
+            </div>
+          </>
+        )}
         {surface.state === "MISSING" && (
           <div className="brief-source-trail">
             <span>今日正式版尚未出現</span>
@@ -553,22 +600,26 @@ function JobsPanel({ jobs }: { jobs: LoadState<OpenAliceJobEntry[]> }) {
 
 function DraftQueuePanel({ drafts, ownerMode }: { drafts: LoadState<ContentDraftEntry[]>; ownerMode: boolean }) {
   return (
-    <Panel code="BRF-DRAFT" title="今日待審草稿" sub="今日每日簡報草稿與來源檢查" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆待審` : drafts.state === "EMPTY" ? "無資料" : "需處理"}>
+    <Panel code="BRF-DRAFT" title="今日草稿狀態" sub="今日每日簡報草稿、審核與退回結果" right={drafts.state === "LIVE" ? `${drafts.data.length} 筆` : drafts.state === "EMPTY" ? "無資料" : "需處理"}>
       <div className="brief-draft-gate">
         <SourceLine state={drafts} label="今日每日簡報草稿" />
         {drafts.state === "LIVE" && (
           <div className="brief-job-list">
             {drafts.data.map((draft) => (
               <div className="brief-job-row draft" key={draft.id}>
-                <span className="badge badge-yellow">待審</span>
+                <span className={`badge ${contentDraftStatusBadge(draft.status)}`}>{contentDraftStatusLabel(draft.status)}</span>
                 <strong>{contentDraftTitle(draft)}</strong>
                 <span>目標日期：{draftTargetDate(draft) ?? "--"}</span>
                 <span>更新：{formatDateTime(draftTime(draft))}</span>
-                {ownerMode ? (
+                {ownerMode && draft.status === "awaiting_review" ? (
                   <>
                     <Link href={`/admin/content-drafts/${draft.id}`}>打開審核</Link>
                     <ContentDraftOverrideActions draftId={draft.id} />
                   </>
+                ) : ownerMode ? (
+                  <Link href={`/admin/content-drafts/${draft.id}`}>
+                    {draft.status === "rejected" ? "查看退回原因" : "查看核准紀錄"}
+                  </Link>
                 ) : (
                   <span className="tg soft">等待 Owner 審核後發布</span>
                 )}
@@ -651,7 +702,7 @@ function DraftSourceTrailPanel({ drafts }: { drafts: ContentDraftEntry[] }) {
   return (
     <Panel code="BRF-SRC" title="來源檢查" sub="草稿段落與來源檢查" right={`${sections.length} 段`}>
       <div className="brief-source-trail">
-        <span>草稿狀態：待審</span>
+        <span>草稿狀態：{contentDraftStatusLabel(draft.status)}</span>
         <span>目標日期：{draftTargetDate(draft) ?? "--"}</span>
         <span>更新：{formatDateTime(draftTime(draft))}</span>
         <span>段落：{sections.length}</span>
@@ -735,9 +786,9 @@ export default async function BriefsPage() {
         {ownerMode && (
           <>
             <div className="parity-kpi-cell">
-              <span className="parity-kpi-label">今日待審草稿</span>
+              <span className="parity-kpi-label">今日草稿</span>
               <span className={`parity-kpi-value ${drafts.data.length ? "warn" : "dim"}`}>{formatCount(drafts.data.length)}</span>
-              <span className="parity-kpi-sub">今天等待審核</span>
+              <span className="parity-kpi-sub">產生 / 審核狀態</span>
             </div>
             <div className="parity-kpi-cell">
               <span className="parity-kpi-label">OpenAlice</span>
@@ -817,8 +868,8 @@ export default async function BriefsPage() {
         <div className="brief-source-card">
           <span>下一步</span>
           <strong>{ownerMode
-            ? (surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "TEMPLATE_BLOCKED" ? "重產新版簡報" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : "追每日簡報流程")
-            : (surface.state === "PUBLISHED" ? "閱讀今日正式簡報" : surface.state === "TEMPLATE_BLOCKED" ? "等待重產後再採用" : surface.state === "AWAITING_REVIEW" ? "等待正式發布" : "先查看市場情報與 AI 推薦")}
+            ? (surface.state === "PUBLISHED" ? "檢查正式來源紀錄" : surface.state === "TEMPLATE_BLOCKED" ? "重產新版簡報" : surface.state === "AWAITING_REVIEW" ? "審核今日草稿" : surface.state === "REJECTED" ? "查看退回原因並重試" : "追每日簡報流程")
+            : (surface.state === "PUBLISHED" ? "閱讀今日正式簡報" : surface.state === "TEMPLATE_BLOCKED" ? "等待重產後再採用" : surface.state === "AWAITING_REVIEW" ? "等待正式發布" : surface.state === "REJECTED" ? "等待修正後重新發布" : "先查看市場情報與 AI 推薦")}
           </strong>
           <p>{ownerMode
             ? "目標是每日自動產生、AI 審核、來源紀錄可查、正式發布後進入首頁與簡報頁；未閉環時要說清楚卡在哪一層。"
