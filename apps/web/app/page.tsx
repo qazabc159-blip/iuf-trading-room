@@ -2,15 +2,18 @@ import Link from "next/link";
 import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
+  ArrowRight,
   BarChart3,
   Building2,
   LineChart,
   Newspaper,
+  ShieldCheck,
   Sparkles,
   Target,
   type LucideIcon,
 } from "lucide-react";
 
+import { RecommendationHandoffLink } from "./ai-recommendations/RecommendationHandoffLink";
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
 import {
@@ -50,6 +53,10 @@ import {
   type TwseIndustryHeatmapTile,
   type TwseMarketOverview,
 } from "@/lib/api";
+import {
+  buildRecommendationPrefillHref,
+  handoffLabelForDirection,
+} from "@/lib/ai-recommendation-handoff";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
@@ -2464,20 +2471,44 @@ function recommendationPlanSummary(item: RecommendationListResponse["items"][num
   ].filter(Boolean).join(" · ") || "交易計畫待回補";
 }
 
-function recommendationTradeHref(item: RecommendationListResponse["items"][number]) {
-  const params = new URLSearchParams();
-  params.set("symbol", item.ticker);
-  params.set("prefill", "true");
-  params.set("from_rec", item.recommendationId);
-  params.set("side", item.direction === "偏空" ? "sell" : "buy");
-  if (item.entryZone?.primary) params.set("entry", item.entryZone.primary);
-  if (item.invalidation?.price) params.set("stop", String(item.invalidation.price));
-  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
-  if (tp1) params.set("tp", String(tp1));
-  return `/portfolio?${params.toString()}`;
+function recommendationPrimaryRisk(item: RecommendationListResponse["items"][number]) {
+  const risk = item.risks?.find((value) => value && value.trim().length > 0);
+  if (risk) {
+    const cleanedRisk = cleanNarrativeText(risk);
+    if (!cleanedRisk.startsWith("段落尚未完成中文整理")) return cleanedRisk;
+  }
+  if (item.invalidation?.price) {
+    return `價格跌破 ${formatPrice(item.invalidation.price)} 或失效條件觸發時，停止這次 SIM 驗證。`;
+  }
+  if (item.invalidation?.rule) {
+    const cleanedRule = cleanNarrativeText(item.invalidation.rule);
+    if (!cleanedRule.startsWith("段落尚未完成中文整理")) return cleanedRule;
+  }
+  return "風險條件尚未完整，先查看推薦詳情再進入模擬驗證。";
 }
 
-function AiRecommendationActionPanel({ recommendations }: { recommendations: LoadState<RecommendationListResponse> }) {
+function recommendationEvidenceSummary(item: RecommendationListResponse["items"][number]) {
+  const evidenceCount = Object.values(item.reasons ?? {}).reduce(
+    (total, reasons) => total + (Array.isArray(reasons) ? reasons.length : 0),
+    0,
+  );
+  const sourceCount = item.sourceTrail?.length ?? 0;
+  return `${evidenceCount} 項理由 · ${sourceCount} 筆來源`;
+}
+
+function AiRecommendationActionPanel({
+  market,
+  realtimeMarket,
+  brief,
+  recommendations,
+  paper,
+}: {
+  market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
+  brief: LoadState<DailyBriefDashboard>;
+  recommendations: LoadState<RecommendationListResponse>;
+  paper: LoadState<PaperHealthState | null>;
+}) {
   const rows = recommendations.state === "LIVE" && !recommendations.data._mock
     ? recommendations.data.items.slice(0, 5)
     : [];
@@ -2494,30 +2525,112 @@ function AiRecommendationActionPanel({ recommendations }: { recommendations: Loa
       ? "API 標記為 mock，首頁已拒絕顯示。"
       : "正式推薦清單目前為空；等待下一次 AI 推薦生成。"
     : recommendations.reason;
+  const marketReady = market.state === "LIVE" || realtimeMarket.state === "LIVE";
+  const briefReady = brief.data.state === "PUBLISHED";
+  const simReady = paper.data?.previewReady === true;
+  const path = [
+    {
+      id: "01",
+      state: marketReady && briefReady ? "LIVE" as DashboardState : marketReady ? "REVIEW" as DashboardState : stateFromLoad(market),
+      title: marketReady && briefReady ? "市場脈絡已就緒" : marketReady ? "盤勢已到，等待今日摘要" : "市場脈絡待補",
+      detail: briefReady ? "盤勢與今日 brief 均可用" : brief.data.reason ?? "保留最新可驗證資訊",
+    },
+    {
+      id: "02",
+      state: panelState,
+      title: rows.length > 0 ? `${rows.length} 檔正式候選已完成` : "AI 候選待生成",
+      detail: rows.length > 0 ? "逐檔檢查證據、風險與失效條件" : emptyReason,
+    },
+    {
+      id: "03",
+      state: simReady ? "LIVE" as DashboardState : stateFromLoad(paper),
+      title: simReady ? "SIM 驗證可用" : "SIM 驗證待就緒",
+      detail: "只帶入模擬草稿，不會建立券商委託",
+    },
+  ];
 
   return (
     <Panel
-      eyebrow="AI RECOMMENDATIONS"
-      title="今日 AI 推薦行動板"
-      sub="只顯示正式推薦 API 回傳；不以策略候選或假資料冒充推薦"
-      right={<StatusChip state={panelState} label={rows.length > 0 ? `${rows.length} 檔` : "待回補"} />}
+      eyebrow="TODAY DECISION PATH"
+      title="今日決策路徑"
+      sub="先確認市場脈絡，再讀證據與風險，最後才把候選帶入 SIM 驗證。"
+      className="tac-decision-panel"
+      right={(
+        <>
+          <Link href="/ai-recommendations" className="tac-decision-top-link">完整推薦</Link>
+          <Link href="/plans" className="tac-decision-top-link">交易計畫</Link>
+        </>
+      )}
     >
+      <ol className="tac-decision-path" aria-label="今日決策流程">
+        {path.map((step) => (
+          <li className={tacticalStatus(step.state)} key={step.id}>
+            <span>{step.id}</span>
+            <div>
+              <b>{step.title}</b>
+              <small>{step.detail}</small>
+            </div>
+            <StatusChip state={step.state} compact />
+          </li>
+        ))}
+      </ol>
       {rows.length > 0 ? (
         <>
-          <div className="tac-strategy-table tac-ai-recs-table" data-testid="homepage-ai-recommendations">
-            <div><span>代號</span><span>公司 / 主要理由</span><span>分類</span><span>計畫</span><span>動作</span></div>
-            {rows.map((item) => (
-              <Link href={recommendationTradeHref(item)} key={item.recommendationId}>
-                <b>{item.ticker}</b>
-                <span><strong>{item.companyName}</strong><small>{recommendationPrimaryReason(item)}</small></span>
-                <small>{item.action}<br />信心 {Math.round(item.confidence * 100)}%</small>
-                <small>{recommendationPlanSummary(item)}</small>
-                <StatusChip state={recommendationActionState(item.action)} label="進交易室" compact />
-              </Link>
-            ))}
+          <div className="tac-decision-list" data-testid="homepage-ai-recommendations">
+            <div className="tac-decision-list-head" aria-hidden="true">
+              <span>候選</span>
+              <span>主要證據</span>
+              <span>首要風險</span>
+              <span>SIM 計畫</span>
+              <span>下一步</span>
+            </div>
+            {rows.map((item, index) => {
+              const handoffHref = buildRecommendationPrefillHref(item);
+              return (
+                <article className="tac-decision-row" key={item.recommendationId}>
+                  <div className="tac-decision-identity">
+                    <span>#{String(index + 1).padStart(2, "0")}</span>
+                    <b>{item.ticker}</b>
+                    <small>{item.companyName}</small>
+                    <StatusChip state={recommendationActionState(item.action)} label={`${Math.round(item.confidence * 100)}%`} compact />
+                  </div>
+                  <div className="tac-decision-evidence">
+                    <strong>{recommendationPrimaryReason(item)}</strong>
+                    <small>{recommendationEvidenceSummary(item)}</small>
+                  </div>
+                  <div className="tac-decision-risk">
+                    <strong>失效前先看</strong>
+                    <small>{recommendationPrimaryRisk(item)}</small>
+                  </div>
+                  <div className="tac-decision-plan">
+                    <strong>{item.action}</strong>
+                    <small>{recommendationPlanSummary(item)}</small>
+                  </div>
+                  <div className="tac-decision-actions">
+                    <Link href={`/ai-recommendations/${encodeURIComponent(item.recommendationId)}`}>
+                      查看詳情
+                    </Link>
+                    {handoffHref ? (
+                      <RecommendationHandoffLink
+                        href={handoffHref}
+                        recommendationId={item.recommendationId}
+                        directionLabel={handoffLabelForDirection(item.direction)}
+                      >
+                        <ShieldCheck size={15} aria-hidden="true" />
+                        帶入 SIM 草稿
+                        <ArrowRight size={15} aria-hidden="true" />
+                      </RecommendationHandoffLink>
+                    ) : (
+                      <span className="tac-decision-disabled">標的代號無法安全帶入</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
-          <div className="tac-brief-quality">
-            來源：GET /api/v1/recommendations/today · {sourceLine} · 點任一檔會帶入交易室紙上預覽。
+          <div className="tac-decision-foot">
+            <span>來源：GET /api/v1/recommendations/today · {sourceLine}</span>
+            <strong>SIM 交接只建立模擬驗證上下文，不送出真實委託。</strong>
           </div>
         </>
       ) : (
@@ -3060,12 +3173,20 @@ async function DashboardContent({
         <div className="tac-content">
           <TopCommandBar now={now} market={market} />
           <AgendaStrip market={market} intel={intel} brief={brief} now={now} />
+          <section className="tac-single-grid">
+            <AiRecommendationActionPanel
+              market={market}
+              realtimeMarket={realtimeMarket}
+              brief={brief}
+              recommendations={recommendations}
+              paper={paper}
+            />
+          </section>
           <section className="tac-hero-grid">
             <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
             <MarketMoversPanel market={market} />
           </section>
-          <section className="tac-two-grid tac-action-grid">
-            <AiRecommendationActionPanel recommendations={recommendations} />
+          <section className="tac-single-grid tac-action-grid">
             <StrategyPanel strategy={s1Strategy} />
           </section>
           <section className="tac-two-grid tac-fresh-heat">

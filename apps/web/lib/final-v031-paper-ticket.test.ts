@@ -70,6 +70,18 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).not.toContain("owner session");
   });
 
+  it("does not mislabel the fast paper shell as an expired Owner session while capital is loading", () => {
+    expect(liveHydration).toContain("async function refreshPaperCapitalGate()");
+    expect(liveHydration).toContain('soft(apiGetRaw("/api/v1/paper/portfolio"))');
+    expect(liveHydration).toContain("function syncPaperCapitalGate()");
+    expect(liveHydration).toContain('live.fastShell === true || portfolioState === "loading"');
+    expect(liveHydration).toContain("正在載入紙上帳本，完成後即可預覽");
+    expect(liveHydration).toContain("紙上帳本載入中");
+    expect(liveHydration).toContain('pendingAvail.textContent = "--"');
+    expect(liveHydration).toContain('pendingAfterAvail.textContent = "--"');
+    expect(liveHydration).toContain('refreshPaperCapitalGate();');
+  });
+
   it("does not fall back to selected quote for an invalid limit-price submit", () => {
     expect(liveHydration).toContain("const rawPx = Number");
     expect(liveHydration).toContain('const px = orderType === "market" ? selectedPx : rawPx');

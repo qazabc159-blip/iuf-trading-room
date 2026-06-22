@@ -1337,6 +1337,21 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     };
   }
 
+  async function refreshPaperCapitalGate() {
+    if (live.screen !== "paper-trading-room") return;
+    const portfolioResult = await soft(apiGetRaw("/api/v1/paper/portfolio"));
+    const envelope = portfolioResult.ok ? portfolioResult.data : null;
+    const baseCapitalTWD = portfolioResult.ok ? (envelope?.summary?.baseCapitalTWD ?? null) : null;
+    live = Object.assign({}, live, {
+      baseCapitalTWD,
+      dataStates: Object.assign({}, live.dataStates || {}, {
+        portfolio: portfolioResult.ok ? "live" : "blocked",
+      }),
+    });
+    window.__IUF_FINAL_V031_LIVE__ = live;
+    syncPaperCapitalGate();
+  }
+
   async function selectPaperSymbol(symbol) {
     const normalized = String(symbol || '').trim().toUpperCase();
     if (!/^[0-9A-Z._-]{2,16}$/.test(normalized)) return;
@@ -2434,6 +2449,57 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const cleanTargetLabel = $(".lv-label.target"); if (cleanTargetLabel && prefill.target) cleanTargetLabel.textContent = "目標 " + prefill.target;
   }
 
+  function syncPaperCapitalGate() {
+    const capitalTWD = live.baseCapitalTWD;
+    const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
+    const portfolioState = String(live.dataStates?.portfolio || "");
+    const capitalLoading = live.fastShell === true || portfolioState === "loading";
+    const lockReason = capitalLoading
+      ? "正在載入紙上帳本，完成後即可預覽"
+      : "需要 Owner 登入才能預覽 / 送出紙上單";
+    const summaryCapEl = $("#summary-capital");
+    if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : (capitalLoading ? "載入中" : "待授權");
+    const summaryAvailEl = $("#summary-avail");
+    if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
+    window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
+    if (capitalReady) {
+      delete window.__IUF_TICKET_LOCK_REASON__;
+    } else {
+      window.__IUF_TICKET_LOCK_REASON__ = lockReason;
+    }
+    const pAvail = $("#p-avail");
+    if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
+    try {
+      if (typeof window.updPreview === "function") window.updPreview();
+    } catch {
+      // Vendor preview is best-effort; backend preview still validates again on click.
+    }
+    if (!capitalReady) {
+      const pendingAvail = $("#p-avail");
+      if (pendingAvail) pendingAvail.textContent = "--";
+      const pendingAfterAvail = $("#p-after-avail");
+      if (pendingAfterAvail) pendingAfterAvail.textContent = "--";
+    }
+    const submit = $("#submit-btn");
+    const kgiSubmit = $("#submit-kgi-sim-btn");
+    if (submit && !capitalReady) {
+      submit.disabled = true;
+      const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
+      if (blockedLabel) blockedLabel.textContent = capitalLoading ? "紙上帳本載入中" : "需要 Owner 登入才能預覽 / 送出紙上單";
+      const gate = $(".gate .h .v");
+      if (gate) gate.textContent = capitalLoading ? "載入中" : "\u8cc7\u6599\u672a\u6388\u6b0a";
+    }
+    if (kgiSubmit && !capitalReady) {
+      kgiSubmit.disabled = true;
+      kgiSubmit.classList.add("is-blocked");
+      kgiSubmit.setAttribute("aria-disabled", "true");
+      kgiSubmit.dataset.blocked = capitalLoading ? "paper_capital_loading" : "owner_session_required";
+      const kgiBlockedLabel = $("#submit-kgi-sim-label") || kgiSubmit.querySelector("b");
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = capitalLoading ? "紙上帳本載入中" : "需要 Owner 登入";
+    }
+    return { capitalReady };
+  }
+
   function hydratePaper() {
     const selected = mergePaperSelectedWithLastGoodQuote(live.selected || {});
     if (selected !== live.selected) {
@@ -2627,40 +2693,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = ohlcvLast ? price(ohlcvLast.low) : (selected.low ? price(selected.low) : "—");
     const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = ohlcvLast ? price(ohlcvLast.close ?? selected.price) : (selected.price ? price(selected.price) : "—");
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
-    const capitalTWD = live.baseCapitalTWD;
-    const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
-    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "待授權";
-    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
-    // expose to updPreview() in vendor HTML
-    window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
-    if (capitalReady) {
-      delete window.__IUF_TICKET_LOCK_REASON__;
-    } else {
-      window.__IUF_TICKET_LOCK_REASON__ = "需要 Owner 登入才能預覽 / 送出紙上單";
-    }
-    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
-    try {
-      if (typeof window.updPreview === "function") window.updPreview();
-    } catch {
-      // Vendor preview is best-effort; backend preview still validates again on click.
-    }
+    const { capitalReady } = syncPaperCapitalGate();
     const submit = $("#submit-btn");
     const kgiSubmit = $("#submit-kgi-sim-btn");
     const getKgiSubmitLabel = () => $("#submit-kgi-sim-label") || kgiSubmit?.querySelector("b");
-    if (submit && !capitalReady) {
-      submit.disabled = true;
-      const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
-      if (blockedLabel) blockedLabel.textContent = "需要 Owner 登入才能預覽 / 送出紙上單";
-      const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
-    }
-    if (kgiSubmit && !capitalReady) {
-      kgiSubmit.disabled = true;
-      kgiSubmit.classList.add("is-blocked");
-      kgiSubmit.setAttribute("aria-disabled", "true");
-      kgiSubmit.dataset.blocked = "owner_session_required";
-      const kgiBlockedLabel = getKgiSubmitLabel();
-      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "需要 Owner 登入";
-    }
     if (submit) submit.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -2991,6 +3027,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   if (live.screen === "market-intel") hydrateMarket();
   if (live.screen === "strategy-ideas") hydrateIdeas();
   if (live.screen === "paper-trading-room") hydratePaper();
+  if (live.screen === "paper-trading-room") refreshPaperCapitalGate();
   refreshClientLive();
   if (live.screen === "paper-trading-room") {
     updatePaperQuoteQualityBadge("stream", { degraded: true });
