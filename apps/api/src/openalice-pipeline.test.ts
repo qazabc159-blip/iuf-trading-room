@@ -12,6 +12,7 @@ import test from "node:test";
 
 import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.js";
 import {
+  aggregateInstitutionalFlowRows,
   buildDailyBriefContractInstructions,
   buildMarketOverviewSourceEntryFromSnapshot,
   formatLiveMarketSnapshotForPrompt,
@@ -34,6 +35,7 @@ import {
   sanitizeBriefBody,
   scrubForbiddenPhrases,
   scrubReplacementChars,
+  tableSourceDateColumn,
   validateDailyBriefSectionsContract,
   _lastPipelineState,
   type SourcePack,
@@ -60,6 +62,26 @@ function makePack(overrides: Partial<SourcePack> = {}): SourcePack {
     ...overrides
   };
 }
+
+test("source pack collector uses revenue_date for monthly revenue freshness", () => {
+  assert.equal(tableSourceDateColumn("tw_monthly_revenue"), "revenue_date");
+  assert.equal(tableSourceDateColumn("tw_institutional_buysell"), "date");
+  assert.equal(tableSourceDateColumn("tw_margin_short"), "date");
+});
+
+test("institutional market aggregate uses FinMind name/buy/sell rows", () => {
+  assert.deepEqual(aggregateInstitutionalFlowRows([
+    { date: "2026-06-19", name: "外陸資", buy: "1200", sell: "300" },
+    { date: "2026-06-19", name: "外資及陸資", buy: 500, sell: 100 },
+    { date: "2026-06-19", name: "投信", buy: 700, sell: 200 },
+    { date: "2026-06-19", name: "自營商", buy: 100, sell: 250 },
+  ]), {
+    foreign: 1300,
+    trust: 500,
+    dealer: -150,
+    date: "2026-06-19",
+  });
+});
 
 test("daily brief contract accepts all required section ids", () => {
   const sections = DAILY_BRIEF_REQUIRED_SECTION_IDS.map((sectionId) => ({

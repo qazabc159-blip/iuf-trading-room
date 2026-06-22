@@ -365,6 +365,39 @@ export type LiveMarketSnapshot = {
   };
 };
 
+export type InstitutionalFlowRow = {
+  date?: unknown;
+  name?: unknown;
+  buy?: unknown;
+  sell?: unknown;
+};
+
+export function aggregateInstitutionalFlowRows(rows: InstitutionalFlowRow[]): LiveMarketSnapshot["institutional"] {
+  let foreign: number | null = null;
+  let trust: number | null = null;
+  let dealer: number | null = null;
+  let date: string | null = null;
+
+  for (const row of rows) {
+    if (!date && typeof row.date === "string") date = row.date;
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    const buy = Number(row.buy);
+    const sell = Number(row.sell);
+    if (!name || !Number.isFinite(buy) || !Number.isFinite(sell)) continue;
+    const net = buy - sell;
+
+    if (/外.*資|foreign/i.test(name)) {
+      foreign = (foreign ?? 0) + net;
+    } else if (/投信|investment.?trust/i.test(name)) {
+      trust = (trust ?? 0) + net;
+    } else if (/自營商|dealer/i.test(name)) {
+      dealer = (dealer ?? 0) + net;
+    }
+  }
+
+  return { foreign, trust, dealer, date };
+}
+
 function hasConsistentTaiexSnapshot(taiex: LiveMarketSnapshot["taiex"]): boolean {
   return taiex.value !== null
     && taiex.change !== null
@@ -498,26 +531,22 @@ async function collectLiveMarketSnapshot(
     if (db) {
       const instRows = await db.execute(
         drizzleSql.raw(
-          `SELECT date,
-            SUM(CASE WHEN investor_type='Foreign_Investor' THEN net_buy_sell ELSE 0 END) AS foreign_net,
-            SUM(CASE WHEN investor_type='Investment_Trust' THEN net_buy_sell ELSE 0 END) AS trust_net,
-            SUM(CASE WHEN investor_type='Dealer' THEN net_buy_sell ELSE 0 END) AS dealer_net
+          `SELECT date, name, buy, sell
            FROM tw_institutional_buysell
            WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
            ${dateCapSql}
-           GROUP BY date ORDER BY date DESC LIMIT 1`
+           AND date = (
+             SELECT MAX(date)
+             FROM tw_institutional_buysell
+             WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}')
+             ${dateCapSql}
+           )
+           ORDER BY name, stock_id`
         )
       );
-      const ir = ((instRows as { rows?: Record<string, unknown>[] }).rows
-        ?? (Array.isArray(instRows) ? (instRows as Record<string, unknown>[]) : []))[0];
-      if (ir) {
-        snapshot.institutional = {
-          foreign: ir["foreign_net"] != null ? Number(ir["foreign_net"]) : null,
-          trust: ir["trust_net"] != null ? Number(ir["trust_net"]) : null,
-          dealer: ir["dealer_net"] != null ? Number(ir["dealer_net"]) : null,
-          date: typeof ir["date"] === "string" ? ir["date"] : null,
-        };
-      }
+      const rows = ((instRows as { rows?: InstitutionalFlowRow[] }).rows
+        ?? (Array.isArray(instRows) ? (instRows as InstitutionalFlowRow[]) : []));
+      snapshot.institutional = aggregateInstitutionalFlowRows(rows);
     }
   } catch {
     // non-fatal — table may not exist
@@ -880,18 +909,31 @@ export function filterSourcePackEntries(sources: SourcePackEntry[]): SourcePackE
   });
 }
 
+const TABLE_SOURCE_DATE_COLUMNS = {
+  tw_monthly_revenue: "revenue_date",
+  tw_institutional_buysell: "date",
+  tw_margin_short: "date",
+} as const;
+
+type TableSourceName = keyof typeof TABLE_SOURCE_DATE_COLUMNS;
+
+export function tableSourceDateColumn(tableName: TableSourceName): string {
+  return TABLE_SOURCE_DATE_COLUMNS[tableName];
+}
+
 async function collectTableSource(
   db: NonNullable<ReturnType<typeof getDb>>,
   sources: SourcePackEntry[],
-  tableName: string,
+  tableName: TableSourceName,
   workspaceId: string,
   staleThreshold: Date,
   staleThresholdDays: number
 ) {
   try {
+    const dateColumn = tableSourceDateColumn(tableName);
     // Raw SQL to avoid requiring schema table references for DRAFT tables
     const rows = await db.execute(
-      drizzleSql.raw(`SELECT COUNT(*) AS cnt, MAX(date) AS latest FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') LIMIT 1`)
+      drizzleSql.raw(`SELECT COUNT(*) AS cnt, MAX(${dateColumn}) AS latest FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') LIMIT 1`)
     );
     const _rowArr = (rows as { rows?: Array<{ cnt?: string | number; latest?: string }> }).rows
       ?? (Array.isArray(rows) ? (rows as Array<{ cnt?: string | number; latest?: string }>) : []);
@@ -911,7 +953,7 @@ async function collectTableSource(
     if (count > 0) {
       try {
         const sampleRes = await db.execute(
-          drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY date DESC LIMIT 3`)
+          drizzleSql.raw(`SELECT * FROM ${tableName} WHERE stock_id IN (SELECT ticker FROM companies WHERE workspace_id = '${workspaceId}') ORDER BY ${dateColumn} DESC LIMIT 3`)
         );
         sampleRows = ((sampleRes as { rows?: Record<string, unknown>[] }).rows
           ?? (Array.isArray(sampleRes) ? (sampleRes as Record<string, unknown>[]) : []));
