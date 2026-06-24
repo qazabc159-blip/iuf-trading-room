@@ -20709,6 +20709,92 @@ app.get("/api/v1/uta/adapters", async (c) => {
   });
 });
 
+// =============================================================================
+// UTA broker connections (Phase 2) — the workspace's broker accounts.
+// Gateway model (architecture decision 2026-06-17): customer credentials NEVER
+// touch our servers; a connection here is a reference/label pointing at the
+// customer-side gateway. No real orders — Real Order stays locked.
+// =============================================================================
+
+// GET /api/v1/uta/accounts — this workspace's broker connections + status
+app.get("/api/v1/uta/accounts", async (c) => {
+  const session = c.get("session");
+  if (!isDatabaseMode()) return c.json({ data: [] });
+  const db = getDb();
+  if (!db) return c.json({ data: [] });
+  const rows = dbExecRows<{
+    id: string; adapter_key: string; display_name: string; account_ref: string;
+    account_label: string; is_primary: boolean; is_active: boolean;
+  }>(await db.execute(drizzleSql`
+    SELECT ba.id, ba.adapter_key, ba.account_ref, ba.account_label, ba.is_primary, ba.is_active, bad.display_name
+    FROM broker_accounts ba
+    JOIN broker_adapters bad ON bad.adapter_key = ba.adapter_key
+    WHERE ba.workspace_id = ${session.workspace.id}
+    ORDER BY ba.is_primary DESC, ba.created_at ASC
+  `));
+  return c.json({
+    data: rows.map((r) => ({
+      id: r.id,
+      adapterKey: r.adapter_key,
+      displayName: r.display_name,
+      accountRef: r.account_ref,
+      accountLabel: r.account_label || r.account_ref,
+      isPrimary: r.is_primary,
+      // Phase 2: a registered connection. Live gateway-reachability ships later.
+      status: r.is_active ? "connected" : "disconnected",
+    })),
+  });
+});
+
+// POST /api/v1/uta/accounts — register/connect a broker account (NO credentials)
+const utaConnectSchema = z.object({
+  adapterKey: z.enum(["kgi", "paper"]),
+  accountRef: z.string().trim().min(1).max(64),
+  accountLabel: z.string().trim().max(64).optional(),
+});
+app.post("/api/v1/uta/accounts", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner" && session.user.role !== "Admin") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  let body: z.infer<typeof utaConnectSchema>;
+  try {
+    body = utaConnectSchema.parse(await c.req.json());
+  } catch (err) {
+    if (err instanceof ZodError) return c.json({ error: "VALIDATION_ERROR", details: err.flatten() }, 400);
+    throw err;
+  }
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+  await db.execute(drizzleSql`
+    INSERT INTO broker_accounts (workspace_id, adapter_key, account_ref, account_label, is_active)
+    VALUES (${session.workspace.id}, ${body.adapterKey}, ${body.accountRef}, ${body.accountLabel ?? ""}, TRUE)
+    ON CONFLICT (workspace_id, adapter_key, account_ref)
+      DO UPDATE SET account_label = EXCLUDED.account_label, is_active = TRUE, updated_at = NOW()
+  `);
+  return c.json({ ok: true, adapterKey: body.adapterKey, accountRef: body.accountRef });
+});
+
+// POST /api/v1/uta/accounts/disconnect — deactivate a connection { id }
+app.post("/api/v1/uta/accounts/disconnect", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner" && session.user.role !== "Admin") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const id = String((body as Record<string, unknown>).id ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return c.json({ error: "invalid_id" }, 400);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+  await db.execute(drizzleSql`
+    UPDATE broker_accounts SET is_active = FALSE, updated_at = NOW()
+    WHERE id = ${id}::uuid AND workspace_id = ${session.workspace.id}
+  `);
+  return c.json({ ok: true });
+});
+
 // POST /api/v1/uta/orders — submit a unified order through the specified adapter
 app.post("/api/v1/uta/orders", async (c) => {
   const bodySchema = z.object({

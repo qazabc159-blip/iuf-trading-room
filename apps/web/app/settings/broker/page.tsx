@@ -3,6 +3,7 @@ import { LockKeyhole, Radio, ShieldCheck, WalletCards } from "lucide-react";
 
 import { getMyEntitlements } from "@/lib/api";
 import { featureStatusLabel, type MyEntitlements, type SubscriptionFeatureId } from "@/lib/subscription-entitlements";
+import { BrokerConnections } from "./broker-connections";
 
 type BrokerFeatureId = Extract<SubscriptionFeatureId, "trading_room_paper" | "kgi_read_only" | "kgi_sim">;
 
@@ -129,6 +130,8 @@ export default async function BrokerSettingsPage() {
             </p>
           )}
         </section>
+
+        <BrokerConnections />
 
         <section
           style={{
