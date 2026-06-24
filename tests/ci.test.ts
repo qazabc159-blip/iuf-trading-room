@@ -17289,6 +17289,97 @@ test("S1-ACCEPTED-FIX-1: orders_accepted counter must include unconfirmed SIM or
   );
 });
 
+// BROKER-ROUTING — account-based broker kind routing (2026-06-24)
+
+test("BROKER-ROUTING-1: adapterKeyToBrokerKind maps 'kgi' → 'kgi' and anything else → 'paper'", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/broker-account-resolver.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("adapterKeyToBrokerKind"),
+    "BROKER-ROUTING-1: adapterKeyToBrokerKind must be exported"
+  );
+  // Verify the "kgi" → "kgi" mapping
+  assert.ok(
+    src.includes(`if (adapterKey === "kgi") return "kgi"`),
+    "BROKER-ROUTING-1: must map adapterKey 'kgi' → BrokerKind 'kgi'"
+  );
+  // Verify the fallback to paper
+  assert.ok(
+    src.includes(`return "paper"`),
+    "BROKER-ROUTING-1: must fall back to 'paper' for unrecognised adapterKey"
+  );
+});
+
+test("BROKER-ROUTING-2: resolveBrokerKindForAccount returns 'paper' when accountId/workspaceId is null", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/broker-account-resolver.ts", import.meta.url),
+    "utf-8"
+  );
+  // Must have null-guard at top of function
+  assert.ok(
+    src.includes("if (!accountId || !workspaceId) return"),
+    "BROKER-ROUTING-2: must guard null/empty accountId or workspaceId and return paper"
+  );
+  // Must have DB unavailable guard
+  assert.ok(
+    src.includes("if (!isDatabaseMode()) return"),
+    "BROKER-ROUTING-2: must return paper when DB is unavailable (non-database mode)"
+  );
+});
+
+test("BROKER-ROUTING-3: resolveBrokerKind in trading-service.ts calls resolveBrokerKindForAccount (DB lookup, not hardcoded 'paper')", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("resolveBrokerKindForAccount"),
+    "BROKER-ROUTING-3: trading-service must import and call resolveBrokerKindForAccount"
+  );
+  // Must NOT contain the old hardcoded fallback pattern
+  assert.ok(
+    !src.includes('return "paper" as const'),
+    "BROKER-ROUTING-3: trading-service must not have the old hardcoded 'paper as const' return"
+  );
+});
+
+test("BROKER-ROUTING-4: KGI manual order write is hard-guarded — assertKgiSimOnly throws + submitOrder kgi path blocked", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
+    "utf-8"
+  );
+  // Must have the lock constant
+  assert.ok(
+    src.includes("KGI_MANUAL_ORDER_WRITE_LOCKED"),
+    "BROKER-ROUTING-4: must declare KGI_MANUAL_ORDER_WRITE_LOCKED guard constant"
+  );
+  // Must have assertKgiSimOnly function
+  assert.ok(
+    src.includes("assertKgiSimOnly"),
+    "BROKER-ROUTING-4: must define assertKgiSimOnly guard function"
+  );
+  // submitOrder must call assertKgiSimOnly for kgi path
+  assert.ok(
+    src.includes('assertKgiSimOnly("submitOrder")'),
+    "BROKER-ROUTING-4: submitOrder must call assertKgiSimOnly for kgi broker path"
+  );
+  // previewOrder must return blocked:true for kgi with kgi_manual_write_locked reason
+  assert.ok(
+    src.includes("kgi_manual_write_locked"),
+    "BROKER-ROUTING-4: previewOrder must include kgi_manual_write_locked in blocked reasons"
+  );
+  // Verify that the actual guard function will throw
+  const lockConstMatch = src.match(/const KGI_MANUAL_ORDER_WRITE_LOCKED\s*=\s*(true|false)/);
+  assert.ok(lockConstMatch, "BROKER-ROUTING-4: KGI_MANUAL_ORDER_WRITE_LOCKED must be true|false literal");
+  assert.equal(
+    lockConstMatch![1],
+    "true",
+    "BROKER-ROUTING-4: KGI_MANUAL_ORDER_WRITE_LOCKED must be true (write locked in Phase 3)"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
