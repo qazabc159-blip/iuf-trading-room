@@ -953,7 +953,10 @@ export async function runS1OrderSubmitTick(): Promise<void> {
     trading_date: todayTst,
     basket_date: basketDate,
     orders_attempted: orderResults.filter((r) => r.status !== "skipped").length,
-    orders_accepted: orderResults.filter((r) => ["accepted", "filled", "partially_filled", "cancelled"].includes(r.status)).length,
+    // KGI SIM never returns a broker fill report — submitted orders stay "unconfirmed"
+    // forever. Count "unconfirmed" as accepted (submission reached the broker) so the
+    // counter reflects real activity rather than showing 0 when 8 orders went through.
+    orders_accepted: orderResults.filter((r) => ["accepted", "filled", "partially_filled", "cancelled", "unconfirmed"].includes(r.status)).length,
     orders_rejected: orderResults.filter((r) => r.status === "rejected").length,
     results: orderResults,
     failsafe_notes
@@ -1059,7 +1062,11 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     .filter((r) => HELD_STATUSES.has(r.status))
     .map((r) => ({
       symbol: r.symbol,
-      shares: r.filled_shares ?? r.shares,
+      // filled_shares is 0 (not null) when KGI SIM never sends a fill report.
+      // `0 ?? r.shares` returns 0 because ?? only replaces null/undefined.
+      // Use basket target_shares (r.shares) as the share count for SIM-held orders
+      // that never received a real fill — that is the intended notional quantity.
+      shares: (r.filled_shares != null && r.filled_shares > 0) ? r.filled_shares : r.shares,
       avg_cost: r.avg_fill_price ?? entryBySymbol.get(r.symbol)?.latest_price ?? 0,
       last_price: null,
       unrealized_pnl_twd: null,

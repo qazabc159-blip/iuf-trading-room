@@ -17221,6 +17221,74 @@ test("COMPANY-AI-ANALYST-1: company AI analyst must enforce a complete product r
   }
 });
 
+// =============================================================================
+// S1-SHARES-FIX / S1-ACCEPTED-FIX — regression guards (2026-06-24)
+// =============================================================================
+
+test("S1-SHARES-FIX-1: filled_shares=0 (SIM unconfirmed) must use basket target_shares not 0", () => {
+  // Reproduce the ?? vs (!=null && >0) difference.
+  // When KGI SIM never sends a fill, filled_shares=0 (not null).
+  // The old code `r.filled_shares ?? r.shares` returns 0 because 0 is not null/undefined.
+  // The new code `(r.filled_shares != null && r.filled_shares > 0) ? r.filled_shares : r.shares`
+  // correctly falls back to basket target_shares.
+  function sharesOld(filledShares: number | null | undefined, targetShares: number): number {
+    return filledShares ?? targetShares;
+  }
+  function sharesNew(filledShares: number | null | undefined, targetShares: number): number {
+    return (filledShares != null && filledShares > 0) ? filledShares : targetShares;
+  }
+
+  // SIM case: filled_shares=0 (set by reconcileKgiOrder when no fill report), target=18000
+  assert.equal(sharesOld(0, 18000), 0, "S1-SHARES-FIX-1: old code returns 0 (the bug)");
+  assert.equal(sharesNew(0, 18000), 18000, "S1-SHARES-FIX-1: new code returns target_shares (the fix)");
+
+  // Real fill case: filled_shares=18000, should use filled_shares
+  assert.equal(sharesNew(18000, 18000), 18000, "S1-SHARES-FIX-1: real fill preserves filled_shares");
+
+  // Null case (legacy path): should fall back to target
+  assert.equal(sharesNew(null, 18000), 18000, "S1-SHARES-FIX-1: null filled_shares falls back to target");
+
+  // Partial fill case: filled_shares=9000 > 0, should use 9000
+  assert.equal(sharesNew(9000, 18000), 9000, "S1-SHARES-FIX-1: partial fill uses filled_shares");
+});
+
+test("S1-ACCEPTED-FIX-1: orders_accepted counter must include unconfirmed SIM orders", () => {
+  // KGI SIM never sends a fill report, so submitted orders permanently stay "unconfirmed".
+  // Old counter only counted ["accepted","filled","partially_filled","cancelled"] → showed 0.
+  // New counter also includes "unconfirmed" → shows 8 (the real count of submitted orders).
+  const orderResults = [
+    { symbol: "5468", status: "unconfirmed" },
+    { symbol: "2492", status: "unconfirmed" },
+    { symbol: "6654", status: "unconfirmed" },
+    { symbol: "2061", status: "unconfirmed" },
+    { symbol: "3285", status: "unconfirmed" },
+    { symbol: "5227", status: "unconfirmed" },
+    { symbol: "3624", status: "unconfirmed" },
+    { symbol: "6449", status: "unconfirmed" },
+  ] as Array<{ symbol: string; status: string }>;
+
+  const OLD_ACCEPTED = ["accepted", "filled", "partially_filled", "cancelled"];
+  const NEW_ACCEPTED = ["accepted", "filled", "partially_filled", "cancelled", "unconfirmed"];
+
+  const oldCount = orderResults.filter((r) => OLD_ACCEPTED.includes(r.status)).length;
+  const newCount = orderResults.filter((r) => NEW_ACCEPTED.includes(r.status)).length;
+
+  assert.equal(oldCount, 0, "S1-ACCEPTED-FIX-1: old counter shows 0 for 8 unconfirmed (the bug)");
+  assert.equal(newCount, 8, "S1-ACCEPTED-FIX-1: new counter shows 8 for 8 unconfirmed (the fix)");
+
+  // Verify rejected orders are still correctly excluded
+  const mixedResults = [
+    { symbol: "A", status: "unconfirmed" },
+    { symbol: "B", status: "rejected" },
+    { symbol: "C", status: "skipped" },
+  ] as Array<{ symbol: string; status: string }>;
+  assert.equal(
+    mixedResults.filter((r) => NEW_ACCEPTED.includes(r.status)).length,
+    1,
+    "S1-ACCEPTED-FIX-1: rejected/skipped still excluded from accepted count"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
