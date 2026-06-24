@@ -463,11 +463,39 @@ describe("final-v031 paper ticket price gate", () => {
 
   it("wires the final-v031 trading room manual ticket to KGI SIM only", () => {
     expect(ticketHtml).toContain('id="submit-kgi-sim-btn"');
-    expect(ticketHtml).toContain("送出 KGI SIM");
+    // Label updated: "送出 KGI 模擬單" (was "送出 KGI SIM" before broker selector)
+    expect(ticketHtml).toContain("送出 KGI 模擬單");
     expect(liveHydration).toContain('fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order"');
     expect(liveHydration).toContain('priceType: orderType === "market" ? "MKT" : undefined');
     expect(liveHydration).toContain("正式實單仍鎖定");
     expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/sim\\/order");
+  });
+
+  it("broker selector defaults to paper and routes KGI through SIM channel", () => {
+    // Paper is the initial default — paper button has active class, KGI does not
+    expect(ticketHtml).toContain('class="bbtn active" data-broker="paper"');
+    expect(ticketHtml).not.toContain('class="bbtn active" data-broker="kgi"');
+    // KGI SIM button is hidden by default (paper selected)
+    expect(ticketHtml).toContain('id="submit-kgi-sim-btn"');
+    expect(ticketHtml).toContain('style="display:none"');
+    // Live hydration wires broker selector with localStorage persistence
+    expect(liveHydration).toContain("ACTIVE_BROKER_STORAGE_KEY");
+    expect(liveHydration).toContain("iuf-active-broker");
+    expect(liveHydration).toContain("activeBrokerKey()");
+    expect(liveHydration).toContain("setActiveBroker(");
+    expect(liveHydration).toContain("applyBrokerSubmitVisibility()");
+    expect(liveHydration).toContain("brokerSubmitCopy(");
+    // Paper submit shows for paper broker; KGI submit shows for KGI broker
+    expect(liveHydration).toContain("paperBtn.style.display = 'none'");
+    expect(liveHydration).toContain("kgiBtn.style.display = 'none'");
+    // Dynamic labels use brokerSubmitCopy helper — no more hardcoded "KGI SIM" in labels
+    expect(liveHydration).toContain("activeBrokerCopy.shortName");
+    expect(liveHydration).toContain("送出模擬訂單");
+    expect(liveHydration).toContain("送出 KGI 模擬單");
+    // Fubon is always disabled — never selectable
+    expect(ticketHtml).toContain('data-broker="fubon" disabled');
+    // UTA adapters fetched to populate live broker catalog
+    expect(liveHydration).toContain('apiGet("/api/v1/uta/adapters")');
   });
 
   it("routes the F-AUTO owner dashboard through the same-origin backend proxy", () => {
