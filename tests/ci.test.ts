@@ -17292,7 +17292,7 @@ test("S1-ACCEPTED-FIX-1: orders_accepted counter must include unconfirmed SIM or
 // BROKER-ROUTING — account-based broker kind routing (2026-06-24)
 
 test("BROKER-ROUTING-1: adapterKeyToBrokerKind maps 'kgi' → 'kgi' and anything else → 'paper'", async () => {
-  const src = await fs.readFile(
+  const src = readFileSync(
     new URL("../apps/api/src/broker/broker-account-resolver.ts", import.meta.url),
     "utf-8"
   );
@@ -17313,7 +17313,7 @@ test("BROKER-ROUTING-1: adapterKeyToBrokerKind maps 'kgi' → 'kgi' and anything
 });
 
 test("BROKER-ROUTING-2: resolveBrokerKindForAccount returns 'paper' when accountId/workspaceId is null", async () => {
-  const src = await fs.readFile(
+  const src = readFileSync(
     new URL("../apps/api/src/broker/broker-account-resolver.ts", import.meta.url),
     "utf-8"
   );
@@ -17330,7 +17330,7 @@ test("BROKER-ROUTING-2: resolveBrokerKindForAccount returns 'paper' when account
 });
 
 test("BROKER-ROUTING-3: resolveBrokerKind in trading-service.ts calls resolveBrokerKindForAccount (DB lookup, not hardcoded 'paper')", async () => {
-  const src = await fs.readFile(
+  const src = readFileSync(
     new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
     "utf-8"
   );
@@ -17346,7 +17346,7 @@ test("BROKER-ROUTING-3: resolveBrokerKind in trading-service.ts calls resolveBro
 });
 
 test("BROKER-ROUTING-4: KGI manual order write is hard-guarded — assertKgiSimOnly throws + submitOrder kgi path blocked", async () => {
-  const src = await fs.readFile(
+  const src = readFileSync(
     new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
     "utf-8"
   );
