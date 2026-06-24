@@ -68,6 +68,10 @@ import {
   listEvents,
   acknowledgeEvent
 } from "./openalice-event-rule-engine.js";
+import {
+  runOpenAliceDecisionTick,
+  getOrchestratorTickState,
+} from "./openalice-orchestrator.js";
 import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
@@ -17136,6 +17140,23 @@ function startSchedulers(workspaceSlug: string): void {
     });
   }, 5 * 60 * 1000);
 
+  // OPENALICE-M1: Decision orchestrator — poll every 10 min.
+  // Consumes iuf_events + signals → LLM reasoning → writes iuf_decisions (status='proposed').
+  // M1 only produces decisions; M2 will execute them.
+  // Fires 60s after boot (gives event-rule-engine its 30s boot tick a head start).
+  // Safe-default: tick never throws; errors are contained + logged inside orchestrator.
+  {
+    const DECISION_TICK_MS = 10 * 60 * 1000;
+    ui(() => {
+      runOpenAliceDecisionTick().catch((e) =>
+        console.error("[openalice-orchestrator] Interval tick failed:", e instanceof Error ? e.message : e)
+      );
+    }, DECISION_TICK_MS);
+    setTimeout(() => {
+      void runOpenAliceDecisionTick();
+    }, 60_000);
+  }
+
   // BLOCK #NEWS: AI news selector — hourly cron (every 60min). isWithinNewsWindowTrigger()
   // enforces 50min double-fire guard. Old 4-window (08/12/18/24) gate removed: users saw
   // stale news when browsing between windows. Now fires every hour, always fresh.
@@ -18062,7 +18083,8 @@ function startSchedulers(workspaceSlug: string): void {
     "MIS-FULL-UNIVERSE-SWEEP (10s/slice, 50 tickers/slice, ~400s/round for ~1978 stocks, fires 08:55-14:35 TST weekdays) + " +
     "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
-    "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) started"
+    "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) + " +
+    "OPENALICE-M1-DECISION-CRON (10min, consumes iuf_events+signals → iuf_decisions, boot-fire 60s) started"
   );
 
   // AI-REC-V2-CRON: Fire Brain ReAct AI recommendation at 09:30 and 13:00 TST weekdays.
