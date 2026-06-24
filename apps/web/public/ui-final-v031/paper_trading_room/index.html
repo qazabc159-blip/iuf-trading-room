@@ -400,12 +400,12 @@ body[data-screen-label="Trading Room v1"] .tnote{
 </div>
 
 <!-- ============ BROKER SELECTOR ============ -->
-<!-- Product-grade broker picker. Phase 1: selection is display-only (orders stay
-     on the SIM channel); switching + 富邦 + real-money ship in later gated phases. -->
+<!-- Phase 2 (2026-06-24): broker strip is clickable — paper is default; KGI routes
+     through /kgi/sim/order SIM channel. Fubon disabled (即將開放). Real-money locked. -->
 <div class="brokerstrip" id="broker-strip">
   <span class="bblabel">交易券商</span>
-  <button type="button" class="bbtn active" data-broker="kgi">凱基 <span class="bsub">KGI</span></button>
-  <button type="button" class="bbtn" data-broker="paper" title="券商切換即將開放">模擬 <span class="bsub">Paper</span></button>
+  <button type="button" class="bbtn" data-broker="kgi">凱基 <span class="bsub">KGI</span></button>
+  <button type="button" class="bbtn active" data-broker="paper">模擬 <span class="bsub">Paper</span></button>
   <button type="button" class="bbtn soon" data-broker="fubon" disabled title="富邦證券接入中，敬請期待">富邦 <span class="bsoon">即將開放</span></button>
   <span class="bbgap"></span>
   <span class="bbmode"><i></i>模擬模式 · 本頁不送實單</span>
@@ -836,14 +836,14 @@ body[data-screen-label="Trading Room v1"] .tnote{
         </div>
       </div>
 
-      <!-- submit -->
+      <!-- submit — visibility driven by active broker (applyBrokerSubmitVisibility) -->
       <div class="tactions">
         <button class="submit buy" type="button" id="submit-btn">
-          <span>送出紙上單　<b style="font-weight:600" id="submit-btn-label">選擇股票與方向</b></span>
+          <span>送出模擬訂單　<b style="font-weight:600" id="submit-btn-label">選擇股票與方向</b></span>
           <span class="sub">平台模擬</span>
         </button>
-        <button class="submit buy" type="button" id="submit-kgi-sim-btn" disabled aria-disabled="true">
-          <span>送出 KGI SIM　<b style="font-weight:600" id="submit-kgi-sim-label">先通過風控預覽</b></span>
+        <button class="submit buy" type="button" id="submit-kgi-sim-btn" disabled aria-disabled="true" style="display:none">
+          <span>送出 KGI 模擬單　<b style="font-weight:600" id="submit-kgi-sim-label">先通過風控預覽</b></span>
           <span class="sub">KGI SIM</span>
         </button>
         <div class="liveex">

@@ -1253,8 +1253,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       soft(apiGet("/api/v1/watchlist"))
     ]);
     const fauto = fautoResult.ok ? fautoResult.data : null;
-    // Phase 1 broker strip uses the STATIC catalog baked into the HTML (KGI + Paper).
-    const brokers = [];
+    // Phase 2 broker strip: fetch live UTA adapter catalog (kgi + paper).
+    // /uta/accounts is currently empty — we use adapters as the selectable source.
+    // Fubon stays display-only (isActive=false on backend); selector defaults paper.
+    let brokers = [];
+    try {
+      const adaptersRes = await soft(apiGet("/api/v1/uta/adapters"));
+      if (adaptersRes.ok && adaptersRes.data && Array.isArray(adaptersRes.data.adapters)) {
+        brokers = adaptersRes.data.adapters.filter((b) => b && b.adapterKey && b.adapterKey !== 'fubon');
+      }
+    } catch {
+      // fallback to HTML static strip — safe to ignore
+    }
     // User-managed watchlist (replaces the hardcoded default symbols). { data: [{symbol,name}] }.
     const myWatchlist = (watchlistResult.ok
       ? ((watchlistResult.data?.data) || (Array.isArray(watchlistResult.data) ? watchlistResult.data : []))
@@ -2283,35 +2293,84 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     note.innerHTML = '<span class="pill" style="color:var(--info);border-color:var(--info-line);background:var(--info-bg)"><i style="background:var(--info)"></i>KGI 唯讀</span> <b>'+esc(title)+'</b><br><span>'+esc(detail)+'</span><br><span style="color:var(--fg-3)">'+rows.join(" · ")+'</span>';
   }
 
-  // Phase 1 (multi-broker, 2026-06-17): render the real UTA broker catalog in the
-  // safety bar so the desk reflects multi-broker support. DISPLAY-ONLY — all orders
-  // still route through the SIM/paper channel; broker switching ships in a later
-  // phase (gated, customer-side gateway model). Keeps the static fallback if the
-  // catalog is empty.
+  // ── Active broker selection (persisted in localStorage) ─────────────────────
+  // Default = paper. KGI SIM is selectable from the broker strip.
+  // Fubon stays disabled/soon — never selectable.
+  const ACTIVE_BROKER_STORAGE_KEY = 'iuf-active-broker';
+  function activeBrokerKey() {
+    try { return String(window.localStorage.getItem(ACTIVE_BROKER_STORAGE_KEY) || 'paper'); } catch { return 'paper'; }
+  }
+  function setActiveBroker(key) {
+    try { window.localStorage.setItem(ACTIVE_BROKER_STORAGE_KEY, String(key)); } catch { /* ignore */ }
+  }
+  // Returns UI copy for submit buttons and gate text based on active broker.
+  function brokerSubmitCopy(brokerKey) {
+    if (brokerKey === 'kgi') return { prefix: '送出 KGI 模擬單', sub: 'KGI SIM', shortName: 'KGI 模擬單' };
+    return { prefix: '送出模擬訂單', sub: '平台模擬', shortName: '模擬訂單' };
+  }
+
+  // Phase 2 (multi-broker, 2026-06-24): broker strip is now clickable — paper is the
+  // default; selecting KGI routes the ticket through the /kgi/sim/order channel.
+  // Fubon stays display-only (disabled button, isActive=false). Real-money channels
+  // remain locked (prod_write_blocked guard unchanged).
   function hydrateBrokerStrip() {
     const strip = $('#broker-strip');
     if (!strip) return;
-    const brokers = (live.brokers || []).filter((b) => b && b.adapterKey);
-    if (!brokers.length) return; // keep static fallback
-    // KGI SIM is the desk's current target (the submit button reads "送出 KGI SIM").
-    const activeKey = brokers.some((b) => b.adapterKey === 'kgi') ? 'kgi' : brokers[0].adapterKey;
-    const capChips = (caps) => {
-      const out = [];
-      if (caps && caps.oddLot) out.push('零股');
-      if (caps && caps.marginTrading) out.push('融資');
-      if (caps && caps.shortSelling) out.push('做空');
-      if (caps && caps.simModeAvailable) out.push('SIM');
-      return out.map((c) => '<span class="bcap">' + esc(c) + '</span>').join('');
-    };
-    strip.innerHTML = '<span class="blabel">券商</span>' + brokers.map((b) => {
-      const active = b.adapterKey === activeKey;
-      return '<span class="bchip' + (active ? ' active' : '') + '" data-broker="' + esc(b.adapterKey) + '"'
-        + (active ? '' : ' title="券商切換即將開放；目前所有委託仍走 SIM／模擬通道"') + '>'
-        + '<span class="bname">' + esc(b.displayName || b.adapterKey) + '</span>'
-        + '<span class="bcaps">' + capChips(b.capabilities) + '</span>'
-        + '<span class="bstate">' + (active ? '使用中 · SIM' : '即將開放') + '</span>'
-        + '</span>';
-    }).join('');
+    const currentKey = activeBrokerKey();
+    // Apply active class to matching button; ensure fubon stays disabled.
+    const btns = strip.querySelectorAll('.bbtn');
+    btns.forEach((btn) => {
+      const bk = btn.dataset && btn.dataset.broker;
+      if (!bk) return;
+      if (bk === 'fubon') return; // always disabled / soon — do not touch
+      const isActive = bk === currentKey;
+      btn.classList.toggle('active', isActive);
+      // Remove placeholder tooltip from selectable buttons
+      if (bk !== 'fubon') btn.removeAttribute('title');
+      if (!btn.dataset.brokerClickWired) {
+        btn.dataset.brokerClickWired = '1';
+        btn.addEventListener('click', () => {
+          if (bk === 'fubon') return;
+          setActiveBroker(bk);
+          hydrateBrokerStrip();
+          applyBrokerSubmitVisibility();
+        });
+      }
+    });
+    applyBrokerSubmitVisibility();
+  }
+
+  // Show the correct submit button and update its label based on active broker.
+  function applyBrokerSubmitVisibility() {
+    const currentKey = activeBrokerKey();
+    const paperBtn = $('#submit-btn');
+    const kgiBtn = $('#submit-kgi-sim-btn');
+    if (!paperBtn || !kgiBtn) return;
+    const copy = brokerSubmitCopy(currentKey);
+    if (currentKey === 'kgi') {
+      // KGI SIM flow is active
+      paperBtn.style.display = 'none';
+      kgiBtn.style.display = '';
+      const kgiFirstSpan = kgiBtn.querySelector('span:first-child');
+      if (kgiFirstSpan) {
+        const kgiLabel = kgiBtn.querySelector('#submit-kgi-sim-label') || kgiFirstSpan.querySelector('b');
+        if (kgiLabel) {
+          kgiFirstSpan.childNodes[0].textContent = copy.prefix + '　';
+        }
+      }
+      const kgiSub = kgiBtn.querySelector('.sub');
+      if (kgiSub) kgiSub.textContent = copy.sub;
+    } else {
+      // Paper flow is active (default)
+      kgiBtn.style.display = 'none';
+      paperBtn.style.display = '';
+      const paperFirstSpan = paperBtn.querySelector('span:first-child');
+      if (paperFirstSpan) {
+        paperFirstSpan.childNodes[0].textContent = copy.prefix + '　';
+      }
+      const paperSub = paperBtn.querySelector('.sub');
+      if (paperSub) paperSub.textContent = copy.sub;
+    }
   }
 
   // Wire the 自選 add box + per-row remove buttons to the watchlist CRUD API,
@@ -2644,9 +2703,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     } catch {
       // Vendor preview is best-effort; backend preview still validates again on click.
     }
+    // Apply broker-based submit button visibility on every hydration pass.
+    applyBrokerSubmitVisibility();
     const submit = $("#submit-btn");
     const kgiSubmit = $("#submit-kgi-sim-btn");
     const getKgiSubmitLabel = () => $("#submit-kgi-sim-label") || kgiSubmit?.querySelector("b");
+    const activeBroker = activeBrokerKey();
+    const activeBrokerCopy = brokerSubmitCopy(activeBroker);
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
@@ -2756,8 +2819,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const kgiLabel = getKgiSubmitLabel();
       const setGate = (message) => { const gate = $(".gate .h .v"); if (gate) gate.textContent = message; };
       if (orderType !== "market" && orderType !== "limit") {
-        if (kgiLabel) kgiLabel.textContent = "KGI SIM 不支援停損單";
-        setGate("KGI SIM 只支援市價 / 限價");
+        if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 不支援停損單";
+        setGate(activeBrokerCopy.shortName + " 只支援市價 / 限價");
         return;
       }
       if (invalidQty || invalidPrice || invalidMarketPrice) {
@@ -2771,7 +2834,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       kgiSubmit.classList.remove("is-blocked");
       kgiSubmit.removeAttribute("aria-disabled");
       delete kgiSubmit.dataset.blocked;
-      if (kgiLabel) kgiLabel.textContent = "KGI SIM 風控預檢中...";
+      if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 風控預檢中...";
       const px = orderType === "market" ? selectedPx : rawPx;
       const payload = {
         symbol: selected.symbol,
@@ -2791,7 +2854,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
 
-        if (kgiLabel) kgiLabel.textContent = "KGI SIM 送單中...";
+        if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 送單中...";
         const simPayload = {
           ticker: selected.symbol,
           side,
@@ -2812,19 +2875,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         const body = await response.json().catch(() => null);
         if (!response.ok) {
           const message = body && typeof body === "object"
-            ? String(body.message || body.reason || body.error || "KGI SIM 送單失敗")
-            : "KGI SIM 送單失敗";
+            ? String(body.message || body.reason || body.error || activeBrokerCopy.shortName + " 送單失敗")
+            : activeBrokerCopy.shortName + " 送單失敗";
           throw new Error(message);
         }
         const data = body && typeof body === "object" ? body.data : null;
         const tradeId = data && typeof data === "object" && data.tradeId ? String(data.tradeId) : "";
-        if (kgiLabel) kgiLabel.textContent = tradeId ? "KGI SIM #" + tradeId : "KGI SIM 已送出";
-        setGate("KGI SIM 已送出（正式實單仍鎖定）");
+        if (kgiLabel) kgiLabel.textContent = tradeId ? activeBrokerCopy.shortName + " #" + tradeId : activeBrokerCopy.shortName + " 已送出";
+        setGate(activeBrokerCopy.shortName + " 已送出（正式實單仍鎖定）");
         try { await refreshClientLive(); } catch { /* ignore */ }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (kgiLabel) kgiLabel.textContent = "KGI SIM 未送出";
-        setGate(message.slice(0, 80) || "KGI SIM 未送出");
+        if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 未送出";
+        setGate(message.slice(0, 80) || activeBrokerCopy.shortName + " 未送出");
       } finally {
         setTimeout(() => { kgiSubmit.disabled = false; }, 1200);
       }
