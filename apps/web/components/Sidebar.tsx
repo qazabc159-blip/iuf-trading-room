@@ -9,6 +9,7 @@ import {
   Building2,
   GitFork,
   LineChart,
+  Network,
   Newspaper,
   Radio,
   Sparkles,
@@ -71,7 +72,8 @@ const OWNER_NAV: NavItem[] = [
 ];
 
 const INTERNAL_NAV: NavItem[] = [
-  { path: "/admin/brain/llm", title: "Brain", sub: "AI 費用與模型", Icon: Brain, activePaths: ["/admin/brain"] },
+  { path: "/admin/brain/llm", title: "Brain", sub: "AI 費用與模型", Icon: Brain, activePaths: ["/admin/brain/llm"] },
+  { path: "/admin/brain/decisions", title: "主腦決策", sub: "決策流", Icon: Network, activePaths: ["/admin/brain/decisions"] },
   { path: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork, activePaths: ["/admin/events"] },
   { path: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart, activePaths: ["/admin/portfolio/snapshots"] },
   { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
