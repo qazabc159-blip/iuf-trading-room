@@ -30,6 +30,9 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/internal\/s1-sim\/(?:status|basket|eod-report)(?:\?|$)/,
   /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
   /^\/api\/v1\/watchlist(?:\?|$)/,
+  // Phase 2 broker selector: desk reads the live adapter catalog + this
+  // workspace's connections to drive the broker strip / account picker.
+  /^\/api\/v1\/uta\/(?:adapters|accounts)(?:\?|$)/,
 ];
 
 const POST_ALLOWLIST = [
