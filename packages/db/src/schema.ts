@@ -1121,9 +1121,9 @@ export const iufDecisions = pgTable(
     createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    statusCreatedIdx:     index("iuf_decisions_status_created_idx").on(table.status, table.createdAt),
-    actionTypeCreatedIdx: index("iuf_decisions_action_type_created_idx").on(table.actionType, table.createdAt),
-    createdAtIdx:         index("iuf_decisions_created_at_idx").on(table.createdAt),
+    statusCreatedIdx:     index("iuf_decisions_status_created_idx").on(table.status, table.createdAt.desc()),
+    actionTypeCreatedIdx: index("iuf_decisions_action_type_created_idx").on(table.actionType, table.createdAt.desc()),
+    createdAtIdx:         index("iuf_decisions_created_at_idx").on(table.createdAt.desc()),
     triggerUidx:          uniqueIndex("iuf_decisions_trigger_uidx").on(table.triggerType, table.triggerId),
   })
 );
