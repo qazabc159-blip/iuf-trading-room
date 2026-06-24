@@ -362,11 +362,23 @@ export function getOrchestratorTickState() {
 }
 
 /**
- * Observability read for the orchestrator state endpoint (M1 verification + M3 UI).
- * Returns counts by status/action_type + the most recent decisions. Read-only.
+ * Observability read for the orchestrator state endpoint (M1 + M2 verification + M3 UI).
+ * Returns decision counts by status/action_type + most recent decisions.
+ * Also includes M2 action executor tick state so the state endpoint shows the full pipeline.
+ * Read-only.
  */
+// Inline type for M2 action executor tick state (avoids import() type reference in return type)
+type ActionTickState = {
+  tickRunning: boolean;
+  lastTickAt: string | null;
+  lastTickDone: number;
+  lastTickSkipped: number;
+  lastTickError: string | null;
+};
+
 export async function getOrchestratorObservability(limit = 20): Promise<{
   tick: ReturnType<typeof getOrchestratorTickState>;
+  actionTick?: ActionTickState;
   totals: { total: number; byStatus: Record<string, number>; byActionType: Record<string, number> };
   recent: Array<{
     id: string;
@@ -381,9 +393,19 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
 }> {
   const tick = getOrchestratorTickState();
   const empty = { total: 0, byStatus: {}, byActionType: {} };
-  if (!isDatabaseMode()) return { tick, totals: empty, recent: [] };
+
+  // Lazily fetch M2 action tick state — dynamic import avoids circular dep
+  let actionTick: ActionTickState | undefined;
+  try {
+    const { getActionExecutorTickState } = await import("./openalice-action-executor.js");
+    actionTick = getActionExecutorTickState();
+  } catch {
+    // M2 not loaded yet (startup race) — omit from response
+  }
+
+  if (!isDatabaseMode()) return { tick, actionTick, totals: empty, recent: [] };
   const db = getDb();
-  if (!db) return { tick, totals: empty, recent: [] };
+  if (!db) return { tick, actionTick, totals: empty, recent: [] };
 
   try {
     const statusRows = await execRows<{ status: string; n: string | number }>(
@@ -408,6 +430,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     for (const r of actionRows) byActionType[r.action_type] = Number(r.n) || 0;
     return {
       tick,
+      actionTick,
       totals: { total, byStatus, byActionType },
       recent: recentRows.map((r) => ({
         id: r.id,
@@ -422,7 +445,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     };
   } catch (e) {
     console.warn("[openalice-orchestrator] getObservability failed:", e instanceof Error ? e.message : String(e));
-    return { tick, totals: empty, recent: [] };
+    return { tick, actionTick, totals: empty, recent: [] };
   }
 }
 

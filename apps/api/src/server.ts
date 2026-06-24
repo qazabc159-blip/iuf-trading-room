@@ -73,6 +73,7 @@ import {
   getOrchestratorTickState,
   getOrchestratorObservability,
 } from "./openalice-orchestrator.js";
+import { runOpenAliceActionTick } from "./openalice-action-executor.js";
 import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
@@ -17158,6 +17159,38 @@ function startSchedulers(workspaceSlug: string): void {
     }, 60_000);
   }
 
+  // OPENALICE-M2: Action executor — poll every 7 min.
+  // Reads iuf_decisions (status='proposed') → executes per action_type → updates status+outcome.
+  // 4 actions: deep_analyze (runReactLoop read-only), priority_alert (iuf_events INSERT),
+  // rec_reweight (advisory record only), rebalance_suggest (advisory record only).
+  // SIM-safe: zero real-order paths. Cadence offset from M1 (10min) so they don't fire together.
+  // Boot-fire: 90s (gives M1 its 60s head start so fresh decisions are available on first action tick).
+  {
+    const ACTION_TICK_MS = 7 * 60 * 1000;
+    // Resolve workspaceId once at scheduler registration (fire-and-forget; null = skip analyst context)
+    ui(async () => {
+      try {
+        const db = getDb();
+        if (!db) { await runOpenAliceActionTick(null); return; }
+        const rows = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
+        const wsId = rows[0]?.id ?? null;
+        await runOpenAliceActionTick(wsId);
+      } catch (e) {
+        console.error("[openalice-action-executor] Interval tick failed:", e instanceof Error ? e.message : e);
+      }
+    }, ACTION_TICK_MS);
+    setTimeout(async () => {
+      try {
+        const db = getDb();
+        const rows = db ? await db.select({ id: workspaces.id }).from(workspaces).limit(1) : [];
+        const wsId = rows[0]?.id ?? null;
+        void runOpenAliceActionTick(wsId);
+      } catch {
+        void runOpenAliceActionTick(null);
+      }
+    }, 90_000);
+  }
+
   // BLOCK #NEWS: AI news selector — hourly cron (every 60min). isWithinNewsWindowTrigger()
   // enforces 50min double-fire guard. Old 4-window (08/12/18/24) gate removed: users saw
   // stale news when browsing between windows. Now fires every hour, always fresh.
@@ -18073,6 +18106,7 @@ function startSchedulers(workspaceSlug: string): void {
     "FINMIND-FULL-11-DATASET boot(60s)+recurring(6h) + " +
     "P0-C pipeline pre_market/close_watch/close_brief (15min) + " +
     "BLOCK#6 event-rule-engine (5min) + email-digest (5min, fires at 17:00–17:30 TST) + " +
+    "OPENALICE-M1 decision-orchestrator (10min, 60s boot) + OPENALICE-M2 action-executor (7min, 90s boot) + " +
     "BLOCK#NEWS news-ai-selector (60min hourly cron, 50min double-fire guard) + " +
     "P0-2 health-watchdog (30min) + " +
     "BLOCK#TOGGLE paper-obs-cron (15min poll, fires at 17:00–17:30 TST) + " +
