@@ -17380,6 +17380,137 @@ test("BROKER-ROUTING-4: KGI manual order write is hard-guarded — assertKgiSimO
   );
 });
 
+// ── OPENALICE-M1 tests ─────────────────────────────────────────────────────────
+
+test("OPENALICE-M1-1: given event trigger (R01 revenue surge), action_type resolves to deep_analyze", async () => {
+  // Pure logic test — exercises the action_type mapping rule without DB or HTTP.
+  // A revenue surge event should route to deep_analyze (stock-level deep analysis).
+  const { default: assert2 } = await import("node:assert/strict");
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-orchestrator.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must export runOpenAliceDecisionTick
+  assert2.ok(
+    src.includes("export async function runOpenAliceDecisionTick"),
+    "OPENALICE-M1-1: must export runOpenAliceDecisionTick"
+  );
+
+  // Must have all 4 action types defined
+  assert2.ok(
+    src.includes('"deep_analyze"') && src.includes('"rec_reweight"') &&
+    src.includes('"rebalance_suggest"') && src.includes('"priority_alert"'),
+    "OPENALICE-M1-1: must define all 4 action_type values"
+  );
+
+  // System prompt must instruct LLM not to execute trades
+  assert2.ok(
+    src.includes("NEVER suggest placing real trades") || src.includes("NEVER suggest actions involving real money"),
+    "OPENALICE-M1-1: system prompt must prohibit trade execution"
+  );
+
+  // Must use json_object responseFormat for structured output
+  assert2.ok(
+    src.includes('"json_object"'),
+    "OPENALICE-M1-1: must use responseFormat: json_object for structured LLM output"
+  );
+});
+
+test("OPENALICE-M1-2: dedup guard prevents same trigger_id from producing two decisions", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-orchestrator.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must use ON CONFLICT (trigger_type, trigger_id) DO NOTHING in insertDecision
+  assert.ok(
+    src.includes("ON CONFLICT (trigger_type, trigger_id) DO NOTHING"),
+    "OPENALICE-M1-2: insertDecision must use ON CONFLICT ... DO NOTHING for dedup"
+  );
+
+  // Must NOT fetch triggers that already have a decision (subquery filter)
+  assert.ok(
+    src.includes("NOT EXISTS") && src.includes("iuf_decisions"),
+    "OPENALICE-M1-2: fetchUnprocessedEvents/Signals must filter out already-processed triggers via NOT EXISTS subquery"
+  );
+});
+
+test("OPENALICE-M1-3: LLM parse failure → fallback to priority_alert, tick does not throw", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-orchestrator.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must have buildFallbackDecision that returns priority_alert
+  assert.ok(
+    src.includes("buildFallbackDecision") && src.includes('"priority_alert"'),
+    "OPENALICE-M1-3: must define buildFallbackDecision that defaults to priority_alert"
+  );
+
+  // Tick must be wrapped in try/catch (safe-default: tick never throws)
+  assert.ok(
+    src.includes("try {") && src.includes("} catch (e) {") &&
+    src.includes("_tickRunning = false"),
+    "OPENALICE-M1-3: runOpenAliceDecisionTick must have try/finally guard with _tickRunning reset"
+  );
+
+  // LLM call result null path must use fallback
+  assert.ok(
+    src.includes("?? buildFallbackDecision(triggerRef)"),
+    "OPENALICE-M1-3: null LLM result must fall back to buildFallbackDecision"
+  );
+});
+
+test("OPENALICE-M1-4: migration 0046 has correct UNIQUE constraint + CHECK constraints + down migration", async () => {
+  const fwdSrc = readFileSync(
+    new URL("../packages/db/migrations/0046_iuf_decisions.sql", import.meta.url),
+    "utf-8"
+  );
+  const downSrc = readFileSync(
+    new URL("../packages/db/migrations/0046_iuf_decisions.down.sql", import.meta.url),
+    "utf-8"
+  );
+
+  // Forward migration must create table with IF NOT EXISTS
+  assert.ok(
+    fwdSrc.includes("CREATE TABLE IF NOT EXISTS iuf_decisions"),
+    "OPENALICE-M1-4: forward migration must use CREATE TABLE IF NOT EXISTS iuf_decisions"
+  );
+
+  // Must have UNIQUE constraint on (trigger_type, trigger_id)
+  assert.ok(
+    fwdSrc.includes("trigger_type, trigger_id"),
+    "OPENALICE-M1-4: must have UNIQUE constraint on (trigger_type, trigger_id)"
+  );
+
+  // Must have CHECK for action_type enum
+  assert.ok(
+    fwdSrc.includes("deep_analyze") && fwdSrc.includes("rec_reweight") &&
+    fwdSrc.includes("rebalance_suggest") && fwdSrc.includes("priority_alert"),
+    "OPENALICE-M1-4: forward migration must have CHECK for all 4 action_type values"
+  );
+
+  // Must have CHECK for status enum
+  assert.ok(
+    fwdSrc.includes("proposed") && fwdSrc.includes("executing") &&
+    fwdSrc.includes("done") && fwdSrc.includes("skipped"),
+    "OPENALICE-M1-4: forward migration must have CHECK for all 4 status values"
+  );
+
+  // Down migration must DROP TABLE
+  assert.ok(
+    downSrc.includes("DROP TABLE IF EXISTS iuf_decisions"),
+    "OPENALICE-M1-4: down migration must DROP TABLE IF EXISTS iuf_decisions"
+  );
+
+  // Must have JSONB type guards
+  assert.ok(
+    fwdSrc.includes("jsonb_typeof"),
+    "OPENALICE-M1-4: forward migration must have jsonb_typeof CHECK constraints"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

@@ -1090,3 +1090,40 @@ export const aiRecPickSnapshots = pgTable(
     retUpdatedIdx:      index("ai_rec_pick_snaps_ret_updated_idx").on(table.retUpdatedAt, table.pickDate.desc()),
   })
 );
+
+// -- iuf_decisions -- migration 0046_iuf_decisions.sql
+// OpenAlice M1 decision layer: orchestrator consumes iuf_events + signals →
+// LLM reasoning → decision rows. M1 writes status='proposed' only; M2 executes.
+// UNIQUE (trigger_type, trigger_id): same event/signal never produces two decisions.
+// DB-side CHECK constraints on action_type, status, confidence, priority, cost_usd,
+// and JSONB type guards on trigger_ref / action_payload / outcome (see migration SQL).
+export const iufDecisions = pgTable(
+  "iuf_decisions",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    // trigger provenance
+    triggerType:   text("trigger_type").notNull(),
+    triggerId:     text("trigger_id").notNull(),
+    triggerRef:    jsonb("trigger_ref").$type<Record<string, unknown>>().notNull().default({}),
+    // LLM reasoning output
+    reasoning:     text("reasoning").notNull().default(""),
+    actionType:    text("action_type").notNull(),
+    actionPayload: jsonb("action_payload").$type<Record<string, unknown>>().notNull().default({}),
+    confidence:    real("confidence").notNull().default(0),
+    priority:      integer("priority").notNull().default(3),
+    // lifecycle — M1 always 'proposed'; M2 updates to executing/done/skipped
+    status:        text("status").notNull().default("proposed"),
+    // M4 outcome (nullable, filled post-hoc by performance tracking cron)
+    outcome:       jsonb("outcome").$type<Record<string, unknown>>(),
+    // cost tracking
+    modelKey:      text("model_key"),
+    costUsd:       numeric("cost_usd", { precision: 10, scale: 8 }).notNull().default("0"),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusCreatedIdx:     index("iuf_decisions_status_created_idx").on(table.status, table.createdAt),
+    actionTypeCreatedIdx: index("iuf_decisions_action_type_created_idx").on(table.actionType, table.createdAt),
+    createdAtIdx:         index("iuf_decisions_created_at_idx").on(table.createdAt),
+    triggerUidx:          uniqueIndex("iuf_decisions_trigger_uidx").on(table.triggerType, table.triggerId),
+  })
+);
