@@ -71,6 +71,7 @@ import {
 import {
   runOpenAliceDecisionTick,
   getOrchestratorTickState,
+  getOrchestratorObservability,
 } from "./openalice-orchestrator.js";
 import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
@@ -19496,6 +19497,18 @@ app.post("/api/v1/admin/ai-recommendations/v3/refresh", async (c) => {
   void _runAiRecV3Cron({ trigger: "manual_refresh", runId, workspaceId: session.workspace?.id ?? null });
 
   return c.json({ ok: true, runId, trigger: "manual_refresh", queuedAt: new Date().toISOString() });
+});
+
+// GET /api/v1/openalice/orchestrator/state — OpenAlice 主腦 M1 決策層 observability (Owner only)
+app.get("/api/v1/openalice/orchestrator/state", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  const limitRaw = Number(c.req.query("limit"));
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
+  const obs = await getOrchestratorObservability(limit);
+  return c.json(obs);
 });
 
 // GET /api/v1/admin/ai-recommendations/v3/status

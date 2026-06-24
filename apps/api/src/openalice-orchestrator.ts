@@ -362,6 +362,71 @@ export function getOrchestratorTickState() {
 }
 
 /**
+ * Observability read for the orchestrator state endpoint (M1 verification + M3 UI).
+ * Returns counts by status/action_type + the most recent decisions. Read-only.
+ */
+export async function getOrchestratorObservability(limit = 20): Promise<{
+  tick: ReturnType<typeof getOrchestratorTickState>;
+  totals: { total: number; byStatus: Record<string, number>; byActionType: Record<string, number> };
+  recent: Array<{
+    id: string;
+    triggerType: string;
+    actionType: string;
+    confidence: number;
+    priority: number;
+    status: string;
+    reasoning: string;
+    createdAt: string;
+  }>;
+}> {
+  const tick = getOrchestratorTickState();
+  const empty = { total: 0, byStatus: {}, byActionType: {} };
+  if (!isDatabaseMode()) return { tick, totals: empty, recent: [] };
+  const db = getDb();
+  if (!db) return { tick, totals: empty, recent: [] };
+
+  try {
+    const statusRows = await execRows<{ status: string; n: string | number }>(
+      db.execute(drizzleSql`SELECT status, count(*) AS n FROM iuf_decisions GROUP BY status`)
+    );
+    const actionRows = await execRows<{ action_type: string; n: string | number }>(
+      db.execute(drizzleSql`SELECT action_type, count(*) AS n FROM iuf_decisions GROUP BY action_type`)
+    );
+    const recentRows = await execRows<{
+      id: string; trigger_type: string; action_type: string; confidence: number;
+      priority: number; status: string; reasoning: string; created_at: string | Date;
+    }>(
+      db.execute(drizzleSql`
+        SELECT id, trigger_type, action_type, confidence, priority, status, reasoning, created_at
+        FROM iuf_decisions ORDER BY created_at DESC LIMIT ${limit}
+      `)
+    );
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const r of statusRows) { const n = Number(r.n) || 0; byStatus[r.status] = n; total += n; }
+    const byActionType: Record<string, number> = {};
+    for (const r of actionRows) byActionType[r.action_type] = Number(r.n) || 0;
+    return {
+      tick,
+      totals: { total, byStatus, byActionType },
+      recent: recentRows.map((r) => ({
+        id: r.id,
+        triggerType: r.trigger_type,
+        actionType: r.action_type,
+        confidence: Number(r.confidence),
+        priority: Number(r.priority),
+        status: r.status,
+        reasoning: r.reasoning,
+        createdAt: typeof r.created_at === "string" ? r.created_at : new Date(r.created_at).toISOString(),
+      })),
+    };
+  } catch (e) {
+    console.warn("[openalice-orchestrator] getObservability failed:", e instanceof Error ? e.message : String(e));
+    return { tick, totals: empty, recent: [] };
+  }
+}
+
+/**
  * runOpenAliceDecisionTick
  *
  * Called every 10 minutes by the scheduler registered in server.ts.
