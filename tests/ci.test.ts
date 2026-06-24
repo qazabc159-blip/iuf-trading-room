@@ -17511,6 +17511,190 @@ test("OPENALICE-M1-4: migration 0046 has correct UNIQUE constraint + CHECK const
   );
 });
 
+// ── OPENALICE-M2 tests ─────────────────────────────────────────────────────────
+
+test("OPENALICE-M2-1: action executor exports runOpenAliceActionTick + getActionExecutorTickState", async () => {
+  const { default: assert2 } = await import("node:assert/strict");
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-action-executor.ts", import.meta.url),
+    "utf-8"
+  );
+
+  assert2.ok(
+    src.includes("export async function runOpenAliceActionTick"),
+    "OPENALICE-M2-1: must export runOpenAliceActionTick"
+  );
+  assert2.ok(
+    src.includes("export function getActionExecutorTickState"),
+    "OPENALICE-M2-1: must export getActionExecutorTickState"
+  );
+
+  // Must handle all 4 action_type cases
+  assert2.ok(
+    src.includes('"deep_analyze"') &&
+    src.includes('"priority_alert"') &&
+    src.includes('"rec_reweight"') &&
+    src.includes('"rebalance_suggest"'),
+    "OPENALICE-M2-1: must handle all 4 action_type values in switch"
+  );
+});
+
+test("OPENALICE-M2-2: rec_reweight and rebalance_suggest are advisory-only (no order/position/recommendation mutation)", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-action-executor.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Advisory handlers must set advisory:true in outcome
+  assert.ok(
+    src.includes("advisory: true"),
+    "OPENALICE-M2-2: advisory handlers must set advisory:true in outcome"
+  );
+
+  // Must include W6 attestation notes
+  assert.ok(
+    src.includes("realOrderPath: false") && src.includes("positionMutated: false"),
+    "OPENALICE-M2-2: must include W6 attestation fields (realOrderPath, positionMutated)"
+  );
+
+  // Must NOT import from broker/* path (words may appear in safety comments, imports are the guard)
+  assert.ok(
+    !src.includes('from "./broker/') && !src.includes('from "../broker/') &&
+    !src.includes('import("./broker/') && !src.includes('import("../broker/'),
+    "OPENALICE-M2-2: must have zero broker import paths (W6 guard)"
+  );
+
+  // Notes must say advisory and not to mutate recommendations
+  assert.ok(
+    src.includes("Advisory only") && src.includes("NOT mutated"),
+    "OPENALICE-M2-2: rec_reweight must document that recommendations are NOT mutated"
+  );
+});
+
+test("OPENALICE-M2-3: priority_alert handler writes to iuf_events via raw SQL (not submitOrder/broker)", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-action-executor.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must INSERT into iuf_events
+  assert.ok(
+    src.includes("INSERT INTO iuf_events"),
+    "OPENALICE-M2-3: priority_alert must INSERT into iuf_events"
+  );
+
+  // Must set acknowledged = false (new, unread alert)
+  assert.ok(
+    src.includes("acknowledged") && src.includes("false"),
+    "OPENALICE-M2-3: new iuf_events must start with acknowledged=false"
+  );
+
+  // Must use a decision-specific rule_id
+  assert.ok(
+    src.includes("R_OPENALICE_DECISION"),
+    "OPENALICE-M2-3: priority_alert events must use ALERT_RULE_ID = R_OPENALICE_DECISION"
+  );
+});
+
+test("OPENALICE-M2-4: status machine proposed→executing→done/skipped, tick is safe-default (never throws)", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-action-executor.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must transition through executing
+  assert.ok(
+    src.includes("markExecuting") && src.includes("markDone") && src.includes("markSkipped"),
+    "OPENALICE-M2-4: must have markExecuting, markDone, markSkipped helpers"
+  );
+
+  // Must reset executing→proposed on outer error for retry
+  assert.ok(
+    src.includes("resetToProposed"),
+    "OPENALICE-M2-4: must reset stuck executing decisions to proposed on outer error"
+  );
+
+  // Tick must be guarded with _actionTickRunning concurrent guard
+  assert.ok(
+    src.includes("_actionTickRunning"),
+    "OPENALICE-M2-4: must have _actionTickRunning concurrent guard"
+  );
+
+  // Outer tick wrapped in try/finally
+  assert.ok(
+    src.includes("try {") && src.includes("} finally {") && src.includes("_actionTickRunning = false"),
+    "OPENALICE-M2-4: runOpenAliceActionTick must have try/finally guard"
+  );
+});
+
+test("OPENALICE-M2-5: deep_analyze calls runReactLoop with read-only tool whitelist (no write tools)", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-action-executor.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Must use DEEP_ANALYZE_TOOL_WHITELIST
+  assert.ok(
+    src.includes("DEEP_ANALYZE_TOOL_WHITELIST"),
+    "OPENALICE-M2-5: must define DEEP_ANALYZE_TOOL_WHITELIST"
+  );
+
+  // Whitelist must include only read-only tools
+  assert.ok(
+    src.includes('"get_company_technical"') &&
+    src.includes('"get_news_top10"') &&
+    src.includes('"get_institutional_flow"'),
+    "OPENALICE-M2-5: DEEP_ANALYZE_TOOL_WHITELIST must include read-only tools"
+  );
+
+  // Must NOT include write-tool strings in the whitelist array
+  assert.ok(
+    !src.includes('"submit_order"') && !src.includes('"place_order"') && !src.includes('"write_position"'),
+    "OPENALICE-M2-5: DEEP_ANALYZE_TOOL_WHITELIST must NOT contain write tools"
+  );
+
+  // Must use dynamic import for react-loop (keep startup cost low)
+  assert.ok(
+    src.includes('await import(') && src.includes("react-loop"),
+    "OPENALICE-M2-5: deep_analyze must dynamically import runReactLoop"
+  );
+
+  // Must use COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION marker in prompt
+  assert.ok(
+    src.includes("COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION"),
+    "OPENALICE-M2-5: deep_analyze prompt must include COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION marker"
+  );
+});
+
+test("OPENALICE-M2-6: server.ts wires M2 action tick (7min interval + 90s boot-fire)", async () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+
+  assert.ok(
+    serverSrc.includes("runOpenAliceActionTick"),
+    "OPENALICE-M2-6: server.ts must import and call runOpenAliceActionTick"
+  );
+
+  assert.ok(
+    serverSrc.includes("openalice-action-executor"),
+    "OPENALICE-M2-6: server.ts must import from openalice-action-executor"
+  );
+
+  // 7 minute interval
+  assert.ok(
+    serverSrc.includes("7 * 60 * 1000") || serverSrc.includes("ACTION_TICK_MS"),
+    "OPENALICE-M2-6: action tick must use 7-minute interval"
+  );
+
+  // 90s boot-fire
+  assert.ok(
+    serverSrc.includes("90_000"),
+    "OPENALICE-M2-6: action tick must boot-fire at 90s"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
