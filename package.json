@@ -13,7 +13,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "check:db-execrows": "node ./scripts/check-db-execrows.mjs",
-    "test": "node --import ./tests/setup-test-env.mjs --import tsx --test ./tests/ci.test.ts ./tests/risk-persistence.test.ts ./tests/migrate.test.ts",
+    "test": "node --import ./tests/setup-test-env.mjs --import tsx --test ./tests/ci.test.ts ./tests/risk-persistence.test.ts ./tests/migrate.test.ts ./tests/openalice-orchestrator.test.ts",
     "qa:playwright": "pnpm --filter @iuf-trading-room/qa-playwright qa:playwright",
     "qa:playwright:smoke": "pnpm --filter @iuf-trading-room/qa-playwright qa:playwright:smoke",
     "smoke": "node --import tsx ./scripts/smoke-api.ts",
