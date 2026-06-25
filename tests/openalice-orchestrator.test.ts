@@ -1,5 +1,5 @@
 /**
- * openalice-orchestrator.test.ts — Brain calibration tests (2026-06-25)
+ * openalice-orchestrator.test.ts — Brain calibration + budget governance tests (2026-06-25)
  * Run via: node --import ./tests/setup-test-env.mjs --import tsx --test tests/openalice-orchestrator.test.ts
  *
  * Tests run in memory mode (no DB required).
@@ -14,6 +14,14 @@
  *   OA-CAL-C1: SYSTEM_PROMPT contains Traditional Chinese requirement for reasoning
  *   OA-CAL-C2: SYSTEM_PROMPT forbids guarantee/follow-trade language
  *   OA-CAL-C3: SYSTEM_PROMPT instructs LLM to put ticker in action_payload.tickers
+ *
+ * Budget governance (OA-GOV-*):
+ *   OA-GOV-1: daily cap defaults to 8, env-overridable
+ *   OA-GOV-2: daily cap reached → skip reason = deep_analyze_daily_cap_reached
+ *   OA-GOV-3: budget insufficient → skip reason = budget_insufficient (not done-empty)
+ *   OA-GOV-4: per-ticker dedup → skip reason = already_analyzed_today
+ *   OA-GOV-5: priority ordering — ORDER BY clause uses confidence DESC secondary sort
+ *   OA-GOV-6: sentinel detection — "報告生成失敗" string marks exhausted synthesis
  */
 
 import assert from "node:assert/strict";
@@ -22,7 +30,12 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { _extractTickersForTest } from "../apps/api/src/openalice-action-executor.ts";
+import {
+  _extractTickersForTest,
+  _getDeepAnalyzeDailyCapForTest,
+  _EMPTY_REPORT_SENTINEL_FOR_TEST,
+  _DEEP_ANALYZE_MIN_BUDGET_USD_FOR_TEST,
+} from "../apps/api/src/openalice-action-executor.ts";
 
 // ── Load orchestrator source for static-analysis tests ────────────────────────
 
@@ -137,4 +150,101 @@ test("OA-CAL-D1: PRIORITY_ALERT_SEVERITY_MAP values all satisfy iuf_events sever
   for (const v of values) {
     assert.ok(allowed.has(v), `severity "${v}" must be one of info|warning|critical (iuf_events CHECK)`);
   }
+});
+
+// ── Budget governance tests (OA-GOV-*) ────────────────────────────────────────
+// Static source assertions — no DB required. Verify structure of the governance
+// gates that prevent 22+/day deep_analyze noise and empty-report "done" outcomes.
+
+const EXECUTOR_SOURCE = readFileSync(
+  join(__dirname, "../apps/api/src/openalice-action-executor.ts"),
+  "utf-8"
+);
+
+test("OA-GOV-1: daily cap defaults to 8, env-overridable via OPENALICE_DEEP_ANALYZE_DAILY_CAP", () => {
+  // Default cap
+  const original = process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"];
+  delete process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"];
+  assert.equal(_getDeepAnalyzeDailyCapForTest(), 8, "default cap should be 8");
+
+  // Env override
+  process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"] = "3";
+  assert.equal(_getDeepAnalyzeDailyCapForTest(), 3, "env override to 3 should work");
+
+  // Restore
+  if (original !== undefined) {
+    process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"] = original;
+  } else {
+    delete process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"];
+  }
+});
+
+test("OA-GOV-2: daily cap gate returns skip with reason=deep_analyze_daily_cap_reached", () => {
+  // Verify source contains the governance gate and the exact skip reason string.
+  assert.ok(
+    EXECUTOR_SOURCE.includes("deep_analyze_daily_cap_reached"),
+    "executor must contain skip reason 'deep_analyze_daily_cap_reached'"
+  );
+  assert.ok(
+    EXECUTOR_SOURCE.includes("dailyCapState.doneCount >= dailyCapState.cap"),
+    "executor must check doneCount against cap"
+  );
+});
+
+test("OA-GOV-3: budget insufficient gate returns skip with reason=budget_insufficient (not done-empty)", () => {
+  // Verify the pre-flight budget check exists and uses the right skip reason.
+  assert.ok(
+    EXECUTOR_SOURCE.includes("budget_insufficient"),
+    "executor must contain skip reason 'budget_insufficient'"
+  );
+  assert.ok(
+    EXECUTOR_SOURCE.includes("getRemainingBudgetUsd"),
+    "executor must call getRemainingBudgetUsd before runReactLoop"
+  );
+  // Min budget threshold exported and non-trivial
+  assert.ok(
+    _DEEP_ANALYZE_MIN_BUDGET_USD_FOR_TEST > 0,
+    "DEEP_ANALYZE_MIN_BUDGET_USD must be > 0"
+  );
+  assert.ok(
+    _DEEP_ANALYZE_MIN_BUDGET_USD_FOR_TEST <= 1,
+    "DEEP_ANALYZE_MIN_BUDGET_USD should be <= $1 (conservative threshold)"
+  );
+});
+
+test("OA-GOV-4: per-ticker dedup gate returns skip with reason=already_analyzed_today", () => {
+  assert.ok(
+    EXECUTOR_SOURCE.includes("already_analyzed_today"),
+    "executor must contain skip reason 'already_analyzed_today'"
+  );
+  assert.ok(
+    EXECUTOR_SOURCE.includes("isTickerDeepAnalyzedToday"),
+    "executor must call isTickerDeepAnalyzedToday per ticker"
+  );
+});
+
+test("OA-GOV-5: fetchProposedDecisions uses confidence DESC as secondary sort (prioritise high-confidence)", () => {
+  assert.ok(
+    EXECUTOR_SOURCE.includes("ORDER BY priority ASC, confidence DESC, created_at DESC"),
+    "fetchProposedDecisions must sort by priority ASC, confidence DESC, created_at DESC"
+  );
+});
+
+test("OA-GOV-6: sentinel string '報告生成失敗' is detected and NOT stored as status=done", () => {
+  // The sentinel is the string written by react-loop when synthesis returns null.
+  // Governance fix: executor must check for this string and mark budget_exhausted_no_report,
+  // then collapse to skipped if all analyses failed.
+  assert.equal(
+    _EMPTY_REPORT_SENTINEL_FOR_TEST,
+    "報告生成失敗",
+    "sentinel constant must match react-loop message exactly"
+  );
+  assert.ok(
+    EXECUTOR_SOURCE.includes("budget_exhausted_no_report"),
+    "executor must map sentinel outcome to 'budget_exhausted_no_report' status"
+  );
+  assert.ok(
+    EXECUTOR_SOURCE.includes("no_real_report_produced"),
+    "executor must collapse all-exhausted results to skipped outcome"
+  );
 });
