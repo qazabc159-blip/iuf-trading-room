@@ -206,18 +206,35 @@ async function handleDeepAnalyze(
     };
   }
 
-  // Extract tickers from payload
+  // Extract tickers from payload — primary source
   const rawTickers = payload["tickers"];
-  const tickers: string[] = Array.isArray(rawTickers)
+  let tickers: string[] = Array.isArray(rawTickers)
     ? rawTickers.filter((t): t is string => typeof t === "string").slice(0, 3)
     : typeof payload["ticker"] === "string"
     ? [payload["ticker"]]
     : [];
 
+  // Fallback: if action_payload had no tickers, look in trigger_ref (the original event/signal data).
+  // This covers the case where the LLM correctly decided deep_analyze but omitted tickers from payload.
+  // trigger_ref.ticker is set by the orchestrator directly from the iuf_events / signals row.
+  if (tickers.length === 0) {
+    const refTicker =
+      typeof triggerRef["ticker"] === "string" && triggerRef["ticker"].trim()
+        ? triggerRef["ticker"].trim()
+        : null;
+    if (refTicker) {
+      tickers = [refTicker];
+      console.log(
+        `[openalice-action-executor] deep_analyze: no tickers in action_payload — ` +
+          `falling back to trigger_ref.ticker="${refTicker}"`
+      );
+    }
+  }
+
   if (tickers.length === 0) {
     return {
       status: "skipped",
-      outcome: { reason: "no_tickers_in_payload", payload },
+      outcome: { reason: "no_tickers_in_payload_or_trigger_ref", payload, triggerRefTicker: triggerRef["ticker"] ?? null },
     };
   }
 
@@ -613,4 +630,31 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
   } finally {
     _actionTickRunning = false;
   }
+}
+
+// ── Test-only exports ──────────────────────────────────────────────────────────
+// Exported for unit tests only — not part of the public API.
+// Mirrors the ticker extraction logic in handleDeepAnalyze.
+
+export function _extractTickersForTest(
+  payload: Record<string, unknown>,
+  triggerRef: Record<string, unknown>
+): { tickers: string[]; source: "payload" | "trigger_ref_fallback" | "none" } {
+  const rawTickers = payload["tickers"];
+  let tickers: string[] = Array.isArray(rawTickers)
+    ? rawTickers.filter((t): t is string => typeof t === "string").slice(0, 3)
+    : typeof payload["ticker"] === "string"
+    ? [payload["ticker"]]
+    : [];
+
+  if (tickers.length > 0) return { tickers, source: "payload" };
+
+  const refTicker =
+    typeof triggerRef["ticker"] === "string" && triggerRef["ticker"].trim()
+      ? triggerRef["ticker"].trim()
+      : null;
+
+  if (refTicker) return { tickers: [refTicker], source: "trigger_ref_fallback" };
+
+  return { tickers: [], source: "none" };
 }

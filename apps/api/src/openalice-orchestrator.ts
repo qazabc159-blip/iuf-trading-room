@@ -121,9 +121,13 @@ Action types (choose EXACTLY one):
 Rules:
 - NEVER suggest placing real trades or submitting orders
 - NEVER suggest actions involving real money execution
+- NEVER mention specific returns, profit guarantees, or follow-trade suggestions
 - Be concise in reasoning (2-3 sentences max)
 - confidence: 0.0-1.0 (how confident you are this is the right action)
 - priority: 1 (urgent/critical) to 5 (low/informational)
+- action_type and all JSON keys MUST remain in English (enum values unchanged)
+- The "reasoning" field MUST be written in Traditional Chinese (繁體中文)
+- If the trigger involves a specific stock ticker, include it in action_payload.tickers as an array (e.g. ["2330"])
 
 Return ONLY valid JSON matching this exact schema:
 {
@@ -131,7 +135,7 @@ Return ONLY valid JSON matching this exact schema:
   "action_payload": { ... },
   "confidence": 0.0..1.0,
   "priority": 1..5,
-  "reasoning": "2-3 sentence explanation"
+  "reasoning": "2-3 句繁體中文說明"
 }`;
 
 function buildUserPrompt(
@@ -149,17 +153,26 @@ function buildUserPrompt(
       `Market event triggered:`,
       `Rule: ${ruleId} — ${ruleName}`,
       `Severity: ${severity}`,
-      ticker ? `Stock: ${ticker}` : `Scope: system-level`,
+      ticker ? `Stock ticker: ${ticker}` : `Scope: system-level`,
       `Event data: ${JSON.stringify(payload, null, 0)}`,
       ``,
+      ticker
+        ? `IMPORTANT: This event is related to stock ${ticker}. If you choose deep_analyze, you MUST include {"tickers": ["${ticker}"]} in action_payload.`
+        : ``,
       `Decide the best action for OpenAlice to take.`,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   } else {
     const source = String(triggerRef["source"] ?? "unknown");
     const direction = String(triggerRef["direction"] ?? "unknown");
     const title = String(triggerRef["title"] ?? "");
     const summary = String(triggerRef["summary"] ?? "");
     const confidence = triggerRef["confidence"] ?? "unknown";
+    // Signals may carry company_ids or a ticker-like field — extract best-effort
+    const ticker = triggerRef["ticker"]
+      ? String(triggerRef["ticker"])
+      : null;
 
     return [
       `Strategy/market signal received:`,
@@ -168,7 +181,11 @@ function buildUserPrompt(
       title ? `Title: ${title}` : "",
       summary ? `Summary: ${summary}` : "",
       `Confidence: ${confidence}`,
+      ticker ? `Stock ticker: ${ticker}` : "",
       ``,
+      ticker
+        ? `IMPORTANT: This signal is related to stock ${ticker}. If you choose deep_analyze, you MUST include {"tickers": ["${ticker}"]} in action_payload.`
+        : `If you choose deep_analyze, include the most relevant stock tickers in action_payload.tickers as an array.`,
       `Decide the best action for OpenAlice to take.`,
     ]
       .filter(Boolean)
@@ -388,6 +405,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     priority: number;
     status: string;
     reasoning: string;
+    outcome: Record<string, unknown> | null;
     createdAt: string;
   }>;
 }> {
@@ -419,10 +437,11 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     );
     const recentRows = execRows<{
       id: string; trigger_type: string; action_type: string; confidence: number;
-      priority: number; status: string; reasoning: string; created_at: string | Date;
+      priority: number; status: string; reasoning: string; outcome: Record<string, unknown> | null;
+      created_at: string | Date;
     }>(
       await db.execute(drizzleSql`
-        SELECT id, trigger_type, action_type, confidence, priority, status, reasoning, created_at
+        SELECT id, trigger_type, action_type, confidence, priority, status, reasoning, outcome, created_at
         FROM iuf_decisions ORDER BY created_at DESC LIMIT ${limit}
       `)
     );
@@ -443,6 +462,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
         priority: Number(r.priority),
         status: r.status,
         reasoning: r.reasoning,
+        outcome: r.outcome ?? null,
         createdAt: typeof r.created_at === "string" ? r.created_at : new Date(r.created_at).toISOString(),
       })),
     };
