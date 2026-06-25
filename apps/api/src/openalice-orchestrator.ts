@@ -408,17 +408,20 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
   if (!db) return { tick, actionTick, totals: empty, recent: [] };
 
   try {
-    const statusRows = await execRows<{ status: string; n: string | number }>(
-      db.execute(drizzleSql`SELECT status, count(*) AS n FROM iuf_decisions GROUP BY status`)
+    // NOTE: execRows() is SYNCHRONOUS and expects the *resolved* query result.
+    // Must await db.execute() FIRST, then pass to execRows — passing the unresolved
+    // Promise makes Array.isArray()=false → always [] (the 2026-06-25 zero-decisions bug).
+    const statusRows = execRows<{ status: string; n: string | number }>(
+      await db.execute(drizzleSql`SELECT status, count(*) AS n FROM iuf_decisions GROUP BY status`)
     );
-    const actionRows = await execRows<{ action_type: string; n: string | number }>(
-      db.execute(drizzleSql`SELECT action_type, count(*) AS n FROM iuf_decisions GROUP BY action_type`)
+    const actionRows = execRows<{ action_type: string; n: string | number }>(
+      await db.execute(drizzleSql`SELECT action_type, count(*) AS n FROM iuf_decisions GROUP BY action_type`)
     );
-    const recentRows = await execRows<{
+    const recentRows = execRows<{
       id: string; trigger_type: string; action_type: string; confidence: number;
       priority: number; status: string; reasoning: string; created_at: string | Date;
     }>(
-      db.execute(drizzleSql`
+      await db.execute(drizzleSql`
         SELECT id, trigger_type, action_type, confidence, priority, status, reasoning, created_at
         FROM iuf_decisions ORDER BY created_at DESC LIMIT ${limit}
       `)
