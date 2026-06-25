@@ -42,6 +42,16 @@ type StatusTotals = {
   }>;
 };
 
+type DecisionVerification = {
+  ret_1d: number | null;
+  ret_5d: number | null;
+  excess_1d: number | null;
+  excess_5d: number | null;
+  hit_1d: boolean | null;
+  hit_5d: boolean | null;
+  updated_at: string;
+};
+
 type DecisionOutcome = {
   advisory?: boolean;
   direction?: string;
@@ -60,6 +70,19 @@ type DecisionOutcome = {
   ticker?: string;
   analyses?: Array<{ ticker: string; status: string; costUsd?: number; reportSummary?: string }>;
   totalCostUsd?: number;
+  verification?: DecisionVerification | null;
+};
+
+type DecisionPerformance = {
+  eligible: number;
+  verified_1d: number;
+  verified_5d: number;
+  hit_rate_1d: number | null;
+  hit_rate_5d: number | null;
+  avg_excess_1d: number | null;
+  avg_excess_5d: number | null;
+  benchmark: string;
+  computed_at: string;
 };
 
 type DecisionItem = {
@@ -77,6 +100,7 @@ type DecisionItem = {
 type OrchestratorState = {
   tick: TickState;
   actionTick?: ActionTickState;
+  decisionPerformance?: DecisionPerformance;
   totals: StatusTotals;
   recent: DecisionItem[];
 };
@@ -106,6 +130,20 @@ const TRIGGER_TYPE_LABEL: Record<string, string> = {
   manual: "手動觸發",
 };
 
+const SKIP_REASON_LABEL: Record<string, string> = {
+  deep_analyze_daily_cap_reached: "今日深析額度已滿",
+  budget_insufficient: "AI 預算不足",
+  already_analyzed_today: "今日已深析過",
+  no_tickers_in_payload: "無明確標的",
+  no_tickers_in_payload_or_trigger_ref: "無明確標的",
+  no_real_report_produced: "報告未生成",
+  confidence_below_threshold: "信心不足",
+  db_unavailable: "資料庫暫不可用",
+  event_insert_failed: "告警寫入失敗",
+  missing_direction_in_payload: "缺少方向資訊",
+  insufficient_payload: "資料不足",
+};
+
 function labelActionType(raw: string) {
   return ACTION_TYPE_LABEL[raw] ?? raw;
 }
@@ -116,6 +154,11 @@ function labelStatus(raw: string) {
 
 function labelTrigger(raw: string) {
   return TRIGGER_TYPE_LABEL[raw] ?? raw;
+}
+
+function labelSkipReason(raw: string | undefined): string {
+  if (!raw) return "略過（原因未記錄）";
+  return SKIP_REASON_LABEL[raw] ?? raw;
 }
 
 // ── API fetch ──────────────────────────────────────────────────────────────
@@ -313,7 +356,79 @@ function TotalsOverview({ totals }: { totals: StatusTotals }) {
 
 // ── Outcome block ──────────────────────────────────────────────────────────
 
-function OutcomeBlock({ outcome, actionType }: { outcome: DecisionOutcome; actionType: string }) {
+// ── Verification block (done deep_analyze) ────────────────────────────────
+
+function VerificationBlock({ v, ticker }: { v: DecisionVerification; ticker?: string }) {
+  const pct = (n: number | null) => (n == null ? "驗證中" : `${(n * 100).toFixed(2)}%`);
+  const hitLabel = (h: boolean | null) => {
+    if (h === null) return "驗證中";
+    return h ? "超越基準" : "未超越基準";
+  };
+  const hitColor = (h: boolean | null) => {
+    if (h === null) return "rgba(255,255,255,0.4)";
+    return h ? "#4caf50" : "#ef5350";
+  };
+
+  return (
+    <div className="_dec-verify">
+      <div className="_dec-verify-head">
+        事後驗證{ticker ? ` · ${ticker}` : ""}
+        <span className="_dec-verify-bench">vs 0050</span>
+      </div>
+      <div className="_dec-verify-grid">
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+1日漲跌</span>
+          <span className="_dec-verify-val">{pct(v.ret_1d)}</span>
+        </div>
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+1日超額 vs 0050</span>
+          <span className="_dec-verify-val" style={{ color: v.excess_1d == null ? "rgba(255,255,255,0.4)" : v.excess_1d >= 0 ? "#4caf50" : "#ef5350" }}>
+            {pct(v.excess_1d)}
+          </span>
+        </div>
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+1日結果</span>
+          <span className="_dec-verify-val" style={{ color: hitColor(v.hit_1d) }}>
+            {hitLabel(v.hit_1d)}
+          </span>
+        </div>
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+5日漲跌</span>
+          <span className="_dec-verify-val">{pct(v.ret_5d)}</span>
+        </div>
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+5日超額 vs 0050</span>
+          <span className="_dec-verify-val" style={{ color: v.excess_5d == null ? "rgba(255,255,255,0.4)" : v.excess_5d >= 0 ? "#4caf50" : "#ef5350" }}>
+            {pct(v.excess_5d)}
+          </span>
+        </div>
+        <div className="_dec-verify-cell">
+          <span className="_dec-verify-label">+5日結果</span>
+          <span className="_dec-verify-val" style={{ color: hitColor(v.hit_5d) }}>
+            {hitLabel(v.hit_5d)}
+          </span>
+        </div>
+      </div>
+      {(v.ret_1d === null || v.ret_5d === null) && (
+        <div className="_dec-verify-pending">驗證中 — 等待收盤價資料回填（每日 15:05 TST 更新）</div>
+      )}
+    </div>
+  );
+}
+
+// ── Outcome block ──────────────────────────────────────────────────────────
+
+function OutcomeBlock({ outcome, actionType, status }: { outcome: DecisionOutcome; actionType: string; status: string }) {
+  // Skipped decisions: show human-readable reason
+  if (status === "skipped") {
+    return (
+      <div className="_dec-outcome">
+        <div className="_dec-outcome-head">略過原因</div>
+        <div className="_dec-skip-reason">{labelSkipReason(outcome.reason)}</div>
+      </div>
+    );
+  }
+
   if (actionType === "deep_analyze" && outcome.analyses) {
     return (
       <div className="_dec-outcome">
@@ -331,6 +446,9 @@ function OutcomeBlock({ outcome, actionType }: { outcome: DecisionOutcome; actio
         ))}
         {outcome.totalCostUsd != null && (
           <div className="_dec-outcome-cost">費用估算：${outcome.totalCostUsd.toFixed(4)} USD</div>
+        )}
+        {outcome.verification && (
+          <VerificationBlock v={outcome.verification} ticker={outcome.analyses[0]?.ticker} />
         )}
       </div>
     );
@@ -426,11 +544,117 @@ function DecisionCard({ item }: { item: DecisionItem }) {
       </div>
 
       {item.outcome && (
-        <OutcomeBlock outcome={item.outcome} actionType={item.actionType} />
+        <OutcomeBlock outcome={item.outcome} actionType={item.actionType} status={item.status} />
       )}
 
       <div className="_dec-card-footer">
         <span className="_dec-card-time">{fmtDateTime(item.createdAt)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Scorecard panel ────────────────────────────────────────────────────────
+
+function ScorecardPanel({ perf }: { perf: DecisionPerformance }) {
+  const pct = (n: number | null, verified: number) => {
+    if (n === null || verified < 1) return null;
+    return `${(n * 100).toFixed(1)}%`;
+  };
+
+  const excess = (n: number | null, verified: number) => {
+    if (n === null || verified < 1) return null;
+    const sign = n >= 0 ? "+" : "";
+    return `${sign}${(n * 100).toFixed(2)}%`;
+  };
+
+  const hitRate1d = pct(perf.hit_rate_1d, perf.verified_1d);
+  const hitRate5d = pct(perf.hit_rate_5d, perf.verified_5d);
+  const excess1d = excess(perf.avg_excess_1d, perf.verified_1d);
+  const excess5d = excess(perf.avg_excess_5d, perf.verified_5d);
+
+  // Minimum samples needed for meaningful rates
+  const MIN_SAMPLE = 5;
+  const honest1d = perf.verified_1d >= MIN_SAMPLE;
+  const honest5d = perf.verified_5d >= MIN_SAMPLE;
+
+  return (
+    <div className="_sc-card">
+      <div className="_sc-title-row">
+        <span className="_sc-title">主腦深析成績單</span>
+        <span className="_sc-bench">vs {perf.benchmark}</span>
+        <span className="_sc-computed">計算於 {fmtDateTime(perf.computed_at)}</span>
+      </div>
+
+      <div className="_sc-grid">
+        {/* Eligible / verified counts */}
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">深析總筆數</span>
+          <span className="_sc-cell-val">{perf.eligible}</span>
+          <span className="_sc-cell-sub">有效決策數</span>
+        </div>
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+1 日驗證數</span>
+          <span className="_sc-cell-val">{perf.verified_1d}</span>
+          <span className="_sc-cell-sub">已過 1 交易日</span>
+        </div>
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+5 日驗證數</span>
+          <span className="_sc-cell-val">{perf.verified_5d}</span>
+          <span className="_sc-cell-sub">已過 5 交易日</span>
+        </div>
+
+        {/* Hit rates */}
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+1 日命中率</span>
+          {hitRate1d && honest1d ? (
+            <span className="_sc-cell-val _sc-cell-val--rate">{hitRate1d}</span>
+          ) : (
+            <span className="_sc-cell-val _sc-cell-val--pending">資料累積中</span>
+          )}
+          <span className="_sc-cell-sub">
+            {honest1d ? `超越 ${perf.benchmark} 比例` : `需 ${MIN_SAMPLE} 筆，現有 ${perf.verified_1d}`}
+          </span>
+        </div>
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+5 日命中率</span>
+          {hitRate5d && honest5d ? (
+            <span className="_sc-cell-val _sc-cell-val--rate">{hitRate5d}</span>
+          ) : (
+            <span className="_sc-cell-val _sc-cell-val--pending">資料累積中</span>
+          )}
+          <span className="_sc-cell-sub">
+            {honest5d ? `超越 ${perf.benchmark} 比例` : `需 ${MIN_SAMPLE} 筆，現有 ${perf.verified_5d}`}
+          </span>
+        </div>
+
+        {/* Average excess */}
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+1 日平均超額</span>
+          {excess1d && honest1d ? (
+            <span className="_sc-cell-val" style={{ color: perf.avg_excess_1d != null && perf.avg_excess_1d >= 0 ? "#4caf50" : "#ef5350" }}>
+              {excess1d}
+            </span>
+          ) : (
+            <span className="_sc-cell-val _sc-cell-val--pending">資料累積中</span>
+          )}
+          <span className="_sc-cell-sub">相對 {perf.benchmark} 超額報酬</span>
+        </div>
+        <div className="_sc-cell">
+          <span className="_sc-cell-label">+5 日平均超額</span>
+          {excess5d && honest5d ? (
+            <span className="_sc-cell-val" style={{ color: perf.avg_excess_5d != null && perf.avg_excess_5d >= 0 ? "#4caf50" : "#ef5350" }}>
+              {excess5d}
+            </span>
+          ) : (
+            <span className="_sc-cell-val _sc-cell-val--pending">資料累積中</span>
+          )}
+          <span className="_sc-cell-sub">相對 {perf.benchmark} 超額報酬</span>
+        </div>
+      </div>
+
+      <div className="_sc-disclaimer">
+        成績單僅呈現歷史觀察數據，不代表未來表現，不構成投資建議。
       </div>
     </div>
   );
@@ -874,6 +1098,153 @@ const CSS = `
     background: rgba(255,255,255,0.09);
     color: rgba(255,255,255,0.75);
   }
+
+  /* ── Skip reason ──────────────────────────────────────────── */
+  ._dec-skip-reason {
+    font-size: 13px;
+    color: rgba(145,160,181,0.85);
+    font-family: var(--mono, monospace);
+    padding: 2px 0 4px;
+  }
+
+  /* ── Verification block ───────────────────────────────────── */
+  ._dec-verify {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.18);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 5px;
+  }
+  ._dec-verify-head {
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-family: var(--mono, monospace);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  ._dec-verify-bench {
+    font-size: 10px;
+    color: rgba(255,184,0,0.5);
+    font-family: var(--mono, monospace);
+  }
+  ._dec-verify-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 12px;
+  }
+  ._dec-verify-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  ._dec-verify-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    font-family: var(--mono, monospace);
+  }
+  ._dec-verify-val {
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--mono, monospace);
+    color: rgba(255,255,255,0.75);
+  }
+  ._dec-verify-pending {
+    font-size: 11px;
+    color: rgba(255,184,0,0.5);
+    font-family: var(--mono, monospace);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* ── Scorecard card ───────────────────────────────────────── */
+  ._sc-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  ._sc-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  ._sc-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.82);
+    font-family: var(--mono, monospace);
+    letter-spacing: 0.03em;
+  }
+  ._sc-bench {
+    font-size: 11px;
+    color: rgba(255,184,0,0.6);
+    font-family: var(--mono, monospace);
+    border: 1px solid rgba(255,184,0,0.2);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  ._sc-computed {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    font-family: var(--mono, monospace);
+    margin-left: auto;
+  }
+  ._sc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px 16px;
+    margin-bottom: 12px;
+  }
+  ._sc-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  ._sc-cell-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.32);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-family: var(--mono, monospace);
+  }
+  ._sc-cell-val {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: var(--mono, monospace);
+    color: rgba(255,255,255,0.85);
+    line-height: 1.1;
+  }
+  ._sc-cell-val--rate {
+    color: #4caf50;
+  }
+  ._sc-cell-val--pending {
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255,184,0,0.55);
+    font-style: italic;
+  }
+  ._sc-cell-sub {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    font-family: var(--mono, monospace);
+    line-height: 1.3;
+  }
+  ._sc-disclaimer {
+    font-size: 10px;
+    color: rgba(255,255,255,0.22);
+    font-family: var(--mono, monospace);
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    line-height: 1.5;
+  }
 `;
 
 // ── Main component ─────────────────────────────────────────────────────────
@@ -969,6 +1340,16 @@ export default function DecisionsPage() {
           >
             <TotalsOverview totals={state.totals} />
           </Panel>
+
+          {state.decisionPerformance && (
+            <Panel
+              code="ADM-BRAIN-DEC-SC"
+              title="深析成績單"
+              right={`${state.decisionPerformance.eligible} 筆有效決策`}
+            >
+              <ScorecardPanel perf={state.decisionPerformance} />
+            </Panel>
+          )}
 
           <Panel
             code="ADM-BRAIN-DEC-LIST"
