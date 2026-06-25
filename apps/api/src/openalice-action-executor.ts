@@ -34,6 +34,7 @@
 import { randomUUID } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
+import { getDailyBudgetUsd, getTodayUtc } from "./llm/llm-gateway.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,20 @@ type ActionOutcome = Record<string, unknown>;
 
 // Max decisions to execute per tick (keeps LLM spend bounded)
 const MAX_DECISIONS_PER_TICK = 5;
+
+// Maximum deep_analyze executions per calendar day (UTC).
+// Prevents 22+/day noise burner — keeps "少而精" discipline.
+// Override with OPENALICE_DEEP_ANALYZE_DAILY_CAP env var.
+function getDeepAnalyzeDailyCap(): number {
+  const env = process.env["OPENALICE_DEEP_ANALYZE_DAILY_CAP"];
+  const parsed = env ? parseInt(env, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
+}
+
+// Minimum remaining LLM budget (USD) required before starting a deep_analyze.
+// A single deep_analyze call (ReAct steps + synthesis) costs ~$0.01-0.05 at
+// gpt-4o-mini rates. $0.10 gives comfortable headroom.
+const DEEP_ANALYZE_MIN_BUDGET_USD = 0.10;
 
 // Minimum confidence threshold to execute deep_analyze (below = skipped)
 const DEEP_ANALYZE_MIN_CONFIDENCE = 0.4;
@@ -120,7 +135,7 @@ async function fetchProposedDecisions(): Promise<ProposedDecisionRow[]> {
              confidence, priority, reasoning, created_at
       FROM iuf_decisions
       WHERE status = 'proposed'
-      ORDER BY priority ASC, created_at DESC
+      ORDER BY priority ASC, confidence DESC, created_at DESC
       LIMIT ${drizzleSql.raw(String(MAX_DECISIONS_PER_TICK))}
     `);
     return execRows<ProposedDecisionRow>(rows);
@@ -170,6 +185,95 @@ async function resetToProposed(decisionId: string): Promise<void> {
   `);
 }
 
+// ── Governance helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Returns the number of deep_analyze decisions that completed today (UTC).
+ * Used to enforce OPENALICE_DEEP_ANALYZE_DAILY_CAP.
+ */
+async function countTodayDeepAnalyzeDone(): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+  try {
+    const today = getTodayUtc(); // "YYYY-MM-DD" UTC
+    const rows = await db.execute(drizzleSql`
+      SELECT COUNT(*)::int AS cnt
+      FROM iuf_decisions
+      WHERE action_type = 'deep_analyze'
+        AND status = 'done'
+        AND DATE(created_at AT TIME ZONE 'UTC') = ${today}::date
+    `);
+    const r = execRows<{ cnt: number | string }>(rows);
+    return Number(r[0]?.cnt ?? 0);
+  } catch (e) {
+    console.warn(
+      "[openalice-action-executor] countTodayDeepAnalyzeDone failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return 0;
+  }
+}
+
+/**
+ * Returns true if the ticker has already been deep_analyzed today (UTC).
+ * Prevents same-ticker budget burn on multiple breakout signals.
+ */
+async function isTickerDeepAnalyzedToday(ticker: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const today = getTodayUtc();
+    const rows = await db.execute(drizzleSql`
+      SELECT COUNT(*)::int AS cnt
+      FROM iuf_decisions
+      WHERE action_type = 'deep_analyze'
+        AND status = 'done'
+        AND DATE(created_at AT TIME ZONE 'UTC') = ${today}::date
+        AND (
+          action_payload->>'tickers' LIKE ${'%' + ticker + '%'}
+          OR action_payload->>'ticker' = ${ticker}
+          OR trigger_ref->>'ticker' = ${ticker}
+        )
+    `);
+    const r = execRows<{ cnt: number | string }>(rows);
+    return Number(r[0]?.cnt ?? 0) > 0;
+  } catch (e) {
+    console.warn(
+      "[openalice-action-executor] isTickerDeepAnalyzedToday failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return false; // fail-open: allow execution rather than over-blocking
+  }
+}
+
+/**
+ * Returns the remaining LLM daily budget in USD.
+ * Queries llm_cost_daily for today's spend, then subtracts from cap.
+ * Returns Infinity on DB error (fail-open — don't block on budget DB failure).
+ */
+async function getRemainingBudgetUsd(): Promise<number> {
+  const db = getDb();
+  if (!db) return Infinity;
+  try {
+    const today = getTodayUtc();
+    const rows = await db.execute(drizzleSql`
+      SELECT COALESCE(SUM(total_cost_usd), 0) AS today_cost
+      FROM llm_cost_daily
+      WHERE date = ${today}::date
+    `);
+    const r = execRows<{ today_cost: string | number }>(rows);
+    const spent = parseFloat(String(r[0]?.today_cost ?? "0"));
+    const budget = getDailyBudgetUsd();
+    return Math.max(0, budget - spent);
+  } catch (e) {
+    console.warn(
+      "[openalice-action-executor] getRemainingBudgetUsd failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+    return Infinity; // fail-open
+  }
+}
+
 // ── Payload parser ─────────────────────────────────────────────────────────────
 
 function parsePayload(raw: Record<string, unknown> | string | null | undefined): Record<string, unknown> {
@@ -195,9 +299,43 @@ async function handleDeepAnalyze(
   payload: Record<string, unknown>,
   triggerRef: Record<string, unknown>,
   confidence: number,
-  workspaceId: string | null
+  workspaceId: string | null,
+  dailyCapState: { doneCount: number; cap: number }
 ): Promise<{ status: "done" | "skipped"; outcome: ActionOutcome }> {
-  // Low confidence: skip
+  // ── Governance gate 1: daily cap ──────────────────────────────────────────
+  if (dailyCapState.doneCount >= dailyCapState.cap) {
+    console.log(
+      `[openalice-action-executor] deep_analyze daily cap reached ` +
+        `(done=${dailyCapState.doneCount} cap=${dailyCapState.cap}) — skipping`
+    );
+    return {
+      status: "skipped",
+      outcome: {
+        reason: "deep_analyze_daily_cap_reached",
+        doneToday: dailyCapState.doneCount,
+        cap: dailyCapState.cap,
+      },
+    };
+  }
+
+  // ── Governance gate 2: budget preflight ───────────────────────────────────
+  const remainingBudget = await getRemainingBudgetUsd();
+  if (remainingBudget < DEEP_ANALYZE_MIN_BUDGET_USD) {
+    console.log(
+      `[openalice-action-executor] deep_analyze budget insufficient ` +
+        `(remaining=$${remainingBudget.toFixed(4)} min=$${DEEP_ANALYZE_MIN_BUDGET_USD}) — skipping`
+    );
+    return {
+      status: "skipped",
+      outcome: {
+        reason: "budget_insufficient",
+        remainingBudgetUsd: remainingBudget,
+        minRequiredUsd: DEEP_ANALYZE_MIN_BUDGET_USD,
+      },
+    };
+  }
+
+  // ── Governance gate 3: low confidence ────────────────────────────────────
   if (confidence < DEEP_ANALYZE_MIN_CONFIDENCE) {
     return {
       status: "skipped",
@@ -256,6 +394,33 @@ async function handleDeepAnalyze(
   }> = [];
 
   for (const ticker of tickers) {
+    // ── Governance gate 4: per-ticker daily dedup ───────────────────────────
+    const alreadyDone = await isTickerDeepAnalyzedToday(ticker.toUpperCase());
+    if (alreadyDone) {
+      console.log(
+        `[openalice-action-executor] deep_analyze ${ticker} already analyzed today — skipping`
+      );
+      analysisResults.push({
+        ticker: ticker.toUpperCase(),
+        runId: "dedup",
+        status: "already_analyzed_today",
+        costUsd: 0,
+        decisionId: null,
+        reportSummary: `已跳過：${ticker.toUpperCase()} 今日已深析`,
+      });
+      continue;
+    }
+
+    // ── Governance gate 5: re-check daily cap inside loop (in case cap was
+    //    consumed by a previous ticker in this same tick) ────────────────────
+    if (dailyCapState.doneCount >= dailyCapState.cap) {
+      console.log(
+        `[openalice-action-executor] deep_analyze daily cap reached mid-loop ` +
+          `(done=${dailyCapState.doneCount} cap=${dailyCapState.cap}) — stopping ticker loop`
+      );
+      break;
+    }
+
     try {
       const reasonTags: string[] = Array.isArray(payload["reason_tags"])
         ? (payload["reason_tags"] as string[]).filter((t): t is string => typeof t === "string")
@@ -279,6 +444,18 @@ async function handleDeepAnalyze(
         runId: randomUUID(),
       });
 
+      // ── Honest status: detect "done but report empty" (budget exhausted during
+      //    synthesis). react-loop returns status="complete" but finalReport
+      //    contains the "報告生成失敗（LLM 配額不足）" sentinel string. We surface
+      //    this as a distinct status so the outcome is not silently marked done.
+      const EMPTY_REPORT_SENTINEL = "報告生成失敗";
+      const reportIsSentinel = result.finalReport.includes(EMPTY_REPORT_SENTINEL);
+
+      // Count this run against the daily cap only if a real report was produced.
+      if (result.status === "complete" && !reportIsSentinel) {
+        dailyCapState.doneCount++;
+      }
+
       // Extract a short summary (first 200 chars of finalReport, no engineering tokens)
       const summaryRaw = result.finalReport.slice(0, 200).replace(/\n+/g, " ").trim();
       const summary = summaryRaw.length > 0 ? summaryRaw + (result.finalReport.length > 200 ? "…" : "") : "分析完成";
@@ -286,7 +463,7 @@ async function handleDeepAnalyze(
       analysisResults.push({
         ticker: ticker.toUpperCase(),
         runId: result.runId,
-        status: result.status,
+        status: reportIsSentinel ? "budget_exhausted_no_report" : result.status,
         costUsd: result.totalCostUsd,
         decisionId: result.decisionId,
         reportSummary: summary,
@@ -308,6 +485,33 @@ async function handleDeepAnalyze(
         reportSummary: `分析失敗: ${msg.slice(0, 80)}`,
       });
     }
+  }
+
+  // If every analysis entry was a dedup-skip, budget_exhausted, failed, or
+  // produced no real report — mark the decision as skipped (honest) instead of done.
+  const REAL_REPORT_STATUSES = new Set(["complete"]);
+  const anyRealReport = analysisResults.some((r) => REAL_REPORT_STATUSES.has(r.status));
+
+  if (!anyRealReport && analysisResults.length > 0) {
+    const allBudgetExhausted = analysisResults.every(
+      (r) => r.status === "budget_exhausted_no_report"
+    );
+    const allDedup = analysisResults.every((r) => r.status === "already_analyzed_today");
+    return {
+      status: "skipped",
+      outcome: {
+        actionType: "deep_analyze",
+        reason: allDedup
+          ? "already_analyzed_today"
+          : allBudgetExhausted
+          ? "budget_insufficient"
+          : "no_real_report_produced",
+        executedAt: new Date().toISOString(),
+        tickers,
+        analyses: analysisResults,
+        totalCostUsd: analysisResults.reduce((s, r) => s + r.costUsd, 0),
+      },
+    };
   }
 
   return {
@@ -526,6 +730,22 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
 
     console.log(`[openalice-action-executor] processing ${rows.length} proposed decisions`);
 
+    // Fetch today's deep_analyze count once per tick (shared across decisions in this tick).
+    // This is mutable state passed to handleDeepAnalyze so ticker-loop increments are visible.
+    const deepAnalyzeCap = getDeepAnalyzeDailyCap();
+    const deepAnalyzeCapState = {
+      doneCount: await countTodayDeepAnalyzeDone(),
+      cap: deepAnalyzeCap,
+    };
+
+    if (deepAnalyzeCapState.doneCount >= deepAnalyzeCap) {
+      console.log(
+        `[openalice-action-executor] deep_analyze daily cap already reached ` +
+          `(done=${deepAnalyzeCapState.doneCount} cap=${deepAnalyzeCap}) — ` +
+          `will skip all deep_analyze proposals this tick`
+      );
+    }
+
     for (const row of rows) {
       if (!row.id) continue;
       const decisionId = String(row.id);
@@ -556,7 +776,8 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
               payload,
               triggerRef,
               confidence,
-              workspaceId ?? null
+              workspaceId ?? null,
+              deepAnalyzeCapState
             );
             break;
 
@@ -637,8 +858,19 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
 
 // ── Test-only exports ──────────────────────────────────────────────────────────
 // Exported for unit tests only — not part of the public API.
-// Mirrors the ticker extraction logic in handleDeepAnalyze.
 
+/** Exposed so tests can verify the cap default and env-override logic. */
+export function _getDeepAnalyzeDailyCapForTest(): number {
+  return getDeepAnalyzeDailyCap();
+}
+
+/** Exposed so tests can verify the sentinel detection logic. */
+export const _EMPTY_REPORT_SENTINEL_FOR_TEST = "報告生成失敗";
+
+/** Exposed so tests can verify the min-budget constant. */
+export const _DEEP_ANALYZE_MIN_BUDGET_USD_FOR_TEST = DEEP_ANALYZE_MIN_BUDGET_USD;
+
+// Mirrors the ticker extraction logic in handleDeepAnalyze.
 export function _extractTickersForTest(
   payload: Record<string, unknown>,
   triggerRef: Record<string, unknown>
