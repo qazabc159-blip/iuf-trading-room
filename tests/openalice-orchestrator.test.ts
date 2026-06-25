@@ -120,3 +120,21 @@ test("OA-CAL-A2: recentRows map includes outcome field", () => {
     "recentRows map should include outcome field"
   );
 });
+
+// OA-CAL-D: priority_alert severity must satisfy iuf_events CHECK (info|warning|critical).
+// 2026-06-25 bug: prio-3 mapped to "high" → every priority_alert INSERT failed the
+// CHECK constraint → alerts never written. Guard every mapped value against the allowed set.
+test("OA-CAL-D1: PRIORITY_ALERT_SEVERITY_MAP values all satisfy iuf_events severity CHECK", () => {
+  const EXECUTOR_SOURCE = readFileSync(
+    join(__dirname, "../apps/api/src/openalice-action-executor.ts"),
+    "utf-8"
+  );
+  const allowed = new Set(["info", "warning", "critical"]);
+  const block = EXECUTOR_SOURCE.match(/PRIORITY_ALERT_SEVERITY_MAP[^{]*\{([^}]*)\}/);
+  assert.ok(block, "PRIORITY_ALERT_SEVERITY_MAP must exist");
+  const values = [...block![1].matchAll(/"[0-9]"\s*:\s*"([a-z]+)"/g)].map((m) => m[1]);
+  assert.ok(values.length >= 5, "map should cover priorities 1-5");
+  for (const v of values) {
+    assert.ok(allowed.has(v), `severity "${v}" must be one of info|warning|critical (iuf_events CHECK)`);
+  }
+});

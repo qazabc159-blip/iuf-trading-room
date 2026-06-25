@@ -75,10 +75,13 @@ const DEEP_ANALYZE_TOOL_WHITELIST = [
 ];
 
 // Severity for priority_alert events written to iuf_events
+// iuf_events CHECK constraint (migration 0025) only allows: 'info' | 'warning' | 'critical'.
+// "high" (the old prio-3 value) violated the CHECK → every priority_alert INSERT failed
+// silently (event_insert_failed), so alerts never reached the notification feed.
 const PRIORITY_ALERT_SEVERITY_MAP: Record<string, string> = {
   "1": "critical",
   "2": "critical",
-  "3": "high",
+  "3": "warning",
   "4": "info",
   "5": "info",
 };
