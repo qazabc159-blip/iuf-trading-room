@@ -17695,6 +17695,21 @@ test("OPENALICE-M2-6: server.ts wires M2 action tick (7min interval + 90s boot-f
   );
 });
 
+test("OPENALICE-OBS-1: getOrchestratorObservability must await db.execute before execRows (no un-awaited Promise)", () => {
+  // 2026-06-25 bug: `await execRows(db.execute(...))` passes an UNRESOLVED Promise
+  // to execRows() (which is synchronous + expects resolved rows) → Array.isArray
+  // (Promise)=false → always [] → state endpoint / M3 UI showed 0 decisions even
+  // while the brain was producing them. Correct pattern: execRows(await db.execute(...)).
+  const src = readFileSync(
+    new URL("../apps/api/src/openalice-orchestrator.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    !/await\s+execRows\s*</.test(src),
+    "OPENALICE-OBS-1: must NOT use `await execRows<...>(` — execRows is sync; await the db.execute() inside instead"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
