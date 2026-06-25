@@ -248,3 +248,147 @@ test("OA-GOV-6: sentinel string '報告生成失敗' is detected and NOT stored 
     "executor must collapse all-exhausted results to skipped outcome"
   );
 });
+
+// ── M4: Decision Outcome Tracking tests (OA-M4-*) ────────────────────────────
+//
+// These tests cover openalice-decision-verifier.ts logic without DB.
+// All price-DB calls are skipped — we test the pure logic layer only.
+
+import {
+  _hasRealReportForTest,
+  _extractTickerFromOutcomeForTest,
+  _calcReturnForTest,
+  _VERIFIER_SENTINEL_FOR_TEST,
+} from "../apps/api/src/openalice-decision-verifier.ts";
+
+const VERIFIER_SOURCE = readFileSync(
+  join(__dirname, "../apps/api/src/openalice-decision-verifier.ts"),
+  "utf-8"
+);
+
+test("OA-M4-1: _calcReturnForTest — basic positive return", () => {
+  // (110 - 100) / 100 = 0.1
+  const r = _calcReturnForTest(100, 110);
+  assert.ok(r !== null, "return should not be null");
+  assert.ok(Math.abs(r! - 0.1) < 1e-10, "return should be 0.1");
+});
+
+test("OA-M4-2: _calcReturnForTest — null inputs return null, zero start returns null", () => {
+  assert.equal(_calcReturnForTest(null, 110), null, "null start → null");
+  assert.equal(_calcReturnForTest(100, null), null, "null end → null");
+  assert.equal(_calcReturnForTest(0, 110), null, "zero start → null (div by zero guard)");
+  assert.equal(_calcReturnForTest(null, null), null, "both null → null");
+});
+
+test("OA-M4-3: _hasRealReportForTest — outcome with complete + clean report → true", () => {
+  const outcome = {
+    actionType: "deep_analyze",
+    tickers: ["2330"],
+    analyses: [
+      {
+        ticker: "2330",
+        status: "complete",
+        reportSummary: "技術面強勢突破，法人連續買超三日，短線多方氣勢不減…",
+        costUsd: 0.012,
+      },
+    ],
+  };
+  assert.equal(_hasRealReportForTest(outcome), true);
+});
+
+test("OA-M4-4: _hasRealReportForTest — sentinel report → false (not a real report)", () => {
+  const outcome = {
+    actionType: "deep_analyze",
+    tickers: ["2432"],
+    analyses: [
+      {
+        ticker: "2432",
+        status: "budget_exhausted_no_report",
+        reportSummary: "分析完成。共執行 2 步推理。報告生成失敗（LLM 配額不足）。",
+        costUsd: 0.001,
+      },
+    ],
+  };
+  assert.equal(_hasRealReportForTest(outcome), false, "sentinel report must not be treated as real");
+});
+
+test("OA-M4-5: _hasRealReportForTest — empty analyses array → false", () => {
+  assert.equal(_hasRealReportForTest({ analyses: [] }), false);
+  assert.equal(_hasRealReportForTest({}), false);
+});
+
+test("OA-M4-6: _extractTickerFromOutcomeForTest — reads tickers[0]", () => {
+  const outcome = { tickers: ["2330", "2317"], analyses: [] };
+  assert.equal(_extractTickerFromOutcomeForTest(outcome), "2330");
+});
+
+test("OA-M4-7: _extractTickerFromOutcomeForTest — falls back to analyses[0].ticker", () => {
+  const outcome = {
+    analyses: [{ ticker: "3518", status: "complete", reportSummary: "…" }],
+  };
+  assert.equal(_extractTickerFromOutcomeForTest(outcome), "3518");
+});
+
+test("OA-M4-8: _extractTickerFromOutcomeForTest — returns null when both missing", () => {
+  assert.equal(_extractTickerFromOutcomeForTest({}), null);
+  assert.equal(_extractTickerFromOutcomeForTest({ analyses: [] }), null);
+});
+
+test("OA-M4-9: sentinel string parity — verifier and executor use same sentinel", () => {
+  assert.equal(
+    _VERIFIER_SENTINEL_FOR_TEST,
+    _EMPTY_REPORT_SENTINEL_FOR_TEST,
+    "verifier and executor must use identical sentinel string"
+  );
+});
+
+test("OA-M4-10: verifier source — updateDecisionVerifications only writes outcome column (no schema changes)", () => {
+  // Verify that the verifier never touches ai_rec_pick_snapshots or other tables
+  assert.ok(
+    !VERIFIER_SOURCE.includes("ai_rec_pick_snapshots"),
+    "verifier must not touch ai_rec_pick_snapshots"
+  );
+  assert.ok(
+    VERIFIER_SOURCE.includes("iuf_decisions"),
+    "verifier must read/write iuf_decisions"
+  );
+  assert.ok(
+    VERIFIER_SOURCE.includes("jsonb_set"),
+    "verifier must use jsonb_set to merge verification into outcome"
+  );
+  // No CREATE TABLE or ALTER TABLE — pure JSONB update, no schema changes
+  assert.ok(
+    !VERIFIER_SOURCE.includes("CREATE TABLE"),
+    "verifier must not CREATE TABLE (no schema changes)"
+  );
+  assert.ok(
+    !VERIFIER_SOURCE.includes("ALTER TABLE"),
+    "verifier must not ALTER TABLE (no schema changes)"
+  );
+});
+
+test("OA-M4-11: verifier source — no broker / position / order paths (SIM-safe)", () => {
+  assert.ok(
+    !VERIFIER_SOURCE.includes('from "./broker/'),
+    "verifier must not import from broker lane"
+  );
+  assert.ok(
+    !VERIFIER_SOURCE.includes("submitOrder"),
+    "verifier must not call submitOrder"
+  );
+  assert.ok(
+    !VERIFIER_SOURCE.includes("placeOrder"),
+    "verifier must not call placeOrder"
+  );
+});
+
+test("OA-M4-12: getOrchestratorObservability source includes decisionPerformance", () => {
+  assert.ok(
+    ORCHESTRATOR_SOURCE.includes("decisionPerformance"),
+    "getOrchestratorObservability must include decisionPerformance in its return"
+  );
+  assert.ok(
+    ORCHESTRATOR_SOURCE.includes("getDecisionPerformance"),
+    "orchestrator must call getDecisionPerformance from verifier"
+  );
+});

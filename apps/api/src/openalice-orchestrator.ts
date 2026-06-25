@@ -393,9 +393,23 @@ type ActionTickState = {
   lastTickError: string | null;
 };
 
+// Inline type for M4 decision performance (mirrors DecisionPerformanceSummary in verifier)
+type DecisionPerformanceSummary = {
+  eligible: number;
+  verified_1d: number;
+  verified_5d: number;
+  hit_rate_1d: number | null;
+  hit_rate_5d: number | null;
+  avg_excess_1d: number | null;
+  avg_excess_5d: number | null;
+  benchmark: string;
+  computed_at: string;
+};
+
 export async function getOrchestratorObservability(limit = 20): Promise<{
   tick: ReturnType<typeof getOrchestratorTickState>;
   actionTick?: ActionTickState;
+  decisionPerformance?: DecisionPerformanceSummary;
   totals: { total: number; byStatus: Record<string, number>; byActionType: Record<string, number> };
   recent: Array<{
     id: string;
@@ -421,7 +435,16 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     // M2 not loaded yet (startup race) — omit from response
   }
 
-  if (!isDatabaseMode()) return { tick, actionTick, totals: empty, recent: [] };
+  // Lazily fetch M4 decision performance summary — dynamic import avoids circular dep
+  let decisionPerformance: DecisionPerformanceSummary | undefined;
+  try {
+    const { getDecisionPerformance } = await import("./openalice-decision-verifier.js");
+    decisionPerformance = await getDecisionPerformance();
+  } catch {
+    // Verifier not loaded or DB error — omit from response (fail-open)
+  }
+
+  if (!isDatabaseMode()) return { tick, actionTick, decisionPerformance, totals: empty, recent: [] };
   const db = getDb();
   if (!db) return { tick, actionTick, totals: empty, recent: [] };
 
@@ -453,6 +476,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     return {
       tick,
       actionTick,
+      decisionPerformance,
       totals: { total, byStatus, byActionType },
       recent: recentRows.map((r) => ({
         id: r.id,
@@ -468,7 +492,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     };
   } catch (e) {
     console.warn("[openalice-orchestrator] getObservability failed:", e instanceof Error ? e.message : String(e));
-    return { tick, actionTick, totals: empty, recent: [] };
+    return { tick, actionTick, decisionPerformance, totals: empty, recent: [] };
   }
 }
 

@@ -18490,6 +18490,42 @@ function startSchedulers(workspaceSlug: string): void {
       }
     }, AI_REC_PERF_POLL_MS);
   }
+
+  // =============================================================================
+  // OPENALICE-M4-CRON: decision outcome verification — back-fill forward returns
+  //
+  // Fires daily at 15:05–15:25 TST (after market close + ai-rec-perf cron window).
+  // Scans done deep_analyze decisions whose outcome.verification is absent or stale
+  // and fills ret_1d/ret_5d + excess vs 0050 benchmark from companies_ohlcv.
+  // No migration: writes into iuf_decisions.outcome JSONB (jsonb_set).
+  // Processes up to 30 rows per tick (see updateDecisionVerifications batch limit).
+  // =============================================================================
+  {
+    const OA_VERIFY_POLL_MS = 15 * 60 * 1000;
+    let _oaVerifyUpdatedDate: string | null = null;
+
+    function isOaVerifyWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      return hhmm >= 1505 && hhmm < 1525; // 15:05–15:25 TST
+    }
+
+    ui(async () => {
+      if (!isOaVerifyWindow()) return;
+      const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const todayDate = taipeiNow.toISOString().slice(0, 10);
+      if (_oaVerifyUpdatedDate === todayDate) return;
+      _oaVerifyUpdatedDate = todayDate;
+      try {
+        const { updateDecisionVerifications } = await import("./openalice-decision-verifier.js");
+        const result = await updateDecisionVerifications();
+        console.info(
+          `[openalice-m4-cron] decision verification done: updated=${result.updated} skipped=${result.skipped} errors=${result.errors}`
+        );
+      } catch (e) {
+        console.warn("[openalice-m4-cron] tick error:", e instanceof Error ? e.message : String(e));
+      }
+    }, OA_VERIFY_POLL_MS);
+  }
 }
 
 async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<string> {
