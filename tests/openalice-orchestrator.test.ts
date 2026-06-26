@@ -116,6 +116,21 @@ test("OA-CAL-C3: SYSTEM_PROMPT instructs LLM to put ticker in action_payload.tic
   );
 });
 
+test("OA-LOOP-1: fetchUnprocessedEvents excludes self-emitted priority_alert events (no feedback loop)", () => {
+  // 2026-06-26: during the OpenAI 429 outage the brain consumed its own
+  // priority_alert notifications (rule_id=R_OPENALICE_DECISION) as new triggers,
+  // each producing another priority_alert → 322 near-duplicate "LLM unavailable"
+  // decisions in ~1h. The unprocessed-events query must exclude self-alerts.
+  assert.ok(
+    ORCHESTRATOR_SOURCE.includes('SELF_ALERT_RULE_ID = "R_OPENALICE_DECISION"'),
+    "orchestrator must define the self-alert rule id to exclude"
+  );
+  assert.ok(
+    ORCHESTRATOR_SOURCE.includes("e.rule_id IS DISTINCT FROM ${SELF_ALERT_RULE_ID}"),
+    "fetchUnprocessedEvents WHERE clause must exclude self-emitted alert events"
+  );
+});
+
 // ── Problem A tests: observability includes outcome field (static source check) ─
 
 test("OA-CAL-A1: recentRows SQL SELECT includes outcome column", () => {
