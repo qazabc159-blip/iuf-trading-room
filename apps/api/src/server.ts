@@ -15330,6 +15330,73 @@ app.post("/api/v1/admin/news-top10/force-refresh", async (c) => {
 });
 
 // =============================================================================
+// ADMIN: Purge OpenAlice fallback-spam decisions (one-off cleanup)
+// =============================================================================
+//
+// POST /api/v1/admin/openalice/decisions/purge-fallback-spam
+//   Owner-only. Dry-run by default; pass {"apply":true} to delete.
+//   Removes the priority_alert decisions produced by buildFallbackDecision when
+//   the LLM was unavailable (action_payload.fallback=true) plus the
+//   notification-centre iuf_events they were executed into (rule_id=
+//   R_OPENALICE_DECISION, "OpenAlice decision LLM unavailable" message).
+//   2026-06-26: the OpenAI 429 outage + self-alert loop (fixed #1141) produced
+//   ~322 of these, flooding the decisions feed. Targets ONLY fallback-marked
+//   rows — real priority_alerts (fallback flag unset) are never matched.
+// =============================================================================
+
+app.post("/api/v1/admin/openalice/decisions/purge-fallback-spam", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const body = await c.req.json().catch(() => ({}));
+  const apply = (body as { apply?: unknown })?.apply === true;
+
+  // Precise identifiers — only the LLM-unavailable fallback spam, nothing else.
+  const decisionWhere = drizzleSql`action_type = 'priority_alert' AND action_payload->>'fallback' = 'true'`;
+  const eventWhere = drizzleSql`rule_id = 'R_OPENALICE_DECISION' AND payload->>'message' LIKE 'OpenAlice decision LLM unavailable%'`;
+
+  try {
+    const decCnt = dbExecRows<{ n?: number }>(
+      await db.execute(drizzleSql`SELECT COUNT(*)::int AS n FROM iuf_decisions WHERE ${decisionWhere}`)
+    )[0]?.n ?? 0;
+    const evtCnt = dbExecRows<{ n?: number }>(
+      await db.execute(drizzleSql`SELECT COUNT(*)::int AS n FROM iuf_events WHERE ${eventWhere}`)
+    )[0]?.n ?? 0;
+
+    if (!apply) {
+      return c.json({
+        mode: "dry_run",
+        decisionsMatched: Number(decCnt),
+        eventsMatched: Number(evtCnt),
+        note: 'pass {"apply":true} to delete',
+      });
+    }
+
+    await db.execute(drizzleSql`DELETE FROM iuf_decisions WHERE ${decisionWhere}`);
+    await db.execute(drizzleSql`DELETE FROM iuf_events WHERE ${eventWhere}`);
+    console.log(
+      `[admin/purge-fallback-spam] Owner uid=${session.user.id} ` +
+        `deleted decisions=${decCnt} events=${evtCnt}`
+    );
+    return c.json({
+      mode: "applied",
+      decisionsDeleted: Number(decCnt),
+      eventsDeleted: Number(evtCnt),
+    });
+  } catch (e) {
+    return c.json(
+      { error: "purge_failed", message: e instanceof Error ? e.message : String(e) },
+      500
+    );
+  }
+});
+
+// =============================================================================
 // ADMIN: News Top-10 Diagnostics (F1)
 // =============================================================================
 //
