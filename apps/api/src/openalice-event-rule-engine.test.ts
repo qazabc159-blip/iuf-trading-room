@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   hasUsableV3RecommendationDelivery,
   shouldEmitDailySmokeFailure,
+  isProviderQuotaExhausted,
+  PROVIDER_QUOTA_429_STREAK_THRESHOLD,
 } from "./openalice-event-rule-engine.js";
 
 test("daily smoke alerts only fire for a same-day weekday failure after the smoke window opens", () => {
@@ -57,4 +59,20 @@ test("R11 still reports true zero-delivery and ignores yesterday's cards", () =>
     generatedAt: "2026-06-21T00:32:07.722Z",
     items: [{ ticker: "2449", action: "A可觀察布局" }],
   }, "2026-06-22"), false);
+});
+
+test("R16 fires only on a sustained provider 429 streak, tolerating a lone transient 429", () => {
+  // 2026-06-26 repro: OpenAI account out of quota → continuous HTTP 429 in
+  // llm_calls. A single burst 429 must not alarm; a streak must.
+  assert.equal(PROVIDER_QUOTA_429_STREAK_THRESHOLD, 3);
+  assert.equal(isProviderQuotaExhausted(0), false);
+  assert.equal(isProviderQuotaExhausted(1), false);
+  assert.equal(isProviderQuotaExhausted(2), false);
+  assert.equal(isProviderQuotaExhausted(3), true);
+  assert.equal(isProviderQuotaExhausted(42), true);
+});
+
+test("R16 threshold is null-safe against non-finite counts (COUNT(*) is always a real int)", () => {
+  assert.equal(isProviderQuotaExhausted(NaN), false);
+  assert.equal(isProviderQuotaExhausted(Number.POSITIVE_INFINITY), false);
 });
