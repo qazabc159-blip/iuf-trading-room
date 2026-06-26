@@ -81,6 +81,50 @@ test("OA3: quota resets on new day", async () => {
   }
 });
 
+test("OA-REFUND: releaseQuota refunds a reserved slot so failed calls don't burn quota", async () => {
+  // 2026-06-26 root-cause: an OpenAI billing outage's failed 429 retries each
+  // consumed a quota slot, draining the daily limit and locking the gateway out
+  // even after the account was topped up. callOpenAi now releases the slot on
+  // every failure path.
+  const { checkAndConsumeQuota, releaseQuota, _resetQuotaGuard, getQuotaStatus } =
+    await import("../openai-quota-guard.js");
+  _resetQuotaGuard();
+  const savedKey = process.env["OPENAI_API_KEY"];
+  const savedLimit = process.env["OPENAI_DAILY_LIMIT"];
+  process.env["OPENAI_API_KEY"] = "test-key";
+  process.env["OPENAI_DAILY_LIMIT"] = "2";
+  try {
+    assert.equal(checkAndConsumeQuota("a"), true);
+    assert.equal(getQuotaStatus().used, 1, "reservation consumes a slot");
+    releaseQuota(); // simulate the underlying call failing (429 / network)
+    assert.equal(getQuotaStatus().used, 0, "failed call must refund its slot");
+    // Quota fully available again after the refund cycle; limit still enforced.
+    assert.equal(checkAndConsumeQuota("b"), true);
+    assert.equal(checkAndConsumeQuota("c"), true);
+    assert.equal(checkAndConsumeQuota("d"), false, "limit still enforced at 2");
+  } finally {
+    if (savedKey !== undefined) process.env["OPENAI_API_KEY"] = savedKey; else delete process.env["OPENAI_API_KEY"];
+    if (savedLimit !== undefined) process.env["OPENAI_DAILY_LIMIT"] = savedLimit; else delete process.env["OPENAI_DAILY_LIMIT"];
+    _resetQuotaGuard();
+  }
+});
+
+test("OA-REFUND: releaseQuota never underflows below zero", async () => {
+  const { releaseQuota, _resetQuotaGuard, getQuotaStatus } =
+    await import("../openai-quota-guard.js");
+  _resetQuotaGuard();
+  const savedKey = process.env["OPENAI_API_KEY"];
+  process.env["OPENAI_API_KEY"] = "test-key";
+  try {
+    releaseQuota();
+    releaseQuota();
+    assert.equal(getQuotaStatus().used, 0, "used must clamp at 0, never negative");
+  } finally {
+    if (savedKey !== undefined) process.env["OPENAI_API_KEY"] = savedKey; else delete process.env["OPENAI_API_KEY"];
+    _resetQuotaGuard();
+  }
+});
+
 // ── OA4: Strategy Reranker (fallback mode) ─────────────────────────────────────
 
 test("OA4: rerankStrategyIdeasWithAi returns algo_only fallback when no API key", async () => {

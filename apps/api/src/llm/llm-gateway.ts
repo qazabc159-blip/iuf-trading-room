@@ -374,7 +374,13 @@ function checkQuota(): boolean {
     console.warn(`[llm-gateway] daily quota limit ${limit} reached`);
     return false;
   }
-  _cachedCallCount++;
+  // NOTE: do NOT increment here. The counter is bumped only after a *successful*
+  // call (see success path below). Counting attempts caused failed calls (HTTP
+  // 429, network, parse) to burn the daily quota — a provider billing outage's
+  // retries would drive the counter to the limit and lock the gateway out for
+  // the rest of the UTC day even after the account was topped up (2026-06-26:
+  // OpenAI 429 streak → "daily quota limit 200 reached" persisted post-top-up
+  // until an api restart cleared the in-memory counter).
   return true;
 }
 
@@ -543,9 +549,12 @@ export async function callLlm(
   const totalTokens = resp.usage?.total_tokens ?? promptTokens + completionTokens;
   const costUsd = estimateCostUsd(modelKey, promptTokens, completionTokens);
 
-  // ── 7. Update in-memory cost cache ───────────────────────────────────────
+  // ── 7. Update in-memory cost + success-call cache ────────────────────────
+  // Count only successful calls toward the daily call-count quota (see
+  // checkQuota): failed calls cost nothing and must not burn the quota.
   syncDay();
   _cachedCostUsd += costUsd;
+  _cachedCallCount++;
 
   // ── 8. Input/output summaries (privacy: first 100 chars only) ───────────
   const firstUserMsg = messages.find(m => m.role === "user")?.content ?? "";

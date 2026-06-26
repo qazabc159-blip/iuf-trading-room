@@ -64,6 +64,20 @@ export function getQuotaStatus(): { used: number; limit: number; resetDay: strin
   return { used: _callCount, limit: getDailyLimit(), resetDay: _resetDay };
 }
 
+/**
+ * Refund a quota slot reserved by checkAndConsumeQuota when the call ultimately
+ * failed (HTTP error, network, parse, empty content). A failed call costs
+ * nothing and must not burn the daily quota — otherwise a provider billing
+ * outage's failed retries drain the quota and lock the gateway out for the rest
+ * of the UTC day even after the account is topped up (2026-06-26 repro on the
+ * sibling llm-gateway path). callOpenAi reserves up-front (burst-safe) and
+ * releases on every failure path.
+ */
+export function releaseQuota(): void {
+  ensureReset();
+  if (_callCount > 0) _callCount--;
+}
+
 /** For tests: reset counter. */
 export function _resetQuotaGuard(): void {
   _callCount = 0;
@@ -122,12 +136,14 @@ export async function callOpenAi(params: OpenAiCallParams): Promise<string | nul
   } catch (e) {
     clearTimeout(timeout);
     console.warn(`[openai-quota-guard][${params.label}] fetch failed:`, e instanceof Error ? e.message : String(e));
+    releaseQuota();
     return null;
   }
 
   if (!res.ok) {
     const body = await res.text().catch(() => "(no body)");
     console.warn(`[openai-quota-guard][${params.label}] HTTP ${res.status}: ${body.slice(0, 120)}`);
+    releaseQuota();
     return null;
   }
 
@@ -136,6 +152,7 @@ export async function callOpenAi(params: OpenAiCallParams): Promise<string | nul
     data = await res.json();
   } catch {
     console.warn(`[openai-quota-guard][${params.label}] response not JSON`);
+    releaseQuota();
     return null;
   }
 
@@ -143,6 +160,7 @@ export async function callOpenAi(params: OpenAiCallParams): Promise<string | nul
   const content = (data as ChatResp)?.choices?.[0]?.message?.content ?? null;
   if (!content) {
     console.warn(`[openai-quota-guard][${params.label}] empty content`);
+    releaseQuota();
     return null;
   }
   return content;
