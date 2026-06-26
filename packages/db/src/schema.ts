@@ -650,6 +650,38 @@ export const brokerAccounts = pgTable(
   })
 );
 
+// broker_gateway_pairings — UTA Phase 2 後續 (Option A customer-side gateway).
+// Pairing between an IUF broker_account and a customer-run gateway agent. Stores
+// token HASHES + liveness only — NEVER broker credentials (those stay client-side).
+export const brokerGatewayPairings = pgTable(
+  "broker_gateway_pairings",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    brokerAccountId:  uuid("broker_account_id").notNull().references(() => brokerAccounts.id, { onDelete: "cascade" }),
+    workspaceId:      uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // SHA-256 hash of the one-time pairing token (plaintext returned once at issuance).
+    pairingTokenHash: text("pairing_token_hash").notNull(),
+    // lifecycle: pending → paired → revoked|expired
+    status:           text("status", { enum: ["pending", "paired", "revoked", "expired"] }).notNull().default("pending"),
+    gatewayLabel:     text("gateway_label").notNull().default(""),
+    // SHA-256 hash of the long-lived gateway session token (set on register, slice 2).
+    gatewayTokenHash: text("gateway_token_hash"),
+    pairedAt:         timestamp("paired_at", { withTimezone: true }),
+    lastHeartbeatAt:  timestamp("last_heartbeat_at", { withTimezone: true }),
+    expiresAt:        timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    // Full unique on the pairing token hash (matches migration 0047).
+    pairingTokenUidx: uniqueIndex("broker_gateway_pairings_pairing_token_uidx").on(table.pairingTokenHash),
+    workspaceIdx:     index("broker_gateway_pairings_workspace_idx").on(table.workspaceId)
+    // NOTE: the partial UNIQUE indexes (one-active-per-account; gateway_token_hash
+    // WHERE NOT NULL) are created by migration 0047 — drizzle metadata here omits
+    // them because partial indexes are not the source of truth (migrations are).
+  })
+);
+
 export const unifiedOrders = pgTable(
   "unified_orders",
   {

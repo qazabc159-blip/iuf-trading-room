@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, randomBytes, createHash } from "node:crypto";
 import { decode as iconvDecode } from "iconv-lite";
 // ── Sentry init must be imported before any other app module ──────────────────
 import { captureException as sentryCaptureException, captureMessage as sentryCaptureMessage } from "./sentry-init.js";
@@ -20897,25 +20897,100 @@ app.get("/api/v1/uta/accounts", async (c) => {
   const rows = dbExecRows<{
     id: string; adapter_key: string; display_name: string; account_ref: string;
     account_label: string; is_primary: boolean; is_active: boolean;
+    pairing_status: string | null; last_heartbeat_at: string | null;
   }>(await db.execute(drizzleSql`
-    SELECT ba.id, ba.adapter_key, ba.account_ref, ba.account_label, ba.is_primary, ba.is_active, bad.display_name
+    SELECT ba.id, ba.adapter_key, ba.account_ref, ba.account_label, ba.is_primary, ba.is_active,
+           bad.display_name,
+           gp.status AS pairing_status, gp.last_heartbeat_at
     FROM broker_accounts ba
     JOIN broker_adapters bad ON bad.adapter_key = ba.adapter_key
+    LEFT JOIN broker_gateway_pairings gp
+      ON gp.broker_account_id = ba.id AND gp.status IN ('pending', 'paired')
     WHERE ba.workspace_id = ${session.workspace.id}
     ORDER BY ba.is_primary DESC, ba.created_at ASC
   `));
+  // A paired gateway is "reachable" only if it has reported a heartbeat recently.
+  const REACHABLE_WINDOW_MS = 5 * 60 * 1000;
   return c.json({
-    data: rows.map((r) => ({
-      id: r.id,
-      adapterKey: r.adapter_key,
-      displayName: r.display_name,
-      accountRef: r.account_ref,
-      accountLabel: r.account_label || r.account_ref,
-      isPrimary: r.is_primary,
-      // Phase 2: a registered connection. Live gateway-reachability ships later.
-      status: r.is_active ? "connected" : "disconnected",
-    })),
+    data: rows.map((r) => {
+      let gatewayStatus: "unpaired" | "pending" | "paired_unreachable" | "reachable" = "unpaired";
+      if (r.pairing_status === "pending") gatewayStatus = "pending";
+      else if (r.pairing_status === "paired") {
+        const hb = r.last_heartbeat_at ? Date.parse(r.last_heartbeat_at) : NaN;
+        gatewayStatus = Number.isFinite(hb) && Date.now() - hb <= REACHABLE_WINDOW_MS
+          ? "reachable"
+          : "paired_unreachable";
+      }
+      return {
+        id: r.id,
+        adapterKey: r.adapter_key,
+        displayName: r.display_name,
+        accountRef: r.account_ref,
+        accountLabel: r.account_label || r.account_ref,
+        isPrimary: r.is_primary,
+        // Phase 2: a registered connection. status reflects the account record.
+        status: r.is_active ? "connected" : "disconnected",
+        // Phase 2 後續: customer-side gateway pairing/liveness (Option A).
+        gatewayStatus,
+        lastHeartbeatAt: r.last_heartbeat_at,
+      };
+    }),
   });
+});
+
+// POST /api/v1/uta/accounts/:id/gateway/pair-token — issue a one-time pairing token
+//   Owner/Admin only. Returns the plaintext token ONCE; only its SHA-256 hash is
+//   stored. The customer pastes it into their own gateway agent, which later
+//   registers (slice 2). No broker credentials are ever involved here (Option A).
+app.post("/api/v1/uta/accounts/:id/gateway/pair-token", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner" && session.user.role !== "Admin") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const accountId = c.req.param("id");
+
+  // Confirm the broker account belongs to this workspace.
+  const acct = dbExecRows<{ id: string }>(await db.execute(drizzleSql`
+    SELECT id FROM broker_accounts
+    WHERE id = ${accountId} AND workspace_id = ${session.workspace.id}
+    LIMIT 1
+  `))[0];
+  if (!acct) return c.json({ error: "account_not_found" }, 404);
+
+  // Generate a one-time pairing token; persist only its hash.
+  const token = `iufgw_${randomBytes(24).toString("base64url")}`;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute pairing window
+
+  try {
+    // Supersede any prior unconsumed pairing for this account (one active per account).
+    await db.execute(drizzleSql`
+      UPDATE broker_gateway_pairings
+      SET status = 'expired', updated_at = NOW()
+      WHERE broker_account_id = ${accountId} AND status = 'pending'
+    `);
+    await db.execute(drizzleSql`
+      INSERT INTO broker_gateway_pairings
+        (broker_account_id, workspace_id, pairing_token_hash, status, expires_at)
+      VALUES (${accountId}, ${session.workspace.id}, ${tokenHash}, 'pending', ${expiresAt.toISOString()})
+    `);
+  } catch (e) {
+    return c.json({ error: "pairing_issue_failed", message: e instanceof Error ? e.message : String(e) }, 500);
+  }
+
+  console.log(`[uta/gateway/pair-token] Owner uid=${session.user.id} issued pairing for account=${accountId}`);
+  return c.json({
+    data: {
+      // Plaintext token — shown ONCE; not recoverable after this response.
+      pairingToken: token,
+      expiresAt: expiresAt.toISOString(),
+      note: "貼進你自己的 gateway agent。憑證/帳密永遠留在你的機器，不會上傳。",
+    },
+  }, 201);
 });
 
 // POST /api/v1/uta/accounts — register/connect a broker account (NO credentials)
