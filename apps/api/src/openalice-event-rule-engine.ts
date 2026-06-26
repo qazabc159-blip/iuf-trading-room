@@ -16,12 +16,13 @@
  *   9.  Hallucination rejected  (brief rejected for hallucination)
  *   10. KGI gateway state change  (connectivity event — active post-5/12)
  *
- * 5 system-health producer rules (2026-06-12 C2 — alerts unified feed):
+ * 6 system-health producer rules (2026-06-12 C2 — alerts unified feed):
  *   11. v3 推薦 cron 當日 attempts 用盡仍無 success
  *   12. LLM 每日預算使用 > 80%
  *   13. KGI SIM daily smoke 最近一次 FAIL
  *   14. Theme refresh cron 平日 18:30 後 successDate ≠ 當日
  *   15. S1 EOD rebuild 後 positions=0（gateway 排程關機 unreachable 不算）
+ *   16. LLM 供應商額度耗盡（OpenAI HTTP 429 streak — IUF 預算 guard 之外的 provider 斷糧）
  *
  * Persistence: writes triggered events to `iuf_events` table.
  * Migration 0025_iuf_events.sql PROMOTED (2026-05-12 P0 unblock — Bruce R5 confirmed table missing).
@@ -117,6 +118,18 @@ export function hasUsableV3RecommendationDelivery(
   if (latestDate !== todayTaipeiDate) return false;
   if (latest.status === "complete") return true;
   return Array.isArray(latest.items) && latest.items.some(isActionableV3RecommendationItem);
+}
+
+/**
+ * R16: a sustained streak of provider HTTP 429s in the lookback window means the
+ * OpenAI account itself is out of quota/credits — distinct from the IUF dollar
+ * budget (which throws LLMBudgetExceeded instead). One transient 429 under burst
+ * is tolerated; >= 3 within the window is treated as account exhaustion.
+ */
+export const PROVIDER_QUOTA_429_STREAK_THRESHOLD = 3;
+export function isProviderQuotaExhausted(http429CountInWindow: number): boolean {
+  return Number.isFinite(http429CountInWindow)
+    && http429CountInWindow >= PROVIDER_QUOTA_429_STREAK_THRESHOLD;
 }
 
 export function shouldEmitDailySmokeFailure(
@@ -730,6 +743,56 @@ const RULES: EventRule[] = [
         return [];
       }
     }
+  },
+
+  // ── Rule 16: LLM 供應商額度耗盡（OpenAI 429 insufficient_quota）─────────────
+  // The IUF-side dollar guard THROWS LLMBudgetExceeded (→ skip reason
+  // budget_insufficient), so a *streak* of HTTP_429 rows in llm_calls means the
+  // provider account itself is out of quota/credits — not an IUF budget cap.
+  // Brain deep_analyze, daily brief, and AI rec share one OpenAI account and all
+  // fail together; only an account top-up fixes it. 429s otherwise only land in
+  // Railway logs (no surface), so an owner had to dig by hand mid-market.
+  // 2026-06-26 repro: deep_analyze + v3 cron both null'd at 09:xx; Railway log
+  // showed continuous "HTTP 429: You exceeded your current quota". This rule turns
+  // that silent log spam into a loud, once-a-day system alert.
+  {
+    id: "R16_LLM_PROVIDER_QUOTA_EXHAUSTED",
+    name: "LLM 供應商額度耗盡",
+    severity: "critical",
+    trigger: async () => {
+      if (!isDatabaseMode()) return [];
+      const db = getDb();
+      if (!db) return [];
+      try {
+        const rows = await db.execute(
+          drizzleSql`
+            SELECT COUNT(*)::int AS cnt, MAX(created_at) AS latest
+            FROM llm_calls
+            WHERE error_code = 'HTTP_429'
+              AND created_at >= now() - interval '30 minutes'
+          `
+        );
+        const row = execRows<{ cnt?: number; latest?: string | Date | null }>(rows)[0];
+        const cnt = Number(row?.cnt ?? 0);
+        // A lone transient 429 can occur under burst; require a sustained streak
+        // before declaring the account exhausted.
+        if (!isProviderQuotaExhausted(cnt)) return [];
+
+        return [{
+          ruleId: "R16_LLM_PROVIDER_QUOTA_EXHAUSTED",
+          ruleName: "LLM 供應商額度耗盡",
+          severity: "critical" as EventSeverity,
+          ticker: null,
+          payload: {
+            http429CountLast30m: cnt,
+            latest429At: row?.latest ? new Date(row.latest).toISOString() : null,
+            hint: "OpenAI 帳號額度/信用額度疑似耗盡，需檢查 plan & billing；主腦/簡報/推薦共用同帳號會一起停"
+          }
+        }];
+      } catch {
+        return [];
+      }
+    }
   }
 ];
 
@@ -859,7 +922,8 @@ const DAILY_DEDUP_RULE_IDS = new Set([
   "R12_LLM_BUDGET_NEAR_LIMIT",
   "R13_DAILY_SMOKE_FAILED",
   "R14_THEME_REFRESH_STALE",
-  "R15_S1_EOD_NO_POSITIONS"
+  "R15_S1_EOD_NO_POSITIONS",
+  "R16_LLM_PROVIDER_QUOTA_EXHAUSTED"
 ]);
 
 async function isDuplicateCandidate(candidate: { ruleId: string; ticker: string | null }): Promise<boolean> {
