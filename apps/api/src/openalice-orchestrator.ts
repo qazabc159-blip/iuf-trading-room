@@ -101,6 +101,16 @@ const LOOKBACK_HOURS = 2;
 const MAX_EVENTS_PER_TICK = 10;
 const MAX_SIGNALS_PER_TICK = 5;
 
+// The brain must NOT consume its own priority_alert notifications as new triggers.
+// The action-executor writes executed priority_alert decisions back into iuf_events
+// with rule_id = "R_OPENALICE_DECISION" (openalice-action-executor.ts ALERT_RULE_ID).
+// If the orchestrator picks those up, each one yields another priority_alert decision
+// → executed into another iuf_event → consumed again = a self-amplification loop.
+// 2026-06-26: during the OpenAI 429 outage every decision fell back to priority_alert,
+// and this loop produced 322 near-identical "LLM unavailable" alerts in ~1h. Excluding
+// self-emitted alert events breaks the loop at the source.
+const SELF_ALERT_RULE_ID = "R_OPENALICE_DECISION";
+
 // LLM config
 const ORCHESTRATOR_MODEL = "gpt-4o-mini";
 const ORCHESTRATOR_MAX_TOKENS = 800;
@@ -290,6 +300,7 @@ async function fetchUnprocessedEvents(): Promise<IufEventRow[]> {
       SELECT e.id, e.rule_id, e.rule_name, e.severity, e.ticker, e.payload, e.triggered_at
       FROM iuf_events e
       WHERE e.triggered_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
+        AND e.rule_id IS DISTINCT FROM ${SELF_ALERT_RULE_ID}
         AND NOT EXISTS (
           SELECT 1 FROM iuf_decisions d
           WHERE d.trigger_type = 'event'
