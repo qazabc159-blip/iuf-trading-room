@@ -351,6 +351,11 @@ function isDeviceAuthRoute(path: string): boolean {
   if (/^\/api\/v1\/openalice\/jobs\/[^/]+\/(heartbeat|result)$/.test(path)) {
     return true;
   }
+  // Broker gateway agents (Option A, customer-side) authenticate with their
+  // pairing / gateway token via Authorization: Bearer — not a web cookie. The
+  // handlers do the bearer check themselves. No order path; SIM-safe.
+  if (path === "/api/v1/uta/gateway/register") return true;
+  if (path === "/api/v1/uta/gateway/heartbeat") return true;
   return false;
 }
 
@@ -20991,6 +20996,106 @@ app.post("/api/v1/uta/accounts/:id/gateway/pair-token", async (c) => {
       note: "貼進你自己的 gateway agent。憑證/帳密永遠留在你的機器，不會上傳。",
     },
   }, 201);
+});
+
+// POST /api/v1/uta/gateway/register — customer gateway agent registers (Slice 2)
+//   Bearer-authed with the one-time PAIRING token (not a web cookie; route is in
+//   isDeviceAuthRoute). Validates the pending/unexpired pairing, marks it paired,
+//   and issues a long-lived GATEWAY session token (returned ONCE, hash stored).
+//   No broker credentials ever cross this boundary (Option A). No order path.
+app.post("/api/v1/uta/gateway/register", async (c) => {
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const m = /^Bearer\s+(.+)$/i.exec((c.req.header("authorization") ?? "").trim());
+  if (!m) return c.json({ error: "missing_bearer_token" }, 401);
+  const pairingHash = createHash("sha256").update(m[1].trim()).digest("hex");
+
+  const body = await c.req.json().catch(() => ({}));
+  const label = typeof (body as { label?: unknown }).label === "string"
+    ? (body as { label: string }).label.trim().slice(0, 64)
+    : "";
+
+  const pairing = dbExecRows<{ id: string; broker_account_id: string; expires_at: string }>(
+    await db.execute(drizzleSql`
+      SELECT id, broker_account_id, expires_at
+      FROM broker_gateway_pairings
+      WHERE pairing_token_hash = ${pairingHash} AND status = 'pending'
+      LIMIT 1
+    `)
+  )[0];
+  if (!pairing) return c.json({ error: "invalid_or_consumed_token" }, 401);
+  if (Date.parse(pairing.expires_at) < Date.now()) {
+    await db.execute(drizzleSql`UPDATE broker_gateway_pairings SET status='expired', updated_at=NOW() WHERE id=${pairing.id}`);
+    return c.json({ error: "pairing_token_expired" }, 401);
+  }
+
+  const gatewayToken = `iufgws_${randomBytes(32).toString("base64url")}`;
+  const gatewayHash = createHash("sha256").update(gatewayToken).digest("hex");
+  await db.execute(drizzleSql`
+    UPDATE broker_gateway_pairings
+    SET status = 'paired', gateway_token_hash = ${gatewayHash}, gateway_label = ${label},
+        paired_at = NOW(), last_heartbeat_at = NOW(), updated_at = NOW()
+    WHERE id = ${pairing.id}
+  `);
+  console.log(`[uta/gateway/register] paired id=${pairing.id} account=${pairing.broker_account_id}`);
+  return c.json({
+    data: {
+      // Long-lived gateway session token — shown ONCE; not recoverable.
+      gatewayToken,
+      brokerAccountId: pairing.broker_account_id,
+      note: "用這個 gateway token 定期打 /uta/gateway/heartbeat 報活。憑證永遠留你本機。",
+    },
+  }, 201);
+});
+
+// POST /api/v1/uta/gateway/heartbeat — gateway liveness ping (Slice 2)
+//   Bearer-authed with the GATEWAY session token. Bumps last_heartbeat_at so
+//   GET /uta/accounts can report gatewayStatus=reachable.
+app.post("/api/v1/uta/gateway/heartbeat", async (c) => {
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const m = /^Bearer\s+(.+)$/i.exec((c.req.header("authorization") ?? "").trim());
+  if (!m) return c.json({ error: "missing_bearer_token" }, 401);
+  const gatewayHash = createHash("sha256").update(m[1].trim()).digest("hex");
+
+  const updated = dbExecRows<{ id: string }>(await db.execute(drizzleSql`
+    UPDATE broker_gateway_pairings
+    SET last_heartbeat_at = NOW(), updated_at = NOW()
+    WHERE gateway_token_hash = ${gatewayHash} AND status = 'paired'
+    RETURNING id
+  `));
+  if (updated.length === 0) return c.json({ error: "invalid_gateway_token" }, 401);
+  return c.json({ data: { ok: true, at: new Date().toISOString() } });
+});
+
+// POST /api/v1/uta/accounts/:id/gateway/revoke — Owner revokes the active pairing
+//   Disconnects the customer gateway (pending or paired → revoked). The gateway
+//   token stops working immediately; re-pairing requires a fresh pair-token.
+app.post("/api/v1/uta/accounts/:id/gateway/revoke", async (c) => {
+  const session = c.get("session");
+  if (session.user.role !== "Owner" && session.user.role !== "Admin") {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+  if (!isDatabaseMode()) return c.json({ error: "db_unavailable" }, 503);
+  const db = getDb();
+  if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  const accountId = c.req.param("id");
+  const revoked = dbExecRows<{ id: string }>(await db.execute(drizzleSql`
+    UPDATE broker_gateway_pairings gp
+    SET status = 'revoked', updated_at = NOW()
+    FROM broker_accounts ba
+    WHERE gp.broker_account_id = ba.id
+      AND ba.id = ${accountId} AND ba.workspace_id = ${session.workspace.id}
+      AND gp.status IN ('pending', 'paired')
+    RETURNING gp.id
+  `));
+  console.log(`[uta/gateway/revoke] Owner uid=${session.user.id} revoked ${revoked.length} pairing(s) for account=${accountId}`);
+  return c.json({ data: { revoked: revoked.length } });
 });
 
 // POST /api/v1/uta/accounts — register/connect a broker account (NO credentials)
