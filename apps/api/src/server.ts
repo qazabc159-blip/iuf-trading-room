@@ -18151,6 +18151,36 @@ function startSchedulers(workspaceSlug: string): void {
         for (let i = 0; i < quotes.length; i += UPSERT_BATCH) {
           await upsertManualQuotes({ session: cronSession, quotes: quotes.slice(i, i + UPSERT_BATCH) });
         }
+
+        // Persist last-good EOD closes to quote_last_close for mark-to-market fallback.
+        // This is the full TWSE universe (~1400 stocks), including all F-AUTO holdings.
+        // After a deploy restart / 盤後 gap, buildS1PositionsSnapshot() reads this table
+        // as step 1d rather than returning null market values.
+        try {
+          const { upsertLastCloses: _upsertEod } = await import("./quote-last-close-store.js");
+          const db3 = isDatabaseMode() ? getDb() : null;
+          if (db3 && tradingDateIso) {
+            // Extract YYYY-MM-DD from tradingDateIso ("YYYY-MM-DDT13:30:00+08:00")
+            const eodTradeDate = tradingDateIso.slice(0, 10);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(eodTradeDate)) {
+              const eodEntries = quotes
+                .filter((q) => q.last !== null && q.last > 0)
+                .map((q) => ({
+                  symbol:     q.symbol,
+                  closePrice: q.last as number,
+                  tradeDate:  eodTradeDate,
+                  source:     "twse_eod" as const,
+                }));
+              if (eodEntries.length > 0) {
+                await _upsertEod(db3, eodEntries);
+                console.log(`[twse-eod-cron] persisted ${eodEntries.length} last-good closes to quote_last_close (trade_date=${eodTradeDate})`);
+              }
+            }
+          }
+        } catch (persistErr) {
+          console.warn("[twse-eod-cron] quote_last_close persist failed:", persistErr instanceof Error ? persistErr.message : String(persistErr));
+        }
+
         _twseEodCronLastFiredAt = new Date().toISOString();
         _twseEodCronLastCount = quotes.length;
         _twseEodCronLastError = null;

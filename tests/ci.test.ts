@@ -17781,6 +17781,139 @@ test("OPENALICE-OBS-1: getOrchestratorObservability must await db.execute before
   );
 });
 
+// ── S1-PERSIST-CLOSE — last-good EOD close persistence + DB fallback ─────────
+// Regression tests for quote_last_close persistence (PR #1146).
+// All source-text assertions — no DB or HTTP required.
+
+test("S1-PERSIST-CLOSE-1: migration 0048 creates quote_last_close with correct schema", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0048_quote_last_close.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS quote_last_close"),
+    "S1-PERSIST-CLOSE-1: migration must create quote_last_close table"
+  );
+  assert.ok(
+    migSrc.includes("PRIMARY KEY (symbol, trade_date)"),
+    "S1-PERSIST-CLOSE-1: table must have composite PK (symbol, trade_date)"
+  );
+  assert.ok(
+    migSrc.includes("CHECK (source IN ('twse_eod', 'tpex_eod', 'mis_close'))"),
+    "S1-PERSIST-CLOSE-1: source column must have CHECK constraint for known EOD sources"
+  );
+  assert.ok(
+    migSrc.includes("CHECK (close_price > 0)"),
+    "S1-PERSIST-CLOSE-1: close_price must be CHECK > 0"
+  );
+  assert.ok(
+    migSrc.includes("quote_last_close_symbol_date_idx"),
+    "S1-PERSIST-CLOSE-1: must create symbol+date covering index"
+  );
+});
+
+test("S1-PERSIST-CLOSE-2: quote-last-close-store exports upsertLastCloses and getLastCloses", () => {
+  const storeSrc = readFileSync(
+    new URL("../apps/api/src/quote-last-close-store.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    storeSrc.includes("export async function upsertLastCloses"),
+    "S1-PERSIST-CLOSE-2: must export upsertLastCloses"
+  );
+  assert.ok(
+    storeSrc.includes("export async function getLastCloses"),
+    "S1-PERSIST-CLOSE-2: must export getLastCloses"
+  );
+  // Conflict target must match composite PK
+  assert.ok(
+    storeSrc.includes("onConflictDoUpdate") &&
+    storeSrc.includes("quoteLastClose.symbol") &&
+    storeSrc.includes("quoteLastClose.tradeDate"),
+    "S1-PERSIST-CLOSE-2: upsertLastCloses must use onConflictDoUpdate with (symbol, tradeDate) target"
+  );
+  // DISTINCT ON for multi-symbol read
+  assert.ok(
+    storeSrc.includes("DISTINCT ON (symbol)"),
+    "S1-PERSIST-CLOSE-2: getLastCloses must use DISTINCT ON (symbol) to return latest per symbol"
+  );
+});
+
+test("S1-PERSIST-CLOSE-3: s1-sim-runner writes closes to DB after TWSE+TPEX mark-to-market", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    runnerSrc.includes("upsertLastCloses") && runnerSrc.includes("getLastCloses"),
+    "S1-PERSIST-CLOSE-3: s1-sim-runner must import upsertLastCloses and getLastCloses"
+  );
+  assert.ok(
+    runnerSrc.includes("1b-persist"),
+    "S1-PERSIST-CLOSE-3: must have 1b-persist comment block for TWSE+TPEX close write path"
+  );
+  assert.ok(
+    runnerSrc.includes("twseSymbolSet") && runnerSrc.includes("tpex_eod"),
+    "S1-PERSIST-CLOSE-3: must distinguish twse_eod vs tpex_eod source per symbol"
+  );
+  assert.ok(
+    runnerSrc.includes("1c-persist"),
+    "S1-PERSIST-CLOSE-3: must have 1c-persist comment block for MIS close write path"
+  );
+  assert.ok(
+    runnerSrc.includes('"mis_close" as const'),
+    "S1-PERSIST-CLOSE-3: MIS fallback must write source=mis_close"
+  );
+});
+
+test("S1-PERSIST-CLOSE-4: s1-sim-runner step 1d reads DB fallback when all live sources miss", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    runnerSrc.includes("1d. DB persisted close fallback"),
+    "S1-PERSIST-CLOSE-4: must have step 1d DB persisted close fallback comment"
+  );
+  assert.ok(
+    runnerSrc.includes("persisted_close_fallback:"),
+    "S1-PERSIST-CLOSE-4: must emit persisted_close_fallback note including symbol, price, trade_date, source"
+  );
+  assert.ok(
+    runnerSrc.includes("persisted_close_fallback_failed"),
+    "S1-PERSIST-CLOSE-4: must catch DB read errors and emit persisted_close_fallback_failed note"
+  );
+  // Verify fallback only runs when positions are still null (guard condition)
+  assert.ok(
+    runnerSrc.includes("stillNullAfterAll"),
+    "S1-PERSIST-CLOSE-4: must only call getLastCloses when positions are still null after TWSE+TPEX+MIS"
+  );
+});
+
+test("S1-PERSIST-CLOSE-5: server.ts TWSE-EOD-QUOTE-CRON also persists to quote_last_close", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    serverSrc.includes("quote-last-close-store"),
+    "S1-PERSIST-CLOSE-5: server.ts must dynamically import quote-last-close-store in EOD cron"
+  );
+  assert.ok(
+    serverSrc.includes("_upsertEod") || serverSrc.includes("upsertLastCloses"),
+    "S1-PERSIST-CLOSE-5: server.ts EOD cron must call upsertLastCloses (or alias) to persist closes"
+  );
+  assert.ok(
+    serverSrc.includes("persisted") && serverSrc.includes("last-good closes to quote_last_close"),
+    "S1-PERSIST-CLOSE-5: server.ts must log persistence of last-good closes to quote_last_close"
+  );
+  // Must guard with tradingDateIso validation to avoid writing empty/wrong dates
+  assert.ok(
+    serverSrc.includes("eodTradeDate") && serverSrc.includes("/^\\d{4}-\\d{2}-\\d{2}$/.test(eodTradeDate)"),
+    "S1-PERSIST-CLOSE-5: server.ts must validate eodTradeDate format before persisting"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
