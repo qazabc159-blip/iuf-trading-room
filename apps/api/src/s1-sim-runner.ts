@@ -116,7 +116,7 @@ export const S1_AUTO_SCHEDULER_POLICY = {
   mode: "weekly_tuesday_kgi_sim",
   signalWindowTst: "Tuesday 08:30-08:55",
   orderSubmitWindowTst: "Tuesday 09:00-09:20",
-  eodWindowTst: "Weekdays 14:00-14:30",
+  eodWindowTst: "Weekdays 14:45-15:30",
   pollIntervalMs: 15 * 60 * 1000,
   signalCatchupBeforeOrder: true,
   manualTriggerRole: "owner_backup_only",
@@ -1202,32 +1202,118 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         getStockDayAllRows(),
         getTpexMainboardCloseRows(),
       ]);
-      if (tpexRows.length === 0) {
-        notes.push("tpex_eod_unavailable: OTC closes missing (fetch failed or empty) — OTC positions stay unpriced");
-      }
 
-      const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
-      for (const row of tpexRows) {
-        const code = row.SecuritiesCompanyCode?.trim();
-        if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
-        const close = parseFloat(row.Close ?? "");
-        if (isFinite(close)) closeBySymbol.set(code, close);
-      }
-
-      let marked = 0;
-      for (const p of positions) {
-        const close = closeBySymbol.get(p.symbol);
-        if (close !== undefined && isFinite(close) && close > 0) {
-          p.last_price = close;
-          p.market_value_twd = Math.round(p.shares * close);
-          if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((close - p.avg_cost) * p.shares);
-          marked++;
+      // YELLOW-1 fix: validate TWSE STOCK_DAY_ALL date before using it.
+      // TWSE publishes today's official closes at ~14:30-15:00 TST. Before that
+      // window the endpoint still serves YESTERDAY's data. If we detect that
+      // stockRows[0].Date (ROC "115/06/30") maps to a date other than today,
+      // skip the entire mark-to-market pass so pricingComplete stays false and
+      // the 15-min scheduler retry can try again after TWSE publishes.
+      //
+      // Concrete failure mode (6/30 observed): at 14:08 TST, STOCK_DAY_ALL
+      // returned yesterday's close. The S1 basket entry price (avg_cost) is also
+      // yesterday's close. mark-to-market set last_price = yesterday close = avg_cost
+      // → unrealized = 0, officialCloseMarkedCount = 8 = positions.length →
+      // pricingComplete = true → _eodLastFiredDate locked today → NO more retries.
+      const stockDateRaw = (stockRows[0] as { Date?: string } | undefined)?.Date?.trim() ?? "";
+      const stockDateIso = (() => {
+        const parts = stockDateRaw.split("/");
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10) + 1911;
+          if (isFinite(y) && y > 1900) {
+            return `${y}-${(parts[1] ?? "").padStart(2, "0")}-${(parts[2] ?? "").padStart(2, "0")}`;
+          }
         }
+        return null;
+      })();
+      if (stockDateIso && stockDateIso !== todayTst) {
+        notes.push(
+          `twse_eod_stale: STOCK_DAY_ALL data_date=${stockDateIso} != today=${todayTst}` +
+          ` — mark-to-market skipped, will retry after TWSE publishes today's closes`
+        );
+        // Fall through with officialCloseMarkedCount=0 → pricingComplete=false → retry enabled.
+      } else {
+        // TWSE data is fresh (or no date to check) — proceed with mark-to-market.
+        if (tpexRows.length === 0) {
+          notes.push("tpex_eod_unavailable: OTC closes missing (fetch failed or empty) — OTC positions stay unpriced");
+        }
+
+        const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
+        for (const row of tpexRows) {
+          const code = row.SecuritiesCompanyCode?.trim();
+          if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
+          const close = parseFloat(row.Close ?? "");
+          if (isFinite(close)) closeBySymbol.set(code, close);
+        }
+
+        let marked = 0;
+        for (const p of positions) {
+          const close = closeBySymbol.get(p.symbol);
+          if (close !== undefined && isFinite(close) && close > 0) {
+            p.last_price = close;
+            p.market_value_twd = Math.round(p.shares * close);
+            if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((close - p.avg_cost) * p.shares);
+            marked++;
+          }
+        }
+        officialCloseMarkedCount = marked;
+        if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE+TPEX EOD closes`);
       }
-      officialCloseMarkedCount = marked;
-      if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE+TPEX EOD closes`);
     } catch {
       notes.push("mark_to_market_unavailable: TWSE/TPEX EOD fetch failed");
+    }
+  }
+
+  // 1c. MIS fallback: price any positions still null after TWSE+TPEX mark-to-market.
+  // YELLOW-2 fix: 1435/2483/6226 (all likely TPEX-listed) were absent from both
+  // STOCK_DAY_ALL (TWSE only) and getTpexMainboardCloseRows() at 16:12 TST, yet
+  // the individual quote endpoint had them via MIS (tse_/otc_ dual-try). MIS keeps
+  // the official 13:30 session close available post-market with today's trade date,
+  // making it equivalent to TWSE/TPEX official EOD for pricing purposes.
+  //
+  // Strategy: serial fetch per unpriced symbol, try tse_ prefix first then otc_.
+  // Uses 4s timeout and fail-open — a failed MIS fetch just leaves last_price=null
+  // for that symbol (reported in notes, no exception propagated).
+  // Does NOT update officialCloseMarkedCount — pricingComplete remains governed by
+  // TWSE+TPEX official mark count, preserving the stale-data retry semantics above.
+  const stillNullPositions = positions.filter((p) => p.last_price === null);
+  if (stillNullPositions.length > 0) {
+    const todayYmd = todayTst.replace(/-/g, ""); // "2026-06-30" → "20260630"
+    const _misParseNum = (s?: string): number | null => {
+      if (!s || s === "-" || s.trim() === "") return null;
+      const n = Number(s.replace(/,/g, "").trim());
+      return isFinite(n) && n > 0 ? n : null;
+    };
+    for (const p of stillNullPositions) {
+      let maked = false;
+      for (const prefix of ["tse", "otc"] as const) {
+        if (maked) break;
+        try {
+          const exCh = encodeURIComponent(`${prefix}_${p.symbol}.tw`);
+          const resp = await fetch(
+            `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0`,
+            { signal: AbortSignal.timeout(4_000), headers: { Accept: "application/json" } }
+          );
+          if (!resp.ok) continue;
+          const data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
+          if (data.rtcode !== "0000" || !data.msgArray?.length) continue;
+          const msg = data.msgArray[0];
+          if (!msg) continue;
+          // MIS date guard: "d" field is "20260630" — must match today
+          if ((msg["d"] ?? "").replace(/-/g, "") !== todayYmd) continue;
+          const bPrices = msg["b"]?.split("_").filter(Boolean);
+          const aPrices = msg["a"]?.split("_").filter(Boolean);
+          const last = _misParseNum(msg["z"]) ?? _misParseNum(bPrices?.[0]) ?? _misParseNum(aPrices?.[0]);
+          if (last === null) continue;
+          p.last_price = last;
+          p.market_value_twd = Math.round(p.shares * last);
+          if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((last - p.avg_cost) * p.shares);
+          notes.push(`mis_close_fallback: ${p.symbol} priced ${last} via MIS ${prefix}_ (TWSE/TPEX EOD absent)`);
+          maked = true;
+        } catch {
+          // fail-open: next prefix or next symbol
+        }
+      }
     }
   }
 
@@ -1235,10 +1321,15 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   // coverage — an OTC symbol with no price for the day no longer nulls out
   // the whole portfolio's market value / unrealized P&L.
   const pricedPositions = positions.filter((p) => p.last_price !== null);
-  // Completion is stricter than "a price exists": gateway rows can carry an
-  // intraday lastPrice. An official EOD report is complete only when every
-  // current holding was marked from the TWSE/TPEX closing-price datasets.
-  const pricingComplete = officialCloseMarkedCount === positions.length;
+  // Completion: every holding has a valid closing price from any authoritative
+  // source (TWSE+TPEX official closes or MIS post-session close). The shifted
+  // window (14:45+) ensures all three are equivalent representations of the
+  // 13:30 session close. For retries driven by stale TWSE data (YELLOW-1 guard
+  // above), officialCloseMarkedCount=0 even if MIS prices all positions, keeping
+  // pricingComplete=false until TWSE publishes fresh data.
+  const pricingComplete = positions.length > 0 &&
+    officialCloseMarkedCount > 0 &&
+    pricedPositions.length === positions.length;
   const unrealizedKnownPositions = positions.filter((p) => p.unrealized_pnl_twd !== null);
   const totalUnrealized = unrealizedKnownPositions.length > 0
     ? unrealizedKnownPositions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
@@ -1267,7 +1358,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     cashResidualTwd: cashResidual,
     totalUnrealizedPnlTwd: totalUnrealized,
     totalMarketValueTwd: totalMarketValue,
-    pricedPositionCount: officialCloseMarkedCount,
+    pricedPositionCount: pricedPositions.length,
     pricingComplete,
   };
 }
@@ -1434,10 +1525,19 @@ export function isS1OrderSubmitWindow(): boolean {
   return taipeiDay === 2 && hhmm >= 900 && hhmm < 920;
 }
 
-/** Daily 14:00–14:30 TST weekdays: EOD report */
+/** Daily 14:45–15:30 TST weekdays: EOD report.
+ *
+ * Shifted from 14:00-14:30 (YELLOW-1 fix): TWSE STOCK_DAY_ALL typically
+ * publishes today's official closes at 14:30-15:00 TST. Opening at 14:00
+ * meant the first cron tick at ~14:08 received yesterday's data, which
+ * matched avg_cost exactly (basket entry = yesterday's close) → unrealized=0
+ * and false pricingComplete=true that locked _eodLastFiredDate and blocked
+ * all subsequent retries. 14:45 start gives TWSE a 15-min buffer after its
+ * target publish time; 15:30 end keeps the window within the same session day.
+ */
 export function isS1EodWindow(): boolean {
   const hhmm = taipeiHHMM();
   const taipeiMs = Date.now() + 8 * 3600 * 1000;
   const taipeiDay = new Date(taipeiMs).getUTCDay();
-  return taipeiDay >= 1 && taipeiDay <= 5 && hhmm >= 1400 && hhmm < 1430;
+  return taipeiDay >= 1 && taipeiDay <= 5 && hhmm >= 1445 && hhmm < 1530;
 }
