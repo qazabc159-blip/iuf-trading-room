@@ -1159,3 +1159,28 @@ export const iufDecisions = pgTable(
     triggerUidx:          uniqueIndex("iuf_decisions_trigger_uidx").on(table.triggerType, table.triggerId),
   })
 );
+
+// -- quote_last_close -- migration 0048_quote_last_close.sql
+// Last-good EOD closing price per symbol per trading day — persisted for
+// mark-to-market fallback after restart or 盤後 data-supplier gaps.
+// Write path: buildS1PositionsSnapshot (TWSE+TPEX+MIS official/post-session close)
+//             and server.ts TWSE-EOD-QUOTE-CRON (full ~1400 TWSE universe).
+// Read path:  getLastCloses() in quote-last-close-store.ts, called as last fallback
+//             after TWSE/TPEX/MIS live fetches all miss.
+// PRIMARY KEY (symbol, trade_date): one authoritative row per symbol per day.
+// source CHECK: 'twse_eod' | 'tpex_eod' | 'mis_close' (DB-side enforcement).
+export const quoteLastClose = pgTable(
+  "quote_last_close",
+  {
+    symbol:     text("symbol").notNull(),
+    closePrice: numeric("close_price", { precision: 12, scale: 2 }).notNull(),
+    tradeDate:  date("trade_date").notNull(),
+    source:     text("source").notNull(),
+    updatedAt:  timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    symbolTradeDatePk: primaryKey({ columns: [table.symbol, table.tradeDate] }),
+    tradeDateIdx:      index("quote_last_close_trade_date_idx").on(table.tradeDate),
+    symbolDateIdx:     index("quote_last_close_symbol_date_idx").on(table.symbol, table.tradeDate),
+  })
+);

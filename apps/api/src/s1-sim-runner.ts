@@ -23,6 +23,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 import { extractKgiTradeId, reconcileKgiOrder } from "./broker/kgi-order-reconciliation.js";
+import { upsertLastCloses, getLastCloses, type LastCloseEntry } from "./quote-last-close-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1258,6 +1259,27 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         }
         officialCloseMarkedCount = marked;
         if (marked > 0) notes.push(`mark_to_market: last_price for ${marked}/${positions.length} positions from TWSE+TPEX EOD closes`);
+
+        // 1b-persist: write successfully priced S1 positions to quote_last_close.
+        // Enables the DB fallback (step 1d) to recover on next restart/盤後 gap.
+        // Source determined per-symbol: TWSE STOCK_DAY_ALL takes precedence over TPEX.
+        if (marked > 0) {
+          const twseSymbolSet = new Set(stockRows.map((r) => r.Code?.trim()).filter(Boolean) as string[]);
+          const toWrite: LastCloseEntry[] = positions
+            .filter((p) => p.last_price !== null && closeBySymbol.has(p.symbol))
+            .map((p) => ({
+              symbol:     p.symbol,
+              closePrice: p.last_price!,
+              tradeDate:  todayTst,
+              source:     (twseSymbolSet.has(p.symbol) ? "twse_eod" : "tpex_eod") as LastCloseEntry["source"],
+            }));
+          const dbForWrite = getDb();
+          if (dbForWrite && toWrite.length > 0) {
+            upsertLastCloses(dbForWrite, toWrite).catch((e: unknown) => {
+              console.warn("[s1-eod] persisted_close write failed:", e instanceof Error ? e.message : String(e));
+            });
+          }
+        }
       }
     } catch {
       notes.push("mark_to_market_unavailable: TWSE/TPEX EOD fetch failed");
@@ -1312,6 +1334,55 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
           maked = true;
         } catch {
           // fail-open: next prefix or next symbol
+        }
+      }
+    }
+
+    // 1c-persist: write MIS-priced positions to quote_last_close.
+    // MIS post-session close is date-validated above (d === todayYmd), so it is
+    // equivalent to TWSE/TPEX official EOD for mark-to-market purposes.
+    const misPriced = stillNullPositions.filter((p) => p.last_price !== null);
+    if (misPriced.length > 0) {
+      const dbForMis = getDb();
+      if (dbForMis) {
+        const misEntries: LastCloseEntry[] = misPriced.map((p) => ({
+          symbol:     p.symbol,
+          closePrice: p.last_price!,
+          tradeDate:  todayTst,
+          source:     "mis_close" as const,
+        }));
+        upsertLastCloses(dbForMis, misEntries).catch((e: unknown) => {
+          console.warn("[s1-eod] mis persisted_close write failed:", e instanceof Error ? e.message : String(e));
+        });
+      }
+    }
+  }
+
+  // 1d. DB persisted close fallback: last resort after TWSE+TPEX+MIS all fail.
+  // Reads quote_last_close written by previous successful pricing passes.
+  // Recovers after deploy restart or 盤後 data-supplier gap without null market values.
+  // Note clearly labeled in notes as 'persisted_close_fallback' with data_date so the
+  // frontend can show the appropriate staleness indicator rather than pretending it's live.
+  {
+    const stillNullAfterAll = positions.filter((p) => p.last_price === null);
+    if (stillNullAfterAll.length > 0) {
+      const dbForFallback = getDb();
+      if (dbForFallback) {
+        try {
+          const stored = await getLastCloses(dbForFallback, stillNullAfterAll.map((p) => p.symbol));
+          for (const p of stillNullAfterAll) {
+            const entry = stored.get(p.symbol);
+            if (!entry) continue;
+            p.last_price = entry.closePrice;
+            p.market_value_twd = Math.round(p.shares * entry.closePrice);
+            if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((entry.closePrice - p.avg_cost) * p.shares);
+            notes.push(
+              `persisted_close_fallback: ${p.symbol} priced ${entry.closePrice} from DB` +
+              ` (trade_date=${entry.tradeDate}, source=${entry.source})`
+            );
+          }
+        } catch {
+          notes.push("persisted_close_fallback_failed: DB read error — positions remain null");
         }
       }
     }
