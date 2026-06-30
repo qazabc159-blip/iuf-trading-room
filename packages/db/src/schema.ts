@@ -1180,7 +1180,7 @@ export const quoteLastClose = pgTable(
   },
   (table) => ({
     symbolTradeDatePk: primaryKey({ columns: [table.symbol, table.tradeDate] }),
-    tradeDateIdx:      index("quote_last_close_trade_date_idx").on(table.tradeDate),
-    symbolDateIdx:     index("quote_last_close_symbol_date_idx").on(table.symbol, table.tradeDate),
+    tradeDateIdx:      index("quote_last_close_trade_date_idx").on(table.tradeDate.desc()),
+    symbolDateIdx:     index("quote_last_close_symbol_date_idx").on(table.symbol, table.tradeDate.desc()),
   })
 );
