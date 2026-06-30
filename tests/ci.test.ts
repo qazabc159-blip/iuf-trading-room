@@ -16116,6 +16116,77 @@ test("S1-OBS-7b: mark-to-market covers OTC (TPEX) symbols, not just TWSE-listed"
 });
 
 // =============================================================================
+// S1-FIX: EOD stale-date guard + MIS fallback (YELLOW-1 + YELLOW-2 fixes)
+// =============================================================================
+//
+// YELLOW-1 (6/30): at 14:08 TST TWSE STOCK_DAY_ALL returned yesterday's data.
+// The basket avg_cost = yesterday's close = mark-to-market close → unrealized=0.
+// officialCloseMarkedCount=8=positions.length → pricingComplete=true →
+// _eodLastFiredDate locked → no retry. Fix: validate STOCK_DAY_ALL date.
+//
+// YELLOW-2 (6/30): 1435/2483/6226 (all TPEX-listed OTC) absent from both
+// STOCK_DAY_ALL (TWSE only) and getTpexMainboardCloseRows() at 16:12 TST.
+// Individual quote endpoint had them via MIS tse_/otc_ dual-try, but
+// buildS1PositionsSnapshot had no MIS fallback. Fix: add MIS fallback pass.
+
+test("S1-FIX-1: mark-to-market skips stale STOCK_DAY_ALL (YELLOW-1 date validation)", () => {
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  // 1. The stale-date note must be present to trace skipped mark-to-market.
+  assert.match(runnerSource, /twse_eod_stale:/,
+    "S1-FIX-1: must push twse_eod_stale note when STOCK_DAY_ALL date != today");
+
+  // 2. The ROC→ISO conversion must use the stockRows[0].Date field.
+  assert.match(runnerSource, /stockDateRaw|stockDateIso|stockRows\[0\]/,
+    "S1-FIX-1: must read date from stockRows[0] for validation");
+
+  // 3. pricingComplete must require officialCloseMarkedCount > 0 so that
+  //    a stale-data skip (officialCloseMarkedCount=0) keeps pricingComplete=false.
+  assert.match(runnerSource, /officialCloseMarkedCount > 0/,
+    "S1-FIX-1: pricingComplete must require officialCloseMarkedCount > 0 to prevent false-complete from stale data");
+
+  // 4. EOD window must be at 14:45+ to give TWSE time to publish.
+  assert.match(runnerSource, /hhmm >= 1445/,
+    "S1-FIX-1: EOD window must start at 14:45 TST (not 14:00) to avoid TWSE publish lag");
+  assert.doesNotMatch(runnerSource, /hhmm >= 1400 && hhmm < 1430/,
+    "S1-FIX-1: old 14:00-14:30 window must be replaced");
+});
+
+test("S1-FIX-2: MIS fallback prices null positions when TWSE+TPEX data absent (YELLOW-2)", () => {
+  const runnerSource = readFileSync(path.join(process.cwd(), "apps/api/src/s1-sim-runner.ts"), "utf8");
+
+  // 1. MIS fallback note so tracing is auditable.
+  assert.match(runnerSource, /mis_close_fallback:/,
+    "S1-FIX-2: must push mis_close_fallback note for each MIS-priced position");
+
+  // 2. Dual-prefix attempt: try tse_ first, then otc_ — mirrors _misPrefixForMarket fallback.
+  assert.match(runnerSource, /"tse", "otc"/,
+    'S1-FIX-2: must iterate ["tse", "otc"] prefixes for MIS query');
+
+  // 3. MIS query URL — same endpoint as individual quote endpoint.
+  assert.match(runnerSource, /mis\.twse\.com\.tw\/stock\/api\/getStockInfo\.jsp/,
+    "S1-FIX-2: must query MIS getStockInfo endpoint for fallback pricing");
+
+  // 4. 4s timeout — not 3s (3s is guarded by S1-OBS-7b for TPEX fetch).
+  assert.match(runnerSource, /AbortSignal\.timeout\(4_000\)/,
+    "S1-FIX-2: MIS fallback must use 4s timeout (not 3s — 3s was the old inline TPEX timeout)");
+
+  // 5. Today-date guard on MIS response to prevent using stale post-session data.
+  assert.match(runnerSource, /todayYmd/,
+    "S1-FIX-2: must validate MIS response date against today to reject stale data");
+
+  // 6. z → bid → ask cascade for thin/漲停 stocks (same as MIS sweep cron).
+  assert.match(runnerSource, /_misParseNum\(msg\["z"\]\)/,
+    'S1-FIX-2: must parse msg["z"] (last trade) with bid/ask fallback');
+
+  // 7. officialCloseMarkedCount must NOT be incremented by MIS fallback.
+  // pricingComplete = officialCloseMarkedCount > 0 && pricedPositions.length === positions.length
+  // ensures stale-data guard (Y1) is not bypassed by MIS pricing alone.
+  assert.doesNotMatch(runnerSource, /officialCloseMarkedCount\+\+/,
+    "S1-FIX-2: MIS fallback must not increment officialCloseMarkedCount");
+});
+
+// =============================================================================
 // C6: TWSE Quote Fallback — unit tests (C6-TWSE-FB-1..5)
 // =============================================================================
 //
