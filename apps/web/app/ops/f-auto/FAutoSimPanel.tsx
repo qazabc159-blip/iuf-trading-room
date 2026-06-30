@@ -14,7 +14,8 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { isKgiTradingHours } from "@/lib/kgi-trading-hours";
 import {
   getFAutoPortfolio,
   getKgiSimOrders,
@@ -43,13 +44,105 @@ type AsyncState<T> =
   | { phase: "live"; data: T }
   | { phase: "pending_backend" };   // endpoint unavailable or still deploying
 
+// ─── Polling constants ────────────────────────────────────────────────────────
+
+/** Intraday poll: 09:00-13:30 TST — data changes frequently during session. */
+const POLL_INTRADAY_MS = 45_000;
+/** Off-hours poll: positions/funds don't change but smoke/status may still update. */
+const POLL_OFFHOURS_MS = 5 * 60_000;
+
+// ─── Auto-refresh hook ────────────────────────────────────────────────────────
+
+/**
+ * Drives periodic polling with:
+ * - Intraday (09:00-13:30 TST) → 45s interval
+ * - Off-hours / weekend → 5min interval
+ * - document.hidden → pause; on visible → immediate refresh + restart timer
+ * - `triggerRefresh()` for manual refresh button
+ */
+function useAutoRefresh(): {
+  tick: number;
+  triggerRefresh: () => void;
+  lastRefreshedAt: Date | null;
+} {
+  const [tick, setTick] = useState(0);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerRefresh = useCallback(() => {
+    setTick((t) => t + 1);
+    setLastRefreshedAt(new Date());
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    function scheduleNext() {
+      if (!alive) return;
+      const delay = isKgiTradingHours() ? POLL_INTRADAY_MS : POLL_OFFHOURS_MS;
+      timeoutRef.current = setTimeout(() => {
+        if (!alive) return;
+        if (!document.hidden) {
+          // Visible: fire refresh and reschedule
+          triggerRefresh();
+          scheduleNext();
+        }
+        // Hidden: don't reschedule — onVisibility will restart when tab comes back
+      }, delay);
+    }
+
+    function onVisibility() {
+      if (!document.hidden) {
+        // Tab came back into view: cancel any pending timer, refresh immediately, restart
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        triggerRefresh();
+        scheduleNext();
+      }
+    }
+
+    scheduleNext();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      alive = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [triggerRefresh]);
+
+  return { tick, triggerRefresh, lastRefreshedAt };
+}
+
+// ─── Time formatter for refresh bar ──────────────────────────────────────────
+
+function fmtTime(d: Date): string {
+  return d.toLocaleTimeString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+// ─── Fetch hook with polling support + stale-data guard ──────────────────────
+
+/**
+ * Fetches data once on mount and on each `refreshTick` increment.
+ *
+ * Stale-data guard: if a background poll fails but we already have good data,
+ * the last known live state is preserved — the screen is NOT cleared to an
+ * error or loading state. First-load failures still show error/pending.
+ */
 function useFetch<T>(
   fetcher: () => Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }>,
+  refreshTick: number,
   startsUnavailable = false,
 ): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>(
     startsUnavailable ? { phase: "pending_backend" } : { phase: "loading" },
   );
+  const lastGoodRef = useRef<T | null>(null);
 
   useEffect(() => {
     if (startsUnavailable) {
@@ -57,14 +150,20 @@ function useFetch<T>(
       return;
     }
     let cancelled = false;
-    setState({ phase: "loading" });
+    // Silent background poll — don't flash "loading" if we already have data
+    const hadGoodData = lastGoodRef.current !== null;
+    if (!hadGoodData) {
+      setState({ phase: "loading" });
+    }
     fetcher().then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 404 || result.status === 501) {
-          setState({ phase: "pending_backend" });
+          if (!hadGoodData) setState({ phase: "pending_backend" });
+          // else: keep showing last good data
         } else {
-          setState({ phase: "error", message: `HTTP ${result.status}` });
+          if (!hadGoodData) setState({ phase: "error", message: `HTTP ${result.status}` });
+          // else: silently keep last good data — don't replace live display with error
         }
         return;
       }
@@ -74,11 +173,12 @@ function useFetch<T>(
         d === undefined ||
         (Array.isArray(d) && d.length === 0) ||
         (typeof d === "object" && Object.keys(d).length === 0);
+      if (!isEmpty) lastGoodRef.current = d;
       setState(isEmpty ? { phase: "empty" } : { phase: "live", data: d });
     });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startsUnavailable]);
+  }, [refreshTick, startsUnavailable]);
 
   return state;
 }
@@ -774,14 +874,22 @@ export function FAutoSimPanel() {
   const [dateOffset, setDateOffset] = useState(0);
   const selectedDate = toTpeDate(dateOffset);
 
-  const portfolioState = useFetch(getFAutoPortfolio);
-  const ordersState = useFetch(getKgiSimOrders);
-  const smokeState = useFetch(getDailySmokeHistory);
+  // Auto-refresh driver: polls based on trading hours, pauses when tab is hidden
+  const { tick, triggerRefresh, lastRefreshedAt } = useAutoRefresh();
 
-  // S1 read-only endpoints. If prod is between deploys, 404/501 becomes a visible pending state.
-  const s1StatusState = useFetch(getS1SimStatus, false);
+  // ── live API fetches (all re-triggered on each tick) ──────────────────────
+  const portfolioState = useFetch(getFAutoPortfolio, tick);
+  const ordersState = useFetch(getKgiSimOrders, tick);
+  const smokeState = useFetch(getDailySmokeHistory, tick);
+  // S1 read-only endpoints: 404/501 → visible pending state; stale-data guard applies
+  const s1StatusState = useFetch(getS1SimStatus, tick, false);
+
+  // EOD and basket use separate date-driven effects
+  const eodLastGoodRef = useRef<S1EodReport | null>(null);
+  const basketLastGoodRef = useRef<S1Basket | null>(null);
   const [eodState, setEodState] = useState<AsyncState<S1EodReport>>({ phase: "pending_backend" });
   const [basketState, setBasketState] = useState<AsyncState<S1Basket>>({ phase: "pending_backend" });
+
   const positionsState = portfolioPositionsState(portfolioState, eodState);
   const fundsState = portfolioFundsState(portfolioState, eodState);
   const portfolioSource = portfolioState.phase === "live"
@@ -793,46 +901,58 @@ export function FAutoSimPanel() {
       ? s1StatusState.data.lastSignalDate
       : selectedDate;
 
-  // EOD follows the selected review date; the basket follows the latest persisted S1 position date.
+  // EOD follows the selected review date + tick (auto-poll)
   useEffect(() => {
     let cancelled = false;
-    setEodState({ phase: "loading" });
+    const hadGoodData = eodLastGoodRef.current !== null;
+    if (!hadGoodData) setEodState({ phase: "loading" });
     getS1SimEodReport(selectedDate).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 404 || result.status === 501) {
-          setEodState({ phase: "pending_backend" });
+          if (!hadGoodData) setEodState({ phase: "pending_backend" });
         } else if (result.status === 400) {
-          setEodState({ phase: "empty" });
+          if (!hadGoodData) setEodState({ phase: "empty" });
         } else {
-          setEodState({ phase: "error", message: `HTTP ${result.status}` });
+          if (!hadGoodData) setEodState({ phase: "error", message: `HTTP ${result.status}` });
+          // else: keep last good data silently
         }
         return;
       }
+      eodLastGoodRef.current = result.data;
       setEodState({ phase: "live", data: result.data });
     });
     return () => { cancelled = true; };
-  }, [selectedDate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, tick]);
 
+  // Basket follows the latest persisted S1 position date + tick (auto-poll)
   useEffect(() => {
     let cancelled = false;
-    setBasketState({ phase: "loading" });
+    const hadGoodData = basketLastGoodRef.current !== null;
+    if (!hadGoodData) setBasketState({ phase: "loading" });
     getS1SimBasket(basketDate).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 404 || result.status === 501) {
-          setBasketState({ phase: "pending_backend" });
+          if (!hadGoodData) setBasketState({ phase: "pending_backend" });
         } else if (result.status === 400) {
-          setBasketState({ phase: "empty" });
+          if (!hadGoodData) setBasketState({ phase: "empty" });
         } else {
-          setBasketState({ phase: "error", message: `HTTP ${result.status}` });
+          if (!hadGoodData) setBasketState({ phase: "error", message: `HTTP ${result.status}` });
+          // else: keep last good data silently
         }
         return;
       }
+      basketLastGoodRef.current = result.data;
       setBasketState({ phase: "live", data: result.data });
     });
     return () => { cancelled = true; };
-  }, [basketDate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basketDate, tick]);
+
+  const refreshIntervalLabel = isKgiTradingHours() ? "45 秒自動刷新" : "5 分鐘自動刷新";
+  const dataAsOf = portfolioState.phase === "live" ? portfolioState.data.as_of : null;
 
   return (
     <div className="_fauto-root">
@@ -841,8 +961,30 @@ export function FAutoSimPanel() {
 
       {/* Top strip: connection light + date selector */}
       <div className="_fauto-top-strip">
-        <KgiConnectionLight />
+        <KgiConnectionLight refreshTick={tick} />
         <DateSelector selected={dateOffset} onChange={setDateOffset} />
+      </div>
+
+      {/* Refresh status bar */}
+      <div className="_fauto-refresh-bar">
+        <span className="_fauto-refresh-ts">
+          最後刷新：
+          {lastRefreshedAt ? fmtTime(lastRefreshedAt) : "頁面載入時"}
+        </span>
+        {dataAsOf && (
+          <span className="_fauto-refresh-ts _fauto-refresh-as-of">
+            資料截至：{fmtDatetime(dataAsOf)}
+          </span>
+        )}
+        <span className="_fauto-refresh-interval">{refreshIntervalLabel}</span>
+        <button
+          type="button"
+          className="_fauto-refresh-btn"
+          onClick={triggerRefresh}
+          aria-label="手動重整所有面板"
+        >
+          重整
+        </button>
       </div>
 
       <FAutoSummary portfolio={portfolioState} status={s1StatusState} eod={eodState} />
@@ -1375,5 +1517,55 @@ const FAUTO_CSS = `
   background: rgba(200,148,63,0.12);
   border-color: rgba(200,148,63,0.30);
   color: #e2b85c;
+}
+
+/* Refresh status bar */
+._fauto-refresh-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background: rgba(8,11,16,0.50);
+  border: 1px solid rgba(220,228,240,0.07);
+  border-radius: 4px;
+}
+._fauto-refresh-ts {
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  color: rgba(145,160,181,0.55);
+  white-space: nowrap;
+}
+._fauto-refresh-as-of {
+  color: rgba(200,148,63,0.60);
+}
+._fauto-refresh-interval {
+  font-size: 10px;
+  font-family: var(--mono, monospace);
+  color: rgba(145,160,181,0.35);
+  letter-spacing: 0.04em;
+  margin-left: auto;
+}
+._fauto-refresh-btn {
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(200,148,63,0.30);
+  background: rgba(200,148,63,0.08);
+  color: #e2b85c;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+._fauto-refresh-btn:hover {
+  background: rgba(200,148,63,0.16);
+  border-color: rgba(200,148,63,0.50);
+}
+._fauto-refresh-btn:active {
+  background: rgba(200,148,63,0.24);
 }
 `;

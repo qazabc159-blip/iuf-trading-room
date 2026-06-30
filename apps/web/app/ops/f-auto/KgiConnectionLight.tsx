@@ -6,7 +6,7 @@
  * Shows: kgi_logged_in / trade_connected / quote_connected / last smoke
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getKgiStatus, type KgiStatus, fmtDatetime } from "@/lib/fauto-sim-api";
 
 type LoadState =
@@ -15,29 +15,34 @@ type LoadState =
   | { phase: "error"; message: string }
   | { phase: "live"; data: KgiStatus };
 
-export function KgiConnectionLight() {
+export function KgiConnectionLight({ refreshTick = 0 }: { refreshTick?: number }) {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
+  const lastGoodRef = useRef<KgiStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const hadGoodData = lastGoodRef.current !== null;
 
     getKgiStatus().then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 403) {
-          setState({ phase: "forbidden" });
+          if (!hadGoodData) setState({ phase: "forbidden" });
         } else {
-          setState({ phase: "error", message: `HTTP ${result.status}` });
+          if (!hadGoodData) setState({ phase: "error", message: `HTTP ${result.status}` });
+          // else: silently keep last known state
         }
         return;
       }
+      lastGoodRef.current = result.data;
       setState({ phase: "live", data: result.data });
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
 
   return (
     <div className="_fauto-conn-block">
