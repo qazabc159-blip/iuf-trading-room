@@ -17914,6 +17914,187 @@ test("S1-PERSIST-CLOSE-5: server.ts TWSE-EOD-QUOTE-CRON also persists to quote_l
   );
 });
 
+// ── SIM-LEDGER — F-AUTO Continuous Ledger Schema + Backfill Engine ───────────
+
+test("SIM-LEDGER-1: migration 0049 creates all three sim_ledger tables", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_weeks"),
+    "SIM-LEDGER-1: must create sim_ledger_weeks"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_holdings"),
+    "SIM-LEDGER-1: must create sim_ledger_holdings"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_nav"),
+    "SIM-LEDGER-1: must create sim_ledger_nav"
+  );
+  assert.ok(
+    migSrc.includes("ADDITIVE ONLY"),
+    "SIM-LEDGER-1: migration comment must declare ADDITIVE ONLY (no existing tables modified)"
+  );
+});
+
+test("SIM-LEDGER-2: migration 0049 source CHECK constraints prevent data pollution", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.sql", import.meta.url),
+    "utf-8"
+  );
+  // sim_ledger_weeks: source must be 'backfill_dry_run' | 'live'
+  assert.ok(
+    migSrc.includes("backfill_dry_run") && migSrc.includes("'live'"),
+    "SIM-LEDGER-2: sim_ledger_weeks must CHECK source IN ('backfill_dry_run','live')"
+  );
+  // sim_ledger_nav: source must include 'live_eod'
+  assert.ok(
+    migSrc.includes("live_eod"),
+    "SIM-LEDGER-2: sim_ledger_nav must CHECK source IN (...'live_eod'...)"
+  );
+  // UNIQUE constraints for idempotent upserts
+  assert.ok(
+    migSrc.includes("UNIQUE (basket_date, source)"),
+    "SIM-LEDGER-2: sim_ledger_weeks + sim_ledger_holdings must have UNIQUE (basket_date, source)"
+  );
+  assert.ok(
+    migSrc.includes("UNIQUE (nav_date, source)"),
+    "SIM-LEDGER-2: sim_ledger_nav must have UNIQUE (nav_date, source)"
+  );
+});
+
+test("SIM-LEDGER-3: migration 0049 down file drops tables in correct order", () => {
+  const downSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.down.sql", import.meta.url),
+    "utf-8"
+  );
+  const navPos = downSrc.indexOf("sim_ledger_nav");
+  const holdingsPos = downSrc.indexOf("sim_ledger_holdings");
+  const weeksPos = downSrc.indexOf("sim_ledger_weeks");
+  assert.ok(navPos > 0 && holdingsPos > 0 && weeksPos > 0,
+    "SIM-LEDGER-3: down migration must DROP all three tables"
+  );
+  assert.ok(
+    navPos < holdingsPos && holdingsPos < weeksPos,
+    "SIM-LEDGER-3: must drop sim_ledger_nav first, then holdings, then weeks (reverse creation order)"
+  );
+  assert.ok(
+    downSrc.includes("DROP TABLE IF EXISTS"),
+    "SIM-LEDGER-3: must use DROP TABLE IF EXISTS (idempotent)"
+  );
+});
+
+test("SIM-LEDGER-4: backfill engine exports runBackfill and key types", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(src.includes("export async function runBackfill"),
+    "SIM-LEDGER-4: must export runBackfill"
+  );
+  assert.ok(src.includes("export interface LedgerWeekResult"),
+    "SIM-LEDGER-4: must export LedgerWeekResult interface"
+  );
+  assert.ok(src.includes("export interface LedgerNavPoint"),
+    "SIM-LEDGER-4: must export LedgerNavPoint interface"
+  );
+  assert.ok(src.includes("export interface BackfillResult"),
+    "SIM-LEDGER-4: must export BackfillResult interface"
+  );
+  assert.ok(src.includes("export async function loadBasketsFromAuditLogs"),
+    "SIM-LEDGER-4: must export loadBasketsFromAuditLogs"
+  );
+});
+
+test("SIM-LEDGER-5: backfill engine is PIT-strict (no look-ahead)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // getPitClose must walk back (not forward) for missing prices
+  assert.ok(
+    src.includes("Walk back") || src.includes("walk back"),
+    "SIM-LEDGER-5: must use walk-back (not walk-forward) for missing prices — PIT compliance"
+  );
+  // Must not allow d > date in the walk-back logic
+  assert.ok(
+    src.includes("d <= date"),
+    "SIM-LEDGER-5: walk-back must only use prices where date <= target (no look-ahead)"
+  );
+  // entry_source must track origin
+  assert.ok(
+    src.includes("finmind_close") && src.includes("entrySource"),
+    "SIM-LEDGER-5: must track entry_source (finmind_close) for audit trail"
+  );
+});
+
+test("SIM-LEDGER-6: backfill engine has dryRun guard — no accidental prod writes", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("dryRun = true"),
+    "SIM-LEDGER-6: dryRun must default to true to prevent accidental DB writes"
+  );
+  assert.ok(
+    src.includes("if (!dryRun && isDatabaseMode())"),
+    "SIM-LEDGER-6: DB persist must be guarded by !dryRun AND isDatabaseMode()"
+  );
+  // No broker, no real-money paths
+  assert.ok(
+    !src.includes("from \"./broker/"),
+    "SIM-LEDGER-6: backfill engine must not import broker modules (SIM-only)"
+  );
+  // Hard-line comment must be present
+  assert.ok(
+    src.includes("SIM-ONLY"),
+    "SIM-LEDGER-6: must contain SIM-ONLY hard line comment"
+  );
+});
+
+test("SIM-LEDGER-7: hardcoded basket fallback covers all 5 rebalance dates", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // All 5 Tuesday dates present in hardcoded basket
+  assert.ok(src.includes('"2026-06-02"'), "SIM-LEDGER-7: must include 2026-06-02 basket");
+  assert.ok(src.includes('"2026-06-09"'), "SIM-LEDGER-7: must include 2026-06-09 basket");
+  assert.ok(src.includes('"2026-06-16"'), "SIM-LEDGER-7: must include 2026-06-16 basket");
+  assert.ok(src.includes('"2026-06-23"'), "SIM-LEDGER-7: must include 2026-06-23 basket");
+  assert.ok(src.includes('"2026-06-30"'), "SIM-LEDGER-7: must include 2026-06-30 basket");
+  // Must export for test access
+  assert.ok(
+    src.includes("export const _getHardcodedBasketsForTest"),
+    "SIM-LEDGER-7: must export _getHardcodedBasketsForTest"
+  );
+});
+
+test("SIM-LEDGER-8: backfill assumptions list is complete (10 assumptions)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // Check key assumption labels exist
+  assert.ok(src.includes("A1:"), "SIM-LEDGER-8: must document assumption A1");
+  assert.ok(src.includes("A2:"), "SIM-LEDGER-8: must document assumption A2");
+  assert.ok(src.includes("A3:"), "SIM-LEDGER-8: must document assumption A3");
+  assert.ok(src.includes("A4:"), "SIM-LEDGER-8: must document assumption A4 (6/23 week)");
+  assert.ok(src.includes("A5:"), "SIM-LEDGER-8: must document assumption A5 (trading halt walkback)");
+  // NAV curve must include known trading days
+  assert.ok(
+    src.includes("TAIWAN_TRADING_DAYS_JUN2026"),
+    "SIM-LEDGER-8: must define TAIWAN_TRADING_DAYS_JUN2026 constant"
+  );
+  assert.ok(
+    src.includes('"2026-06-08"'),
+    "SIM-LEDGER-8: trading days must include 6/8 (Mon before W2 rebalance)"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
