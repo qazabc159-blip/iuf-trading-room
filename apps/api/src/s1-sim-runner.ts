@@ -1517,6 +1517,47 @@ async function runS1EodReportTickOnce(): Promise<void> {
         data: report,
       });
     }
+
+    // Phase 2: live ledger writes — SIM-ONLY, fire-and-forget (never block EOD).
+    // Tuesday (rebalance day): close prev week + open new week + NAV row.
+    // Other weekdays: daily NAV row only.
+    const taipeiMs = Date.now() + 8 * 3600 * 1000;
+    const taipeiDay = new Date(taipeiMs).getUTCDay(); // 2 = Tuesday
+    void (async () => {
+      try {
+        const { writeLiveLedgerAfterEod, writeDailyNavRow } = await import("./sim-ledger-backfill.js");
+        if (taipeiDay === 2) {
+          // Tuesday: full rebalance ledger write
+          const ledgerResult = await writeLiveLedgerAfterEod({
+            rebalanceDate: todayTst,
+            currentPositions: snapshot.positions.map((p) => ({
+              symbol: p.symbol,
+              shares: p.shares,
+              avg_cost: p.avg_cost,
+              last_price: p.last_price,
+              market_value_twd: p.market_value_twd,
+            })),
+            cashResidualTwd: snapshot.cashResidualTwd,
+            totalMarketValueTwd: snapshot.totalMarketValueTwd,
+          });
+          console.log(
+            `[s1-ledger] Tuesday rebalance ledger: written=${ledgerResult.written} ` +
+            `weekNum=${ledgerResult.weekNum} realizedPnl=${ledgerResult.realizedPnlTwd} ` +
+            `equity=${ledgerResult.equityAfterTwd} costs=${ledgerResult.transactionCostsTwd}`
+          );
+        } else {
+          // Non-Tuesday: daily NAV row only (requires backfill already applied)
+          await writeDailyNavRow({
+            navDate: todayTst,
+            cashResidualTwd: snapshot.cashResidualTwd,
+            totalMarketValueTwd: snapshot.totalMarketValueTwd,
+          });
+          console.log(`[s1-ledger] daily NAV row written: ${todayTst}`);
+        }
+      } catch (e) {
+        console.warn("[s1-ledger] live ledger write failed (non-fatal):", e instanceof Error ? e.message : String(e));
+      }
+    })();
   }
 
   // Markdown report
