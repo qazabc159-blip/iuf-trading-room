@@ -823,6 +823,53 @@ export async function getS1SimBasket(date: string) {
   };
 }
 
+// ── F-AUTO NAV curve (連續帳本) ────────────────────────────────────────────────
+
+export type NavCurvePoint = {
+  /** YYYY-MM-DD */
+  navDate: string;
+  /** 權益淨值（TWD） */
+  equityTwd: number;
+  /** 累計報酬率（%，e.g. -7.36 代表 -7.36%） */
+  returnPct: number;
+  weekNum: number;
+  /** "live" | "backfill" | "backfill_dry_run" */
+  source: string;
+};
+
+export type NavWeekRow = {
+  weekNum: number;
+  /** 重平衡日 YYYY-MM-DD */
+  basketDate: string;
+  realizedPnlTwd: number;
+  equityAfterTwd: number;
+  cashResidualTwd: number;
+  basketCostTwd: number;
+};
+
+export type FAutoNavSummary = {
+  initialEquity: number;
+  currentEquity: number;
+  /** 含成本累計報酬率（%，e.g. -7.36） */
+  cumulativeReturnPct: number;
+  totalRealizedPnlTwd: number;
+  currentWeekNum: number;
+  lastNavDate: string;
+};
+
+export type FAutoNavResponse = {
+  /** "sim_ledger_live" | "empty_ledger" | ... */
+  source: string;
+  navCurve: NavCurvePoint[];
+  weeks: NavWeekRow[];
+  summary: FAutoNavSummary;
+};
+
+/** GET /api/v1/portfolio/f-auto/nav — 連續 NAV 曲線（Owner-only） */
+export async function getFAutoNav() {
+  return apiFetch<FAutoNavResponse>("/api/v1/portfolio/f-auto/nav");
+}
+
 // ─── display helpers ───────────────────────────────────────────────────────────
 
 export function fmtTwd(value: number | null | undefined): string {
