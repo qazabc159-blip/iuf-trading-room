@@ -31,12 +31,13 @@ test("T1: /companies/2330 renders freshness badge in hero bar", async ({ page },
   // 給 1.5s 讓 client quote store 打完第一輪 poll
   await page.waitForTimeout(1500);
 
-  // 必須有 freshness badge（任意 4 mode 之一）
+  // 必須有 freshness badge（任意 5 mode 之一，close = #1077 盤後今日收盤）
   const badge = page.locator(
     '[data-testid="freshness-badge-live"],' +
     '[data-testid="freshness-badge-intraday"],' +
     '[data-testid="freshness-badge-stale"],' +
-    '[data-testid="freshness-badge-eod"]'
+    '[data-testid="freshness-badge-eod"],' +
+    '[data-testid="freshness-badge-close"]'
   ).first();
   await expect(badge, "freshness badge must be present in hero bar").toBeVisible();
 
@@ -71,12 +72,13 @@ test("T3: /companies/2330 does not show live badge when market is closed (盤後
     const liveCount = await liveBadge.count();
     expect(liveCount, "No live badge should appear post-market (盤後不假裝 live)").toBe(0);
 
-    // 必須有 eod 或 stale
+    // 必須有 eod / stale / close（close = 今日收盤，#1074/#1077 盤後誠實標示）
     const safeCount = await page.locator(
       '[data-testid="freshness-badge-eod"],' +
-      '[data-testid="freshness-badge-stale"]'
+      '[data-testid="freshness-badge-stale"],' +
+      '[data-testid="freshness-badge-close"]'
     ).count();
-    expect(safeCount, "post-market must show eod or stale badge").toBeGreaterThan(0);
+    expect(safeCount, "post-market must show eod, stale or close badge").toBeGreaterThan(0);
   } else {
     // 盤中：允許 live / intraday / stale 任一（不強制 live）
     const anyBadge = await page.locator(
