@@ -6142,10 +6142,11 @@ const authLoginSchema = z.object({
   password: z.string().min(1).max(256)
 });
 
-const authRegisterSchema = z.object({
+const authRegisterWithInviteSchema = z.object({
+  inviteToken: z.string().min(1).max(256),
   email: z.string().email(),
-  password: z.string().min(8).max(256),
-  inviteCode: z.string().min(1).max(128)
+  name: z.string().min(1).max(100),
+  password: z.string().min(8).max(256)
 });
 
 function sanitizeOperationalErrorMessage(value: unknown): string | undefined {
@@ -6191,10 +6192,26 @@ app.post("/auth/login", async (c) => {
 });
 
 app.post("/auth/register-with-invite", async (c) => {
-  const body = authRegisterSchema.parse(await c.req.json());
-  const result = await registerWithInvite(body.email, body.password, body.inviteCode);
+  // New workspace_invites-backed registration (migration 0050).
+  // Token is looked up by SHA-256 hash; plain token is never stored.
+  // All invalid states (bad token, expired, used, revoked) return the same
+  // error code to prevent token-existence oracle attacks.
+  let body: ReturnType<typeof authRegisterWithInviteSchema.parse>;
+  try {
+    body = authRegisterWithInviteSchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_request_body" }, 400);
+  }
+  const { validateAndClaimWorkspaceInvite } = await import("./invite-store.js");
+  const result = await validateAndClaimWorkspaceInvite({
+    inviteToken: body.inviteToken,
+    email: body.email,
+    name: body.name,
+    password: body.password
+  });
   if (!result.ok) {
-    return c.json({ error: result.error }, 400);
+    const status = result.error === "email_already_registered" ? 409 : 400;
+    return c.json({ error: result.error }, status);
   }
   c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
   return c.json({ user: result.user, workspace: result.workspace });
@@ -21942,6 +21959,170 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
     prompt: decision.prompt
   };
   return c.json({ data: shaped });
+});
+
+// =============================================================================
+// ADMIN: Invite Management (Owner + Admin)
+// =============================================================================
+//
+// POST /api/v1/admin/invites       — issue new invite token
+// GET  /api/v1/admin/invites       — list all invites for workspace
+// POST /api/v1/admin/invites/:id/revoke — revoke a pending invite
+//
+// Security:
+//   - Token stored as SHA-256 hash only; plain token returned ONCE at creation
+//   - role must be Admin|Analyst|Trader|Viewer (Owner excluded by DB CHECK)
+//   - All state-invalid tokens return "invalid_or_expired" to caller (no oracle)
+// =============================================================================
+
+const createInviteBodySchema = z.object({
+  role: z.enum(["Admin", "Analyst", "Trader", "Viewer"]),
+  invitedEmail: z.string().email().optional(),
+  label: z.string().max(200).optional(),
+  expiresInDays: z.number().int().min(1).max(365).optional()
+});
+
+app.post("/api/v1/admin/invites", async (c) => {
+  const session = c.get("session");
+  if (!session || (session.user.role !== "Owner" && session.user.role !== "Admin")) {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  let body: ReturnType<typeof createInviteBodySchema.parse>;
+  try {
+    body = createInviteBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_request_body" }, 400);
+  }
+  const { createWorkspaceInvite } = await import("./invite-store.js");
+  try {
+    const result = await createWorkspaceInvite({
+      workspaceId: session.workspace.id,
+      createdBy: session.user.id,
+      role: body.role,
+      invitedEmail: body.invitedEmail ?? null,
+      label: body.label ?? null,
+      expiresInDays: body.expiresInDays
+    });
+    return c.json({ data: result }, 201);
+  } catch (err) {
+    console.error("[admin/invites] createWorkspaceInvite error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "invite_creation_failed" }, 500);
+  }
+});
+
+app.get("/api/v1/admin/invites", async (c) => {
+  const session = c.get("session");
+  if (!session || (session.user.role !== "Owner" && session.user.role !== "Admin")) {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const { listWorkspaceInvites } = await import("./invite-store.js");
+  try {
+    const invites = await listWorkspaceInvites(session.workspace.id);
+    return c.json({ data: invites });
+  } catch (err) {
+    console.error("[admin/invites] listWorkspaceInvites error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "invite_list_failed" }, 500);
+  }
+});
+
+app.post("/api/v1/admin/invites/:id/revoke", async (c) => {
+  const session = c.get("session");
+  if (!session || (session.user.role !== "Owner" && session.user.role !== "Admin")) {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const inviteId = c.req.param("id");
+  if (!inviteId) return c.json({ error: "missing_invite_id" }, 400);
+  const { revokeWorkspaceInvite } = await import("./invite-store.js");
+  try {
+    const revoked = await revokeWorkspaceInvite(inviteId, session.workspace.id);
+    if (!revoked) {
+      return c.json({ error: "invite_not_found_or_already_used" }, 404);
+    }
+    return c.json({ data: { revoked: true } });
+  } catch (err) {
+    console.error("[admin/invites/:id/revoke] error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "revoke_failed" }, 500);
+  }
+});
+
+// =============================================================================
+// ADMIN: User Management (Owner only)
+// =============================================================================
+//
+// GET  /api/v1/admin/users              — list workspace users
+// POST /api/v1/admin/users/:id/role     — change a user's role
+// POST /api/v1/admin/users/:id/deactivate — soft-deactivate a user
+//
+// Constraints:
+//   - Cannot promote any user to Owner
+//   - Cannot change / deactivate yourself
+//   - Deactivated users lose their active session on next request
+// =============================================================================
+
+app.get("/api/v1/admin/users", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const { listWorkspaceUsers } = await import("./invite-store.js");
+  try {
+    const userList = await listWorkspaceUsers(session.workspace.id);
+    return c.json({ data: userList });
+  } catch (err) {
+    console.error("[admin/users] listWorkspaceUsers error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "user_list_failed" }, 500);
+  }
+});
+
+const changeRoleBodySchema = z.object({
+  role: z.enum(["Admin", "Analyst", "Trader", "Viewer"])
+});
+
+app.post("/api/v1/admin/users/:id/role", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const targetId = c.req.param("id");
+  if (!targetId) return c.json({ error: "missing_user_id" }, 400);
+  let body: ReturnType<typeof changeRoleBodySchema.parse>;
+  try {
+    body = changeRoleBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_request_body" }, 400);
+  }
+  const { changeUserRole } = await import("./invite-store.js");
+  const result = await changeUserRole({
+    targetUserId: targetId,
+    newRole: body.role,
+    requestorId: session.user.id,
+    workspaceId: session.workspace.id
+  });
+  if (!result.ok) {
+    const status = result.error === "user_not_found" ? 404 : 400;
+    return c.json({ error: result.error }, status);
+  }
+  return c.json({ data: { updated: true } });
+});
+
+app.post("/api/v1/admin/users/:id/deactivate", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const targetId = c.req.param("id");
+  if (!targetId) return c.json({ error: "missing_user_id" }, 400);
+  const { deactivateUser } = await import("./invite-store.js");
+  const result = await deactivateUser({
+    targetUserId: targetId,
+    requestorId: session.user.id,
+    workspaceId: session.workspace.id
+  });
+  if (!result.ok) {
+    const status = result.error === "user_not_found" ? 404 : 400;
+    return c.json({ error: result.error }, status);
+  }
+  return c.json({ data: { deactivated: true } });
 });
 
 const port = Number(process.env.PORT ?? 3001);
