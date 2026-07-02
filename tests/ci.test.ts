@@ -18541,6 +18541,65 @@ test("INVITE-8: schema.ts has workspaceInvites table and users.isActive", () => 
   );
 });
 
+test("INVITE-9: validateAndClaimWorkspaceInvite wraps steps 6-8 in a transaction (Mike audit fix)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/invite-store.ts", import.meta.url),
+    "utf-8"
+  );
+  // Transaction wrapper exists
+  assert.ok(
+    src.includes("db.transaction(async (tx) =>"),
+    "INVITE-9: steps 6-8 must be wrapped in db.transaction() so user INSERT failure rolls back the claim"
+  );
+  // Atomic claim uses tx.execute (inside transaction)
+  assert.ok(
+    src.includes("tx.execute(drizzleSql"),
+    "INVITE-9: atomic claim UPDATE must use tx.execute inside the transaction"
+  );
+  // tx.insert for user creation (inside transaction)
+  assert.ok(
+    src.includes(".insert(users)") && src.indexOf("tx.execute") < src.indexOf(".insert(users)"),
+    "INVITE-9: user INSERT must happen after the atomic claim inside the transaction"
+  );
+  // Sentinel error class for concurrent claim (distinct from DB errors)
+  assert.ok(
+    src.includes("_ConcurrentClaimError"),
+    "INVITE-9: must use a named sentinel error class to distinguish concurrent-claim from DB errors"
+  );
+  // Catches Postgres 23505 (email UNIQUE violation in race) → rolls back invite claim
+  assert.ok(
+    src.includes("23505"),
+    "INVITE-9: must catch Postgres error code 23505 (UNIQUE violation) inside tx catch handler"
+  );
+});
+
+test("INVITE-10: migration 0050 has partial UNIQUE index blocking duplicate active invites per email", () => {
+  const sql = readFileSync(
+    new URL("../packages/db/migrations/0050_workspace_invites.sql", import.meta.url),
+    "utf-8"
+  );
+  // Partial UNIQUE index exists
+  assert.ok(
+    sql.includes("workspace_invites_workspace_email_active_uidx"),
+    "INVITE-10: migration must create workspace_invites_workspace_email_active_uidx"
+  );
+  // Partial condition: invited_email IS NOT NULL (universal links excluded)
+  assert.ok(
+    sql.includes("invited_email IS NOT NULL"),
+    "INVITE-10: partial index condition must require invited_email IS NOT NULL"
+  );
+  // Partial condition: only active (not used AND not revoked)
+  assert.ok(
+    sql.includes("used_at IS NULL") && sql.includes("revoked_at IS NULL"),
+    "INVITE-10: partial index must only cover active invites (used_at IS NULL AND revoked_at IS NULL)"
+  );
+  // Covers workspace scoping
+  assert.ok(
+    sql.includes("ON workspace_invites(workspace_id, invited_email)"),
+    "INVITE-10: partial index must be scoped to (workspace_id, invited_email)"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

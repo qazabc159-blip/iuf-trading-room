@@ -176,7 +176,21 @@ export async function revokeWorkspaceInvite(
 }
 
 // ── validateAndClaimWorkspaceInvite ───────────────────────────────────────────
-// Full register flow: validate token → claim atomically → create user → return session
+// Full register flow: validate token → claim + create user atomically → return session.
+//
+// Steps 6-8 (claim invite / INSERT user / link used_by) run inside a single DB
+// transaction so that any failure (e.g. email UNIQUE violation in a race) rolls
+// back the used_at update — the invite remains usable and is NOT permanently burned.
+//
+// Error oracle prevention: all bad-token states return the same "invalid_or_expired"
+// code so callers cannot enumerate which tokens exist.
+
+// Sentinel error thrown inside the transaction to signal "lost concurrent race".
+// Using a named class lets us distinguish it from real DB errors in the catch block.
+class _ConcurrentClaimError extends Error {
+  constructor() { super("CONCURRENT_CLAIM_LOST"); this.name = "_ConcurrentClaimError"; }
+}
+
 export async function validateAndClaimWorkspaceInvite(opts: {
   inviteToken: string;
   email: string;
@@ -188,7 +202,7 @@ export async function validateAndClaimWorkspaceInvite(opts: {
   const normalEmail = opts.email.toLowerCase().trim();
   const normalName = opts.name.trim() || (normalEmail.split("@")[0] ?? normalEmail);
 
-  // 1. Look up invite by hash
+  // 1. Look up invite by hash (read-only, outside tx)
   const [invite] = await db
     .select()
     .from(workspaceInvites)
@@ -216,7 +230,7 @@ export async function validateAndClaimWorkspaceInvite(opts: {
     }
   }
 
-  // 3. Email uniqueness
+  // 3. Early email uniqueness check (good UX; DB UNIQUE constraint is the hard guard)
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
@@ -233,52 +247,69 @@ export async function validateAndClaimWorkspaceInvite(opts: {
     return { ok: false, error: passwordError };
   }
 
-  // 5. Hash password (CPU work done outside the claim window)
+  // 5. Hash password (CPU work done outside the transaction)
   const passwordHash = await hashPassword(opts.password);
 
-  // 6. Atomic claim: UPDATE WHERE used_at IS NULL — concurrent race guard
-  const claimed = execRows<{ id: string }>(
-    await db.execute(drizzleSql`
-      UPDATE workspace_invites
-      SET used_at = NOW()
-      WHERE id = ${invite.id}
-        AND used_at IS NULL
-        AND revoked_at IS NULL
-        AND expires_at > NOW()
-      RETURNING id
-    `)
-  );
-  if (claimed.length === 0) {
-    // Lost the race — another request claimed this token concurrently
-    return { ok: false, error: "invalid_or_expired" };
+  // 6-8. Atomic transaction: claim invite + create user + link used_by.
+  //
+  // If user INSERT fails for any reason (e.g. concurrent email registration),
+  // the transaction rolls back and used_at reverts — the invite is NOT burned.
+  let newUser: typeof users.$inferSelect;
+  try {
+    newUser = await db.transaction(async (tx) => {
+      // Step 6: Atomic claim — concurrent double-registration guard
+      const claimed = execRows<{ id: string }>(
+        await tx.execute(drizzleSql`
+          UPDATE workspace_invites
+          SET used_at = NOW()
+          WHERE id = ${invite.id}
+            AND used_at IS NULL
+            AND revoked_at IS NULL
+            AND expires_at > NOW()
+          RETURNING id
+        `)
+      );
+      if (claimed.length === 0) {
+        throw new _ConcurrentClaimError();
+      }
+
+      // Step 7: Create user (UNIQUE on email — any race here rolls back step 6 too)
+      const [u] = await tx
+        .insert(users)
+        .values({
+          email: normalEmail,
+          name: normalName,
+          passwordHash,
+          role: invite.role as "Admin" | "Analyst" | "Trader" | "Viewer",
+          workspaceId: invite.workspaceId,
+          isActive: true
+        })
+        .returning();
+
+      if (!u) throw new Error("INSERT_RETURNED_EMPTY");
+
+      // Step 8: Back-fill used_by now that we have the new user id
+      await tx
+        .update(workspaceInvites)
+        .set({ usedBy: u.id })
+        .where(eq(workspaceInvites.id, invite.id));
+
+      return u;
+    });
+  } catch (err) {
+    if (err instanceof _ConcurrentClaimError) {
+      return { ok: false, error: "invalid_or_expired" };
+    }
+    // Postgres UNIQUE constraint violation (code 23505) — rare race on email
+    const errCode = (err as { code?: string }).code;
+    if (errCode === "23505") {
+      return { ok: false, error: "email_already_registered" };
+    }
+    // Unexpected DB error — rethrow so the route handler can return 500
+    throw err;
   }
 
-  // 7. Create user
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email: normalEmail,
-      name: normalName,
-      passwordHash,
-      role: invite.role as "Admin" | "Analyst" | "Trader" | "Viewer",
-      workspaceId: invite.workspaceId,
-      isActive: true
-    })
-    .returning();
-
-  if (!newUser) {
-    // Should not happen; log and surface as generic error
-    console.error("[invite-store] user INSERT returned no row after claiming invite", invite.id);
-    return { ok: false, error: "registration_failed" };
-  }
-
-  // 8. Link used_by
-  await db
-    .update(workspaceInvites)
-    .set({ usedBy: newUser.id })
-    .where(eq(workspaceInvites.id, invite.id));
-
-  // 9. Fetch workspace for session
+  // 9. Fetch workspace for session (outside tx — read-only, no rollback needed)
   const [workspace] = await db
     .select({ id: workspaces.id, name: workspaces.name, slug: workspaces.slug })
     .from(workspaces)

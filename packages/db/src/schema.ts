@@ -1273,6 +1273,10 @@ export const simLedgerNav = pgTable(
 // Invite-based user onboarding. token_hash = SHA-256(plain_token).
 // Plain token returned once at creation and never stored.
 // role CHECK: Admin|Analyst|Trader|Viewer (Owner is NOT a valid invite role).
+// NOTE: the partial UNIQUE index (workspace_invites_workspace_email_active_uidx)
+// on (workspace_id, invited_email) WHERE invited_email IS NOT NULL AND used_at IS NULL
+// AND revoked_at IS NULL is created by migration 0050 — Drizzle metadata here omits
+// it because partial indexes are not the source of truth (migrations are).
 export const workspaceInvites = pgTable(
   "workspace_invites",
   {
@@ -1280,7 +1284,7 @@ export const workspaceInvites = pgTable(
     workspaceId:  uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     tokenHash:    text("token_hash").notNull().unique(),
     role:         text("role").notNull(), // enforced by DB CHECK: Admin|Analyst|Trader|Viewer
-    invitedEmail: text("invited_email"),  // null = universal link
+    invitedEmail: text("invited_email"),  // null = universal link; partial UNIQUE on active rows
     label:        text("label"),
     createdBy:    uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
     expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),

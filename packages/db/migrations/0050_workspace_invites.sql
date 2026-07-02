@@ -38,3 +38,10 @@ CREATE INDEX IF NOT EXISTS workspace_invites_workspace_created_idx
 -- Index for: audit trail (who issued what)
 CREATE INDEX IF NOT EXISTS workspace_invites_created_by_idx
   ON workspace_invites(created_by);
+
+-- Partial UNIQUE index: prevent same workspace+email from having multiple active invites.
+-- "Active" = not yet used AND not yet revoked.
+-- Allows re-inviting the same email AFTER a previous invite was used or revoked.
+CREATE UNIQUE INDEX IF NOT EXISTS workspace_invites_workspace_email_active_uidx
+  ON workspace_invites(workspace_id, invited_email)
+  WHERE invited_email IS NOT NULL AND used_at IS NULL AND revoked_at IS NULL;
