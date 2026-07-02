@@ -2,11 +2,17 @@
  * sim-ledger-backfill.ts — F-AUTO SIM Continuous Ledger Backfill Engine
  *
  * 楊董 ACK 2026-07-01: 建帳本+回補 6/2 起 (Phase 1 dry-run)
+ * 楊董 ACK 2026-07-02: Phase 2 — 帳本落地 prod，從今起真連續累計，含交易成本
  *
  * Purpose:
  *   Reads the 5-week basket history from audit_logs, fetches PIT closing
  *   prices via FinMind API, and computes a continuous NAV curve as if the
  *   F-AUTO SIM had been trading a rolling equity account (not a weekly reset).
+ *
+ *   Phase 2 additions:
+ *   - Transaction cost deduction (buy commission + sell commission + STT)
+ *   - writeLiveLedgerAfterEod(): called by s1-sim-runner on Tuesday EOD
+ *   - writeDailyNavRow(): called every weekday EOD for continuous NAV curve
  *
  * Hard lines:
  *   - SIM-ONLY: no real-money writes. No broker interaction.
@@ -15,9 +21,9 @@
  *   - DRY-RUN default: set DRY_RUN=false to persist to sim_ledger_* tables.
  *   - No automatic execution from server.ts — must be triggered manually.
  *
- * Assumptions (楊董 must audit before Phase 2):
+ * Assumptions (楊董 ACK 2026-07-01, updated Phase 2):
  *   A1. Assumed execution price = Tuesday closing price (PIT close, not basket latest_price)
- *   A2. No transaction costs (no brokerage fee, no securities tax)
+ *   A2. Transaction costs included (Phase 2): buy 0.1425%, sell 0.1425% + STT 0.3%
  *   A3. All 8 positions per week: assumed fully filled at Tuesday close regardless of KGI SIM status
  *   A4. 6/23 week (accepted=0): treated same as other weeks (consistent audit-rebuild logic)
  *   A5. 5348 trading halt days (close=0): use last known good close via walk-back
@@ -30,6 +36,29 @@
 
 import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
 import { sql as drizzleSql } from "drizzle-orm";
+
+// ── Cost rates (Phase 2) ───────────────────────────────────────────────────
+
+/** Standard KGI brokerage + tax rates for Phase 2 cost-inclusive ledger. */
+export interface CostRates {
+  buyCommissionRate: number;           // fraction of transaction value, e.g. 0.001425
+  sellCommissionRate: number;          // fraction of transaction value
+  securitiesTransactionTaxRate: number; // fraction on sell side only, e.g. 0.003
+}
+
+/** Standard Taiwan stock transaction cost rates (KGI default). */
+export const STANDARD_COST_RATES: CostRates = {
+  buyCommissionRate: 0.001425,
+  sellCommissionRate: 0.001425,
+  securitiesTransactionTaxRate: 0.003,
+};
+
+/** Zero-cost rates (Phase 1 baseline assumption A2). */
+export const ZERO_COST_RATES: CostRates = {
+  buyCommissionRate: 0,
+  sellCommissionRate: 0,
+  securitiesTransactionTaxRate: 0,
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +101,14 @@ export interface BackfillResult {
   totalRealizedPnl: number;
   finalEquity: number;
   cumulativeReturnPct: number;
+  /** Transaction costs deducted from equity (0 if ZERO_COST_RATES). */
+  totalTransactionCostsTwd: number;
+  /** Equity if NO transaction costs were applied (Phase 1 baseline comparison). */
+  noCostFinalEquity: number;
+  /** Return % if NO transaction costs were applied (Phase 1 baseline: should be ~-6.34%). */
+  noCostReturnPct: number;
+  /** Flags whether cost rates were non-zero in this run. */
+  costsIncluded: boolean;
   assumptions: string[];
   priceDataWarnings: string[];
 }
@@ -196,6 +233,8 @@ export async function runBackfill(options: {
   rebalanceDates?: string[];
   initialEquity?: number;
   workspaceId?: string;
+  /** Phase 2: include transaction costs. Defaults to STANDARD_COST_RATES. Pass ZERO_COST_RATES to replicate Phase 1. */
+  costRates?: CostRates;
 }): Promise<BackfillResult> {
   const {
     dryRun = true,
@@ -203,11 +242,18 @@ export async function runBackfill(options: {
     rebalanceDates = ["2026-06-02","2026-06-09","2026-06-16","2026-06-23","2026-06-30"],
     initialEquity = 10_000_000,
     workspaceId,
+    costRates = STANDARD_COST_RATES,
   } = options;
+
+  const costsIncluded = costRates.buyCommissionRate !== 0
+    || costRates.sellCommissionRate !== 0
+    || costRates.securitiesTransactionTaxRate !== 0;
 
   const assumptions = [
     "A1: Assumed execution price = Tuesday closing price (FinMind TaiwanStockPrice close, PIT)",
-    "A2: No transaction costs (zero brokerage fee, zero securities transaction tax)",
+    costsIncluded
+      ? `A2: Transaction costs included — buy commission ${(costRates.buyCommissionRate * 100).toFixed(4)}%, sell commission ${(costRates.sellCommissionRate * 100).toFixed(4)}%, STT ${(costRates.securitiesTransactionTaxRate * 100).toFixed(2)}%`
+      : "A2: No transaction costs (zero-cost baseline — Phase 1 parity check)",
     "A3: All 8 positions assumed fully filled at Tuesday close regardless of KGI SIM status",
     "A4: 6/23 week (accepted=0 in KGI SIM): treated same as other weeks (audit-rebuild consistency)",
     "A5: 5348 trading halt days (close=0): walk back to last known good close",
@@ -241,11 +287,15 @@ export async function runBackfill(options: {
 
   // Step 4: Roll through each rebalance cycle
   let equity = initialEquity;
+  // Track no-cost equity in parallel for Phase 1 parity validation
+  let equityNoCost = initialEquity;
+  let totalTransactionCostsTwd = 0;
   const weeks: LedgerWeekResult[] = [];
   let prevBasket: LedgerBasketEntry[] = [];
   let prevEntryPrices = new Map<string, number>();
   let prevCost = 0;
   let prevCash = 0;
+  let prevCashNoCost = 0;
 
   for (let i = 0; i < rebalanceDates.length; i++) {
     const rbDate = rebalanceDates[i]!;
@@ -267,6 +317,9 @@ export async function runBackfill(options: {
 
     const actualCost = basket.reduce((s, p) => s + p.shares * (entryPrices.get(p.symbol) ?? 0), 0);
 
+    // Phase 2 cost calculation: buy commission on new basket
+    const buyCost = Math.round(actualCost * costRates.buyCommissionRate);
+
     // Compute realized PnL from exiting previous basket
     let realizedPnl: number | null = null;
     if (i > 0 && prevBasket.length > 0) {
@@ -287,8 +340,21 @@ export async function runBackfill(options: {
           realizedPnl: Math.round(pnl),
         });
       }
-      realizedPnl = Math.round(exitTotal - prevCost);
-      equity = Math.round(prevCash + exitTotal);
+      // Phase 2: sell cost = sell commission + STT on exit proceeds
+      const sellCost = Math.round(exitTotal * (costRates.sellCommissionRate + costRates.securitiesTransactionTaxRate));
+      const weekCost = sellCost + buyCost;
+      totalTransactionCostsTwd += weekCost;
+
+      realizedPnl = Math.round(exitTotal - prevCost - sellCost - buyCost);
+      // equity after exit + new entry (with costs)
+      equity = Math.round(prevCash + exitTotal - sellCost - buyCost);
+      // no-cost parallel track
+      equityNoCost = Math.round(prevCashNoCost + exitTotal);
+    } else {
+      // W1: only buy cost
+      totalTransactionCostsTwd += buyCost;
+      equity = initialEquity - buyCost;
+      equityNoCost = initialEquity;
     }
 
     // Add current week's open positions (no exit yet)
@@ -305,6 +371,7 @@ export async function runBackfill(options: {
     }
 
     const cashResidual = Math.round(equity - actualCost);
+    const cashResidualNoCost = Math.round(equityNoCost - actualCost);
 
     weeks.push({
       weekNum: i + 1,
@@ -321,6 +388,7 @@ export async function runBackfill(options: {
     prevEntryPrices = entryPrices;
     prevCost = actualCost;
     prevCash = cashResidual;
+    prevCashNoCost = cashResidualNoCost;
   }
 
   // Step 5: Build daily NAV curve
@@ -363,6 +431,18 @@ export async function runBackfill(options: {
     .filter((w) => w.realizedPnlTwd !== null)
     .reduce((s, w) => s + (w.realizedPnlTwd ?? 0), 0);
 
+  // No-cost baseline (Phase 1 parity check)
+  // Last week's equityNoCost + last basket market value at end date
+  const lastWeekNoCash = prevCashNoCost;
+  const lastBasket = basketMap.get(rebalanceDates[rebalanceDates.length - 1] ?? "") ?? [];
+  let lastMvNoCost = 0;
+  for (const pos of lastBasket) {
+    const pr = getPitClose(priceMap, pos.symbol, endDate);
+    if (pr) lastMvNoCost += pr.price * pos.shares;
+  }
+  const noCostFinalEquity = Math.round(lastWeekNoCash + lastMvNoCost);
+  const noCostReturnPct = ((noCostFinalEquity - initialEquity) / initialEquity) * 100;
+
   // Step 7: Persist if not dry-run
   if (!dryRun && isDatabaseMode()) {
     await persistBackfillResults({ weeks, navCurve });
@@ -375,6 +455,10 @@ export async function runBackfill(options: {
     totalRealizedPnl,
     finalEquity,
     cumulativeReturnPct: Math.round(cumulativeReturnPct * 10000) / 10000,
+    totalTransactionCostsTwd,
+    noCostFinalEquity,
+    noCostReturnPct: Math.round(noCostReturnPct * 10000) / 10000,
+    costsIncluded,
     assumptions,
     priceDataWarnings: priceWarnings,
   };
@@ -428,6 +512,13 @@ async function persistBackfillResults(data: {
       } else {
         // Bug 2 fix: open positions (exitDate=null) were previously skipped.
         // Phase 2 needs these rows to display current holdings (e.g. W5).
+        //
+        // DO NOTHING on conflict (Mike re-audit 🟡 fix 2026-07-02):
+        // If Phase 2 live cron has already closed this position (writing
+        // exit_price_twd + realized_pnl_twd), a full backfill re-run must
+        // NOT overwrite that exit data with NULL.  The closed-position branch
+        // (pos.exitDate !== null) fires later in the same loop iteration and
+        // correctly updates exit columns via its own ON CONFLICT DO UPDATE.
         await db.execute(drizzleSql`
           INSERT INTO sim_ledger_holdings
             (week_num, basket_date, symbol, shares, entry_price_twd,
@@ -435,9 +526,7 @@ async function persistBackfillResults(data: {
           VALUES
             (${w.weekNum}, ${w.basketDate}::date, ${pos.symbol}, ${pos.shares},
              ${pos.entryPrice}, NULL, NULL, NULL, 'finmind_close', NULL)
-          ON CONFLICT (basket_date, symbol) DO UPDATE SET
-            exit_price_twd = EXCLUDED.exit_price_twd,
-            realized_pnl_twd = EXCLUDED.realized_pnl_twd
+          ON CONFLICT (basket_date, symbol) DO NOTHING
         `);
       }
     }
@@ -552,4 +641,276 @@ export function _computeHoldingsRowsForTest(weeks: LedgerWeekResult[]): HoldingR
     }
   }
   return rows;
+}
+
+// ── Phase 2: Live ledger writes ────────────────────────────────────────────
+
+/**
+ * Reads the latest sim_ledger_weeks row to determine current weekNum and
+ * last recorded equity. Returns null if ledger is empty (backfill not applied).
+ */
+export async function getLatestLedgerState(db: ReturnType<typeof getDb>): Promise<{
+  weekNum: number;
+  equityAfterTwd: number;
+  basketDate: string;
+} | null> {
+  if (!db) return null;
+  try {
+    const rows = await db.execute(drizzleSql`
+      SELECT week_num, equity_after_twd, basket_date
+      FROM sim_ledger_weeks
+      WHERE source IN ('live', 'backfill_dry_run')
+      ORDER BY basket_date DESC, week_num DESC
+      LIMIT 1
+    `) as unknown as Array<{ week_num: number; equity_after_twd: string; basket_date: string }>;
+    if (!rows.length) return null;
+    const r = rows[0]!;
+    return {
+      weekNum: Number(r.week_num),
+      equityAfterTwd: Number(r.equity_after_twd),
+      basketDate: String(r.basket_date).slice(0, 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * writeLiveLedgerAfterEod — called from s1-sim-runner on Tuesday EOD.
+ *
+ * Closes previous week (computes realized PnL from EOD prices), opens new week,
+ * and writes daily NAV row. Idempotent via sim_ledger_weeks UNIQUE(basket_date,source).
+ *
+ * Called only when snapshot.pricingComplete=true AND today is Tuesday.
+ */
+export async function writeLiveLedgerAfterEod(options: {
+  rebalanceDate: string;  // today's Tuesday date YYYY-MM-DD
+  /** Priced positions from buildS1PositionsSnapshot (today's new basket with EOD prices). */
+  currentPositions: Array<{
+    symbol: string;
+    shares: number;
+    avg_cost: number;
+    last_price: number | null;
+    market_value_twd: number | null;
+  }>;
+  cashResidualTwd: number;
+  totalMarketValueTwd: number | null;
+  workspaceId?: string;
+  costRates?: CostRates;
+}): Promise<{
+  written: boolean;
+  weekNum: number;
+  realizedPnlTwd: number | null;
+  equityAfterTwd: number;
+  transactionCostsTwd: number;
+  notes: string[];
+}> {
+  const db = getDb();
+  if (!db || !isDatabaseMode()) {
+    return { written: false, weekNum: 0, realizedPnlTwd: null, equityAfterTwd: 0, transactionCostsTwd: 0, notes: ["no_db"] };
+  }
+
+  const { rebalanceDate, currentPositions, cashResidualTwd, totalMarketValueTwd, workspaceId, costRates = STANDARD_COST_RATES } = options;
+  const notes: string[] = [];
+
+  try {
+    // 1. Get current ledger state to determine week number
+    const latestState = await getLatestLedgerState(db);
+    if (!latestState) {
+      notes.push("live_ledger_skip: backfill not applied yet — apply admin backfill first");
+      return { written: false, weekNum: 0, realizedPnlTwd: null, equityAfterTwd: 0, transactionCostsTwd: 0, notes };
+    }
+    const weekNum = latestState.weekNum + 1;
+    const prevEquity = latestState.equityAfterTwd;
+
+    // 2. Load previous week's basket from audit_logs
+    const allBaskets = await loadBasketsFromAuditLogs(workspaceId).catch(() => new Map<string, LedgerBasketEntry[]>());
+    const sortedDates = [...allBaskets.keys()].sort();
+    const prevDates = sortedDates.filter((d) => d < rebalanceDate);
+    const prevBasketDate = prevDates[prevDates.length - 1] ?? null;
+    const prevBasket = prevBasketDate ? (allBaskets.get(prevBasketDate) ?? []) : [];
+
+    if (prevBasket.length === 0) {
+      notes.push(`live_ledger_skip: no previous basket found before ${rebalanceDate}`);
+      return { written: false, weekNum, realizedPnlTwd: null, equityAfterTwd: prevEquity, transactionCostsTwd: 0, notes };
+    }
+
+    // 3. Compute realized PnL using today's EOD prices (from current snapshot)
+    //    The snapshot prices the NEW basket. For the OLD basket symbols, use last_price
+    //    from positions if overlap, otherwise fetch from quote_last_close.
+    const todayPriceMap = new Map(currentPositions.map((p) => [p.symbol, p.last_price]));
+
+    // For old basket symbols not in new basket, query quote_last_close
+    const missingSymbols = prevBasket.map((p) => p.symbol).filter((s) => !todayPriceMap.has(s));
+    if (missingSymbols.length > 0) {
+      try {
+        const safeSymbols = missingSymbols.map((s) => s.replace(/'/g, "''"));
+        const symbolList = safeSymbols.map((s) => `'${s}'`).join(",");
+        const priceRows = await db.execute(drizzleSql.raw(`
+          SELECT DISTINCT ON (symbol) symbol, close_price
+          FROM quote_last_close
+          WHERE symbol IN (${symbolList})
+            AND trade_date = '${rebalanceDate}'
+          ORDER BY symbol, trade_date DESC
+        `)) as unknown as Array<{ symbol: string; close_price: string }>;
+        for (const r of priceRows) {
+          todayPriceMap.set(r.symbol, Number(r.close_price));
+        }
+      } catch (e) {
+        notes.push(`quote_last_close_fetch_warn: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    let exitTotal = 0;
+    let prevCost = 0;
+    for (const pos of prevBasket) {
+      const exitPrice = todayPriceMap.get(pos.symbol) ?? null;
+      if (exitPrice === null) {
+        notes.push(`missing_exit_price: ${pos.symbol} on ${rebalanceDate} — using avg_cost as fallback`);
+      }
+      const ep = exitPrice ?? 0;
+      exitTotal += pos.shares * ep;
+    }
+
+    // Rough prev cost estimate: sum of (shares × avg_cost) from sim_ledger_holdings
+    try {
+      const holdingRows = await db.execute(drizzleSql`
+        SELECT symbol, shares, entry_price_twd
+        FROM sim_ledger_holdings
+        WHERE basket_date = ${prevBasketDate}::date
+          AND exit_date IS NULL
+      `) as unknown as Array<{ symbol: string; shares: number; entry_price_twd: string }>;
+      prevCost = holdingRows.reduce((s, r) => s + Number(r.shares) * Number(r.entry_price_twd), 0);
+    } catch {
+      prevCost = prevBasket.reduce((s, p) => {
+        const price = currentPositions.find((c) => c.symbol === p.symbol)?.avg_cost ?? 0;
+        return s + p.shares * price;
+      }, 0);
+    }
+
+    const newBasketCost = currentPositions.reduce((s, p) => s + p.shares * (p.avg_cost ?? 0), 0);
+    const sellCost = Math.round(exitTotal * (costRates.sellCommissionRate + costRates.securitiesTransactionTaxRate));
+    const buyCost = Math.round(newBasketCost * costRates.buyCommissionRate);
+    const transactionCostsTwd = sellCost + buyCost;
+
+    const realizedPnlTwd = Math.round(exitTotal - prevCost - sellCost - buyCost);
+    const equityAfterTwd = Math.round(prevEquity - prevCost + exitTotal - sellCost - buyCost);
+
+    // 4. Write new week to sim_ledger_weeks
+    await db.execute(drizzleSql`
+      INSERT INTO sim_ledger_weeks
+        (week_num, basket_date, initial_equity, basket_cost_twd,
+         cash_residual_twd, realized_pnl_twd, equity_after_twd, source,
+         notes)
+      VALUES
+        (${weekNum}, ${rebalanceDate}::date, 10000000,
+         ${Math.round(newBasketCost)}, ${cashResidualTwd},
+         ${realizedPnlTwd}, ${equityAfterTwd}, 'live',
+         ${JSON.stringify(notes.length > 0 ? [{ phase2_live: true, notes }] : [{ phase2_live: true }])}::jsonb)
+      ON CONFLICT (basket_date, source) DO UPDATE SET
+        realized_pnl_twd = EXCLUDED.realized_pnl_twd,
+        equity_after_twd = EXCLUDED.equity_after_twd,
+        cash_residual_twd = EXCLUDED.cash_residual_twd,
+        updated_at = NOW()
+    `);
+
+    // 5. Update previous week's open holdings to add exit data
+    for (const pos of prevBasket) {
+      const exitPrice = todayPriceMap.get(pos.symbol) ?? null;
+      const posRealizedPnl = exitPrice !== null
+        ? Math.round((exitPrice - (prevCost / Math.max(1, prevBasket.reduce((s, p) => s + p.shares, 0)) || 0)) * pos.shares)
+        : null;
+      await db.execute(drizzleSql`
+        INSERT INTO sim_ledger_holdings
+          (week_num, basket_date, symbol, shares, entry_price_twd,
+           exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
+        VALUES
+          (${weekNum - 1}, ${prevBasketDate}::date, ${pos.symbol}, ${pos.shares},
+           ${pos.shares > 0 ? 0 : 0},
+           ${exitPrice}, ${rebalanceDate}::date,
+           ${posRealizedPnl}, 'live_eod', 'live_eod')
+        ON CONFLICT (basket_date, symbol) DO UPDATE SET
+          exit_price_twd = EXCLUDED.exit_price_twd,
+          exit_date = EXCLUDED.exit_date,
+          realized_pnl_twd = EXCLUDED.realized_pnl_twd,
+          exit_source = EXCLUDED.exit_source
+      `);
+    }
+
+    // 6. Insert new week's open positions
+    for (const pos of currentPositions) {
+      await db.execute(drizzleSql`
+        INSERT INTO sim_ledger_holdings
+          (week_num, basket_date, symbol, shares, entry_price_twd,
+           exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
+        VALUES
+          (${weekNum}, ${rebalanceDate}::date, ${pos.symbol}, ${pos.shares},
+           ${pos.avg_cost}, NULL, NULL, NULL, 'live_eod', NULL)
+        ON CONFLICT (basket_date, symbol) DO NOTHING
+      `);
+    }
+
+    // 7. Write NAV row for today
+    const navEquity = Math.round(cashResidualTwd + (totalMarketValueTwd ?? 0));
+    const initialEquity = 10_000_000;
+    const returnPct = Math.round(((navEquity - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+    await db.execute(drizzleSql`
+      INSERT INTO sim_ledger_nav
+        (nav_date, equity_twd, initial_equity, return_pct, week_num, source, notes)
+      VALUES
+        (${rebalanceDate}::date, ${navEquity}, ${initialEquity},
+         ${returnPct}, ${weekNum}, 'live_eod',
+         'rebalance_tuesday')
+      ON CONFLICT (nav_date, source) DO UPDATE SET
+        equity_twd = EXCLUDED.equity_twd,
+        return_pct = EXCLUDED.return_pct
+    `);
+
+    notes.push(`live_ledger_written: weekNum=${weekNum} realizedPnl=${realizedPnlTwd} equity=${equityAfterTwd} costs=${transactionCostsTwd}`);
+    return { written: true, weekNum, realizedPnlTwd, equityAfterTwd, transactionCostsTwd, notes };
+  } catch (e) {
+    notes.push(`live_ledger_error: ${e instanceof Error ? e.message : String(e)}`);
+    return { written: false, weekNum: 0, realizedPnlTwd: null, equityAfterTwd: 0, transactionCostsTwd: 0, notes };
+  }
+}
+
+/**
+ * writeDailyNavRow — called from s1-sim-runner every weekday EOD (non-Tuesday).
+ *
+ * Writes a daily NAV snapshot to sim_ledger_nav using today's mark-to-market value.
+ * Idempotent via UNIQUE(nav_date, source).
+ * No-ops if ledger is empty (backfill not applied) or database unavailable.
+ */
+export async function writeDailyNavRow(options: {
+  navDate: string;          // today YYYY-MM-DD
+  cashResidualTwd: number;
+  totalMarketValueTwd: number | null;
+}): Promise<void> {
+  const db = getDb();
+  if (!db || !isDatabaseMode()) return;
+
+  const { navDate, cashResidualTwd, totalMarketValueTwd } = options;
+
+  const latestState = await getLatestLedgerState(db).catch(() => null);
+  if (!latestState) return; // backfill not applied yet
+
+  const navEquity = Math.round(cashResidualTwd + (totalMarketValueTwd ?? 0));
+  const initialEquity = 10_000_000;
+  const returnPct = Math.round(((navEquity - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+
+  try {
+    await db.execute(drizzleSql`
+      INSERT INTO sim_ledger_nav
+        (nav_date, equity_twd, initial_equity, return_pct, week_num, source, notes)
+      VALUES
+        (${navDate}::date, ${navEquity}, ${initialEquity},
+         ${returnPct}, ${latestState.weekNum}, 'live_eod',
+         'daily_mark_to_market')
+      ON CONFLICT (nav_date, source) DO UPDATE SET
+        equity_twd = EXCLUDED.equity_twd,
+        return_pct = EXCLUDED.return_pct
+    `);
+  } catch (e) {
+    console.warn("[sim-ledger] writeDailyNavRow error:", e instanceof Error ? e.message : String(e));
+  }
 }

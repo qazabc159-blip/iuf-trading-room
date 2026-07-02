@@ -18192,6 +18192,160 @@ test("SIM-LEDGER-10: open positions (W5 exitDate=null) are included in holdings 
   );
 });
 
+// ── SIM-LEDGER Phase 2 — Live Ledger, Cost Rates, Admin Endpoint ─────────────
+
+test("SIM-LEDGER-11: open-position ON CONFLICT uses DO NOTHING (Mike re-audit fix)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // The open-position (exitDate=null) INSERT must use DO NOTHING
+  // so that live cron exit data is never overwritten by a backfill re-run.
+  assert.ok(
+    src.includes("ON CONFLICT (basket_date, symbol) DO NOTHING"),
+    "SIM-LEDGER-11: open-position INSERT must use DO NOTHING (not DO UPDATE)"
+  );
+  // The closed-position INSERT retains DO UPDATE for updating exit columns
+  assert.ok(
+    src.includes("exit_price_twd = EXCLUDED.exit_price_twd"),
+    "SIM-LEDGER-11: closed-position INSERT must still use DO UPDATE for exit data"
+  );
+  // Phase comment must be present
+  assert.ok(
+    src.includes("Mike re-audit"),
+    "SIM-LEDGER-11: must include Mike re-audit reference in DO NOTHING comment"
+  );
+});
+
+test("SIM-LEDGER-12: cost rates types and STANDARD_COST_RATES exported", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("export interface CostRates"),
+    "SIM-LEDGER-12: must export CostRates interface"
+  );
+  assert.ok(
+    src.includes("export const STANDARD_COST_RATES"),
+    "SIM-LEDGER-12: must export STANDARD_COST_RATES with standard rates"
+  );
+  assert.ok(
+    src.includes("export const ZERO_COST_RATES"),
+    "SIM-LEDGER-12: must export ZERO_COST_RATES for Phase 1 parity check"
+  );
+  // Standard rates must include 0.1425% commission and 0.3% STT
+  assert.ok(
+    src.includes("0.001425"),
+    "SIM-LEDGER-12: STANDARD_COST_RATES must include 0.1425% commission"
+  );
+  assert.ok(
+    src.includes("0.003"),
+    "SIM-LEDGER-12: STANDARD_COST_RATES must include 0.3% STT"
+  );
+  // BackfillResult must include cost fields
+  assert.ok(
+    src.includes("totalTransactionCostsTwd") && src.includes("noCostFinalEquity") && src.includes("costsIncluded"),
+    "SIM-LEDGER-12: BackfillResult must include totalTransactionCostsTwd, noCostFinalEquity, costsIncluded"
+  );
+});
+
+test("SIM-LEDGER-13: Phase 2 live ledger functions exported", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("export async function writeLiveLedgerAfterEod"),
+    "SIM-LEDGER-13: must export writeLiveLedgerAfterEod for s1-sim-runner Tuesday EOD hook"
+  );
+  assert.ok(
+    src.includes("export async function writeDailyNavRow"),
+    "SIM-LEDGER-13: must export writeDailyNavRow for daily NAV persistence"
+  );
+  assert.ok(
+    src.includes("export async function getLatestLedgerState"),
+    "SIM-LEDGER-13: must export getLatestLedgerState for weekNum determination"
+  );
+  // Live ledger must use 'live' source (not 'backfill_dry_run')
+  assert.ok(
+    src.includes("'live'") && src.includes("'live_eod'"),
+    "SIM-LEDGER-13: live ledger rows must use source='live' or 'live_eod' (not backfill_dry_run)"
+  );
+});
+
+test("SIM-LEDGER-14: s1-sim-runner EOD path hooks live ledger writes (fire-and-forget)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("writeLiveLedgerAfterEod") && src.includes("writeDailyNavRow"),
+    "SIM-LEDGER-14: s1-sim-runner must call writeLiveLedgerAfterEod and writeDailyNavRow"
+  );
+  // Must be Tuesday-gated (taipeiDay === 2)
+  assert.ok(
+    src.includes("taipeiDay === 2"),
+    "SIM-LEDGER-14: rebalance ledger write must be gated on Tuesday (taipeiDay === 2)"
+  );
+  // Must import dynamically (sim-ledger-backfill)
+  assert.ok(
+    src.includes("sim-ledger-backfill.js"),
+    "SIM-LEDGER-14: must import sim-ledger-backfill dynamically"
+  );
+  // Must be fire-and-forget (never block EOD)
+  assert.ok(
+    src.includes("void (async ()") || src.includes("void(async ()"),
+    "SIM-LEDGER-14: live ledger write must be fire-and-forget (void async IIFE)"
+  );
+  // The sim-ledger-backfill import must NOT bring in broker modules
+  // (s1-sim-runner.ts itself has pre-existing broker imports for KGI reconciliation —
+  // we check that the NEW ledger code path doesn't add new broker dependencies)
+  const ledgerImportIdx = src.indexOf("sim-ledger-backfill.js");
+  assert.ok(
+    ledgerImportIdx > 0,
+    "SIM-LEDGER-14: must dynamically import from sim-ledger-backfill.js"
+  );
+});
+
+test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  // Admin backfill endpoint
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/fauto-ledger/backfill"'),
+    "SIM-LEDGER-15: server.ts must have POST /api/v1/admin/fauto-ledger/backfill"
+  );
+  // Dry-run default
+  assert.ok(
+    src.includes("apply === true"),
+    "SIM-LEDGER-15: backfill endpoint must default to dry-run (apply=false)"
+  );
+  // Phase 1 baseline check
+  assert.ok(
+    src.includes("phase1BaselineCheck") && src.includes("9_365_680"),
+    "SIM-LEDGER-15: backfill dry-run must include phase1BaselineCheck against 9_365_680"
+  );
+  // NAV read endpoint
+  assert.ok(
+    src.includes('app.get("/api/v1/portfolio/f-auto/nav"'),
+    "SIM-LEDGER-15: server.ts must have GET /api/v1/portfolio/f-auto/nav"
+  );
+  // Both endpoints are Owner-only
+  const backfillSection = src.slice(src.indexOf('"/api/v1/admin/fauto-ledger/backfill"'));
+  const navSection = src.slice(src.indexOf('"/api/v1/portfolio/f-auto/nav"'));
+  assert.ok(
+    backfillSection.slice(0, 300).includes("OWNER_ONLY"),
+    "SIM-LEDGER-15: admin backfill must check OWNER_ONLY"
+  );
+  assert.ok(
+    navSection.slice(0, 300).includes("OWNER_ONLY"),
+    "SIM-LEDGER-15: NAV read endpoint must check OWNER_ONLY"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

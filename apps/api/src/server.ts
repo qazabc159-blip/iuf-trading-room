@@ -5340,6 +5340,110 @@ app.get("/api/v1/portfolio/f-auto", async (c) => {
   return c.json(body);
 });
 
+// GET /api/v1/portfolio/f-auto/nav — F-AUTO SIM NAV curve (Owner only)
+//
+// Phase 2 ledger read endpoint. Returns continuous NAV series from
+// sim_ledger_nav + weekly realized/unrealized decomposition from
+// sim_ledger_weeks. Empty result if Phase 2 backfill not yet applied.
+//
+// Jim's next baton: use this endpoint to render the NAV chart.
+// Proxy allowlist note: add /api/v1/portfolio/f-auto/nav to GET_ALLOWLIST
+// in apps/web/app/api/ui-final-v031/backend/route.ts before consuming from iframe.
+//
+// 楊董 ACK 2026-07-02.
+app.get("/api/v1/portfolio/f-auto/nav", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  try {
+    const db = isDatabaseMode() ? getDb() : null;
+    if (!db) {
+      return c.json({ ok: true, source: "no_db", navCurve: [], weeks: [], summary: null });
+    }
+
+    const { sql: sqlRaw } = await import("drizzle-orm");
+
+    // Read NAV curve
+    const navRows = await db.execute(sqlRaw`
+      SELECT nav_date, equity_twd, return_pct, week_num, source
+      FROM sim_ledger_nav
+      ORDER BY nav_date ASC
+    `) as unknown as Array<{
+      nav_date: string;
+      equity_twd: string;
+      return_pct: string;
+      week_num: number;
+      source: string;
+    }>;
+
+    // Read weekly summary
+    const weekRows = await db.execute(sqlRaw`
+      SELECT week_num, basket_date, realized_pnl_twd, equity_after_twd,
+             cash_residual_twd, basket_cost_twd, source
+      FROM sim_ledger_weeks
+      ORDER BY week_num ASC, basket_date ASC
+    `) as unknown as Array<{
+      week_num: number;
+      basket_date: string;
+      realized_pnl_twd: string | null;
+      equity_after_twd: string;
+      cash_residual_twd: string;
+      basket_cost_twd: string;
+      source: string;
+    }>;
+
+    const navCurve = navRows.map((r) => ({
+      navDate: String(r.nav_date).slice(0, 10),
+      equityTwd: Number(r.equity_twd),
+      returnPct: Number(r.return_pct),
+      weekNum: Number(r.week_num),
+      source: String(r.source),
+    }));
+
+    const weeks = weekRows.map((r) => ({
+      weekNum: Number(r.week_num),
+      basketDate: String(r.basket_date).slice(0, 10),
+      realizedPnlTwd: r.realized_pnl_twd !== null ? Number(r.realized_pnl_twd) : null,
+      equityAfterTwd: Number(r.equity_after_twd),
+      cashResidualTwd: Number(r.cash_residual_twd),
+      basketCostTwd: Number(r.basket_cost_twd),
+      source: String(r.source),
+    }));
+
+    const lastNav = navCurve[navCurve.length - 1] ?? null;
+    const lastWeek = weekRows[weekRows.length - 1] ?? null;
+    const initialEquity = 10_000_000;
+    const totalRealizedPnl = weekRows
+      .filter((r) => r.realized_pnl_twd !== null)
+      .reduce((s, r) => s + Number(r.realized_pnl_twd), 0);
+
+    const summary = lastNav
+      ? {
+          initialEquity,
+          currentEquity: lastNav.equityTwd,
+          cumulativeReturnPct: lastNav.returnPct,
+          totalRealizedPnlTwd: Math.round(totalRealizedPnl),
+          currentWeekNum: lastWeek ? Number(lastWeek.week_num) : null,
+          lastNavDate: lastNav.navDate,
+        }
+      : null;
+
+    return c.json({
+      ok: true,
+      source: navCurve.length > 0 ? "sim_ledger_live" : "empty_ledger",
+      navCurve,
+      weeks,
+      summary,
+      asOf: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("[portfolio/f-auto/nav] error:", e);
+    return c.json({ error: "NAV_READ_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
 // GET /api/v1/internal/s1-sim/basket?date=YYYY-MM-DD — S1 basket (Owner only)
 //
 // Returns the full S1Basket JSON for the requested date.
@@ -15295,6 +15399,99 @@ app.post("/api/v1/admin/announcements/backfill", async (c) => {
       ...result
     }
   });
+});
+
+// =============================================================================
+// ADMIN: F-AUTO SIM Ledger Backfill
+// =============================================================================
+//
+// POST /api/v1/admin/fauto-ledger/backfill
+//   Owner-only. Runs the F-AUTO SIM continuous ledger backfill (6/2→today).
+//   Body: { apply?: boolean }  — default apply=false (dry-run).
+//   With apply=true writes to sim_ledger_weeks + sim_ledger_holdings + sim_ledger_nav.
+//
+//   Dry-run validation: response includes both no-cost (Phase 1 baseline ~-6.34%)
+//   and with-cost (Phase 2 target ~-8.38%) equity figures. DO NOT apply unless
+//   noCostFinalEquity ≈ 9_365_680 (regression check).
+//
+//   楊董 ACK 2026-07-02: Phase 2 帳本落地 prod — apply only via Elva.
+// =============================================================================
+
+app.post("/api/v1/admin/fauto-ledger/backfill", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { apply?: boolean } = {};
+  try {
+    body = (await c.req.json()) as { apply?: boolean };
+  } catch {
+    // empty body = dry-run
+  }
+  const applyToDb = body.apply === true;
+
+  try {
+    const { runBackfill, STANDARD_COST_RATES, ZERO_COST_RATES } = await import("./sim-ledger-backfill.js");
+
+    // Run with costs (Phase 2 target — includes transaction fees)
+    const result = await runBackfill({
+      dryRun: !applyToDb,
+      costRates: STANDARD_COST_RATES,
+    });
+
+    // Phase 1 baseline validation (no costs — must match ~9_365_680)
+    const baselineResult = applyToDb
+      ? null
+      : await runBackfill({
+          dryRun: true,
+          costRates: ZERO_COST_RATES,
+        });
+
+    const phase1BaselineCheck = baselineResult
+      ? {
+          expectedNoCostEquity: 9_365_680,
+          actualNoCostEquity: baselineResult.finalEquity,
+          diffTwd: baselineResult.finalEquity - 9_365_680,
+          // Allow ±5000 TWD variance (rounding from FinMind data vs Phase 1 run)
+          pass: Math.abs(baselineResult.finalEquity - 9_365_680) < 5_000,
+        }
+      : null;
+
+    return c.json({
+      ok: true,
+      dryRun: !applyToDb,
+      applied: applyToDb,
+      withCost: {
+        finalEquity: result.finalEquity,
+        cumulativeReturnPct: result.cumulativeReturnPct,
+        totalRealizedPnl: result.totalRealizedPnl,
+        totalTransactionCostsTwd: result.totalTransactionCostsTwd,
+      },
+      noCost: baselineResult
+        ? {
+            finalEquity: baselineResult.finalEquity,
+            cumulativeReturnPct: baselineResult.cumulativeReturnPct,
+          }
+        : null,
+      phase1BaselineCheck,
+      weeks: result.weeks.map((w) => ({
+        weekNum: w.weekNum,
+        basketDate: w.basketDate,
+        realizedPnlTwd: w.realizedPnlTwd,
+        equityAfterTwd: w.equityAfterTwd,
+        cashResidualTwd: w.cashResidualTwd,
+        basketCostTwd: w.basketCostTwd,
+      })),
+      navCurveLength: result.navCurve.length,
+      priceDataWarnings: result.priceDataWarnings,
+      assumptions: result.assumptions,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("[admin/fauto-ledger/backfill] error:", e);
+    return c.json({ error: "BACKFILL_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 // =============================================================================
