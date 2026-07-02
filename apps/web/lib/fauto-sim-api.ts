@@ -123,6 +123,8 @@ export type SimPosition = {
   unrealizedPnl: number | null;
   lastPrice: number | null;
   marketValue: number | null;
+  /** true when lastPrice was null and marketValue was estimated from avgCost * qty */
+  marketValueIsEstimated?: boolean;
   note?: string | null;
 };
 

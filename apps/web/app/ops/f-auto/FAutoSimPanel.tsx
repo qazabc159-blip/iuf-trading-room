@@ -191,6 +191,29 @@ function toTpeDate(offset = 0): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }); // YYYY-MM-DD
 }
 
+// ─── Holding-days helpers ─────────────────────────────────────────────────────
+
+function calcHoldingDays(positionsDate: string | null): number | null {
+  if (!positionsDate) return null;
+  try {
+    const open = new Date(positionsDate + "T00:00:00+08:00");
+    const now = new Date();
+    const days = Math.floor((now.getTime() - open.getTime()) / (24 * 60 * 60 * 1000));
+    return days >= 0 ? days : null;
+  } catch {
+    return null;
+  }
+}
+
+function fmtShortDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + "T00:00:00+08:00");
+    return d.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" });
+  } catch {
+    return dateStr.slice(5, 10); // fallback: MM-DD
+  }
+}
+
 function portfolioPositionsState(
   state: AsyncState<FAutoPortfolio>,
   eodState: AsyncState<S1EodReport>,
@@ -203,13 +226,23 @@ function portfolioPositionsState(
     ...(() => {
       const eod = eodRows.get(position.symbol);
       const lastPrice = position.last_price ?? eod?.lastPrice ?? null;
+      const avgCost = position.avg_cost ?? eod?.avgCost ?? null;
+      // When lastPrice is unavailable, estimate market value from avg_cost to avoid
+      // treating unpriced positions as zero — they still represent real invested capital.
+      const marketValue =
+        position.market_value_twd ??
+        (lastPrice != null
+          ? lastPrice * position.shares
+          : avgCost != null
+            ? avgCost * position.shares  // 未計價：以成本估
+            : null);
+      const marketValueIsEstimated = lastPrice == null && marketValue != null;
       return {
-        avgCost: position.avg_cost ?? eod?.avgCost ?? null,
+        avgCost,
         unrealizedPnl: position.unrealized_pnl_twd ?? eod?.unrealizedPnlTwd ?? null,
         lastPrice,
-        marketValue:
-          position.market_value_twd ??
-          (lastPrice == null ? null : lastPrice * position.shares),
+        marketValue,
+        marketValueIsEstimated,
       };
     })(),
     symbol: position.symbol,
@@ -253,12 +286,64 @@ function FAutoSummary({
   const data = portfolio.phase === "live" ? portfolio.data : null;
   const statusData = status.phase === "live" ? status.data : null;
   const eodData = eod.phase === "live" && eod.data.found ? eod.data : null;
+
   const capital = data?.capital_twd ?? statusData?.configuredCapitalTwd ?? null;
-  const marketValue = eodData?.totalMarketValueTwd ?? data?.total_market_value_twd ?? statusData?.eodMarketValueTwd ?? null;
-  const cash = eodData?.cashResidual ?? data?.cash_residual_estimated_twd ?? (capital != null && marketValue != null ? capital - marketValue : null);
+  const rawPositions = data?.positions ?? [];
+  const positionCount = rawPositions.length > 0 ? rawPositions.length : (statusData?.eodPositionCount ?? 0);
+
+  // ── Market value breakdown: priced vs unpriced (estimated at cost) ──────────
+  const pricedPositions = rawPositions.filter((p) => p.last_price != null);
+  const unpricedPositions = rawPositions.filter((p) => p.last_price == null);
+  const hasUnpricedPositions = unpricedPositions.length > 0;
+
+  const pricedMV = rawPositions.length > 0
+    ? pricedPositions.reduce((s, p) => s + (p.market_value_twd ?? (p.last_price! * p.shares)), 0)
+    : null;
+  const estimatedMV = rawPositions.length > 0
+    ? unpricedPositions.reduce((s, p) => s + (p.avg_cost ?? 0) * p.shares, 0)
+    : null;
+
+  // Display market value: priced + cost-estimated (no silent zero for unpriced)
+  const displayMV = rawPositions.length > 0
+    ? (pricedMV ?? 0) + (estimatedMV ?? 0)
+    : (eodData?.totalMarketValueTwd ?? data?.total_market_value_twd ?? statusData?.eodMarketValueTwd ?? null);
+
+  // 動用資金（成本合計）= sum of avg_cost × shares
+  const costBasis = rawPositions.length > 0
+    ? rawPositions.reduce((s, p) => s + (p.avg_cost ?? 0) * p.shares, 0)
+    : null;
+
+  // Cash & total assets (estimated)
+  const cash = eodData?.cashResidual ?? data?.cash_residual_estimated_twd
+    ?? (capital != null && displayMV != null ? capital - displayMV : null);
+
+  const totalAssetsEstimated = displayMV != null && cash != null ? displayMV + cash : null;
+
+  // PnL with dual denominator
   const pnl = eodData?.totalUnrealizedPnlTwd ?? data?.total_unrealized_pnl_twd ?? statusData?.eodUnrealizedPnlTwd ?? null;
-  const pnlPct = capital && pnl != null ? (pnl / capital) * 100 : null;
-  const positionCount = data?.positions.length ?? statusData?.eodPositionCount ?? 0;
+  // Primary: vs 動用資金（成本合計）— more honest when only partially deployed
+  const pnlVsCostPct = pnl != null && costBasis != null && costBasis > 0
+    ? (pnl / costBasis) * 100
+    : null;
+  // Secondary: vs 總本金
+  const pnlVsCapitalPct = pnl != null && capital != null && capital > 0
+    ? (pnl / capital) * 100
+    : null;
+
+  // 曝險：動用資金 / 本金
+  const exposurePct = costBasis != null && capital != null && capital > 0
+    ? (costBasis / capital) * 100
+    : null;
+
+  // 持有天數
+  const positionsDate = data?.positions_date ?? statusData?.lastEodDate?.slice(0, 10) ?? null;
+  const holdingDays = calcHoldingDays(positionsDate);
+  const openDateLabel = positionsDate ? fmtShortDate(positionsDate) : null;
+
+  // Staleness: persisted_close_fallback indicates some prices are from a prior close
+  const hasPersistedFallback = data?.notes?.some((n) => n.includes("persisted_close_fallback")) ?? false;
+
+  const pnlCls = pnlClass(pnl);
 
   return (
     <section className="_fauto-summary" aria-label="S1 F-AUTO 資產總覽">
@@ -276,13 +361,80 @@ function FAutoSummary({
           <Link href="/reviews">每週復盤</Link>
         </div>
       </div>
+
       <div className="_fauto-summary-grid">
-        <div><span>配置資金</span><strong>{fmtTwd(capital)}</strong><small>{data?.capital_source ?? statusData?.capitalSource ?? "--"}</small></div>
-        <div><span>持倉市值</span><strong>{fmtTwd(marketValue)}</strong><small>{positionCount} 檔持倉</small></div>
-        <div><span>現金餘額</span><strong>{fmtTwd(cash)}</strong><small>估值後可用餘額</small></div>
-        <div className={pnlClass(pnl)}><span>未實現損益</span><strong>{fmtTwd(pnl)}</strong><small>{pnlPct == null ? "--" : `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`}</small></div>
-        <div><span>部位日期</span><strong>{eodData?.date ?? data?.positions_date ?? statusData?.lastEodDate?.slice(0, 10) ?? "--"}</strong><small>{eodData?.dataSource ?? data?.data_source ?? statusData?.eodDataSource ?? "--"}</small></div>
+        {/* Col 1: 配置資金（本金） */}
+        <div>
+          <span>配置資金（本金）</span>
+          <strong>{fmtTwd(capital)}</strong>
+          <small>{data?.capital_source ?? statusData?.capitalSource ?? "--"}</small>
+        </div>
+
+        {/* Col 2: 總資產（估）— two-line breakdown when unpriced positions exist */}
+        <div>
+          <span>總資產（估）</span>
+          <strong>{fmtTwd(totalAssetsEstimated)}</strong>
+          {hasUnpricedPositions ? (
+            <small className="_fauto-summary-breakdown">
+              計價 {fmtTwd(pricedMV)} + 未計估 {fmtTwd(estimatedMV)} + 現 {fmtTwd(cash)}
+            </small>
+          ) : (
+            <small>{positionCount} 檔持倉 + 現金</small>
+          )}
+        </div>
+
+        {/* Col 3: 動用資金 · 曝險% */}
+        <div>
+          <span>動用資金</span>
+          <strong>{fmtTwd(costBasis)}</strong>
+          <small>
+            {exposurePct != null ? `曝險 ${exposurePct.toFixed(1)}%` : "--"}
+          </small>
+        </div>
+
+        {/* Col 4: 現金水位 */}
+        <div>
+          <span>現金水位</span>
+          <strong>{fmtTwd(cash)}</strong>
+          <small>
+            {exposurePct != null
+              ? `閒置 ${(100 - exposurePct).toFixed(1)}%`
+              : "估值後可用餘額"}
+          </small>
+        </div>
+
+        {/* Col 5: 未實現損益 — dual denominator */}
+        <div className={pnlCls}>
+          <span>未實現損益</span>
+          <strong>{fmtTwd(pnl)}</strong>
+          <small>
+            {pnlVsCostPct != null
+              ? `${pnlVsCostPct >= 0 ? "+" : ""}${pnlVsCostPct.toFixed(2)}% vs 動用資金`
+              : "--"}
+            {pnlVsCapitalPct != null
+              ? ` / ${pnlVsCapitalPct >= 0 ? "+" : ""}${pnlVsCapitalPct.toFixed(2)}% vs 本金`
+              : ""}
+          </small>
+        </div>
+
+        {/* Col 6: 持有天數 */}
+        <div>
+          <span>持倉狀態</span>
+          <strong>
+            {holdingDays != null ? `${holdingDays} 天` : (positionsDate ?? "--")}
+          </strong>
+          <small>
+            {openDateLabel != null ? `開倉 ${openDateLabel}` : (eodData?.dataSource ?? data?.data_source ?? statusData?.eodDataSource ?? "--")}
+          </small>
+        </div>
       </div>
+
+      {/* Staleness notice for persisted-close-fallback prices */}
+      {hasPersistedFallback && (
+        <div className="_fauto-summary-staleness">
+          部分收盤價取自前日或最近已知收盤，今日報價尚未更新，估值僅供參考。
+        </div>
+      )}
     </section>
   );
 }
@@ -326,11 +478,20 @@ function SimPositionsPanel({
                   <td className="_fauto-symbol">{pos.symbol}</td>
                   <td className="_fauto-tbl-r">{pos.qty.toLocaleString("zh-TW")}</td>
                   <td className="_fauto-tbl-r">{pos.avgCost != null ? pos.avgCost.toFixed(2) : "--"}</td>
-                  <td className="_fauto-tbl-r">{pos.lastPrice != null ? pos.lastPrice.toFixed(2) : "--"}</td>
+                  <td className="_fauto-tbl-r">
+                    {pos.lastPrice != null
+                      ? pos.lastPrice.toFixed(2)
+                      : <span className="_fauto-unpriced-badge">未計價</span>}
+                  </td>
                   <td className={`_fauto-tbl-r ${pnlClass(pos.unrealizedPnl)}`}>
                     {fmtTwd(pos.unrealizedPnl)}
                   </td>
-                  <td className="_fauto-tbl-r">{fmtTwd(pos.marketValue)}</td>
+                  <td className="_fauto-tbl-r">
+                    {fmtTwd(pos.marketValue)}
+                    {pos.marketValueIsEstimated && (
+                      <span className="_fauto-estimated-tag">以成本估</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1067,7 +1228,7 @@ const FAUTO_CSS = `
 }
 ._fauto-summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 ._fauto-summary-grid > div {
   min-width: 0;
@@ -1093,7 +1254,7 @@ const FAUTO_CSS = `
 ._fauto-summary-grid ._fauto-green small { color: #56d99b; }
 ._fauto-summary-grid ._fauto-red strong,
 ._fauto-summary-grid ._fauto-red small { color: #ff6b77; }
-@media (max-width: 1100px) {
+@media (max-width: 1300px) {
   ._fauto-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   ._fauto-summary-grid > div { border-bottom: 1px solid rgba(220,228,240,0.08); }
 }
@@ -1368,6 +1529,52 @@ const FAUTO_CSS = `
   border: 1px solid rgba(200,148,63,0.20);
   border-radius: 2px;
   padding: 1px 5px;
+}
+
+/* Unpriced / estimated markers */
+._fauto-unpriced-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-family: var(--mono, monospace);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid rgba(244,189,85,0.40);
+  color: #f4bd55;
+  background: rgba(244,189,85,0.08);
+  vertical-align: middle;
+}
+._fauto-estimated-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-family: var(--mono, monospace);
+  letter-spacing: 0.03em;
+  padding: 1px 4px;
+  margin-left: 4px;
+  border-radius: 2px;
+  border: 1px solid rgba(145,160,181,0.25);
+  color: rgba(145,160,181,0.70);
+  background: rgba(145,160,181,0.06);
+  vertical-align: middle;
+}
+
+/* Summary breakdown sub-line (long text, allow wrapping) */
+._fauto-summary-breakdown {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* Summary staleness notice */
+._fauto-summary-staleness {
+  padding: 7px 20px;
+  font-size: 11px;
+  color: rgba(244,189,85,0.75);
+  font-style: italic;
+  border-top: 1px solid rgba(244,189,85,0.12);
+  background: rgba(244,189,85,0.04);
 }
 
 /* Note */

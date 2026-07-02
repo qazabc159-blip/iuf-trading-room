@@ -124,4 +124,61 @@ describe("F-AUTO S1 product observability", () => {
     // Import from trading hours helper
     expect(panelSource).toContain('from "@/lib/kgi-trading-hours"');
   });
+
+  // ── Display honesty (6/30 breakdown fix) ─────────────────────────────────────
+
+  it("marks unpriced positions with 未計價 badge instead of showing null as zero", () => {
+    // The badge appears in SimPositionsPanel for lastPrice == null
+    expect(panelSource).toContain("未計價");
+    expect(panelSource).toContain("_fauto-unpriced-badge");
+    // API layer exposes the new field
+    expect(apiSource).toContain("marketValueIsEstimated");
+  });
+
+  it("estimates market value from avg_cost when lastPrice is null", () => {
+    // portfolioPositionsState must compute cost-estimated market value
+    expect(panelSource).toContain("以成本估");
+    expect(panelSource).toContain("_fauto-estimated-tag");
+    // Logic: avgCost * shares when lastPrice is null
+    expect(panelSource).toContain("avgCost * position.shares");
+    expect(panelSource).toContain("marketValueIsEstimated");
+  });
+
+  it("shows dual-denominator PnL: vs 動用資金 (primary) and vs 本金 (secondary)", () => {
+    expect(panelSource).toContain("動用資金");
+    expect(panelSource).toContain("vs 動用資金");
+    expect(panelSource).toContain("vs 本金");
+    expect(panelSource).toContain("pnlVsCostPct");
+    expect(panelSource).toContain("pnlVsCapitalPct");
+    // costBasis is the denominator for 動用資金
+    expect(panelSource).toContain("costBasis");
+  });
+
+  it("shows 曝險 (exposure %) and 現金水位 in summary", () => {
+    expect(panelSource).toContain("曝險");
+    expect(panelSource).toContain("exposurePct");
+    expect(panelSource).toContain("現金水位");
+  });
+
+  it("shows 持有天數 from positions_date", () => {
+    expect(panelSource).toContain("calcHoldingDays");
+    expect(panelSource).toContain("holdingDays");
+    expect(panelSource).toContain("開倉");
+    expect(panelSource).toContain("fmtShortDate");
+  });
+
+  it("shows total assets as priced + estimated + cash breakdown", () => {
+    expect(panelSource).toContain("totalAssetsEstimated");
+    expect(panelSource).toContain("hasUnpricedPositions");
+    expect(panelSource).toContain("pricedMV");
+    expect(panelSource).toContain("estimatedMV");
+    expect(panelSource).toContain("總資產（估）");
+    expect(panelSource).toContain("_fauto-summary-breakdown");
+  });
+
+  it("surfaces persisted_close_fallback staleness notice in the UI", () => {
+    expect(panelSource).toContain("persisted_close_fallback");
+    expect(panelSource).toContain("_fauto-summary-staleness");
+    expect(panelSource).toContain("hasPersistedFallback");
+  });
 });
