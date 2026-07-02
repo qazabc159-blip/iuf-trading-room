@@ -405,16 +405,36 @@ async function persistBackfillResults(data: {
         updated_at = NOW()
     `);
 
+    // Bug 1 fix: basket_date must be the ENTRY date (previous week's Tuesday),
+    // not pos.exitDate (which is this week's date = wrong JOIN key).
+    const prevWeek = data.weeks.find((wr) => wr.weekNum === w.weekNum - 1);
+
     for (const pos of w.positions) {
       if (pos.exitDate !== null) {
+        // Closed position: was opened in prevWeek, exited this week.
+        const entryBasketDate = prevWeek?.basketDate ?? w.basketDate;
         await db.execute(drizzleSql`
           INSERT INTO sim_ledger_holdings
             (week_num, basket_date, symbol, shares, entry_price_twd,
              exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
           VALUES
-            (${w.weekNum - 1}, ${pos.exitDate}::date, ${pos.symbol}, ${pos.shares},
+            (${w.weekNum - 1}, ${entryBasketDate}::date, ${pos.symbol}, ${pos.shares},
              ${pos.entryPrice}, ${pos.exitPrice}, ${pos.exitDate}::date,
              ${pos.realizedPnl}, 'finmind_close', 'finmind_close')
+          ON CONFLICT (basket_date, symbol) DO UPDATE SET
+            exit_price_twd = EXCLUDED.exit_price_twd,
+            realized_pnl_twd = EXCLUDED.realized_pnl_twd
+        `);
+      } else {
+        // Bug 2 fix: open positions (exitDate=null) were previously skipped.
+        // Phase 2 needs these rows to display current holdings (e.g. W5).
+        await db.execute(drizzleSql`
+          INSERT INTO sim_ledger_holdings
+            (week_num, basket_date, symbol, shares, entry_price_twd,
+             exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
+          VALUES
+            (${w.weekNum}, ${w.basketDate}::date, ${pos.symbol}, ${pos.shares},
+             ${pos.entryPrice}, NULL, NULL, NULL, 'finmind_close', NULL)
           ON CONFLICT (basket_date, symbol) DO UPDATE SET
             exit_price_twd = EXCLUDED.exit_price_twd,
             realized_pnl_twd = EXCLUDED.realized_pnl_twd
@@ -473,3 +493,63 @@ function getHardcodedBaskets(): Map<string, LedgerBasketEntry[]> {
 
 export const _getPitCloseForTest = getPitClose;
 export const _getHardcodedBasketsForTest = getHardcodedBaskets;
+
+/**
+ * HoldingRow — the pure-computation output of the holdings persist logic.
+ * Exported so tests can assert correctness without a DB connection.
+ */
+export interface HoldingRow {
+  weekNum: number;
+  basketDate: string;       // ENTRY date (Tuesday), not exit date — Bug 1 fix
+  symbol: string;
+  shares: number;
+  entryPrice: number;
+  exitPrice: number | null;
+  exitDate: string | null;
+  realizedPnl: number | null;
+  isOpen: boolean;          // true = still held (exitDate=null) — Bug 2 fix
+}
+
+/**
+ * _computeHoldingsRowsForTest — pure function that mirrors persistBackfillResults'
+ * holdings logic without touching the DB.  Used by SIM-LEDGER-9 and SIM-LEDGER-10
+ * regression tests to verify Bug 1 (basket_date = entry date) and Bug 2 (open
+ * positions included).
+ */
+export function _computeHoldingsRowsForTest(weeks: LedgerWeekResult[]): HoldingRow[] {
+  const rows: HoldingRow[] = [];
+  for (const w of weeks) {
+    const prevWeek = weeks.find((wr) => wr.weekNum === w.weekNum - 1);
+    for (const pos of w.positions) {
+      if (pos.exitDate !== null) {
+        // Closed: entry basket is previous week's date
+        const entryBasketDate = prevWeek?.basketDate ?? w.basketDate;
+        rows.push({
+          weekNum:     w.weekNum - 1,
+          basketDate:  entryBasketDate,
+          symbol:      pos.symbol,
+          shares:      pos.shares,
+          entryPrice:  pos.entryPrice,
+          exitPrice:   pos.exitPrice,
+          exitDate:    pos.exitDate,
+          realizedPnl: pos.realizedPnl,
+          isOpen:      false,
+        });
+      } else {
+        // Open: entry basket is this week's date
+        rows.push({
+          weekNum:     w.weekNum,
+          basketDate:  w.basketDate,
+          symbol:      pos.symbol,
+          shares:      pos.shares,
+          entryPrice:  pos.entryPrice,
+          exitPrice:   null,
+          exitDate:    null,
+          realizedPnl: null,
+          isOpen:      true,
+        });
+      }
+    }
+  }
+  return rows;
+}

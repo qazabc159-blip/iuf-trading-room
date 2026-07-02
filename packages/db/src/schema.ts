@@ -1184,3 +1184,86 @@ export const quoteLastClose = pgTable(
     symbolDateIdx:     index("quote_last_close_symbol_date_idx").on(table.symbol, table.tradeDate.desc()),
   })
 );
+
+// -- sim_ledger_weeks / sim_ledger_holdings / sim_ledger_nav —————————————————
+// migration 0049_sim_ledger.sql
+//
+// F-AUTO SIM Continuous Ledger: three ADDITIVE tables that convert F-AUTO from
+// "weekly paper reset" to a continuous compounding equity account.
+//
+// Hard lines:
+//   SIM-only — no real-money writes ever touch these tables.
+//   source CHECK columns prevent dry-run data from polluting live ledger.
+//   UNIQUE (basket_date, source) / (basket_date, symbol) → idempotent upserts.
+//   basket_date in sim_ledger_holdings = ENTRY date (Tuesday), NOT exit date.
+//   Open positions (exitDate=null) are persisted; exit columns left NULL.
+//
+// Index alignment with 0049 DDL (all DESC match `.desc()`):
+//   sim_ledger_weeks    basket_date_idx          → basket_date DESC
+//   sim_ledger_holdings week_idx                 → week_num ASC, basket_date ASC
+//   sim_ledger_holdings symbol_idx               → symbol ASC, basket_date DESC
+//   sim_ledger_nav      date_idx                 → nav_date DESC
+
+export const simLedgerWeeks = pgTable(
+  "sim_ledger_weeks",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    weekNum:          integer("week_num").notNull(),
+    basketDate:       date("basket_date").notNull(),
+    initialEquity:    numeric("initial_equity",   { precision: 16, scale: 2 }).notNull(),
+    basketCostTwd:    numeric("basket_cost_twd",  { precision: 16, scale: 2 }).notNull(),
+    cashResidualTwd:  numeric("cash_residual_twd",{ precision: 16, scale: 2 }).notNull(),
+    realizedPnlTwd:   numeric("realized_pnl_twd", { precision: 16, scale: 2 }),
+    equityAfterTwd:   numeric("equity_after_twd", { precision: 16, scale: 2 }).notNull(),
+    source:           text("source").notNull(),
+    notes:            jsonb("notes").$type<unknown[]>().notNull().default([]),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    basketDateIdx:    index("sim_ledger_weeks_basket_date_idx").on(table.basketDate.desc()),
+    basketSrcUidx:    uniqueIndex("sim_ledger_weeks_basket_src_uidx").on(table.basketDate, table.source),
+  })
+);
+
+export const simLedgerHoldings = pgTable(
+  "sim_ledger_holdings",
+  {
+    id:             uuid("id").defaultRandom().primaryKey(),
+    weekNum:        integer("week_num").notNull(),
+    basketDate:     date("basket_date").notNull(),    // ENTRY date (Tuesday), not exit date
+    symbol:         text("symbol").notNull(),
+    shares:         integer("shares").notNull(),
+    entryPriceTwd:  numeric("entry_price_twd", { precision: 12, scale: 4 }).notNull(),
+    exitPriceTwd:   numeric("exit_price_twd",  { precision: 12, scale: 4 }),
+    exitDate:       date("exit_date"),
+    realizedPnlTwd: numeric("realized_pnl_twd", { precision: 16, scale: 2 }),
+    entrySource:    text("entry_source").notNull().default("finmind_close"),
+    exitSource:     text("exit_source"),
+    createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    weekIdx:          index("sim_ledger_holdings_week_idx").on(table.weekNum, table.basketDate),
+    symbolDateIdx:    index("sim_ledger_holdings_symbol_idx").on(table.symbol, table.basketDate.desc()),
+    basketSymbolUidx: uniqueIndex("sim_ledger_holdings_basket_symbol_uidx").on(table.basketDate, table.symbol),
+  })
+);
+
+export const simLedgerNav = pgTable(
+  "sim_ledger_nav",
+  {
+    id:            uuid("id").defaultRandom().primaryKey(),
+    navDate:       date("nav_date").notNull(),
+    equityTwd:     numeric("equity_twd",     { precision: 16, scale: 2 }).notNull(),
+    initialEquity: numeric("initial_equity", { precision: 16, scale: 2 }).notNull(),
+    returnPct:     numeric("return_pct",     { precision: 8,  scale: 4 }).notNull(),
+    weekNum:       integer("week_num").notNull(),
+    source:        text("source").notNull(),
+    notes:         text("notes"),
+    createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    navDateIdx:     index("sim_ledger_nav_date_idx").on(table.navDate.desc()),
+    navDateSrcUidx: uniqueIndex("sim_ledger_nav_date_src_uidx").on(table.navDate, table.source),
+  })
+);

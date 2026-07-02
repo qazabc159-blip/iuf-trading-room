@@ -18095,6 +18095,103 @@ test("SIM-LEDGER-8: backfill assumptions list is complete (10 assumptions)", () 
   );
 });
 
+// ── SIM-LEDGER 0049 audit fix regression tests ────────────────────────────
+// SIM-LEDGER-9: Bug 1 — basket_date in holdings must be ENTRY date, not exit date.
+// SIM-LEDGER-10: Bug 2 — open positions (W5 exitDate=null) must be written to holdings.
+
+test("SIM-LEDGER-9: holdings basket_date uses entry date not exit date (Bug 1 regression)", async () => {
+  const { _computeHoldingsRowsForTest } = await import("../apps/api/src/sim-ledger-backfill.js");
+
+  // W1: opened 2026-06-02, closed at W2 rebalance (2026-06-09)
+  // W2: has W1 positions as closed (exitDate = W2 basket date)
+  const w1 = {
+    weekNum: 1,
+    basketDate: "2026-06-02",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_501_150,
+    cashResidualTwd: 5_498_850,
+    realizedPnlTwd: null,
+    equityAfterTwd: 10_000_000,
+    positions: [
+      { symbol: "3191", shares: 25000, entryPrice: 85.2, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+  const w2 = {
+    weekNum: 2,
+    basketDate: "2026-06-09",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_471_580,
+    cashResidualTwd: 5_207_120,
+    realizedPnlTwd: -321_300,
+    equityAfterTwd: 9_678_700,
+    positions: [
+      // W1 position closed at W2 date — basket_date must resolve to "2026-06-02" (entry), not "2026-06-09" (exit)
+      { symbol: "3191", shares: 25000, entryPrice: 85.2, entrySource: "finmind_close",
+        exitPrice: 72.36, exitDate: "2026-06-09" as string | null, realizedPnl: -321_000 as number | null },
+      // W2 open position
+      { symbol: "5701", shares: 101000, entryPrice: 26.5, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+
+  const rows = _computeHoldingsRowsForTest([w1, w2]);
+  const closedRow = rows.find((r) => r.symbol === "3191" && r.exitDate !== null);
+
+  assert.ok(closedRow, "SIM-LEDGER-9: closed position row must be present");
+  assert.equal(
+    closedRow?.basketDate,
+    "2026-06-02",
+    "SIM-LEDGER-9: basket_date must be entry date (2026-06-02), not exit date (2026-06-09)"
+  );
+  assert.equal(
+    closedRow?.weekNum,
+    1,
+    "SIM-LEDGER-9: week_num for closed W1 position must be 1"
+  );
+});
+
+test("SIM-LEDGER-10: open positions (W5 exitDate=null) are included in holdings rows (Bug 2 regression)", async () => {
+  const { _computeHoldingsRowsForTest } = await import("../apps/api/src/sim-ledger-backfill.js");
+
+  // W5: all positions still open (no exit yet — current holdings)
+  const w5 = {
+    weekNum: 5,
+    basketDate: "2026-06-30",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_218_700,
+    cashResidualTwd: 5_146_980,
+    realizedPnlTwd: -218_700,
+    equityAfterTwd: 9_365_680,
+    positions: [
+      { symbol: "1435", shares: 6000, entryPrice: 27.35, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+      { symbol: "2483", shares: 11000, entryPrice: 22.4,  entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+      { symbol: "6226", shares: 31000, entryPrice: 11.05, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+
+  const rows = _computeHoldingsRowsForTest([w5]);
+  const openRows = rows.filter((r) => r.exitDate === null);
+
+  assert.ok(openRows.length > 0, "SIM-LEDGER-10: open W5 positions must appear in holdings rows");
+  assert.equal(openRows.length, 3, "SIM-LEDGER-10: all 3 W5 open positions must be written");
+  assert.ok(
+    openRows.every((r) => r.basketDate === "2026-06-30"),
+    "SIM-LEDGER-10: open position basket_date must be W5 entry date (2026-06-30)"
+  );
+  assert.ok(
+    openRows.every((r) => r.weekNum === 5),
+    "SIM-LEDGER-10: open position week_num must be 5"
+  );
+  assert.ok(
+    openRows.every((r) => r.isOpen),
+    "SIM-LEDGER-10: open positions must have isOpen=true"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
