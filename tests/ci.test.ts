@@ -18346,6 +18346,201 @@ test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts"
   );
 });
 
+// =============================================================================
+// INVITE REGISTRATION — Migration 0050 + invite-store + server endpoints
+// =============================================================================
+
+test("INVITE-1: migration 0050 forward SQL has correct workspace_invites schema", () => {
+  const sql = readFileSync(
+    new URL("../packages/db/migrations/0050_workspace_invites.sql", import.meta.url),
+    "utf-8"
+  );
+  // Table exists
+  assert.ok(sql.includes("CREATE TABLE IF NOT EXISTS workspace_invites"), "INVITE-1: migration must create workspace_invites");
+  // role CHECK excludes Owner
+  assert.ok(
+    sql.includes("CHECK (role IN ('Admin','Analyst','Trader','Viewer'))"),
+    "INVITE-1: role CHECK must exclude Owner"
+  );
+  // token_hash UNIQUE
+  assert.ok(sql.includes("token_hash    TEXT        NOT NULL UNIQUE"), "INVITE-1: token_hash must be UNIQUE");
+  // invited_email nullable
+  assert.ok(sql.includes("invited_email TEXT"), "INVITE-1: invited_email must exist (nullable universal link)");
+  // used_at + revoked_at for three-state tracking
+  assert.ok(sql.includes("used_at       TIMESTAMPTZ"), "INVITE-1: used_at must exist");
+  assert.ok(sql.includes("revoked_at    TIMESTAMPTZ"), "INVITE-1: revoked_at must exist");
+  // is_active added to users
+  assert.ok(
+    sql.includes("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true"),
+    "INVITE-1: is_active must be added to users in 0050"
+  );
+});
+
+test("INVITE-2: migration 0050 down SQL is symmetric and safe", () => {
+  const sql = readFileSync(
+    new URL("../packages/db/migrations/0050_workspace_invites.down.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(sql.includes("DROP TABLE IF EXISTS workspace_invites"), "INVITE-2: down must drop workspace_invites");
+  assert.ok(sql.includes("ALTER TABLE users DROP COLUMN IF EXISTS is_active"), "INVITE-2: down must drop is_active from users");
+});
+
+test("INVITE-3: invite-store token security — only stores hash, plain token never appears in DB path", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/invite-store.ts", import.meta.url),
+    "utf-8"
+  );
+  // Uses SHA-256 for hash
+  assert.ok(src.includes("createHash(\"sha256\")"), "INVITE-3: must hash token with SHA-256");
+  // randomBytes for entropy
+  assert.ok(src.includes("randomBytes(32)"), "INVITE-3: token must use 32 random bytes");
+  // Token hash stored, not the plain token
+  assert.ok(src.includes("tokenHash"), "INVITE-3: variable tokenHash must exist");
+  // Plain token returned from create fn
+  assert.ok(src.includes("token,"), "INVITE-3: plain token must be returned from create");
+  // Registration URL construction
+  assert.ok(
+    src.includes("app.eycvector.com/register"),
+    "INVITE-3: registrationUrl must point to app.eycvector.com/register"
+  );
+});
+
+test("INVITE-4: invite-store atomic concurrent claim guard", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/invite-store.ts", import.meta.url),
+    "utf-8"
+  );
+  // Atomic UPDATE with used_at IS NULL guard
+  assert.ok(
+    src.includes("used_at IS NULL") && src.includes("RETURNING id"),
+    "INVITE-4: atomic claim must UPDATE WHERE used_at IS NULL RETURNING id"
+  );
+  // Checks returned row count
+  assert.ok(
+    src.includes("claimed.length === 0"),
+    "INVITE-4: must check claimed.length === 0 for concurrent race"
+  );
+  // Uses execRows for postgres.js shape normalisation
+  assert.ok(src.includes("execRows"), "INVITE-4: must use execRows to normalise postgres.js result");
+});
+
+test("INVITE-5: invite-store error codes — all invalid states return invalid_or_expired", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/invite-store.ts", import.meta.url),
+    "utf-8"
+  );
+  // Count occurrences of invalid_or_expired
+  const matches = src.match(/invalid_or_expired/g) ?? [];
+  assert.ok(
+    matches.length >= 5,
+    `INVITE-5: must return "invalid_or_expired" for all token failure paths (found ${matches.length})`
+  );
+  // Email already registered is separate (distinct error for UX)
+  assert.ok(src.includes("email_already_registered"), "INVITE-5: email conflict must use dedicated error code");
+  // Owner exclusion in INVITE_ROLES
+  assert.ok(
+    src.includes("\"Admin\", \"Analyst\", \"Trader\", \"Viewer\""),
+    "INVITE-5: INVITE_ROLES must exclude Owner"
+  );
+});
+
+test("INVITE-6: auth-store is_active guard in login and session hydration", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/auth-store.ts", import.meta.url),
+    "utf-8"
+  );
+  // isActive in column projection
+  assert.ok(
+    src.includes("isActive: users.isActive"),
+    "INVITE-6: authUserColumns must select isActive"
+  );
+  // login path checks isActive
+  const loginBlock = src.slice(
+    src.indexOf("export async function loginWithPassword"),
+    src.indexOf("// ── register with invite")
+  );
+  assert.ok(
+    loginBlock.includes("isActive === false"),
+    "INVITE-6: loginWithPassword must reject deactivated users"
+  );
+  // getUserById (session hydration) also checks isActive
+  const getUserBlock = src.slice(
+    src.indexOf("export async function getUserById"),
+    src.indexOf("// ── issue an invite code")
+  );
+  assert.ok(
+    getUserBlock.includes("isActive === false"),
+    "INVITE-6: getUserById must return null for deactivated users (kills active sessions)"
+  );
+});
+
+test("INVITE-7: server.ts invite management endpoints exist with correct auth gates", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  // Register endpoint uses inviteToken (new schema, not old inviteCode)
+  assert.ok(
+    src.includes("inviteToken:") && src.includes("authRegisterWithInviteSchema"),
+    "INVITE-7: /auth/register-with-invite must use authRegisterWithInviteSchema with inviteToken"
+  );
+  // Admin invite endpoints exist
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/invites"'),
+    "INVITE-7: POST /api/v1/admin/invites must exist"
+  );
+  assert.ok(
+    src.includes('app.get("/api/v1/admin/invites"'),
+    "INVITE-7: GET /api/v1/admin/invites must exist"
+  );
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/invites/:id/revoke"'),
+    "INVITE-7: POST /api/v1/admin/invites/:id/revoke must exist"
+  );
+  // Admin invite endpoints allow Owner OR Admin
+  const createInviteSection = src.slice(src.indexOf('app.post("/api/v1/admin/invites"'));
+  assert.ok(
+    createInviteSection.slice(0, 500).includes("Admin"),
+    "INVITE-7: invite creation must accept Admin role (not Owner-only)"
+  );
+  // User management endpoints exist
+  assert.ok(
+    src.includes('app.get("/api/v1/admin/users"'),
+    "INVITE-7: GET /api/v1/admin/users must exist"
+  );
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/users/:id/role"'),
+    "INVITE-7: POST /api/v1/admin/users/:id/role must exist"
+  );
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/users/:id/deactivate"'),
+    "INVITE-7: POST /api/v1/admin/users/:id/deactivate must exist"
+  );
+  // User management is Owner-only
+  const usersSection = src.slice(src.indexOf('app.get("/api/v1/admin/users"'));
+  assert.ok(
+    usersSection.slice(0, 300).includes("OWNER_ONLY"),
+    "INVITE-7: GET /api/v1/admin/users must be Owner-only"
+  );
+});
+
+test("INVITE-8: schema.ts has workspaceInvites table and users.isActive", () => {
+  const src = readFileSync(
+    new URL("../packages/db/src/schema.ts", import.meta.url),
+    "utf-8"
+  );
+  // workspaceInvites table
+  assert.ok(src.includes("export const workspaceInvites"), "INVITE-8: schema.ts must export workspaceInvites");
+  assert.ok(src.includes("token_hash"), "INVITE-8: workspaceInvites must have token_hash column");
+  assert.ok(src.includes("invited_email"), "INVITE-8: workspaceInvites must have invited_email column");
+  assert.ok(src.includes("revoked_at"), "INVITE-8: workspaceInvites must have revoked_at column");
+  // users.isActive
+  assert.ok(
+    src.includes('isActive: boolean("is_active").notNull().default(true)'),
+    "INVITE-8: users table must have isActive boolean column"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

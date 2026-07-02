@@ -142,7 +142,8 @@ const authUserColumns = {
   name: users.name,
   passwordHash: users.passwordHash,
   role: users.role,
-  workspaceId: users.workspaceId
+  workspaceId: users.workspaceId,
+  isActive: users.isActive
 };
 
 const authWorkspaceColumns = {
@@ -172,6 +173,12 @@ export async function loginWithPassword(
     .limit(1);
 
   if (!row) {
+    return { ok: false, error: "invalid_credentials" };
+  }
+
+  // Soft-deactivated users cannot log in (returns generic credential error to
+  // avoid leaking account existence to an attacker who has the right password).
+  if (row.isActive === false) {
     return { ok: false, error: "invalid_credentials" };
   }
 
@@ -295,6 +302,9 @@ export async function getUserById(userId: string): Promise<(AuthUser & { workspa
   const db = requireDb();
   const [row] = await db.select(authUserColumns).from(users).where(eq(users.id, userId)).limit(1);
   if (!row) return null;
+
+  // Deactivated users lose their active session immediately.
+  if (row.isActive === false) return null;
 
   const workspace = await selectAuthWorkspace(row.workspaceId ?? null);
 
