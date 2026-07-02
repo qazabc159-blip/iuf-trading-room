@@ -773,8 +773,9 @@ export async function writeLiveLedgerAfterEod(options: {
     }
 
     // Rough prev cost estimate: sum of (shares × avg_cost) from sim_ledger_holdings
+    let holdingRows: Array<{ symbol: string; shares: number; entry_price_twd: string }> = [];
     try {
-      const holdingRows = await db.execute(drizzleSql`
+      holdingRows = await db.execute(drizzleSql`
         SELECT symbol, shares, entry_price_twd
         FROM sim_ledger_holdings
         WHERE basket_date = ${prevBasketDate}::date
@@ -816,7 +817,7 @@ export async function writeLiveLedgerAfterEod(options: {
 
     // 5. Update previous week's open holdings to add exit data
     // Build per-symbol entry price map from the holdings rows loaded earlier
-    const entryPriceBySymbol = new Map(holdingRows.map((r) => [
+    const entryPriceBySymbol = new Map(holdingRows.map((r): [string, number] => [
       r.symbol,
       Number(r.entry_price_twd),
     ]));
