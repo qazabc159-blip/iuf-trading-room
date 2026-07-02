@@ -815,10 +815,16 @@ export async function writeLiveLedgerAfterEod(options: {
     `);
 
     // 5. Update previous week's open holdings to add exit data
+    // Build per-symbol entry price map from the holdings rows loaded earlier
+    const entryPriceBySymbol = new Map(holdingRows.map((r) => [
+      r.symbol,
+      Number(r.entry_price_twd),
+    ]));
     for (const pos of prevBasket) {
       const exitPrice = todayPriceMap.get(pos.symbol) ?? null;
+      const entryPriceTwd = entryPriceBySymbol.get(pos.symbol) ?? 0;
       const posRealizedPnl = exitPrice !== null
-        ? Math.round((exitPrice - (prevCost / Math.max(1, prevBasket.reduce((s, p) => s + p.shares, 0)) || 0)) * pos.shares)
+        ? Math.round((exitPrice - entryPriceTwd) * pos.shares)
         : null;
       await db.execute(drizzleSql`
         INSERT INTO sim_ledger_holdings
@@ -826,7 +832,7 @@ export async function writeLiveLedgerAfterEod(options: {
            exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
         VALUES
           (${weekNum - 1}, ${prevBasketDate}::date, ${pos.symbol}, ${pos.shares},
-           ${pos.shares > 0 ? 0 : 0},
+           ${entryPriceTwd},
            ${exitPrice}, ${rebalanceDate}::date,
            ${posRealizedPnl}, 'live_eod', 'live_eod')
         ON CONFLICT (basket_date, symbol) DO UPDATE SET
