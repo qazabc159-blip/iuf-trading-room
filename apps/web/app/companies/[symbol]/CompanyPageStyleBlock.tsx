@@ -159,41 +159,42 @@ export function CompanyPageStyleBlock() {
   .company-side-column .panel { transition: none !important; }
 }
 
-/* Data dock sections */
+/* Data dock sections — tighter separator (was margin-top:24 / padding-top:20) */
 .company-data-dock-title {
-  margin-top: 24px;
+  margin-top: 14px;
   border-top: 1px solid rgba(220,228,240,0.07);
-  padding-top: 20px;
+  padding-top: 14px;
 }
 
 /* ── 知識圖譜 grid — desktop 2-col ── */
 .company-knowledge-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(16px, 1.8vw, 24px);
+  gap: clamp(12px, 1.4vw, 20px);
   align-items: start;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .company-knowledge-grid > .panel {
   margin: 0 !important;
 }
 
-/* Knowledge panel base */
+/* Knowledge panel base — reduced min-height for blocked/empty states */
 ._ck-panel,
 ._ig-panel {
-  min-height: 160px;
+  min-height: 100px;
 }
 
-/* state-panel spacing inside knowledge panels */
+/* state-panel spacing inside knowledge panels — was 24px 0 8px (too tall) */
 ._ck-panel .state-panel,
 ._ig-panel .state-panel {
-  padding: 24px 0 8px;
+  padding: 10px 0 6px;
 }
 
-/* Ultra-wide: show knowledge + mini-graph side by side when the main column is roomy. */
-@media (min-width: 1500px) {
+/* Desktop: show knowledge + industry graph side by side starting at 1280px viewport.
+   Previously 1500px — the main column is ~850px wide at 1440px viewport, plenty of room. */
+@media (min-width: 1280px) {
   .company-knowledge-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
   }
 }
 @media (max-width: 1180px) {
@@ -223,7 +224,7 @@ export function CompanyPageStyleBlock() {
 
 /* ── AI Analyst Report Panel (_ai-*) ── */
 ._ai-report-panel {
-  margin-top: 16px;
+  margin-top: 10px;
 }
 
 /* Meta strip */
@@ -427,38 +428,62 @@ export function CompanyPageStyleBlock() {
   word-break: break-word;
 }
 
-/* State screens */
+/* State screens — interactive (idle/running/error): keep centered for usability */
 ._ai-empty-state,
 ._ai-running-state,
-._ai-error-state,
-._ai-owner-lock,
-._ai-body-placeholder {
+._ai-error-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px 16px;
-  gap: 10px;
+  padding: 22px 16px;
+  gap: 8px;
   text-align: center;
 }
-._ai-empty-icon,
-._ai-lock-icon {
-  font-size: 28px;
+
+/* Non-interactive states (owner-lock / role-loading) — compact horizontal bar */
+._ai-owner-lock,
+._ai-body-placeholder {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  text-align: left;
+  min-height: unset;
+  border-top: 1px solid rgba(220,228,240,0.06);
 }
-._ai-empty-msg,
-._ai-lock-msg {
+
+._ai-empty-icon {
+  font-size: 24px;
+}
+._ai-lock-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+._ai-empty-msg {
   font-family: var(--mono);
   font-size: 13px;
   color: rgba(255,255,255,0.6);
   font-weight: 600;
 }
-._ai-empty-sub,
-._ai-lock-sub {
+._ai-lock-msg {
+  font-family: var(--mono);
   font-size: 11px;
-  max-width: 320px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+._ai-empty-sub {
+  font-size: 11px;
+  max-width: 340px;
+}
+._ai-lock-sub {
+  font-size: 10.5px;
+  color: rgba(255,255,255,0.32);
 }
 ._ai-generate-btn {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 ._ai-running-msg {
   font-family: var(--mono);
