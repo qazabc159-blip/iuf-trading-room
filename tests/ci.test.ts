@@ -129,6 +129,7 @@ import {
 } from "../packages/contracts/src/index.ts";
 import { signalCreateInputSchema } from "../packages/contracts/src/signal.ts";
 import { MemoryTradingRoomRepository } from "../packages/domain/src/memory-repository.ts";
+import { normalizeThemeLifecycleForRead } from "../packages/domain/src/theme-lifecycle.ts";
 import {
   buildCompanyReferenceIndex,
   buildImportedCompanyDraft,
@@ -254,6 +255,18 @@ test("DB-POOL-1: production DB client must not serialize the whole app through o
     /connect_timeout:\s*getDatabaseConnectTimeoutSeconds\(\)/,
     "DB-POOL-1: postgres client must use the bounded connect timeout"
   );
+});
+
+test("THEMES-LIFECYCLE-1: listThemes normalizes legacy lifecycle values instead of hiding rows", () => {
+  assert.equal(normalizeThemeLifecycleForRead("Discovery"), "Discovery");
+  assert.equal(normalizeThemeLifecycleForRead("Validation"), "Validation");
+  assert.equal(normalizeThemeLifecycleForRead("Expansion"), "Expansion");
+  assert.equal(normalizeThemeLifecycleForRead("Crowded"), "Crowded");
+  assert.equal(normalizeThemeLifecycleForRead("Distribution"), "Distribution");
+  assert.equal(normalizeThemeLifecycleForRead("Monitoring"), "Validation");
+  assert.equal(normalizeThemeLifecycleForRead("active"), "Expansion");
+  assert.equal(normalizeThemeLifecycleForRead("retired"), "Distribution");
+  assert.equal(normalizeThemeLifecycleForRead("Maturity"), "Crowded");
 });
 
 test("RAILWAY-BOOT-1: production database boot must fail closed when migrations fail", () => {

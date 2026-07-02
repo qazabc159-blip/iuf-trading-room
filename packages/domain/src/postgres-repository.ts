@@ -71,6 +71,7 @@ import type {
   SessionOptions,
   TradingRoomRepository
 } from "./types.js";
+import { normalizeThemeLifecycleForRead } from "./theme-lifecycle.js";
 
 const defaultWorkspaceSlug = "primary-desk";
 const defaultWorkspaceName = "Primary Desk";
@@ -200,6 +201,24 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
     });
   }
 
+  private parseThemeRow(row: typeof themes.$inferSelect): Theme {
+    return themeSchema.parse({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      marketState: row.marketState,
+      lifecycle: normalizeThemeLifecycleForRead(row.lifecycle),
+      priority: row.priority,
+      thesis: row.thesis,
+      whyNow: row.whyNow,
+      bottleneck: row.bottleneck,
+      corePoolCount: row.corePoolCount,
+      observationPoolCount: row.observationPoolCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    });
+  }
+
   async getSession(options?: SessionOptions) {
     const { workspace, user } = await this.ensureSessionBase(options);
     return this.buildSession(workspace, user, options);
@@ -223,27 +242,12 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
 
     const results = [];
     for (const row of rows) {
-      const parsed = themeSchema.safeParse({
-        id: row.id,
-        name: row.name,
-        slug: row.slug,
-        marketState: row.marketState,
-        lifecycle: row.lifecycle,
-        priority: row.priority,
-        thesis: row.thesis,
-        whyNow: row.whyNow,
-        bottleneck: row.bottleneck,
-        corePoolCount: row.corePoolCount,
-        observationPoolCount: row.observationPoolCount,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString()
-      });
-      if (parsed.success) {
-        results.push(parsed.data);
-      } else {
+      try {
+        results.push(this.parseThemeRow(row));
+      } catch (error) {
         // Log bad row so we can identify and fix it
         console.error(
-          `[listThemes] skipping invalid row id=${row.id} slug="${row.slug}" errors=${JSON.stringify(parsed.error.flatten())}`
+          `[listThemes] skipping invalid row id=${row.id} slug="${row.slug}" error=${error instanceof Error ? error.message : String(error)}`
         );
       }
     }
@@ -264,21 +268,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       return null;
     }
 
-    return themeSchema.parse({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      marketState: row.marketState,
-      lifecycle: row.lifecycle,
-      priority: row.priority,
-      thesis: row.thesis,
-      whyNow: row.whyNow,
-      bottleneck: row.bottleneck,
-      corePoolCount: row.corePoolCount,
-      observationPoolCount: row.observationPoolCount,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    });
+    return this.parseThemeRow(row);
   }
 
   async createTheme(input: ThemeCreateInput, options?: SessionOptions) {
@@ -302,21 +292,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       })
       .returning();
 
-    return themeSchema.parse({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      marketState: row.marketState,
-      lifecycle: row.lifecycle,
-      priority: row.priority,
-      thesis: row.thesis,
-      whyNow: row.whyNow,
-      bottleneck: row.bottleneck,
-      corePoolCount: row.corePoolCount,
-      observationPoolCount: row.observationPoolCount,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    });
+    return this.parseThemeRow(row);
   }
 
   async updateTheme(themeId: string, input: ThemeUpdateInput, options?: SessionOptions) {
@@ -343,21 +319,7 @@ export class PostgresTradingRoomRepository implements TradingRoomRepository {
       return null;
     }
 
-    return themeSchema.parse({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      marketState: row.marketState,
-      lifecycle: row.lifecycle,
-      priority: row.priority,
-      thesis: row.thesis,
-      whyNow: row.whyNow,
-      bottleneck: row.bottleneck,
-      corePoolCount: row.corePoolCount,
-      observationPoolCount: row.observationPoolCount,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString()
-    });
+    return this.parseThemeRow(row);
   }
 
   async listCompanies(themeId?: string, options?: SessionOptions) {
