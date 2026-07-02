@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isKgiTradingHours } from "@/lib/kgi-trading-hours";
 import {
   getFAutoPortfolio,
+  getFAutoNav,
   getKgiSimOrders,
   getDailySmokeHistory,
   getS1SimStatus,
@@ -28,6 +29,7 @@ import {
   type SimPosition,
   type SimFunds,
   type FAutoPortfolio,
+  type FAutoNavResponse,
   type KgiSimRawOrderItem,
   type KgiSimOrdersResult,
   type DailySmokeHistory,
@@ -36,6 +38,7 @@ import {
   type S1Basket,
 } from "@/lib/fauto-sim-api";
 import { KgiConnectionLight } from "./KgiConnectionLight";
+import { FAutoNavPanel } from "./FAutoNavPanel";
 
 type AsyncState<T> =
   | { phase: "loading" }
@@ -1040,6 +1043,7 @@ export function FAutoSimPanel() {
 
   // ── live API fetches (all re-triggered on each tick) ──────────────────────
   const portfolioState = useFetch(getFAutoPortfolio, tick);
+  const navState = useFetch<FAutoNavResponse>(getFAutoNav, tick);
   const ordersState = useFetch(getKgiSimOrders, tick);
   const smokeState = useFetch(getDailySmokeHistory, tick);
   // S1 read-only endpoints: 404/501 → visible pending state; stale-data guard applies
@@ -1149,6 +1153,13 @@ export function FAutoSimPanel() {
       </div>
 
       <FAutoSummary portfolio={portfolioState} status={s1StatusState} eod={eodState} />
+
+      {/* NAV Curve — placed after summary, before the sub-panel grid */}
+      <FAutoNavPanel
+        phase={navState.phase}
+        data={navState.phase === "live" ? navState.data : null}
+        errorMessage={navState.phase === "error" ? navState.message : undefined}
+      />
 
       {/* Main grid */}
       <div className="_fauto-grid">

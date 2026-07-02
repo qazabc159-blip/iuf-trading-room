@@ -21,7 +21,7 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/strategy\/ideas(?:\?|$)/,
   /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio|positions|funds)(?:\?|$|\/)/,
   /^\/api\/v1\/portfolio\/kgi\/positions(?:\?|$)/,
-  /^\/api\/v1\/portfolio\/f-auto(?:\?|$)/,
+  /^\/api\/v1\/portfolio\/f-auto(?:\/nav)?(?:\?|$)/,
   /^\/api\/v1\/companies(?:\?|$|\/)/,
   /^\/api\/v1\/themes\/[^/]+\/companies(?:\?|$)/,
   /^\/api\/v1\/kgi\/status(?:\?|$)/,

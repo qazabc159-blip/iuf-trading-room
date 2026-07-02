@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const panelSource = readFileSync(new URL("./FAutoSimPanel.tsx", import.meta.url), "utf8");
+const navPanelSource = readFileSync(new URL("./FAutoNavPanel.tsx", import.meta.url), "utf8");
 const connSource = readFileSync(new URL("./KgiConnectionLight.tsx", import.meta.url), "utf8");
 const apiSource = readFileSync(new URL("../../../lib/fauto-sim-api.ts", import.meta.url), "utf8");
 const sidebarSource = readFileSync(new URL("../../../components/Sidebar.tsx", import.meta.url), "utf8");
@@ -182,3 +183,104 @@ describe("F-AUTO S1 product observability", () => {
     expect(panelSource).toContain("hasPersistedFallback");
   });
 });
+
+describe("F-AUTO NAV Curve panel", () => {
+  it("wires getFAutoNav into the main panel via useFetch and tick", () => {
+    // Import declared
+    expect(panelSource).toContain("getFAutoNav");
+    expect(panelSource).toContain("FAutoNavPanel");
+    expect(panelSource).toContain("useFetch<FAutoNavResponse>(getFAutoNav, tick)");
+    // Passed to component
+    expect(panelSource).toContain("<FAutoNavPanel");
+    expect(panelSource).toContain("navState.phase");
+  });
+
+  it("defines getFAutoNav pointing at /api/v1/portfolio/f-auto/nav", () => {
+    expect(apiSource).toContain("getFAutoNav");
+    expect(apiSource).toContain("/api/v1/portfolio/f-auto/nav");
+  });
+
+  it("exports typed NavCurvePoint, NavWeekRow, FAutoNavResponse from api module", () => {
+    expect(apiSource).toContain("NavCurvePoint");
+    expect(apiSource).toContain("NavWeekRow");
+    expect(apiSource).toContain("FAutoNavResponse");
+    expect(apiSource).toContain("navDate");
+    expect(apiSource).toContain("equityTwd");
+    expect(apiSource).toContain("returnPct");
+    expect(apiSource).toContain("weekNum");
+    expect(apiSource).toContain("realizedPnlTwd");
+    expect(apiSource).toContain("initialEquity");
+    expect(apiSource).toContain("cumulativeReturnPct");
+  });
+
+  it("renders SVG equity curve with baseline and week markers", () => {
+    // SVG component exists
+    expect(navPanelSource).toContain("NavChart");
+    expect(navPanelSource).toContain("polyline");
+    expect(navPanelSource).toContain("polygon");
+    // Baseline dashed line
+    expect(navPanelSource).toContain("strokeDasharray");
+    // Week markers (circles)
+    expect(navPanelSource).toContain("weekMarkers");
+    expect(navPanelSource).toContain("<circle");
+    // Tooltip via SVG title
+    expect(navPanelSource).toContain("<title>");
+    // W label
+    expect(navPanelSource).toContain("`W${weekNum}`");
+  });
+
+  it("shows y-mode toggle for 報酬% and 權益 TWD", () => {
+    expect(navPanelSource).toContain("YMode");
+    expect(navPanelSource).toContain("報酬 %");
+    expect(navPanelSource).toContain("權益 TWD");
+    expect(navPanelSource).toContain("_fnav-toggle-btn");
+    expect(navPanelSource).toContain("_fnav-toggle-active");
+    // Mode value
+    expect(navPanelSource).toContain('"pct"');
+    expect(navPanelSource).toContain('"equity"');
+  });
+
+  it("shows cumulative summary row with honest cost-inclusive return label", () => {
+    expect(navPanelSource).toContain("起始本金");
+    expect(navPanelSource).toContain("目前權益");
+    expect(navPanelSource).toContain("累計報酬（含成本）");
+    expect(navPanelSource).toContain("含手續費與證交稅");
+    expect(navPanelSource).toContain("累計已實現損益");
+    expect(navPanelSource).toContain("cumulativeReturnPct");
+    expect(navPanelSource).toContain("totalRealizedPnlTwd");
+  });
+
+  it("shows weekly breakdown table with 6 columns", () => {
+    expect(navPanelSource).toContain("NavWeekTable");
+    expect(navPanelSource).toContain("逐週紀錄");
+    expect(navPanelSource).toContain("重平衡日");
+    expect(navPanelSource).toContain("部署成本");
+    expect(navPanelSource).toContain("已實現損益");
+    expect(navPanelSource).toContain("期末權益");
+    expect(navPanelSource).toContain("現金剩餘");
+    expect(navPanelSource).toContain("basketDate");
+    expect(navPanelSource).toContain("basketCostTwd");
+    expect(navPanelSource).toContain("equityAfterTwd");
+  });
+
+  it("honestly labels backfill segments and handles empty_ledger state", () => {
+    // backfill detection
+    expect(navPanelSource).toContain("isBackfillPoint");
+    expect(navPanelSource).toContain("backfill_dry_run");
+    expect(navPanelSource).toContain("歷史回補（依審計紀錄重建）");
+    // empty_ledger empty state
+    expect(navPanelSource).toContain("empty_ledger");
+    expect(navPanelSource).toContain("帳本尚未建立");
+  });
+
+  it("allows /api/v1/portfolio/f-auto/nav through the backend proxy GET allowlist", () => {
+    // route.ts lives one level up from the test; read via fs if possible
+    const routeSource = readFileSync(
+      new URL("../../api/ui-final-v031/backend/route.ts", import.meta.url),
+      "utf8",
+    );
+    // Pattern must match /nav subpath
+    expect(routeSource).toContain("portfolio\\/f-auto(?:\\/nav)?");
+  });
+});
+
