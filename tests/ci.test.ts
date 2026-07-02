@@ -17914,6 +17914,284 @@ test("S1-PERSIST-CLOSE-5: server.ts TWSE-EOD-QUOTE-CRON also persists to quote_l
   );
 });
 
+// ── SIM-LEDGER — F-AUTO Continuous Ledger Schema + Backfill Engine ───────────
+
+test("SIM-LEDGER-1: migration 0049 creates all three sim_ledger tables", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_weeks"),
+    "SIM-LEDGER-1: must create sim_ledger_weeks"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_holdings"),
+    "SIM-LEDGER-1: must create sim_ledger_holdings"
+  );
+  assert.ok(
+    migSrc.includes("CREATE TABLE IF NOT EXISTS sim_ledger_nav"),
+    "SIM-LEDGER-1: must create sim_ledger_nav"
+  );
+  assert.ok(
+    migSrc.includes("ADDITIVE ONLY"),
+    "SIM-LEDGER-1: migration comment must declare ADDITIVE ONLY (no existing tables modified)"
+  );
+});
+
+test("SIM-LEDGER-2: migration 0049 source CHECK constraints prevent data pollution", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.sql", import.meta.url),
+    "utf-8"
+  );
+  // sim_ledger_weeks: source must be 'backfill_dry_run' | 'live'
+  assert.ok(
+    migSrc.includes("backfill_dry_run") && migSrc.includes("'live'"),
+    "SIM-LEDGER-2: sim_ledger_weeks must CHECK source IN ('backfill_dry_run','live')"
+  );
+  // sim_ledger_nav: source must include 'live_eod'
+  assert.ok(
+    migSrc.includes("live_eod"),
+    "SIM-LEDGER-2: sim_ledger_nav must CHECK source IN (...'live_eod'...)"
+  );
+  // UNIQUE constraints for idempotent upserts
+  assert.ok(
+    migSrc.includes("UNIQUE (basket_date, source)"),
+    "SIM-LEDGER-2: sim_ledger_weeks + sim_ledger_holdings must have UNIQUE (basket_date, source)"
+  );
+  assert.ok(
+    migSrc.includes("UNIQUE (nav_date, source)"),
+    "SIM-LEDGER-2: sim_ledger_nav must have UNIQUE (nav_date, source)"
+  );
+});
+
+test("SIM-LEDGER-3: migration 0049 down file drops tables in correct order", () => {
+  const downSrc = readFileSync(
+    new URL("../packages/db/migrations/0049_sim_ledger.down.sql", import.meta.url),
+    "utf-8"
+  );
+  const navPos = downSrc.indexOf("sim_ledger_nav");
+  const holdingsPos = downSrc.indexOf("sim_ledger_holdings");
+  const weeksPos = downSrc.indexOf("sim_ledger_weeks");
+  assert.ok(navPos > 0 && holdingsPos > 0 && weeksPos > 0,
+    "SIM-LEDGER-3: down migration must DROP all three tables"
+  );
+  assert.ok(
+    navPos < holdingsPos && holdingsPos < weeksPos,
+    "SIM-LEDGER-3: must drop sim_ledger_nav first, then holdings, then weeks (reverse creation order)"
+  );
+  assert.ok(
+    downSrc.includes("DROP TABLE IF EXISTS"),
+    "SIM-LEDGER-3: must use DROP TABLE IF EXISTS (idempotent)"
+  );
+});
+
+test("SIM-LEDGER-4: backfill engine exports runBackfill and key types", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(src.includes("export async function runBackfill"),
+    "SIM-LEDGER-4: must export runBackfill"
+  );
+  assert.ok(src.includes("export interface LedgerWeekResult"),
+    "SIM-LEDGER-4: must export LedgerWeekResult interface"
+  );
+  assert.ok(src.includes("export interface LedgerNavPoint"),
+    "SIM-LEDGER-4: must export LedgerNavPoint interface"
+  );
+  assert.ok(src.includes("export interface BackfillResult"),
+    "SIM-LEDGER-4: must export BackfillResult interface"
+  );
+  assert.ok(src.includes("export async function loadBasketsFromAuditLogs"),
+    "SIM-LEDGER-4: must export loadBasketsFromAuditLogs"
+  );
+});
+
+test("SIM-LEDGER-5: backfill engine is PIT-strict (no look-ahead)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // getPitClose must walk back (not forward) for missing prices
+  assert.ok(
+    src.includes("Walk back") || src.includes("walk back"),
+    "SIM-LEDGER-5: must use walk-back (not walk-forward) for missing prices — PIT compliance"
+  );
+  // Must not allow d > date in the walk-back logic
+  assert.ok(
+    src.includes("d <= date"),
+    "SIM-LEDGER-5: walk-back must only use prices where date <= target (no look-ahead)"
+  );
+  // entry_source must track origin
+  assert.ok(
+    src.includes("finmind_close") && src.includes("entrySource"),
+    "SIM-LEDGER-5: must track entry_source (finmind_close) for audit trail"
+  );
+});
+
+test("SIM-LEDGER-6: backfill engine has dryRun guard — no accidental prod writes", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("dryRun = true"),
+    "SIM-LEDGER-6: dryRun must default to true to prevent accidental DB writes"
+  );
+  assert.ok(
+    src.includes("if (!dryRun && isDatabaseMode())"),
+    "SIM-LEDGER-6: DB persist must be guarded by !dryRun AND isDatabaseMode()"
+  );
+  // No broker, no real-money paths
+  assert.ok(
+    !src.includes("from \"./broker/"),
+    "SIM-LEDGER-6: backfill engine must not import broker modules (SIM-only)"
+  );
+  // Hard-line comment must be present
+  assert.ok(
+    src.includes("SIM-ONLY"),
+    "SIM-LEDGER-6: must contain SIM-ONLY hard line comment"
+  );
+});
+
+test("SIM-LEDGER-7: hardcoded basket fallback covers all 5 rebalance dates", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // All 5 Tuesday dates present in hardcoded basket
+  assert.ok(src.includes('"2026-06-02"'), "SIM-LEDGER-7: must include 2026-06-02 basket");
+  assert.ok(src.includes('"2026-06-09"'), "SIM-LEDGER-7: must include 2026-06-09 basket");
+  assert.ok(src.includes('"2026-06-16"'), "SIM-LEDGER-7: must include 2026-06-16 basket");
+  assert.ok(src.includes('"2026-06-23"'), "SIM-LEDGER-7: must include 2026-06-23 basket");
+  assert.ok(src.includes('"2026-06-30"'), "SIM-LEDGER-7: must include 2026-06-30 basket");
+  // Must export for test access
+  assert.ok(
+    src.includes("export const _getHardcodedBasketsForTest"),
+    "SIM-LEDGER-7: must export _getHardcodedBasketsForTest"
+  );
+});
+
+test("SIM-LEDGER-8: backfill assumptions list is complete (10 assumptions)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // Check key assumption labels exist
+  assert.ok(src.includes("A1:"), "SIM-LEDGER-8: must document assumption A1");
+  assert.ok(src.includes("A2:"), "SIM-LEDGER-8: must document assumption A2");
+  assert.ok(src.includes("A3:"), "SIM-LEDGER-8: must document assumption A3");
+  assert.ok(src.includes("A4:"), "SIM-LEDGER-8: must document assumption A4 (6/23 week)");
+  assert.ok(src.includes("A5:"), "SIM-LEDGER-8: must document assumption A5 (trading halt walkback)");
+  // NAV curve must include known trading days
+  assert.ok(
+    src.includes("TAIWAN_TRADING_DAYS_JUN2026"),
+    "SIM-LEDGER-8: must define TAIWAN_TRADING_DAYS_JUN2026 constant"
+  );
+  assert.ok(
+    src.includes('"2026-06-08"'),
+    "SIM-LEDGER-8: trading days must include 6/8 (Mon before W2 rebalance)"
+  );
+});
+
+// ── SIM-LEDGER 0049 audit fix regression tests ────────────────────────────
+// SIM-LEDGER-9: Bug 1 — basket_date in holdings must be ENTRY date, not exit date.
+// SIM-LEDGER-10: Bug 2 — open positions (W5 exitDate=null) must be written to holdings.
+
+test("SIM-LEDGER-9: holdings basket_date uses entry date not exit date (Bug 1 regression)", async () => {
+  const { _computeHoldingsRowsForTest } = await import("../apps/api/src/sim-ledger-backfill.js");
+
+  // W1: opened 2026-06-02, closed at W2 rebalance (2026-06-09)
+  // W2: has W1 positions as closed (exitDate = W2 basket date)
+  const w1 = {
+    weekNum: 1,
+    basketDate: "2026-06-02",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_501_150,
+    cashResidualTwd: 5_498_850,
+    realizedPnlTwd: null,
+    equityAfterTwd: 10_000_000,
+    positions: [
+      { symbol: "3191", shares: 25000, entryPrice: 85.2, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+  const w2 = {
+    weekNum: 2,
+    basketDate: "2026-06-09",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_471_580,
+    cashResidualTwd: 5_207_120,
+    realizedPnlTwd: -321_300,
+    equityAfterTwd: 9_678_700,
+    positions: [
+      // W1 position closed at W2 date — basket_date must resolve to "2026-06-02" (entry), not "2026-06-09" (exit)
+      { symbol: "3191", shares: 25000, entryPrice: 85.2, entrySource: "finmind_close",
+        exitPrice: 72.36, exitDate: "2026-06-09" as string | null, realizedPnl: -321_000 as number | null },
+      // W2 open position
+      { symbol: "5701", shares: 101000, entryPrice: 26.5, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+
+  const rows = _computeHoldingsRowsForTest([w1, w2]);
+  const closedRow = rows.find((r) => r.symbol === "3191" && r.exitDate !== null);
+
+  assert.ok(closedRow, "SIM-LEDGER-9: closed position row must be present");
+  assert.equal(
+    closedRow?.basketDate,
+    "2026-06-02",
+    "SIM-LEDGER-9: basket_date must be entry date (2026-06-02), not exit date (2026-06-09)"
+  );
+  assert.equal(
+    closedRow?.weekNum,
+    1,
+    "SIM-LEDGER-9: week_num for closed W1 position must be 1"
+  );
+});
+
+test("SIM-LEDGER-10: open positions (W5 exitDate=null) are included in holdings rows (Bug 2 regression)", async () => {
+  const { _computeHoldingsRowsForTest } = await import("../apps/api/src/sim-ledger-backfill.js");
+
+  // W5: all positions still open (no exit yet — current holdings)
+  const w5 = {
+    weekNum: 5,
+    basketDate: "2026-06-30",
+    initialEquity: 10_000_000,
+    basketCostTwd: 4_218_700,
+    cashResidualTwd: 5_146_980,
+    realizedPnlTwd: -218_700,
+    equityAfterTwd: 9_365_680,
+    positions: [
+      { symbol: "1435", shares: 6000, entryPrice: 27.35, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+      { symbol: "2483", shares: 11000, entryPrice: 22.4,  entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+      { symbol: "6226", shares: 31000, entryPrice: 11.05, entrySource: "finmind_close",
+        exitPrice: null, exitDate: null as string | null, realizedPnl: null as number | null },
+    ],
+  };
+
+  const rows = _computeHoldingsRowsForTest([w5]);
+  const openRows = rows.filter((r) => r.exitDate === null);
+
+  assert.ok(openRows.length > 0, "SIM-LEDGER-10: open W5 positions must appear in holdings rows");
+  assert.equal(openRows.length, 3, "SIM-LEDGER-10: all 3 W5 open positions must be written");
+  assert.ok(
+    openRows.every((r) => r.basketDate === "2026-06-30"),
+    "SIM-LEDGER-10: open position basket_date must be W5 entry date (2026-06-30)"
+  );
+  assert.ok(
+    openRows.every((r) => r.weekNum === 5),
+    "SIM-LEDGER-10: open position week_num must be 5"
+  );
+  assert.ok(
+    openRows.every((r) => r.isOpen),
+    "SIM-LEDGER-10: open positions must have isOpen=true"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
