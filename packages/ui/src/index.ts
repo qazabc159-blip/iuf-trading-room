@@ -1,15 +1,8 @@
 export const primaryNavigation = [
-  { href: "/", label: "總覽", short: "總覽" },
-  { href: "/themes", label: "主題戰區", short: "主題" },
-  { href: "/companies", label: "公司資料庫", short: "公司" },
-  { href: "/signals", label: "訊號雷達", short: "訊號" },
-  { href: "/ideas", label: "策略推薦", short: "推薦" },
-  { href: "/runs", label: "策略歷史", short: "歷史" },
-  { href: "/plans", label: "交易計畫", short: "計畫" },
-  { href: "/portfolio", label: "持倉部位", short: "持倉" },
-  { href: "/quote", label: "即時報價", short: "報價" },
-  { href: "/reviews", label: "交易檢討", short: "檢討" },
-  { href: "/briefs", label: "每日簡報", short: "簡報" },
-  { href: "/drafts", label: "草稿審核", short: "審核" },
-  { href: "/ops", label: "系統戰情", short: "戰情" }
-];
+  { href: "/", label: "戰情台", short: "戰情" },
+  { href: "/market-intel", label: "市場情報", short: "情報" },
+  { href: "/ai-recommendations", label: "AI 推薦", short: "推薦" },
+  { href: "/portfolio", label: "交易室", short: "交易" },
+  { href: "/companies", label: "公司 / 主題", short: "公司" },
+  { href: "/quant-strategies", label: "量化策略", short: "策略" },
+] as const;

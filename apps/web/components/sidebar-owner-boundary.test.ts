@@ -18,6 +18,9 @@ describe("product navigation owner boundary", () => {
     expect(sidebarSource).toContain("apiGetMe");
     expect(sidebarSource).toContain('const isOwner = userRole === "Owner"');
     expect(sidebarSource).toContain("{isOwner && (");
+    expect(sidebarSource).toContain("CANONICAL_PRODUCT_SURFACES");
+    expect(sidebarSource).toContain("OWNER_PRODUCT_SURFACES");
+    expect(sidebarSource).toContain("INTERNAL_ADMIN_SURFACES");
     expect(sidebarSource).toContain("內部後台");
     expect(sidebarSource).toContain("Paper / SIM 模式 · Real Order 停用");
   });
