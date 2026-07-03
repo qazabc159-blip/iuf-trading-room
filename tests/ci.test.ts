@@ -18613,6 +18613,112 @@ test("INVITE-10: migration 0050 has partial UNIQUE index blocking duplicate acti
   );
 });
 
+// ── DRAFT-BULK — content_drafts bulk-reject endpoint (2026-07-03 night fixes) ──
+
+test("DRAFT-BULK-1: admin-content-drafts-bulk-reject handler exists with correct dry-run default", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/admin-content-drafts-bulk-reject.ts", import.meta.url),
+    "utf-8"
+  );
+  // Handler is exported
+  assert.ok(
+    src.includes("export async function handleAdminContentDraftsBulkReject"),
+    "DRAFT-BULK-1: must export handleAdminContentDraftsBulkReject"
+  );
+  // apply defaults to false (dry-run is the default)
+  assert.ok(
+    src.includes("apply: z.boolean().default(false)"),
+    "DRAFT-BULK-1: apply must default to false (dry-run is default)"
+  );
+  // dry-run path returns dryRun:true, NO DB update
+  assert.ok(
+    src.includes("dryRun: true"),
+    "DRAFT-BULK-1: dry-run response must include dryRun:true"
+  );
+  // soft-delete only (status='rejected'), never DELETE row
+  assert.ok(
+    src.includes("status: \"rejected\"") && !src.includes(".delete("),
+    "DRAFT-BULK-1: must soft-reject (status=rejected) and never DELETE rows"
+  );
+  // Owner-only gate
+  assert.ok(
+    src.includes("owner_required"),
+    "DRAFT-BULK-1: must require Owner role"
+  );
+  // Distribution stats by table and producerVersion
+  assert.ok(
+    src.includes("byTable") && src.includes("byProducerVersion"),
+    "DRAFT-BULK-1: response must include distribution breakdown by targetTable and producerVersion"
+  );
+});
+
+test("DRAFT-BULK-2: server.ts exposes bulk-reject route and handler on POST /api/v1/admin/content-drafts/bulk-reject", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  // Route exists
+  assert.ok(
+    serverSrc.includes("/api/v1/admin/content-drafts/bulk-reject"),
+    "DRAFT-BULK-2: server.ts must register POST /api/v1/admin/content-drafts/bulk-reject"
+  );
+  // Dynamic import of the handler (pattern matches cleanup-orphan and retry-review)
+  assert.ok(
+    serverSrc.includes("admin-content-drafts-bulk-reject"),
+    "DRAFT-BULK-2: server.ts must dynamically import admin-content-drafts-bulk-reject"
+  );
+});
+
+// ── S1-PERSIST-TPEX — TPEX EOD quote_last_close persist (2026-07-03 night fixes) ──
+
+test("S1-PERSIST-TPEX-1: server.ts TWSE-EOD-QUOTE-CRON also persists TPEX EOD closes to quote_last_close", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  // TPEX persist block exists
+  assert.ok(
+    serverSrc.includes("Persist TPEX EOD closes to quote_last_close"),
+    "S1-PERSIST-TPEX-1: server.ts TWSE EOD cron must have TPEX persist block"
+  );
+  // getTpexMainboardCloseRows called in EOD cron
+  assert.ok(
+    serverSrc.includes("_getTpex") || serverSrc.includes("getTpexMainboardCloseRows"),
+    "S1-PERSIST-TPEX-1: server.ts EOD cron must call getTpexMainboardCloseRows for OTC stocks"
+  );
+  // Uses tpex_eod source
+  assert.ok(
+    serverSrc.includes("tpex_eod"),
+    "S1-PERSIST-TPEX-1: server.ts EOD cron must tag TPEX rows as tpex_eod source"
+  );
+  // Fail-open: TPEX block wrapped in try/catch (does not throw)
+  assert.ok(
+    serverSrc.includes("tpexPersistErr") || serverSrc.includes("TPEX quote_last_close persist failed"),
+    "S1-PERSIST-TPEX-1: TPEX persist block must be fail-open (wrapped in try/catch)"
+  );
+});
+
+test("S1-PERSIST-TPEX-2: TPEX persist uses SecuritiesCompanyCode as ticker and Close as price", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  // Correct TPEX row fields accessed
+  assert.ok(
+    serverSrc.includes("SecuritiesCompanyCode"),
+    "S1-PERSIST-TPEX-2: must use SecuritiesCompanyCode as the ticker field from TpexDailyRow"
+  );
+  assert.ok(
+    serverSrc.includes("r.Close"),
+    "S1-PERSIST-TPEX-2: must use Close field from TpexDailyRow for price"
+  );
+  // Ticker validation (numeric 4-6 digits, same guard as TWSE block)
+  assert.ok(
+    serverSrc.includes("/^\\d{4,6}$/.test(ticker)"),
+    "S1-PERSIST-TPEX-2: must validate ticker as numeric 4-6 digit code before upserting"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

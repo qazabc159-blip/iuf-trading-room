@@ -18395,6 +18395,36 @@ function startSchedulers(workspaceSlug: string): void {
           console.warn("[twse-eod-cron] quote_last_close persist failed:", persistErr instanceof Error ? persistErr.message : String(persistErr));
         }
 
+        // Persist TPEX EOD closes to quote_last_close (source=tpex_eod).
+        // Bruce audit 7/2 PARTIAL: TWSE stocks persisted by block above, but OTC stocks
+        // (4716/5489/4707/5348/3230 in F-AUTO basket) not covered — they fell through to MIS
+        // fallback. Without DB persist, a restart during/after盤後 leaves OTC positions null.
+        // Uses same eodTradeDate from TWSE block (same trading day). Fail-open: never throws.
+        try {
+          const { getTpexMainboardCloseRows: _getTpex } = await import("./data-sources/twse-openapi-client.js");
+          const db4 = isDatabaseMode() ? getDb() : null;
+          if (db4 && eodTradeDate) {
+            const tpexRows = await _getTpex();
+            if (tpexRows.length > 0) {
+              const { upsertLastCloses: _upsertTpex } = await import("./quote-last-close-store.js");
+              const tpexEntries = tpexRows
+                .map((r) => {
+                  const ticker = r.SecuritiesCompanyCode?.trim();
+                  const close = parseFloat(r.Close ?? "");
+                  if (!ticker || !/^\d{4,6}$/.test(ticker) || !isFinite(close) || close <= 0) return null;
+                  return { symbol: ticker, closePrice: close, tradeDate: eodTradeDate, source: "tpex_eod" as const };
+                })
+                .filter((e): e is NonNullable<typeof e> => e !== null);
+              if (tpexEntries.length > 0) {
+                await _upsertTpex(db4, tpexEntries);
+                console.log(`[twse-eod-cron] persisted ${tpexEntries.length} TPEX last-good closes to quote_last_close (trade_date=${eodTradeDate})`);
+              }
+            }
+          }
+        } catch (tpexPersistErr) {
+          console.warn("[twse-eod-cron] TPEX quote_last_close persist failed:", tpexPersistErr instanceof Error ? tpexPersistErr.message : String(tpexPersistErr));
+        }
+
         _twseEodCronLastFiredAt = new Date().toISOString();
         _twseEodCronLastCount = quotes.length;
         _twseEodCronLastError = null;
@@ -20697,6 +20727,23 @@ app.post("/api/v1/admin/content-drafts/retry-review", async (c) => {
 app.post("/api/v1/admin/content-drafts/cleanup-orphan", async (c) => {
   const { handleAdminContentDraftsCleanupOrphan } = await import("./admin-content-drafts-cleanup-orphan.js");
   return handleAdminContentDraftsCleanupOrphan(c);
+});
+
+// =============================================================================
+// ADMIN: content-drafts/bulk-reject — bulk soft-reject stuck awaiting_review drafts (2026-07-03)
+// Bruce audit 7/2: 1012 content_drafts stuck awaiting_review (company_notes 46% / theme_summaries 44%
+// / daily_briefs 10%, producerVersion v1 92%). Root cause: OpenAlice devices active → enqueue jobs
+// → device submits draft_ready → v1 draft. Devices went stale; AI reviewer never cleared queue.
+// No v2 consumer depends on these drafts (#1092 confirmed). Safe bulk-reject clears dedupeKey blocks.
+// Auth: Owner-only
+// Body: { olderThanDays?: number (default 7), status?: "awaiting_review" (default), producerVersion?: string, apply?: boolean (default FALSE) }
+//   apply=false → dry-run: returns distribution stats, NO changes
+//   apply=true  → soft-reject matching rows (status='rejected'), NO DELETE
+// DO NOT send apply=true without楊董 ACK on dry-run numbers.
+// =============================================================================
+app.post("/api/v1/admin/content-drafts/bulk-reject", async (c) => {
+  const { handleAdminContentDraftsBulkReject } = await import("./admin-content-drafts-bulk-reject.js");
+  return handleAdminContentDraftsBulkReject(c);
 });
 
 // =============================================================================
