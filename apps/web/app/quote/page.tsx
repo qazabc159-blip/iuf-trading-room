@@ -1,4 +1,5 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { DataStateBadge } from "@/components/DataStateBadge";
 import {
   getCompanies,
   getCompanyKBar,
@@ -286,7 +287,7 @@ function KgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote | null 
     return (
       <Panel code="QTE-REALTIME" title="即時報價" right="暫停">
         <div className="state-panel">
-          <span className="badge badge-red">報價不可用</span>
+          <DataStateBadge state="empty" label="報價不可用" testId="quote-realtime-empty-badge" />
           <span className="tg soft">KGI / TWSE 來源都沒有可顯示資料</span>
           <span className="state-reason">{reason}</span>
         </div>
