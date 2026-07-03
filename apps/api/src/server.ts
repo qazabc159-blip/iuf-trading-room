@@ -21201,6 +21201,11 @@ app.get("/api/v1/uta/accounts", async (c) => {
   if (!isDatabaseMode()) return c.json({ data: [] });
   const db = getDb();
   if (!db) return c.json({ data: [] });
+  // Unified order flow PR-2 (D6): guarantee a baseline paper + kgi row exists
+  // before listing, so the account picker never renders an empty list.
+  // Idempotent no-op after the first call per workspace.
+  const { ensureDefaultBrokerAccounts } = await import("./broker/broker-account-seed.js");
+  await ensureDefaultBrokerAccounts(session.workspace.id);
   const rows = dbExecRows<{
     id: string; adapter_key: string; display_name: string; account_ref: string;
     account_label: string; is_primary: boolean; is_active: boolean;
