@@ -41,6 +41,7 @@ const modes = [
 ];
 
 const secureRules = [
+  "憑證只存在您自己的電腦，永不上傳伺服器。",
   "瀏覽器頁面不收集 KGI SIM 帳號或密碼。",
   "KGI 憑證必須從安全環境讀取，例如 AWS SSM 或 Railway secret，不寫入 localStorage。",
   "Paper、KGI SIM、Real Order 必須在 UI 和事件紀錄中清楚分開。",
@@ -81,6 +82,26 @@ export default async function BrokerSettingsPage() {
             Real Order 在產品內維持鎖定。
           </p>
         </header>
+
+        <section
+          style={{
+            border: "1px solid rgba(52,211,153,0.24)",
+            background: "rgba(52,211,153,0.055)",
+            padding: 18,
+            marginBottom: 22,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399", flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <b style={{ color: "#34d399" }}>憑證只存在您自己的電腦，永不上傳伺服器</b>
+            <p style={{ margin: "6px 0 0", color: "var(--fg-2, #bcc4cf)", fontSize: 13, lineHeight: 1.7 }}>
+              此頁只管理券商帳號代號、本機連線狀態與一次性配對碼；不收集、不顯示也不保存券商帳密。
+            </p>
+          </div>
+        </section>
 
         <section
           style={{
