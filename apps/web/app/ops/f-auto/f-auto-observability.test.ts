@@ -6,6 +6,7 @@ const navPanelSource = readFileSync(new URL("./FAutoNavPanel.tsx", import.meta.u
 const connSource = readFileSync(new URL("./KgiConnectionLight.tsx", import.meta.url), "utf8");
 const apiSource = readFileSync(new URL("../../../lib/fauto-sim-api.ts", import.meta.url), "utf8");
 const sidebarSource = readFileSync(new URL("../../../components/Sidebar.tsx", import.meta.url), "utf8");
+const canonicalSurfacesSource = readFileSync(new URL("../../../lib/canonical-surfaces.ts", import.meta.url), "utf8");
 
 describe("F-AUTO S1 product observability", () => {
   it("uses the durable F-AUTO portfolio for positions and funds", () => {
@@ -40,9 +41,10 @@ describe("F-AUTO S1 product observability", () => {
   });
 
   it("gives owners a primary navigation entry", () => {
-    expect(sidebarSource).toContain("OWNER_NAV");
-    expect(sidebarSource).toContain('path: "/ops/f-auto"');
-    expect(sidebarSource).toContain("S1 持倉 / 損益");
+    expect(sidebarSource).toContain("OWNER_PRODUCT_SURFACES");
+    expect(sidebarSource).toContain("OWNER_PRODUCT_NAV");
+    expect(canonicalSurfacesSource).toContain('path: "/ops/f-auto"');
+    expect(canonicalSurfacesSource).toContain("S1 持倉 / 損益");
   });
 
   // ── Auto-refresh polling ───────────────────────────────────────────────────

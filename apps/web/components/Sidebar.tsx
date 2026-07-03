@@ -20,68 +20,52 @@ import {
 } from "lucide-react";
 
 import { apiGetMe, apiLogout } from "@/lib/auth-client";
+import {
+  CANONICAL_PRODUCT_SURFACES,
+  INTERNAL_ADMIN_SURFACES,
+  OWNER_PRODUCT_SURFACES,
+  type WebSurface,
+} from "@/lib/canonical-surfaces";
 
 type NavItem = {
   path: string;
   title: string;
   sub: string;
   Icon: LucideIcon;
-  activePaths: string[];
+  activePaths: readonly string[];
 };
 
-const NAV: NavItem[] = [
-  { path: "/", title: "戰情台", sub: "今日總覽", Icon: Target, activePaths: ["/"] },
-  { path: "/market-intel", title: "市場情報", sub: "AI 精選", Icon: Newspaper, activePaths: ["/market-intel"] },
-  {
-    path: "/ai-recommendations",
-    title: "AI 推薦",
-    sub: "推薦股票",
-    Icon: Sparkles,
-    activePaths: ["/ai-recommendations", "/ideas", "/runs", "/signals"],
-  },
-  {
-    path: "/portfolio",
-    title: "交易室",
-    sub: "Paper / SIM",
-    Icon: LineChart,
-    activePaths: ["/portfolio", "/plans"],
-  },
-  {
-    path: "/companies",
-    title: "公司 / 主題",
-    sub: "公司雷達",
-    Icon: Building2,
-    activePaths: ["/companies", "/themes"],
-  },
-  {
-    path: "/quant-strategies",
-    title: "量化策略",
-    sub: "SIM-only",
-    Icon: BarChart3,
-    activePaths: ["/quant-strategies"],
-  },
-];
+const SURFACE_ICONS: Record<string, LucideIcon> = {
+  "/": Target,
+  "/market-intel": Newspaper,
+  "/ai-recommendations": Sparkles,
+  "/portfolio": LineChart,
+  "/companies": Building2,
+  "/quant-strategies": BarChart3,
+  "/ops/f-auto": Radio,
+  "/admin/brain/llm": Brain,
+  "/admin/brain/decisions": Network,
+  "/admin/events": GitFork,
+  "/admin/portfolio/snapshots": LineChart,
+  "/admin/tools": Wrench,
+  "/admin/uta/accounts": Sparkles,
+  "/admin/strategies": BarChart3,
+  "/admin/team": Users,
+};
 
-const OWNER_NAV: NavItem[] = [
-  {
-    path: "/ops/f-auto",
-    title: "F-AUTO SIM",
-    sub: "S1 持倉 / 損益",
-    Icon: Radio,
-    activePaths: ["/ops/f-auto"],
-  },
-];
+function surfaceToNavItem(surface: WebSurface): NavItem {
+  return {
+    path: surface.path,
+    title: surface.title,
+    sub: surface.sub,
+    Icon: SURFACE_ICONS[surface.path] ?? Target,
+    activePaths: surface.activePaths,
+  };
+}
 
-const INTERNAL_NAV: NavItem[] = [
-  { path: "/admin/brain/llm", title: "Brain", sub: "AI 費用與模型", Icon: Brain, activePaths: ["/admin/brain/llm"] },
-  { path: "/admin/brain/decisions", title: "主腦決策", sub: "決策流", Icon: Network, activePaths: ["/admin/brain/decisions"] },
-  { path: "/admin/events", title: "EventLog", sub: "事件流", Icon: GitFork, activePaths: ["/admin/events"] },
-  { path: "/admin/portfolio/snapshots", title: "Portfolio", sub: "快照版本", Icon: LineChart, activePaths: ["/admin/portfolio/snapshots"] },
-  { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
-  { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
-  { path: "/admin/strategies", title: "Strategies", sub: "策略治理", Icon: BarChart3, activePaths: ["/admin/strategies"] },
-  { path: "/admin/team", title: "團隊與邀請", sub: "用戶 / 邀請管理", Icon: Users, activePaths: ["/admin/team"] },
-];
+const PRODUCT_NAV = CANONICAL_PRODUCT_SURFACES.map(surfaceToNavItem);
+const OWNER_PRODUCT_NAV = OWNER_PRODUCT_SURFACES.map(surfaceToNavItem);
+const INTERNAL_ADMIN_NAV = INTERNAL_ADMIN_SURFACES.map(surfaceToNavItem);
 
 function pathMatches(pathname: string, path: string) {
   if (path === "/") return pathname === "/";
@@ -124,8 +108,8 @@ export function Sidebar() {
   }
 
   const isOwner = userRole === "Owner";
-  const primaryNav = isOwner ? [...NAV, ...OWNER_NAV] : NAV;
-  const internalActive = INTERNAL_NAV.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
+  const primaryNav = isOwner ? [...PRODUCT_NAV, ...OWNER_PRODUCT_NAV] : PRODUCT_NAV;
+  const internalActive = INTERNAL_ADMIN_NAV.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
 
   return (
     <aside className="app-sidebar app-tactical-sidebar tac-sidebar">
@@ -173,7 +157,7 @@ export function Sidebar() {
             <small>Owner-only</small>
           </summary>
           <nav className="tac-nav tac-nav-admin" aria-label="內部後台導覽">
-            {INTERNAL_NAV.map((item) => {
+            {INTERNAL_ADMIN_NAV.map((item) => {
               const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
               const Icon = item.Icon;
               return (
