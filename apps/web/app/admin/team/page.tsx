@@ -731,19 +731,19 @@ export default function TeamPage() {
   const fetchRef = useRef(0);
   useEffect(() => {
     if (phase !== "loading") return;
-    const token = ++fetchRef.current;
+    const fetchSeq = ++fetchRef.current;
     let cancelled = false;
 
     async function load() {
       try {
         const [invRes, usrRes] = await Promise.all([apiListInvites(), apiListUsers()]);
-        if (cancelled || fetchRef.current !== token) return;
+        if (cancelled || fetchRef.current !== fetchSeq) return;
         if (!invRes.ok) throw new Error(invRes.error);
         if (!usrRes.ok) throw new Error(usrRes.error);
         setData({ invites: invRes.invites, users: usrRes.users });
         setPhase("ready");
       } catch (err) {
-        if (cancelled || fetchRef.current !== token) return;
+        if (cancelled || fetchRef.current !== fetchSeq) return;
         setErrMsg(err instanceof Error ? err.message : "資料載入失敗");
         setPhase("error");
       }
