@@ -503,16 +503,23 @@ export async function submitOrder(input: {
     }
   }
 
-  // Paper path.
-  const order = await placePaperOrder({
-    session: input.session,
-    order: input.order,
-    riskCheckId: riskCheck.id,
-    quoteGate
-  });
-  await markUnifiedOrderSubmitted(record.id, order.brokerOrderId ?? order.id, order);
-
-  return { order, riskCheck, blocked: false, quoteGate };
+  // Paper path. Mirrors the kgi branch's dual-write failure handling: if
+  // placePaperOrder throws, the pending-first unified_orders row must not be
+  // left stuck at "pending" forever — mark it rejected and rethrow so the
+  // caller still sees the original error (Pete review, PR #1164).
+  try {
+    const order = await placePaperOrder({
+      session: input.session,
+      order: input.order,
+      riskCheckId: riskCheck.id,
+      quoteGate
+    });
+    await markUnifiedOrderSubmitted(record.id, order.brokerOrderId ?? order.id, order);
+    return { order, riskCheck, blocked: false, quoteGate };
+  } catch (err) {
+    await markUnifiedOrderRejected(record.id, { error: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
 }
 
 // Dry-run: runs the same risk gate as submitOrder but skips broker.place.

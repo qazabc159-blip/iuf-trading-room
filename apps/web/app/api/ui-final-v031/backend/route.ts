@@ -32,12 +32,17 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/watchlist(?:\?|$)/,
   // Phase 2 broker selector: desk reads the live adapter catalog + this
   // workspace's connections to drive the broker strip / account picker.
-  /^\/api\/v1\/uta\/(?:adapters|accounts)(?:\?|$)/,
+  // "orders" added for unified-order-flow PR-2 (D3): desk order report panel
+  // reads unified_orders via GET /uta/orders.
+  /^\/api\/v1\/uta\/(?:adapters|accounts|orders)(?:\?|$)/,
 ];
 
 const POST_ALLOWLIST = [
   /^\/api\/v1\/paper\/(?:preview|submit)(?:\?|$)/,
   /^\/api\/v1\/kgi\/sim\/order(?:\?|$)/,
+  // Unified order flow (D1): single submit entry point for all channels
+  // (paper / kgi-sim / fubon placeholder). See S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md.
+  /^\/api\/v1\/trading\/orders(?:\?|$)/,
   // User watchlist add + remove (remove is POST, not DELETE — this proxy has no
   // DELETE allowlist, and add/remove through one verb keeps the surface minimal).
   /^\/api\/v1\/watchlist(?:\/remove)?(?:\?|$)/,

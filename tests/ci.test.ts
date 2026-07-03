@@ -17823,6 +17823,79 @@ test("UOF-D2-5: POST /trading/orders catches KgiChannelUnavailableError and retu
   assert.match(window, /,\s*409\s*\)/, "UOF-D2-5: route must respond with HTTP 409 for channel-unavailable errors");
 });
 
+// ── 統一下單流 PR-2 (D6, 2026-07-04) ─────────────────────────────────────────
+//
+// Account seeding + proxy allowlist. Design §4 PR-2:
+// reports/epic_trading_desk_20260702/S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md
+
+test("UOF-D6-1: ensureDefaultBrokerAccounts seeds both paper and kgi rows via an idempotent upsert", async () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/broker-account-seed.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(src, /export async function ensureDefaultBrokerAccounts/, "UOF-D6-1: must export ensureDefaultBrokerAccounts");
+  assert.match(src, /'paper'/, "UOF-D6-1: seed must include the paper adapter_key");
+  assert.match(src, /'kgi'/, "UOF-D6-1: seed must include the kgi adapter_key");
+  assert.match(
+    src,
+    /ON CONFLICT \(workspace_id, adapter_key, account_ref\) DO NOTHING/,
+    "UOF-D6-1: upsert must be idempotent — re-running must not duplicate or throw"
+  );
+});
+
+test("UOF-D6-2: ensureDefaultBrokerAccounts no-ops safely when DB is unavailable (memory mode)", async () => {
+  const { ensureDefaultBrokerAccounts } = await import("../apps/api/src/broker/broker-account-seed.ts");
+  // CI runs with isDatabaseMode()=false — this must resolve without throwing,
+  // matching the graceful-degrade convention used by every other uta/* handler.
+  await assert.doesNotReject(
+    () => ensureDefaultBrokerAccounts("00000000-0000-0000-0000-000000000001"),
+    "UOF-D6-2: must not throw when DB is unavailable"
+  );
+  // Missing workspaceId must also be a safe no-op.
+  await assert.doesNotReject(() => ensureDefaultBrokerAccounts(""));
+});
+
+test("UOF-D6-3: GET /uta/accounts calls ensureDefaultBrokerAccounts before listing (server.ts source)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeIdx = src.indexOf('app.get("/api/v1/uta/accounts"');
+  assert.ok(routeIdx >= 0, "UOF-D6-3: GET /uta/accounts route must exist");
+  const window = src.slice(routeIdx, routeIdx + 900);
+  assert.match(window, /ensureDefaultBrokerAccounts/, "UOF-D6-3: route must call ensureDefaultBrokerAccounts");
+  const seedCallIdx = window.indexOf("ensureDefaultBrokerAccounts(session.workspace.id)");
+  const selectIdx = window.indexOf("SELECT ba.id");
+  assert.ok(seedCallIdx >= 0, "UOF-D6-3: must call ensureDefaultBrokerAccounts(session.workspace.id)");
+  assert.ok(selectIdx >= 0, "UOF-D6-3: SELECT query must be present");
+  assert.ok(seedCallIdx < selectIdx, "UOF-D6-3: seed must run BEFORE the SELECT so a fresh workspace never sees an empty list");
+});
+
+test("UOF-D6-5: paper channel dual-write failure is caught and marks the pending unified_orders row rejected, then rethrows (trading-service.ts source, Pete review PR #1164)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
+    "utf-8"
+  );
+  const paperIdx = src.indexOf("// Paper path.");
+  assert.ok(paperIdx >= 0, "UOF-D6-5: paper path comment must exist");
+  const window = src.slice(paperIdx, paperIdx + 900);
+
+  const tryIdx = window.indexOf("try {");
+  const placeIdx = window.indexOf("await placePaperOrder(");
+  const catchIdx = window.indexOf("} catch (err)");
+  const rejectIdx = window.indexOf("await markUnifiedOrderRejected(record.id", catchIdx);
+  const rethrowIdx = window.indexOf("throw err;", catchIdx);
+
+  assert.ok(tryIdx >= 0 && tryIdx < placeIdx, "UOF-D6-5: placePaperOrder must be inside a try block");
+  assert.ok(catchIdx > placeIdx, "UOF-D6-5: a catch block must follow the placePaperOrder call");
+  assert.ok(
+    rejectIdx > catchIdx,
+    "UOF-D6-5: catch must call markUnifiedOrderRejected(record.id, ...) — mirrors the kgi branch, closes the " +
+    "'pending forever' gap when placePaperOrder throws"
+  );
+  assert.ok(rethrowIdx > catchIdx, "UOF-D6-5: catch must rethrow so the caller still sees the original error");
+});
+
 // ── OPENALICE-M1 tests ─────────────────────────────────────────────────────────
 
 test("OPENALICE-M1-1: given event trigger (R01 revenue surge), action_type resolves to deep_analyze", async () => {
