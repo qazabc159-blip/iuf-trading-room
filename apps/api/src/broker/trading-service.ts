@@ -1,6 +1,8 @@
 import {
   type AppSession,
   type BrokerKind,
+  type ExecutionQuoteContext,
+  type KgiChannelUnavailableReason,
   type Order,
   type OrderCancelInput,
   type OrderCreateInput,
@@ -24,34 +26,205 @@ import {
   placePaperOrder
 } from "./paper-broker.js";
 import { resolveBrokerKindForAccount } from "./broker-account-resolver.js";
+import { resolveKgiEnv } from "./kgi-sim-env.js";
+import type { UnifiedOrderInput } from "./broker-adapter.js";
+import type { UnifiedOrderRecord } from "./unified-order-store.js";
 
 // Re-export so existing callers (routes, tests) keep the stable import path.
 export type { SubmitOrderResult };
 
 // ---------------------------------------------------------------------------
-// Hard guard — KGI write-side permanently locked for manual orders (Phase 3)
+// KGI SIM channel guard (統一下單流 D2, 2026-07-04)
 //
-// This constant is the canonical enforcement point. When Phase 4 (real order)
-// is approved, ONLY this function may be updated after Elva sign-off.
+// Replaces the Phase 3 unconditional write-lock guard function. The KGI
+// write path is now open ONLY when KGI_ENV=sim; every other case throws
+// KgiChannelUnavailableError, which the /trading/orders route turns into a
+// structured 409 { error: "kgi_channel_unavailable", reason }. Gateway-side
+// session verification (login/account-set) is NOT re-implemented here — that
+// stays the gateway's job (L4 Gate2 in app.py, W6-audited, untouched).
 // ---------------------------------------------------------------------------
-const KGI_MANUAL_ORDER_WRITE_LOCKED = true;
+
+export class KgiChannelUnavailableError extends Error {
+  readonly reason: KgiChannelUnavailableReason;
+  constructor(reason: KgiChannelUnavailableReason, message?: string) {
+    super(message ?? `KGI SIM channel unavailable: ${reason}`);
+    this.name = "KgiChannelUnavailableError";
+    this.reason = reason;
+  }
+}
 
 /**
- * assertKgiSimOnly — throws if a KGI manual order would reach the real write path.
+ * assertKgiSimChannel — pre-flight checks ported from the standalone
+ * POST /api/v1/kgi/sim/order route (server.ts), minus the Owner-role gate
+ * (the unified pipeline already enforces account ownership via
+ * resolveBrokerKindForAccount's workspace-scoped lookup).
  *
- * W6 No-Real-Order guard: KGI accounts on the manual trading path must NEVER
- * submit a live order. The KGI adapter's submitOrder() calls the real gateway
- * /order/create endpoint; we intercept here before the adapter is reached.
- *
- * To unlock: set KGI_MANUAL_ORDER_WRITE_LOCKED = false AND obtain Elva sign-off.
+ *   ① resolveKgiEnv() === "sim" (kgi-sim-env.ts — existing function, not
+ *      re-implemented)
+ *   ② order-shape checks the old route's body schema enforced implicitly
+ *      (market/limit only; limit requires a price)
+ *   ③ gateway-side sim session verification is intentionally NOT done here
  */
-function assertKgiSimOnly(context: string): void {
-  if (KGI_MANUAL_ORDER_WRITE_LOCKED) {
-    throw new Error(
-      `[trading-service] KGI manual order write is locked (Phase 3 SIM-safe). ` +
-      `Context: ${context}. Real KGI order submission requires Phase 4 unlock.`
+export function assertKgiSimChannel(order: OrderCreateInput): void {
+  const env = resolveKgiEnv();
+  if (env !== "sim") {
+    throw new KgiChannelUnavailableError(
+      "not_sim_env",
+      `KGI_ENV=${env}. Unified order flow only submits to KGI when KGI_ENV=sim.`
     );
   }
+  if (order.type === "stop" || order.type === "stop_limit") {
+    throw new KgiChannelUnavailableError(
+      "unsupported_order_type",
+      `KGI SIM channel does not support order type "${order.type}".`
+    );
+  }
+  if (order.type === "limit" && (order.price == null || order.price <= 0)) {
+    throw new KgiChannelUnavailableError(
+      "missing_limit_price",
+      "限價單需要填入有效的委託價格。"
+    );
+  }
+}
+
+/** Maps a KgiGatewayClient error (thrown by KgiBrokerAdapter.submitOrder) to a reason code. */
+async function mapKgiSubmitError(err: unknown): Promise<KgiChannelUnavailableError> {
+  const {
+    KgiGatewayAuthError,
+    KgiGatewayUnreachableError,
+    KgiGatewayNotEnabledError,
+    KgiGatewayValidationError,
+    KgiGatewayUpstreamError
+  } = await import("./kgi-gateway-client.js");
+
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof KgiGatewayUnreachableError) {
+    return new KgiChannelUnavailableError("gateway_unreachable", message);
+  }
+  if (err instanceof KgiGatewayAuthError) {
+    return new KgiChannelUnavailableError("gateway_auth_error", message);
+  }
+  if (err instanceof KgiGatewayNotEnabledError) {
+    if (message.includes("[NOT_LOGGED_IN]")) {
+      return new KgiChannelUnavailableError("gateway_not_logged_in", message);
+    }
+    if (message.includes("[LIVE_ORDER_BLOCKED]")) {
+      return new KgiChannelUnavailableError("live_order_blocked", message);
+    }
+    return new KgiChannelUnavailableError("order_not_enabled", message);
+  }
+  if (err instanceof KgiGatewayValidationError) {
+    return new KgiChannelUnavailableError("order_validation_rejected", message);
+  }
+  if (err instanceof KgiGatewayUpstreamError) {
+    return new KgiChannelUnavailableError("order_upstream_error", message);
+  }
+  return new KgiChannelUnavailableError("unknown_error", message);
+}
+
+// ---------------------------------------------------------------------------
+// unified_orders dual-write (統一下單流 D3, 2026-07-04)
+//
+// Every submitted order (paper AND kgi) gets one unified_orders row, written
+// pending-first — BEFORE the channel call — so there is never a state where
+// an order reached the broker but has no audit row. If the update-after-
+// submit call fails, the row is left "pending" on purpose (never auto-
+// resubmitted); that is a reconciliation-sweep concern, not this function's.
+// ---------------------------------------------------------------------------
+
+function toUnifiedOrderInput(order: OrderCreateInput): UnifiedOrderInput {
+  return {
+    symbol: order.symbol,
+    action: order.side === "buy" ? "Buy" : "Sell",
+    qty: order.quantity,
+    quantityUnit: order.quantity_unit,
+    priceType: order.type === "market" ? "Market" : "Limit",
+    limitPrice: order.price ?? undefined,
+    orderCond: "Cash",
+    oddLot: order.quantity_unit === "SHARE",
+    idempotencyKey: order.clientOrderId
+  };
+}
+
+async function recordUnifiedOrder(params: {
+  workspaceId: string;
+  adapterKey: "kgi" | "paper";
+  input: UnifiedOrderInput;
+  actorId: string | null;
+}): Promise<UnifiedOrderRecord> {
+  const { createUnifiedOrder } = await import("./unified-order-store.js");
+  // Insert failure propagates to the caller — the whole submit is aborted,
+  // no channel call is made. This is the "insert 失敗=整筆中止不送單" invariant.
+  return createUnifiedOrder(params.workspaceId, params.adapterKey, params.input, params.actorId);
+}
+
+async function markUnifiedOrderSubmitted(
+  recordId: string,
+  externalOrderId: string,
+  response: unknown
+): Promise<void> {
+  try {
+    const { updateUnifiedOrderSubmitted } = await import("./unified-order-store.js");
+    await updateUnifiedOrderSubmitted(recordId, externalOrderId, response);
+  } catch (err) {
+    console.error(
+      `[trading-service] unified_orders update-to-submitted failed for ${recordId}; ` +
+      `row remains pending — requires reconciliation sweep.`,
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+async function markUnifiedOrderRejected(recordId: string, response: unknown): Promise<void> {
+  try {
+    const { updateUnifiedOrderRejected } = await import("./unified-order-store.js");
+    await updateUnifiedOrderRejected(recordId, response);
+  } catch (err) {
+    console.error(
+      `[trading-service] unified_orders update-to-rejected failed for ${recordId}; ` +
+      `row remains pending — requires reconciliation sweep.`,
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+/** Builds the SubmitOrderResult.order for the KGI channel from the unified_orders record. */
+function unifiedRecordToOrder(params: {
+  record: UnifiedOrderRecord;
+  order: OrderCreateInput;
+  riskCheckId: string;
+  quoteContext: ExecutionQuoteContext | null;
+  externalOrderId: string;
+}): Order {
+  const now = new Date().toISOString();
+  return {
+    id: params.record.id,
+    clientOrderId: params.order.clientOrderId ?? params.record.id,
+    brokerOrderId: params.externalOrderId,
+    accountId: params.order.accountId,
+    broker: "kgi",
+    symbol: params.order.symbol,
+    side: params.order.side,
+    type: params.order.type,
+    timeInForce: params.order.timeInForce,
+    quantity: params.order.quantity,
+    filledQuantity: 0,
+    price: params.order.price,
+    stopPrice: params.order.stopPrice,
+    avgFillPrice: null,
+    status: "submitted",
+    reason: null,
+    tradePlanId: params.order.tradePlanId,
+    strategyId: params.order.strategyId,
+    riskCheckId: params.riskCheckId,
+    submittedAt: now,
+    acknowledgedAt: null,
+    filledAt: null,
+    canceledAt: null,
+    quoteContext: params.quoteContext,
+    createdAt: params.record.createdAt,
+    updatedAt: now
+  };
 }
 
 // Build the account context the risk engine reads from.
@@ -119,7 +292,18 @@ async function buildAccountContext(input: {
       grossExposurePct: (grossExposure / equity) * 100,
       symbolPositionPct: symbolPosPct,
       themeExposurePct: symbolPosPct,
-      brokerConnected: false // degraded — KGI balance not available via gateway
+      // brokerConnected feeds risk-engine's non-overridable "broker_disconnected"
+      // guard (統一下單流 D2, 2026-07-04). Before D2, this value was moot — the
+      // Phase-3 write-lock guard hard-blocked every kgi submit before
+      // buildAccountContext could gate anything. Now that the SIM channel can
+      // actually submit,
+      // "connected" must mean "the write channel resolveKgiEnv() will actually
+      // route through" — mirrors the same check assertKgiSimChannel() runs, so
+      // the risk engine and the channel guard never disagree. Balance itself is
+      // still a paper-balance proxy (KGI SIM has no balance endpoint); that is
+      // a separate, orthogonal degradation already reflected by equity being 1
+      // when balance.equity is unset.
+      brokerConnected: resolveKgiEnv() === "sim"
     };
   }
 
@@ -239,18 +423,26 @@ export async function submitOrder(input: {
   session: AppSession;
   repo: TradingRoomRepository;
   order: OrderCreateInput;
+  /**
+   * TEST ONLY — bypasses resolveBrokerKindForAccount's DB lookup.
+   * CI (`node --test`) runs in memory persistence mode with no Postgres
+   * service, so resolveBrokerKindForAccount() always returns "paper"
+   * (see broker-account-resolver.ts's isDatabaseMode() guard). This override
+   * is the only way to exercise the "kgi" branch end-to-end in this
+   * environment. Named _test-prefixed to match the codebase's existing
+   * test-hook convention (_resetKgiSimState, _resetUnifiedOrderStoreForTests,
+   * _resetDailySmokeHistory). No HTTP route reads or forwards this field.
+   */
+  _testBrokerKindOverride?: BrokerKind;
 }): Promise<SubmitOrderResult> {
   const workspaceId = (input.session.workspace as { id?: string } | undefined)?.id ?? null;
-  const brokerKind = await resolveBrokerKind(input.order, workspaceId);
+  const brokerKind = input._testBrokerKindOverride ?? await resolveBrokerKind(input.order, workspaceId);
 
-  // W6 No-Real-Order hard guard — KGI manual order write is locked in Phase 3.
-  // assertKgiSimOnly throws if the write-locked flag is active, preventing
-  // any KGI submit from reaching the broker adapter.
+  // KGI SIM channel guard (統一下單流 D2) — throws KgiChannelUnavailableError
+  // when KGI_ENV != sim or the order shape is unsupported by the SIM channel.
+  // Runs before risk/gate so an unavailable channel fails fast.
   if (brokerKind === "kgi") {
-    assertKgiSimOnly("submitOrder");
-    // assertKgiSimOnly throws unconditionally while KGI_MANUAL_ORDER_WRITE_LOCKED=true.
-    // The line below is unreachable in Phase 3 but left for Phase 4 clarity.
-    return { order: null, riskCheck: null as unknown as RiskCheckResult, blocked: true, quoteGate: null };
+    assertKgiSimChannel(input.order);
   }
 
   const riskCheck = await runRiskCheck({ ...input, commit: true, brokerKind });
@@ -272,29 +464,71 @@ export async function submitOrder(input: {
     return { order: null, riskCheck, blocked: true, quoteGate };
   }
 
-  // Paper path — the only write path allowed in Phase 3.
+  // D3 pending-first dual-write — unified_orders row exists BEFORE the
+  // channel call, for both paper and kgi. Insert failure aborts the submit;
+  // no channel call happens without an audit row first.
+  if (!workspaceId) {
+    throw new Error(
+      "[trading-service] workspace not resolved — cannot record unified order (pending-first invariant)"
+    );
+  }
+  const actorId = (input.session.user as { id?: string } | undefined)?.id ?? null;
+  const unifiedInput = toUnifiedOrderInput(input.order);
+  const record = await recordUnifiedOrder({
+    workspaceId,
+    adapterKey: brokerKind === "kgi" ? "kgi" : "paper",
+    input: unifiedInput,
+    actorId
+  });
+
+  if (brokerKind === "kgi") {
+    try {
+      const { KgiBrokerAdapter } = await import("./kgi-broker-adapter.js");
+      const adapter = new KgiBrokerAdapter({
+        gatewayBaseUrl: process.env["KGI_GATEWAY_URL"] ?? "http://127.0.0.1:8787"
+      });
+      const submitResult = await adapter.submitOrder(unifiedInput);
+      await markUnifiedOrderSubmitted(record.id, submitResult.externalOrderId, submitResult);
+      const order = unifiedRecordToOrder({
+        record,
+        order: input.order,
+        riskCheckId: riskCheck.id,
+        quoteContext: quoteGate.quoteContext,
+        externalOrderId: submitResult.externalOrderId
+      });
+      return { order, riskCheck, blocked: false, quoteGate };
+    } catch (err) {
+      await markUnifiedOrderRejected(record.id, { error: err instanceof Error ? err.message : String(err) });
+      throw await mapKgiSubmitError(err);
+    }
+  }
+
+  // Paper path.
   const order = await placePaperOrder({
     session: input.session,
     order: input.order,
     riskCheckId: riskCheck.id,
     quoteGate
   });
+  await markUnifiedOrderSubmitted(record.id, order.brokerOrderId ?? order.id, order);
 
   return { order, riskCheck, blocked: false, quoteGate };
 }
 
 // Dry-run: runs the same risk gate as submitOrder but skips broker.place.
 // Uses commit:false so the duplicate-intent guard doesn't see the preview.
-// For KGI accounts in Phase 3: runs risk+gate pipeline (read-only) but
-// returns blocked=true with reason "kgi_manual_write_locked" instead of
-// placing any order. This lets the UI display a meaningful diagnostic.
+// For KGI accounts: runs risk+gate pipeline (read-only) and additionally
+// runs the same assertKgiSimChannel pre-flight submitOrder would run, so
+// preview and submit never disagree about channel availability. This never
+// calls the broker adapter — no side effects, no gateway session touched.
 export async function previewOrder(input: {
   session: AppSession;
   repo: TradingRoomRepository;
   order: OrderCreateInput;
+  _testBrokerKindOverride?: BrokerKind; // TEST ONLY — see submitOrder() jsdoc.
 }): Promise<SubmitOrderResult> {
   const workspaceId = (input.session.workspace as { id?: string } | undefined)?.id ?? null;
-  const brokerKind = await resolveBrokerKind(input.order, workspaceId);
+  const brokerKind = input._testBrokerKindOverride ?? await resolveBrokerKind(input.order, workspaceId);
 
   const riskCheck = await runRiskCheck({ ...input, commit: false, brokerKind });
   // Preview always runs the gate so the UI can see exactly why a submit
@@ -306,20 +540,23 @@ export async function previewOrder(input: {
     mode: modeForBroker(brokerKind)
   });
 
-  // KGI accounts: blocked in Phase 3 — real order write permanently locked.
-  // Return blocked:true so the UI can display "KGI order not yet available".
   if (brokerKind === "kgi") {
-    return {
-      order: null,
-      riskCheck,
-      blocked: true,
-      quoteGate: {
-        ...quoteGate,
+    try {
+      assertKgiSimChannel(input.order);
+    } catch (err) {
+      const reason = err instanceof KgiChannelUnavailableError ? err.reason : "unknown_error";
+      return {
+        order: null,
+        riskCheck,
         blocked: true,
-        decision: "block",
-        reasons: ["kgi_manual_write_locked", ...quoteGate.reasons]
-      }
-    };
+        quoteGate: {
+          ...quoteGate,
+          blocked: true,
+          decision: "block",
+          reasons: [`kgi_channel_unavailable:${reason}`, ...quoteGate.reasons]
+        }
+      };
+    }
   }
 
   const blocked = riskCheck.decision === "block" || quoteGate.blocked;

@@ -189,13 +189,15 @@ export const orderCreateInputSchema = z.object({
   timeInForce: timeInForceSchema.default("rod"),
   quantity: z.number().positive(),
   // quantity_unit: paper-layer odd-lot support.
-  // SHARE = raw share count; default — `quantity` is interpreted as shares.
-  //         Existing callers and deriveQuantity() emit shares, so SHARE is the
-  //         backward-compatible default.
-  // LOT   = board lot (1 lot = 1000 shares); explicit opt-in for board-lot orders.
+  // SHARE = raw share count (odd-lot trading).
+  // LOT   = board lot (1 lot = 1000 shares).
+  // REQUIRED, no default — 統一下單流 D4 (2026-07-04): SHARE vs LOT is a 1000x
+  // notional difference, so every caller must state it explicitly. This schema
+  // had zero live HTTP callers when the default was removed (design doc
+  // reports/epic_trading_desk_20260702/S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md §2 D4).
   // Broker adapters (KGI) must NOT use this field for live orders — they handle
   // lot sizing via their own contract rules.
-  quantity_unit: z.enum(["SHARE", "LOT"]).optional().default("SHARE"),
+  quantity_unit: z.enum(["SHARE", "LOT"]),
   price: z.number().positive().nullable().default(null),
   stopPrice: z.number().positive().nullable().default(null),
   tradePlanId: z.string().uuid().nullable().default(null),
@@ -206,6 +208,26 @@ export const orderCreateInputSchema = z.object({
   overrideGuards: z.array(z.string()).default([]),
   overrideReason: z.string().default("")
 });
+
+// KGI SIM channel failure reasons — 統一下單流 D2/D5 (2026-07-04).
+// Returned as { error: "kgi_channel_unavailable", reason } with HTTP 409 by
+// POST /trading/orders. Client vocab tables (PR-3) map each code to a
+// product-grade Chinese message; the raw reason string must never render
+// directly in the UI.
+export const kgiChannelUnavailableReasonSchema = z.enum([
+  "not_sim_env",
+  "unsupported_order_type",
+  "missing_limit_price",
+  "gateway_unreachable",
+  "gateway_auth_error",
+  "gateway_not_logged_in",
+  "live_order_blocked",
+  "order_not_enabled",
+  "order_validation_rejected",
+  "order_upstream_error",
+  "unknown_error"
+]);
+export type KgiChannelUnavailableReason = z.infer<typeof kgiChannelUnavailableReasonSchema>;
 
 export const orderCancelInputSchema = z.object({
   orderId: z.string(),

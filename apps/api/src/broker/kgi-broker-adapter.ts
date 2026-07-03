@@ -7,6 +7,7 @@
 
 import type { KgiGatewayClientConfig } from "./kgi-gateway-client.js";
 import { KgiBroker } from "./kgi-broker.js";
+import { extractKgiTradeId } from "./kgi-order-reconciliation.js";
 import type {
   BrokerAdapter,
   BrokerCapabilities,
@@ -69,10 +70,13 @@ export class KgiBrokerAdapter implements BrokerAdapter {
       oddLot: input.oddLot ?? false,
     });
 
+    // Gateway OrderCreateResponse carries { ok, sim_only, status, kgi_response_repr }.
+    // trade_id is not a stable top-level field — extractKgiTradeId() handles the
+    // direct-key case (trade_id/order_id/...) and the kgi_response_repr regex
+    // fallback ("OrderResponse(nid=... )"), matching the extraction already
+    // proven correct in kgi-sim-env.ts's runSimTradeSmoke().
     const rawRecord = result as Record<string, unknown>;
-    const externalOrderId = typeof rawRecord["order_id"] === "string"
-      ? rawRecord["order_id"]
-      : "kgi-" + Date.now();
+    const externalOrderId = extractKgiTradeId(rawRecord) ?? "kgi-" + Date.now();
 
     return { externalOrderId, status: "submitted" };
   }

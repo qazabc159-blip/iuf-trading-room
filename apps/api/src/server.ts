@@ -197,7 +197,7 @@ import {
   listPaperPositions,
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
-import { cancelOrder, previewOrder, submitOrder } from "./broker/trading-service.js";
+import { cancelOrder, KgiChannelUnavailableError, previewOrder, submitOrder } from "./broker/trading-service.js";
 import { listExecutionEvents } from "./broker/execution-events-store.js";
 import {
   getCompanyGraphSearchResults,
@@ -1503,12 +1503,22 @@ app.get("/api/v1/trading/orders", async (c) => {
 
 app.post("/api/v1/trading/orders", async (c) => {
   const payload = orderCreateInputSchema.parse(await c.req.json());
-  const result = await submitOrder({
-    session: c.get("session"),
-    repo: c.get("repo"),
-    order: payload
-  });
-  return c.json({ data: result }, result.blocked ? 422 : 201);
+  try {
+    const result = await submitOrder({
+      session: c.get("session"),
+      repo: c.get("repo"),
+      order: payload
+    });
+    return c.json({ data: result }, result.blocked ? 422 : 201);
+  } catch (err) {
+    // 統一下單流 D2: KGI SIM channel unavailable (env / order-shape pre-check,
+    // or the gateway call itself failed). Structured 409 per design §2 D2 —
+    // client maps `reason` to a product-grade message, never renders raw text.
+    if (err instanceof KgiChannelUnavailableError) {
+      return c.json({ error: "kgi_channel_unavailable", reason: err.reason }, 409);
+    }
+    throw err;
+  }
 });
 
 app.post("/api/v1/trading/orders/preview", async (c) => {
@@ -21446,6 +21456,11 @@ app.post("/api/v1/uta/orders", async (c) => {
     symbol: z.string().min(1),
     action: z.enum(["Buy", "Sell"]),
     qty: z.number().int().positive(),
+    // REQUIRED, no default — 統一下單流 D4 (2026-07-04): /uta/orders previously
+    // had no quantity_unit field at all (relied on oddLot boolean only, which
+    // doesn't disambiguate LOT-vs-SHARE for board-lot orders). Added explicitly
+    // per design doc §2 D4 "/uta/orders 補欄位".
+    quantityUnit: z.enum(["SHARE", "LOT"]),
     priceType: z.enum(["Market", "Limit", "LimitUp", "LimitDown"]),
     limitPrice: z.number().positive().optional(),
     orderCond: z.enum(["Cash", "Margin", "ShortSelling", "LendSelling"]).optional(),
@@ -21467,6 +21482,7 @@ app.post("/api/v1/uta/orders", async (c) => {
     symbol: body.symbol,
     action: body.action,
     qty: body.qty,
+    quantityUnit: body.quantityUnit,
     priceType: body.priceType,
     limitPrice: body.limitPrice,
     orderCond: body.orderCond,

@@ -985,6 +985,7 @@ async function main() {
           type: "limit",
           timeInForce: "rod",
           quantity: 10,
+          quantity_unit: "SHARE",
           price: 123.45,
           overrideGuards: [],
           overrideReason: ""
@@ -1023,6 +1024,7 @@ async function main() {
           type: "limit",
           timeInForce: "rod",
           quantity: 10,
+          quantity_unit: "SHARE",
           price: 123.45,
           overrideGuards: [],
           overrideReason: ""
