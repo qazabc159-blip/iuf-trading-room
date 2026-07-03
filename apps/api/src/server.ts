@@ -18403,7 +18403,8 @@ function startSchedulers(workspaceSlug: string): void {
         try {
           const { getTpexMainboardCloseRows: _getTpex } = await import("./data-sources/twse-openapi-client.js");
           const db4 = isDatabaseMode() ? getDb() : null;
-          if (db4 && eodTradeDate) {
+          const tpexTradeDate = tradingDateIso ? tradingDateIso.slice(0, 10) : "";
+          if (db4 && /^\d{4}-\d{2}-\d{2}$/.test(tpexTradeDate)) {
             const tpexRows = await _getTpex();
             if (tpexRows.length > 0) {
               const { upsertLastCloses: _upsertTpex } = await import("./quote-last-close-store.js");
@@ -18412,12 +18413,12 @@ function startSchedulers(workspaceSlug: string): void {
                   const ticker = r.SecuritiesCompanyCode?.trim();
                   const close = parseFloat(r.Close ?? "");
                   if (!ticker || !/^\d{4,6}$/.test(ticker) || !isFinite(close) || close <= 0) return null;
-                  return { symbol: ticker, closePrice: close, tradeDate: eodTradeDate, source: "tpex_eod" as const };
+                  return { symbol: ticker, closePrice: close, tradeDate: tpexTradeDate, source: "tpex_eod" as const };
                 })
                 .filter((e): e is NonNullable<typeof e> => e !== null);
               if (tpexEntries.length > 0) {
                 await _upsertTpex(db4, tpexEntries);
-                console.log(`[twse-eod-cron] persisted ${tpexEntries.length} TPEX last-good closes to quote_last_close (trade_date=${eodTradeDate})`);
+                console.log(`[twse-eod-cron] persisted ${tpexEntries.length} TPEX last-good closes to quote_last_close (trade_date=${tpexTradeDate})`);
               }
             }
           }
