@@ -132,6 +132,76 @@ function removeEntry<T>(prev: Record<string, T>, id: string) {
   return next;
 }
 
+// ── C-4 信任卡：狀態白話對照，跟 gatewayBadge() 的四個 label 一一對應 ──────────
+const GATEWAY_STATE_PLAIN_LANGUAGE: Array<{ label: string; plain: string }> = [
+  { label: "未配對", plain: "還沒裝 — 你的電腦上還沒開始設定本機連線程式。" },
+  { label: "等待配對", plain: "裝了還沒認親 — 本機連線程式已啟動，但還沒跟你的帳號對上號。" },
+  { label: "已連線", plain: "一切正常 — 你的電腦跟這裡互相認得，心跳持續回報。" },
+  { label: "等待連線", plain: "失聯 — 你電腦上的本機連線程式停了，或網路斷了，暫時收不到心跳。" },
+];
+
+const RECOVERY_STEPS = [
+  "重新啟動你電腦上的本機連線程式",
+  "回到這頁重新產生一次配對碼，重新貼一次",
+  "還是連不上，找我們，不要自己改設定檔",
+];
+
+/**
+ * C-4 — 「你的憑證在哪裡」固定說明卡。
+ * 對應 DAILY_DECISION_FLOW_DESIGN_v1.md §6 四點：
+ *   ① 憑證只存你自己電腦，永不上傳
+ *   ② 本機連線程式只回報「還活著」的心跳，不經手憑證
+ *   ③ 四態白話對照
+ *   ④ 失敗自救三步
+ */
+export function CredentialTrustCard() {
+  return (
+    <section
+      style={{
+        border: "1px solid rgba(52,211,153,0.22)",
+        background: "linear-gradient(180deg, rgba(18,18,18,0.96), rgba(8,8,8,0.98))",
+        padding: 20,
+        marginBottom: 22,
+        display: "grid",
+        gap: 16,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "#34d399" }} />
+        <h2 style={{ margin: 0, fontSize: 16 }}>你的憑證在哪裡</h2>
+      </div>
+
+      <div style={{ display: "grid", gap: 8, color: "var(--fg-2, #bcc4cf)", fontSize: 13, lineHeight: 1.7 }}>
+        <p style={{ margin: 0 }}>憑證只存在你自己的電腦，永不上傳。這個網站不會看到、也不會儲存你的券商帳號密碼。</p>
+        <p style={{ margin: 0 }}>
+          本機連線程式是安裝在你自己電腦上的一個小程式，負責幫你跟券商連線；我們這邊只收得到「它還活著」的心跳，收不到任何帳號或密碼。
+        </p>
+      </div>
+
+      <div>
+        <h3 style={{ margin: "0 0 10px", fontSize: 13, color: "var(--fg-1, #ddd)" }}>連線狀態，白話說</h3>
+        <div style={{ display: "grid", gap: 8 }}>
+          {GATEWAY_STATE_PLAIN_LANGUAGE.map((entry) => (
+            <div key={entry.label} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+              <b style={{ minWidth: 68, color: "var(--accent, #c8943f)", fontSize: 12 }}>{entry.label}</b>
+              <span style={{ color: "var(--fg-3, #8a93a3)", fontSize: 12, lineHeight: 1.6 }}>{entry.plain}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 style={{ margin: "0 0 10px", fontSize: 13, color: "var(--fg-1, #ddd)" }}>連不上時，先做這三步</h3>
+        <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, color: "var(--fg-2, #bcc4cf)", fontSize: 12, lineHeight: 1.6 }}>
+          {RECOVERY_STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 const inputStyle: CSSProperties = {
   background: "rgba(8,8,8,0.6)",
   border: "1px solid rgba(200,148,63,0.28)",
@@ -275,7 +345,9 @@ export function BrokerConnections() {
   };
 
   return (
-    <section
+    <>
+      <CredentialTrustCard />
+      <section
       style={{
         border: "1px solid rgba(200,148,63,0.22)",
         background: "linear-gradient(180deg, rgba(18,18,18,0.96), rgba(8,8,8,0.98))",
@@ -554,6 +626,7 @@ export function BrokerConnections() {
       </div>
 
       {err ? <p style={{ margin: "12px 0 0", color: "#f87171", fontSize: 13 }}>{err}</p> : null}
-    </section>
+      </section>
+    </>
   );
 }

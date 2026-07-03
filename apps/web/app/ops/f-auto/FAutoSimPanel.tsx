@@ -16,6 +16,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isKgiTradingHours } from "@/lib/kgi-trading-hours";
+import { DataStateBadge } from "@/components/DataStateBadge";
 import {
   getFAutoPortfolio,
   getFAutoNav,
@@ -1137,9 +1138,11 @@ export function FAutoSimPanel() {
           {lastRefreshedAt ? fmtTime(lastRefreshedAt) : "頁面載入時"}
         </span>
         {dataAsOf && (
-          <span className="_fauto-refresh-ts _fauto-refresh-as-of">
-            資料截至：{fmtDatetime(dataAsOf)}
-          </span>
+          <DataStateBadge
+            state="close"
+            label={`資料截至：${fmtDatetime(dataAsOf)}`}
+            testId="fauto-data-as-of-badge"
+          />
         )}
         <span className="_fauto-refresh-interval">{refreshIntervalLabel}</span>
         <button
@@ -1754,9 +1757,6 @@ const FAUTO_CSS = `
   font-family: var(--mono, monospace);
   color: rgba(145,160,181,0.55);
   white-space: nowrap;
-}
-._fauto-refresh-as-of {
-  color: rgba(200,148,63,0.60);
 }
 ._fauto-refresh-interval {
   font-size: 10px;
