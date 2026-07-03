@@ -112,7 +112,14 @@ import {
   listPaperOrders,
   placePaperOrder
 } from "../apps/api/src/broker/paper-broker.ts";
-import { previewOrder, submitOrder } from "../apps/api/src/broker/trading-service.ts";
+import {
+  assertKgiSimChannel,
+  KgiChannelUnavailableError,
+  previewOrder,
+  submitOrder
+} from "../apps/api/src/broker/trading-service.ts";
+import { orderCreateInputSchema, kgiChannelUnavailableReasonSchema } from "../packages/contracts/src/broker.ts";
+import { quantityUnitSchema } from "../packages/contracts/src/paper.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
 import {
   buildEventHistoryView,
@@ -17429,39 +17436,391 @@ test("BROKER-ROUTING-3: resolveBrokerKind in trading-service.ts calls resolveBro
   );
 });
 
-test("BROKER-ROUTING-4: KGI manual order write is hard-guarded — assertKgiSimOnly throws + submitOrder kgi path blocked", async () => {
+test("BROKER-ROUTING-4: KGI SIM channel is guarded by assertKgiSimChannel — env-gated, not the old Phase-3 unconditional lock", async () => {
   const src = readFileSync(
     new URL("../apps/api/src/broker/trading-service.ts", import.meta.url),
     "utf-8"
   );
-  // Must have the lock constant
   assert.ok(
-    src.includes("KGI_MANUAL_ORDER_WRITE_LOCKED"),
-    "BROKER-ROUTING-4: must declare KGI_MANUAL_ORDER_WRITE_LOCKED guard constant"
+    src.includes("export function assertKgiSimChannel"),
+    "BROKER-ROUTING-4: must define assertKgiSimChannel guard function"
   );
-  // Must have assertKgiSimOnly function
   assert.ok(
-    src.includes("assertKgiSimOnly"),
-    "BROKER-ROUTING-4: must define assertKgiSimOnly guard function"
+    src.includes("class KgiChannelUnavailableError"),
+    "BROKER-ROUTING-4: must define KgiChannelUnavailableError"
   );
-  // submitOrder must call assertKgiSimOnly for kgi path
   assert.ok(
-    src.includes('assertKgiSimOnly("submitOrder")'),
-    "BROKER-ROUTING-4: submitOrder must call assertKgiSimOnly for kgi broker path"
+    src.includes("assertKgiSimChannel(input.order)"),
+    "BROKER-ROUTING-4: submitOrder must call assertKgiSimChannel for the kgi broker path"
   );
-  // previewOrder must return blocked:true for kgi with kgi_manual_write_locked reason
+  // The Phase-3 unconditional hard-lock mechanism must be fully removed —
+  // KGI_ENV=sim is now the single source of truth (統一下單流 D2, 2026-07-04).
   assert.ok(
-    src.includes("kgi_manual_write_locked"),
-    "BROKER-ROUTING-4: previewOrder must include kgi_manual_write_locked in blocked reasons"
+    !src.includes("KGI_MANUAL_ORDER_WRITE_LOCKED"),
+    "BROKER-ROUTING-4: Phase-3 KGI_MANUAL_ORDER_WRITE_LOCKED constant must be fully removed"
   );
-  // Verify that the actual guard function will throw
-  const lockConstMatch = src.match(/const KGI_MANUAL_ORDER_WRITE_LOCKED\s*=\s*(true|false)/);
-  assert.ok(lockConstMatch, "BROKER-ROUTING-4: KGI_MANUAL_ORDER_WRITE_LOCKED must be true|false literal");
-  assert.equal(
-    lockConstMatch![1],
-    "true",
-    "BROKER-ROUTING-4: KGI_MANUAL_ORDER_WRITE_LOCKED must be true (write locked in Phase 3)"
+  assert.ok(
+    !src.includes("assertKgiSimOnly"),
+    "BROKER-ROUTING-4: Phase-3 assertKgiSimOnly must be fully removed"
   );
+});
+
+// ── 統一下單流 PR-1 (F2-O3, 2026-07-04) ─────────────────────────────────────
+//
+// D2 KGI SIM channel + D3 pending-first unified_orders dual-write + D4
+// quantity_unit schema hardening + D5 reason-code enum.
+// Design: reports/epic_trading_desk_20260702/S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md
+
+function uofTestOrder(overrides: Partial<{
+  accountId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  type: "market" | "limit" | "stop" | "stop_limit";
+  quantity: number;
+  quantity_unit: "SHARE" | "LOT";
+  price: number | null;
+  stopPrice: number | null;
+}> = {}) {
+  return {
+    accountId: overrides.accountId ?? "uof-test-acct",
+    symbol: overrides.symbol ?? "UOFTEST",
+    side: overrides.side ?? ("buy" as const),
+    type: overrides.type ?? ("market" as const),
+    timeInForce: "rod" as const,
+    quantity: overrides.quantity ?? 1000,
+    quantity_unit: overrides.quantity_unit ?? ("SHARE" as const),
+    price: overrides.price ?? null,
+    stopPrice: overrides.stopPrice ?? null,
+    tradePlanId: null,
+    strategyId: null,
+    // Fresh manual quotes land as review_required by gate policy (see the
+    // existing "trading-service.submitOrder runs session + risk + gate +
+    // paper broker end-to-end" test above), and a fresh test account's tiny
+    // default equity trips max_per_trade at notional sizes — override both so
+    // these tests exercise the channel-routing/dual-write logic, not risk
+    // sizing. (broker_disconnected is NOT overridable by design — see the
+    // brokerConnected fix in buildAccountContext's kgi branch instead.)
+    overrideGuards: [GATE_OVERRIDE_KEY, "max_per_trade"],
+    overrideReason: "uof-pr1-test"
+  };
+}
+
+test("UOF-D2-1: assertKgiSimChannel throws not_sim_env when KGI_ENV != sim", () => {
+  const original = process.env["KGI_ENV"];
+  process.env["KGI_ENV"] = "prod";
+  try {
+    assert.throws(
+      () => assertKgiSimChannel(uofTestOrder()),
+      (err: unknown) => err instanceof KgiChannelUnavailableError && err.reason === "not_sim_env"
+    );
+  } finally {
+    if (original === undefined) delete process.env["KGI_ENV"];
+    else process.env["KGI_ENV"] = original;
+  }
+});
+
+test("UOF-D2-2: assertKgiSimChannel rejects stop/stop_limit orders and limit orders missing a price", () => {
+  const original = process.env["KGI_ENV"];
+  process.env["KGI_ENV"] = "sim";
+  try {
+    assert.throws(
+      () => assertKgiSimChannel(uofTestOrder({ type: "stop", stopPrice: 10 })),
+      (err: unknown) => err instanceof KgiChannelUnavailableError && err.reason === "unsupported_order_type"
+    );
+    assert.throws(
+      () => assertKgiSimChannel(uofTestOrder({ type: "stop_limit", stopPrice: 10, price: 10 })),
+      (err: unknown) => err instanceof KgiChannelUnavailableError && err.reason === "unsupported_order_type"
+    );
+    assert.throws(
+      () => assertKgiSimChannel(uofTestOrder({ type: "limit", price: null })),
+      (err: unknown) => err instanceof KgiChannelUnavailableError && err.reason === "missing_limit_price"
+    );
+    assert.doesNotThrow(() => assertKgiSimChannel(uofTestOrder({ type: "limit", price: 100 })));
+    assert.doesNotThrow(() => assertKgiSimChannel(uofTestOrder({ type: "market" })));
+  } finally {
+    if (original === undefined) delete process.env["KGI_ENV"];
+    else process.env["KGI_ENV"] = original;
+  }
+});
+
+test("UOF-D2-3: submitOrder still hard-blocks KGI when KGI_ENV != sim — no unified_orders row, no gateway call", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `uof-nonsim-${randomUUID()}` });
+
+  const originalKgiEnv = process.env["KGI_ENV"];
+  const originalFetch = globalThis.fetch;
+  process.env["KGI_ENV"] = "prod";
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    throw new Error("UOF-D2-3: gateway must never be reached when KGI_ENV != sim");
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      submitOrder({
+        session,
+        repo,
+        order: uofTestOrder({ symbol: "UOFNONSIM", accountId: "kgi-nonsim-acct" }),
+        _testBrokerKindOverride: "kgi"
+      }),
+      (err: unknown) => err instanceof KgiChannelUnavailableError && err.reason === "not_sim_env"
+    );
+    assert.equal(fetchCalled, false, "UOF-D2-3: gateway fetch must never fire");
+    const rows = await listUnifiedOrders(session.workspace.id);
+    assert.equal(
+      rows.some((r) => r.symbol === "UOFNONSIM"),
+      false,
+      "UOF-D2-3: no unified_orders row when the pre-flight blocks before recording (insert never happens)"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKgiEnv === undefined) delete process.env["KGI_ENV"];
+    else process.env["KGI_ENV"] = originalKgiEnv;
+  }
+});
+
+test("UOF-D2/D3: kgi account routes through the SIM channel via /trading/orders, records unified_orders pending-first, and returns a tradeId", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `uof-kgi-${randomUUID()}` });
+  const accountId = "kgi-smoke-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  // Execution-mode gate (modeForBroker("kgi") === "execution") only treats
+  // source="kgi" as liveUsable — upsertPaperQuotes forces sourceOverride:
+  // "paper" which is non_live_source for execution mode, so this must use
+  // upsertManualQuotes with an explicit source="kgi" quote row instead.
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UOFKGI",
+        market: "OTHER",
+        source: "kgi",
+        last: 100,
+        bid: 99.9,
+        ask: 100.1,
+        open: 100,
+        high: 100,
+        low: 100,
+        prevClose: 100,
+        volume: 5000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const originalEnv = {
+    KGI_ENV: process.env["KGI_ENV"],
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"]
+  };
+  const originalFetch = globalThis.fetch;
+  process.env["KGI_ENV"] = "sim";
+  process.env["KGI_GATEWAY_URL"] = "http://uof-kgi-gateway.test";
+
+  let pendingRowSeenAtGatewayCallTime = false;
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://uof-kgi-gateway.test/order/create") {
+      // D3 pending-first: by the time the mock gateway call fires, the
+      // unified_orders row must already exist with status=pending.
+      const rows = await listUnifiedOrders(session.workspace.id);
+      pendingRowSeenAtGatewayCallTime = rows.some(
+        (r) => r.status === "pending" && r.symbol === "UOFKGI"
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          sim_only: true,
+          status: "accepted",
+          kgi_response_repr: "OrderResponse(nid=1779199594627344001 status=Accepted)"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const result = await submitOrder({
+      session,
+      repo,
+      order: uofTestOrder({ symbol: "UOFKGI", accountId, quantity: 1000, quantity_unit: "SHARE" }),
+      _testBrokerKindOverride: "kgi"
+    });
+
+    assert.equal(result.blocked, false, "UOF: kgi SIM order must not be blocked when the channel is open");
+    assert.ok(result.order, "UOF: order must be present in the result");
+    assert.equal(
+      result.order?.brokerOrderId,
+      "1779199594627344001",
+      "UOF: tradeId extracted from kgi_response_repr must come back on the order"
+    );
+    assert.equal(result.order?.status, "submitted");
+    assert.equal(
+      pendingRowSeenAtGatewayCallTime,
+      true,
+      "UOF-D3: unified_orders row must exist as 'pending' BEFORE the gateway call (pending-first invariant)"
+    );
+
+    const rowsAfter = await listUnifiedOrders(session.workspace.id);
+    const row = rowsAfter.find((r) => r.symbol === "UOFKGI");
+    assert.ok(row, "UOF-D3: unified_orders row must exist after submit");
+    assert.equal(row?.status, "submitted", "UOF-D3: row transitions pending -> submitted");
+    assert.equal(row?.adapterKey, "kgi");
+    assert.equal(row?.externalOrderId, "1779199594627344001");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("UOF-D3-paper: paper channel orders also get a pending-first unified_orders row", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `uof-paper-${randomUUID()}` });
+  const accountId = "uof-paper-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UOFPAPER",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "UOFPAPER", accountId, quantity: 1000, quantity_unit: "SHARE" })
+  });
+
+  assert.equal(result.blocked, false, "UOF-D3-paper: paper market order against a fresh manual quote must not be blocked");
+  const rows = await listUnifiedOrders(session.workspace.id);
+  const row = rows.find((r) => r.symbol === "UOFPAPER");
+  assert.ok(row, "UOF-D3-paper: unified_orders row must exist for the paper channel too");
+  assert.equal(row?.adapterKey, "paper");
+  assert.equal(row?.status, "submitted");
+});
+
+test("UOF-D4-1: orderCreateInputSchema.quantity_unit is required with no default (SHARE vs LOT = 1000x notional)", () => {
+  assert.throws(
+    () =>
+      orderCreateInputSchema.parse({
+        accountId: "a",
+        symbol: "S",
+        side: "buy",
+        quantity: 1
+      }),
+    "UOF-D4-1: missing quantity_unit must fail parse, not silently default to SHARE"
+  );
+  assert.doesNotThrow(() =>
+    orderCreateInputSchema.parse({
+      accountId: "a",
+      symbol: "S",
+      side: "buy",
+      quantity: 1,
+      quantity_unit: "LOT"
+    })
+  );
+});
+
+test("UOF-D4-2: paper quantityUnitSchema (existing, regression) still has no default", () => {
+  assert.throws(() => quantityUnitSchema.parse(undefined));
+  assert.doesNotThrow(() => quantityUnitSchema.parse("SHARE"));
+});
+
+test("UOF-D4-3: /uta/orders body schema requires quantityUnit, no default (server.ts source)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeIdx = src.indexOf('app.post("/api/v1/uta/orders"');
+  assert.ok(routeIdx >= 0, "UOF-D4-3: /uta/orders route must exist");
+  const window = src.slice(routeIdx, routeIdx + 1500);
+  assert.match(
+    window,
+    /quantityUnit:\s*z\.enum\(\["SHARE",\s*"LOT"\]\),/,
+    "UOF-D4-3: quantityUnit must be required (no .optional()/.default() suffix)"
+  );
+  assert.doesNotMatch(
+    window,
+    /quantityUnit:\s*z\.enum\(\["SHARE",\s*"LOT"\]\)\.(optional|default)/,
+    "UOF-D4-3: quantityUnit must not carry .optional() or .default()"
+  );
+});
+
+test("UOF-D5-1: kgiChannelUnavailableReasonSchema covers every reason code the guard/error-mapper can produce", () => {
+  const expected = [
+    "not_sim_env",
+    "unsupported_order_type",
+    "missing_limit_price",
+    "gateway_unreachable",
+    "gateway_auth_error",
+    "gateway_not_logged_in",
+    "live_order_blocked",
+    "order_not_enabled",
+    "order_validation_rejected",
+    "order_upstream_error",
+    "unknown_error"
+  ];
+  for (const code of expected) {
+    assert.doesNotThrow(() => kgiChannelUnavailableReasonSchema.parse(code), `UOF-D5-1: reason "${code}" must be a valid enum member`);
+  }
+  assert.throws(() => kgiChannelUnavailableReasonSchema.parse("not_a_real_reason"));
+});
+
+test("UOF-D2-5: POST /trading/orders catches KgiChannelUnavailableError and returns structured 409 (server.ts source)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeIdx = src.indexOf('app.post("/api/v1/trading/orders"');
+  assert.ok(routeIdx >= 0, "UOF-D2-5: /trading/orders route must exist");
+  const window = src.slice(routeIdx, routeIdx + 900);
+  assert.match(window, /KgiChannelUnavailableError/, "UOF-D2-5: route must import/catch KgiChannelUnavailableError");
+  assert.match(window, /"kgi_channel_unavailable"/, "UOF-D2-5: route must respond with error: kgi_channel_unavailable");
+  assert.match(window, /,\s*409\s*\)/, "UOF-D2-5: route must respond with HTTP 409 for channel-unavailable errors");
 });
 
 // ── OPENALICE-M1 tests ─────────────────────────────────────────────────────────
