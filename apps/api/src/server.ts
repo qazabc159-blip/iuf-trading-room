@@ -2630,16 +2630,11 @@ app.post("/api/v1/strategy/:strategyId/toggle-mode", async (c) => {
 // Contract guarantee: when Fubon Neo WS adapter ships, only the data-fetch
 // section changes. This path, response schema, and freshness labeling stays.
 //
-// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES)
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure quote data,
+// 2026-07-04 reports/permission_matrix/PR_B_CLASSIFICATION_2026_07_04.md)
 // Query: ?symbols=2330,0050 (comma-separated, required, max 50)
 // =============================================================================
 app.get("/api/v1/realtime/snapshot", async (c) => {
-  const session = c.get("session");
-  const role = session.user.role as string;
-  if (!READ_DRAFT_ROLES.has(role)) {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
-
   const rawSymbols = (c.req.query("symbols") ?? "").trim();
   if (!rawSymbols) {
     return c.json({ error: "missing_symbols", message: "?symbols= is required (comma-separated)" }, 400);
@@ -3344,14 +3339,10 @@ app.get("/api/v1/briefs", async (c) => {
 // Only returns rows where status IN ('published','approved') or
 // (status='draft' AND generated_by='worker') — mirrors listBriefs normalization.
 //
-// Auth: Owner / Admin / Analyst (READ_DRAFT_ROLES)
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, published/approved
+// briefs only, no audit chain; sibling /api/v1/briefs list has no gate at all)
 // =============================================================================
 app.get("/api/v1/briefs/search", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
-
   const db = getDb();
   if (!isDatabaseMode() || !db) {
     return c.json({ error: "database_unavailable" }, 503);
@@ -8936,16 +8927,12 @@ app.get("/api/v1/market-intel/announcements", async (c) => {
 // Frontend announcements panel routes to this path expecting:
 //   { items: [...], total: N, asOf: "YYYY-MM-DD" }
 //
-// Auth: READ_DRAFT_ROLES (Owner / Admin / Analyst)
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, official market
+// announcements + FinMind news fallback, no internal governance content)
 // Source: tw_announcements (today + 30 days) + tw_stock_news FinMind fallback
 // =============================================================================
 app.get("/api/v1/announcements", async (c) => {
   const session = c.get("session");
-  const role = session.user.role;
-  if (!READ_DRAFT_ROLES.has(role)) {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
-
   const db = getDb();
   const asOf = new Date().toISOString().slice(0, 10);
 
@@ -11782,10 +11769,9 @@ app.get("/api/v1/meta", (c) => {
 
 // ── P0 #2: GET /api/v1/sources ────────────────────────────────────────────────
 // 8 fixed sources in fixed order: finmind/kline/company/openalice/topic/strategy/signal/news
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, data-source
+// freshness/health state only, no governance/audit/execution content)
 app.get("/api/v1/sources", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const finmind = getFinMindClient();
   const tokenPresent = finmind.hasToken();
   const stats = getFinMindStats();
@@ -12059,10 +12045,9 @@ app.get("/api/v1/sources", async (c) => {
 
 // ── P1 #5 (path alias): GET /api/v1/finmind/health ───────────────────────────
 // Vendor spec: /api/v1/finmind/health — richer shape than /diagnostics/finmind
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, vendor health/quota
+// state only; token is never returned, see HARD LINE comment below)
 app.get("/api/v1/finmind/health", (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const finmind = getFinMindClient();
   const tokenPresent = finmind.hasToken();
   const stats = getFinMindStats();
@@ -12106,10 +12091,8 @@ app.get("/api/v1/finmind/health", (c) => {
 // Vendor shape: { sourceState, sourceLabel, indices[], flows[], stocks[], intradayTwii[60] }
 // Real-time quotes come from KGI gateway (blocked) → sourceState=empty, no fake data.
 // Static TWII index placeholder from market_data overview when available.
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure quote data)
 app.get("/api/v1/quotes", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   // KGI quote gateway is BLOCKED (TradeCom permission pending) → sourceState=empty
   // Per vendor spec: "如果市場資料來源 status = empty, response 必須帶 sourceState: 'empty'"
   // HARD LINE: do not fake indices/flows/stocks with made-up numbers.
@@ -12131,10 +12114,8 @@ app.get("/api/v1/quotes", async (c) => {
 // as primary source. Falls back to companies_ohlcv when TWSE unavailable.
 // Note: TWSE STOCK_DAY_ALL is T+0 EOD data. During trading hours (09:00-13:30)
 // it may be yesterday's data; after 14:00 it reflects today's final prices.
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure market breadth data)
 app.get("/api/v1/breadth", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   // ── Path 1: TWSE STOCK_DAY_ALL breadth (covers 1400+ listed stocks) ────────
   try {
     const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
@@ -12241,10 +12222,8 @@ async function _getTwseOfficialIndustryMap(): Promise<Map<string, string>> {
 // Delegates to TWSE OpenAPI industry heatmap (same as dashboard/snapshot).
 // Falls back to OHLCV table when TWSE unavailable.
 // Task B fix: was reading from companies_ohlcv only → sourceState:"error" when table empty.
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure industry heatmap data)
 app.get("/api/v1/heatmap", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const session = c.get("session");
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
@@ -12417,10 +12396,8 @@ function _taiexCloseLabel(ts: string | null | undefined, isLkg: boolean): string
   return tsDate === todayTaipei ? "今日收盤" : "上日收盤";
 }
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure TAIEX/OTC index data)
 app.get("/api/v1/market/overview/twse", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   // 1. MIS realtime index (盤中即時) — preferred during the trading session
   const mis = _misIndexOverviewSnapshot();
   if (mis?.taiex) {
@@ -12461,10 +12438,8 @@ app.get("/api/v1/market/overview/twse", async (c) => {
   return c.json({ ...resultPayload, otc: otcPayload, sourceState, taiexDisplayLabel });
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure industry heatmap data)
 app.get("/api/v1/market/heatmap/twse", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getTwseIndustryHeatmap, getStockDayAllRows, rocDateToTaipeiTs } = await import("./data-sources/twse-openapi-client.js");
   const { getFinMindIndustryHeatmap, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
@@ -12599,10 +12574,9 @@ app.post("/api/v1/kgi/holdings/sync", async (c) => {
 });
 
 // GET /api/v1/market/overview/kgi — TAIEX + OTC realtime (KGI tick → TWSE fallback)
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure index data,
+// no account/credential fields)
 app.get("/api/v1/market/overview/kgi", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   try {
     const { getKgiMarketOverview } = await import("./kgi-subscription-manager.js");
     const kgiResult = await getKgiMarketOverview();
@@ -12691,10 +12665,8 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
 // Tier 2: TWSE STOCK_DAY_ALL per-symbol EOD close+changePct
 // Tier 3: In-process last-known-close cache (survives off-hours)
 // Guarantee: ALWAYS returns all 40 KGI core tiles with sourceState. Never drops a tile.
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure heatmap tile data)
 app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   try {
     const { initSubscriptionManager, getKgiCoreHeatmap } = await import("./kgi-subscription-manager.js");
     initSubscriptionManager();
@@ -12902,9 +12874,9 @@ app.get("/api/v1/paper/e2e", async (c) => {
 
 // ── P1 #1: GET /api/v1/portfolio/preview ─────────────────────────────────────
 // Vendor shape: { cash, positions, readiness, note }
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB/G-PORT-read downgrade, paper
+// preview only ("紙上預覽,不連真實券商"), aligns with D3 G-PORT read=Viewer)
 app.get("/api/v1/portfolio/preview", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
 
   const baseCapitalRaw = Number(process.env.PAPER_BROKER_INITIAL_CASH);
   const baseCapitalTWD = Number.isFinite(baseCapitalRaw) && baseCapitalRaw > 0
@@ -12949,10 +12921,9 @@ app.get("/api/v1/portfolio/preview", async (c) => {
 // by appending this BEFORE the existing registration. But since it's already registered,
 // we use a separate vendor path: /api/v1/vendor/strategy/ideas
 // This is additive and does not break the existing route.
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade; same getStrategyIdeas()
+// data already served without any role gate at /api/v1/strategy/ideas)
 app.get("/api/v1/vendor/strategy/ideas", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const session = c.get("session");
   const repo = c.get("repo");
 
@@ -18941,10 +18912,8 @@ async function resolveDatabaseWorkspaceSlug(fallbackSlug: string): Promise<strin
 //   - No apps/web/* change
 // =============================================================================
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure market breadth data)
 app.get("/api/v1/market/breadth/twse", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   // Same-day fix (2026-06-17): FinMind whole-market is same-day at the close while
   // TWSE STOCK_DAY_ALL is EOD-only and lags a day right after close. getFinMindMarketBreadth
   // now filters to the listed-stock universe (4-digit + 00-prefixed ETFs), excluding
@@ -18970,10 +18939,8 @@ app.get("/api/v1/market/breadth/twse", async (c) => {
 //   — Each stock: { symbol, name, last, changePct, volume }
 //   — Role: READ_DRAFT_ROLES
 //   — 60-second in-memory cache; fail-open (never 5xx)
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure market leaders data)
 app.get("/api/v1/market/leaders/twse", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindLeaders, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
   const { getTwseLeaders } = await import("./data-sources/twse-openapi-client.js");
 
@@ -19100,10 +19067,8 @@ app.get("/api/v1/paper/portfolio/history", async (c) => {
 //   - NOT touching index path (BG #1 lane)
 // =============================================================================
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure industry heatmap data)
 app.get("/api/v1/market/heatmap/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const session = c.get("session");
   const dbMode = isDatabaseMode();
   const db = dbMode ? getDb() : null;
@@ -19171,10 +19136,8 @@ app.get("/api/v1/market/heatmap/finmind", async (c) => {
   });
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure market breadth data)
 app.get("/api/v1/market/breadth/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindMarketBreadth, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
   const { getTwseMarketBreadth } = await import("./data-sources/twse-openapi-client.js");
 
@@ -19188,10 +19151,8 @@ app.get("/api/v1/market/breadth/finmind", async (c) => {
   return c.json(twseResult);
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure market leaders data)
 app.get("/api/v1/market/leaders/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindLeaders, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (finMindAggregateHasToken()) {
@@ -19212,10 +19173,9 @@ app.get("/api/v1/market/leaders/finmind", async (c) => {
   });
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public TWSE
+// institutional trading summary data)
 app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindInstitutionalSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (!finMindAggregateHasToken()) {
@@ -19250,10 +19210,9 @@ app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
   return c.json({ ...result, state: "live" });
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public TWSE
+// margin-trading summary data)
 app.get("/api/v1/market/margin-summary/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindMarginSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (!finMindAggregateHasToken()) {
@@ -19286,10 +19245,8 @@ app.get("/api/v1/market/margin-summary/finmind", async (c) => {
   return c.json({ ...result, state: "live" });
 });
 
+// Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public market news data)
 app.get("/api/v1/market/news/finmind", async (c) => {
-  const role = c.get("session").user.role;
-  if (!READ_DRAFT_ROLES.has(role)) return c.json({ error: "forbidden_role" }, 403);
-
   const { getFinMindMarketNews, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (!finMindAggregateHasToken()) {

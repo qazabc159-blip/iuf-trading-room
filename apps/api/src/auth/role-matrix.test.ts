@@ -171,6 +171,63 @@ const CASES: MatrixCase[] = [
     path: "/api/v1/themes/index",
     expected: { Owner: 200, Admin: 403, Analyst: 403, Trader: 403, Viewer: 403 },
     note: "current gate = Owner only; representative of the real-money / ops-core group."
+  },
+
+  // ── PR-B (2026-07-04): G-PUB READ_DRAFT_ROLES downgrade ──────────────────
+  // Design: reports/permission_matrix/PERMISSION_MATRIX_v1.md §4 PR-B row.
+  // Classification evidence: reports/permission_matrix/PR_B_CLASSIFICATION_2026_07_04.md
+  //
+  // Under-grant direction: G-PUB representative endpoints that were previously
+  // gated Owner/Admin/Analyst-only now pass every role, including Viewer/Trader.
+  // Both endpoints below are deterministic in memory mode (no DB, no network
+  // fan-out) so this suite stays fast and non-flaky.
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/quotes)",
+    method: "GET",
+    path: "/api/v1/quotes",
+    expected: { Owner: 200, Admin: 200, Analyst: 200, Trader: 200, Viewer: 200 },
+    note: "PR-B: pure quote data (KGI channel blocked -> static empty stub); READ_DRAFT_ROLES check removed."
+  },
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/announcements)",
+    method: "GET",
+    path: "/api/v1/announcements",
+    expected: { Owner: 200, Admin: 200, Analyst: 200, Trader: 200, Viewer: 200 },
+    note: "PR-B: official market announcements + FinMind news fallback; READ_DRAFT_ROLES check removed."
+  }
+];
+
+// ── PR-B over-grant guard: the 3 pre-classified exemptions stay Analyst+ ───
+// (briefs/:id auditChain, dashboard/snapshot audit_stats+lab_strategies fan-out,
+// paper/e2e kill-switch/execution flags). These must NOT be reachable by
+// Viewer/Trader even after the G-PUB downgrade above.
+interface ExemptCase {
+  name: string;
+  method: "GET" | "POST";
+  path: string;
+  /** Only asserted for roles below the gate — Owner/Admin/Analyst status varies
+   *  by memory-mode DB availability and is not the point of this guard. */
+  deniedRoles: readonly Role[];
+}
+
+const EXEMPT_CASES: ExemptCase[] = [
+  {
+    name: "briefs/:id (auditChain — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/briefs/role-matrix-nonexistent-brief",
+    deniedRoles: ["Viewer", "Trader"]
+  },
+  {
+    name: "dashboard/snapshot (audit_stats + lab_strategies fan-out — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/dashboard/snapshot",
+    deniedRoles: ["Viewer", "Trader"]
+  },
+  {
+    name: "paper/e2e (kill-switch / execution flags — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/paper/e2e",
+    deniedRoles: ["Viewer", "Trader"]
   }
 ];
 
@@ -184,6 +241,22 @@ describe("role-matrix (PR-A skeleton — pins CURRENT server.ts behavior)", () =
           res.status,
           expectedStatus,
           `${testCase.note}\nExpected ${role} -> ${expectedStatus}, got ${res.status}`
+        );
+        await res.text().catch(() => undefined);
+      });
+    }
+  }
+});
+
+describe("role-matrix PR-B — over-grant guard on the 3 pre-classified exemptions", () => {
+  for (const exemptCase of EXEMPT_CASES) {
+    for (const role of exemptCase.deniedRoles) {
+      test(`${exemptCase.name} :: ${exemptCase.method} ${exemptCase.path} :: ${role} -> 403`, async () => {
+        const res = await requestAs(role, exemptCase.method, exemptCase.path);
+        assert.equal(
+          res.status,
+          403,
+          `PR-B exemption must stay Analyst+: ${role} should still get 403 on ${exemptCase.path}, got ${res.status}`
         );
         await res.text().catch(() => undefined);
       });
