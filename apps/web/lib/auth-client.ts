@@ -79,7 +79,8 @@ export async function apiLogin(email: string, password: string): Promise<AuthRes
 export async function apiRegister(
   email: string,
   password: string,
-  inviteCode: string,
+  inviteToken: string,
+  name?: string,
 ): Promise<AuthResult> {
   if (!API_BASE) return missingApi();
 
@@ -88,7 +89,7 @@ export async function apiRegister(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ email, password, inviteCode }),
+      body: JSON.stringify({ inviteToken, email, name: name?.trim() || email.split("@")[0], password }),
     });
 
     if (!res.ok) {
@@ -197,7 +198,8 @@ export function authErrorMessage(error: string): string {
     case "invalid_credentials":
       return "帳號或密碼錯誤。";
     case "invalid_invite_code":
-      return "邀請碼無效。";
+    case "invalid_or_expired":
+      return "邀請連結無效或已過期，請聯繫邀請人。";
     case "invite_already_used":
       return "這組邀請碼已經使用過。";
     case "invite_expired":
@@ -221,5 +223,171 @@ export function authErrorMessage(error: string): string {
         return "伺服器暫時無法完成請求，請稍後再試。";
       }
       return "登入失敗，請稍後再試。";
+  }
+}
+
+// ── Admin: Invite Management ──────────────────────────────────────────────────
+
+export type InviteStatus = "pending" | "used" | "expired" | "revoked";
+
+export type InviteRecord = {
+  id: string;
+  role: string;
+  invitedEmail: string | null;
+  label: string | null;
+  createdBy: string;
+  expiresAt: string;
+  createdAt: string;
+  usedAt: string | null;
+  usedBy: string | null;
+  revokedAt: string | null;
+  status: InviteStatus;
+};
+
+export type CreatedInvite = {
+  id: string;
+  token: string;
+  registrationUrl: string;
+  expiresAt: string;
+  role: string;
+};
+
+export type CreateInviteResult = ({ ok: true } & CreatedInvite) | AuthFailure;
+export type InviteListResult = { ok: true; invites: InviteRecord[] } | AuthFailure;
+export type RevokeResult = { ok: true } | AuthFailure;
+
+export async function apiCreateInvite(params: {
+  role: "Admin" | "Analyst" | "Trader" | "Viewer";
+  invitedEmail?: string;
+  label?: string;
+  expiresInDays?: number;
+}): Promise<CreateInviteResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const body: Record<string, unknown> = { role: params.role };
+    if (params.invitedEmail?.trim()) body.invitedEmail = params.invitedEmail.trim();
+    if (params.label?.trim()) body.label = params.label.trim();
+    if (params.expiresInDays) body.expiresInDays = params.expiresInDays;
+    const res = await fetch(`${API_BASE}/api/v1/admin/invites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    const rb = await res.json() as { data: CreatedInvite };
+    return { ok: true, ...rb.data };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+export async function apiListInvites(): Promise<InviteListResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/invites`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    const rb = await res.json() as { data: InviteRecord[] };
+    return { ok: true, invites: rb.data };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+export async function apiRevokeInvite(inviteId: string): Promise<RevokeResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/invites/${inviteId}/revoke`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+// ── Admin: User Management ────────────────────────────────────────────────────
+
+export type UserRecord = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type UserListResult = { ok: true; users: UserRecord[] } | AuthFailure;
+export type ChangeRoleResult = { ok: true } | AuthFailure;
+export type DeactivateUserResult = { ok: true } | AuthFailure;
+
+export async function apiListUsers(): Promise<UserListResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/users`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    const rb = await res.json() as { data: UserRecord[] };
+    return { ok: true, users: rb.data };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+export async function apiChangeUserRole(
+  userId: string,
+  role: "Admin" | "Analyst" | "Trader" | "Viewer",
+): Promise<ChangeRoleResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/users/${userId}/role`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ role }),
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+export async function apiDeactivateUser(userId: string): Promise<DeactivateUserResult> {
+  if (!API_BASE) return missingApi();
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/admin/users/${userId}/deactivate`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const rb = await res.json().catch(() => ({})) as { error?: string };
+      return { ok: false, error: rb.error ?? `server_error_${res.status}` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "network_error" };
   }
 }

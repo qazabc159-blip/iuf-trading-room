@@ -14,6 +14,7 @@ import {
   Radio,
   Sparkles,
   Target,
+  Users,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -79,6 +80,7 @@ const INTERNAL_NAV: NavItem[] = [
   { path: "/admin/tools", title: "Tools", sub: "工具登錄", Icon: Wrench, activePaths: ["/admin/tools"] },
   { path: "/admin/uta/accounts", title: "UTA", sub: "帳號管理", Icon: Sparkles, activePaths: ["/admin/uta"] },
   { path: "/admin/strategies", title: "Strategies", sub: "策略治理", Icon: BarChart3, activePaths: ["/admin/strategies"] },
+  { path: "/admin/team", title: "團隊與邀請", sub: "用戶 / 邀請管理", Icon: Users, activePaths: ["/admin/team"] },
 ];
 
 function pathMatches(pathname: string, path: string) {
