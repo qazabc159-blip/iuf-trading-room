@@ -543,6 +543,141 @@ export function CompanyPageStyleBlock() {
 @media (prefers-reduced-motion: reduce) {
   ._ai-spinner { animation: none; }
 }
+
+/* ── Round 2: _co-hud-stats-strip — supplemental stats row (振幅/52週高低/市值/PBR) ── */
+._co-hud-stats-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  margin-bottom: 14px;
+  border: 1px solid rgba(220,228,240,0.09);
+  border-left: 3px solid rgba(200,148,63,0.55);
+  background: rgba(5,8,12,0.45);
+  overflow: hidden;
+}
+._co-hud-stat-cell {
+  flex: 1 1 0;
+  min-width: 72px;
+  padding: 10px 14px 11px;
+  border-right: 1px solid rgba(220,228,240,0.07);
+}
+._co-hud-stat-cell:last-child { border-right: none; }
+._co-hud-stat-lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--night-mid, #91a0b5);
+  margin-bottom: 5px;
+  line-height: 1;
+}
+._co-hud-stat-val {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--night-ink, #e7ecf3);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+._co-hud-stat-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--night-soft, #566276);
+  margin-top: 2px;
+}
+._co-hud-stat-val._co-hud-up { color: rgba(230,57,70,0.88); }
+._co-hud-stat-val._co-hud-dn { color: rgba(74,219,136,0.88); }
+@media (max-width: 640px) {
+  ._co-hud-stats-strip { flex-wrap: wrap; }
+  ._co-hud-stat-cell {
+    flex: 1 1 40%;
+    border-bottom: 1px solid rgba(220,228,240,0.07);
+  }
+}
+
+/* ── Round 2: _co-trading-view — K-line chart + depth/BidAsk side-by-side ── */
+._co-trading-view {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+._co-chart-pane {
+  flex: 0 0 64%;
+  min-width: 0;
+}
+._co-depth-pane {
+  flex: 1 1 0;
+  min-width: 250px;
+  position: sticky;
+  top: clamp(76px, 8vh, 96px);
+}
+@media (max-width: 1180px) {
+  ._co-trading-view {
+    flex-direction: column;
+    gap: 10px;
+  }
+  ._co-chart-pane {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  ._co-depth-pane {
+    position: static;
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ── Round 2: _co-section-banner — unified section divider replaces company-tabs-band ── */
+._co-section-banner {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 24px;
+  padding: 12px 4px 12px 16px;
+  border-top: 1px solid rgba(220,228,240,0.07);
+  border-left: 3px solid rgba(200,148,63,0.55);
+  background: rgba(5,8,12,0.28);
+}
+._co-section-banner-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--gold-bright, #e2b85c);
+  text-transform: uppercase;
+}
+._co-section-banner-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--night-ink, #e7ecf3);
+}
+._co-section-banner-desc {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--night-mid, #91a0b5);
+  flex-basis: 100%;
+  line-height: 1.55;
+  margin-top: 2px;
+}
+._co-section-banner-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+  align-self: center;
+}
+._co-section-banner-tags span {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 7px;
+  border: 1px solid rgba(220,228,240,0.11);
+  background: rgba(5,8,12,0.4);
+  color: var(--night-mid, #91a0b5);
+  letter-spacing: 0.05em;
+}
     `}</style>
   );
 }
