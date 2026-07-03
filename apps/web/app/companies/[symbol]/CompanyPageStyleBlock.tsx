@@ -38,6 +38,15 @@ export function CompanyPageStyleBlock() {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 360px) !important;
   gap: clamp(16px, 1.8vw, 26px) !important;
   overflow-x: visible !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.company-main-column,
+.company-side-column {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 @media (min-width: 1181px) {
@@ -200,10 +209,14 @@ export function CompanyPageStyleBlock() {
 @media (max-width: 1180px) {
   .company-detail-layout {
     grid-template-columns: minmax(0, 1fr) !important;
+    overflow-x: hidden !important;
+  }
+  .company-main-column {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
   .company-side-column {
     position: static !important;
-    grid-template-columns: repeat(2, minmax(280px, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     order: 0;
   }
 }
@@ -546,19 +559,24 @@ export function CompanyPageStyleBlock() {
 
 /* ── Round 2: _co-hud-stats-strip — supplemental stats row (振幅/52週高低/市值/PBR) ── */
 ._co-hud-stats-strip {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 112px), 1fr));
   margin-bottom: 14px;
   border: 1px solid rgba(220,228,240,0.09);
   border-left: 3px solid rgba(200,148,63,0.55);
   background: rgba(5,8,12,0.45);
   overflow: hidden;
 }
+@media (min-width: 900px) {
+  ._co-hud-stats-strip {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
 ._co-hud-stat-cell {
-  flex: 1 1 0;
-  min-width: 72px;
+  min-width: 0;
   padding: 10px 14px 11px;
   border-right: 1px solid rgba(220,228,240,0.07);
+  border-bottom: 1px solid rgba(220,228,240,0.07);
 }
 ._co-hud-stat-cell:last-child { border-right: none; }
 ._co-hud-stat-lbl {
@@ -571,12 +589,14 @@ export function CompanyPageStyleBlock() {
   line-height: 1;
 }
 ._co-hud-stat-val {
+  min-width: 0;
   font-family: var(--mono);
   font-size: 13.5px;
   font-weight: 700;
   color: var(--night-ink, #e7ecf3);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 ._co-hud-stat-sub {
   font-family: var(--mono);
@@ -587,10 +607,10 @@ export function CompanyPageStyleBlock() {
 ._co-hud-stat-val._co-hud-up { color: rgba(230,57,70,0.88); }
 ._co-hud-stat-val._co-hud-dn { color: rgba(74,219,136,0.88); }
 @media (max-width: 640px) {
-  ._co-hud-stats-strip { flex-wrap: wrap; }
+  ._co-hud-stats-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   ._co-hud-stat-cell {
-    flex: 1 1 40%;
     border-bottom: 1px solid rgba(220,228,240,0.07);
+    padding: 10px 12px 11px;
   }
 }
 
@@ -600,31 +620,74 @@ export function CompanyPageStyleBlock() {
   gap: 12px;
   align-items: start;
   margin-bottom: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 ._co-chart-pane {
   flex: 0 0 64%;
   min-width: 0;
+  max-width: 100%;
 }
 ._co-depth-pane {
   flex: 1 1 0;
   min-width: 250px;
+  max-width: 100%;
   position: sticky;
   top: clamp(76px, 8vh, 96px);
+}
+._co-chart-pane > *,
+._co-depth-pane > * {
+  min-width: 0;
+  max-width: 100%;
 }
 @media (max-width: 1180px) {
   ._co-trading-view {
     flex-direction: column;
     gap: 10px;
+    overflow-x: hidden;
   }
   ._co-chart-pane {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     width: 100%;
+    max-width: 100%;
   }
   ._co-depth-pane {
     position: static;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     width: 100%;
+    max-width: 100%;
     min-width: 0;
+  }
+}
+@media (max-width: 640px) {
+  ._co-chart-pane .company-workbench-shell,
+  ._co-chart-pane .kline-panel,
+  ._co-chart-pane .kline-chart-shell,
+  ._co-chart-pane .kline-chart-canvas {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  ._co-chart-pane .company-workbench-shell .kline-panel {
+    padding-inline: 12px !important;
+  }
+  ._co-chart-pane .company-workbench-shell .kline-toolbar {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr) !important;
+    overflow: hidden;
+  }
+  ._co-chart-pane .company-workbench-shell .kline-control-group {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  ._co-chart-pane .company-workbench-shell .kline-tab {
+    flex: 0 0 auto;
+  }
+  ._co-chart-pane .company-workbench-shell .kline-chart-canvas {
+    min-height: clamp(300px, 64vh, 420px);
   }
 }
 

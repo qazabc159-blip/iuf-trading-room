@@ -38,6 +38,9 @@ const CO_HERO_CSS = `
 }
 
 ._co-hero-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 4px 0 0;
   border-left: 3px solid rgba(226,184,92,0.8);
   background: linear-gradient(90deg, rgba(226,184,92,0.09) 0%, rgba(226,184,92,0.02) 44%, transparent 100%),
@@ -84,14 +87,35 @@ const CO_HERO_CSS = `
 /* KPI strip — 10 cells matching homepage metric style */
 ._co-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
   border-top: 1px solid rgba(220,228,240,0.07);
+}
+@media (min-width: 1280px) {
+  ._co-kpi-strip { grid-template-columns: repeat(10, minmax(0, 1fr)); }
 }
 @media (max-width: 1200px) {
   ._co-kpi-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   ._co-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  ._co-hero-identity {
+    gap: 8px 10px;
+    padding: 14px 16px 8px;
+  }
+  ._co-hero-symbol { font-size: 24px; }
+  ._co-hero-name { font-size: 15px; }
+  ._co-hero-meta {
+    padding: 0 16px 10px;
+    line-height: 1.55;
+  }
+  ._co-kpi-cell {
+    min-height: 72px;
+    padding: 10px 12px 11px;
+    border-bottom: 1px solid rgba(220,228,240,0.07);
+  }
+  ._co-kpi-value { font-size: 22px; }
+  ._co-kpi-value.--md { font-size: 18px; }
+  ._co-kpi-value.--sm { font-size: 14px; }
 }
 
 ._co-kpi-cell {
@@ -110,8 +134,12 @@ const CO_HERO_CSS = `
   letter-spacing: 0.09em;
   color: var(--night-mid, #91a0b5);
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 ._co-kpi-value {
+  min-width: 0;
   font-family: var(--mono);
   font-size: 26px;
   font-weight: 800;
