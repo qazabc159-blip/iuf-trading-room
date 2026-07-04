@@ -5541,88 +5541,31 @@ app.get("/api/v1/portfolio/f-auto/nav", async (c) => {
   }
 
   try {
-    const db = isDatabaseMode() ? getDb() : null;
-    if (!db) {
-      return c.json({ ok: true, source: "no_db", navCurve: [], weeks: [], summary: null });
-    }
-
-    const { sql: sqlRaw } = await import("drizzle-orm");
-
-    // Read NAV curve
-    const navRows = await db.execute(sqlRaw`
-      SELECT nav_date, equity_twd, return_pct, week_num, source
-      FROM sim_ledger_nav
-      ORDER BY nav_date ASC
-    `) as unknown as Array<{
-      nav_date: string;
-      equity_twd: string;
-      return_pct: string;
-      week_num: number;
-      source: string;
-    }>;
-
-    // Read weekly summary
-    const weekRows = await db.execute(sqlRaw`
-      SELECT week_num, basket_date, realized_pnl_twd, equity_after_twd,
-             cash_residual_twd, basket_cost_twd, source
-      FROM sim_ledger_weeks
-      ORDER BY week_num ASC, basket_date ASC
-    `) as unknown as Array<{
-      week_num: number;
-      basket_date: string;
-      realized_pnl_twd: string | null;
-      equity_after_twd: string;
-      cash_residual_twd: string;
-      basket_cost_twd: string;
-      source: string;
-    }>;
-
-    const navCurve = navRows.map((r) => ({
-      navDate: String(r.nav_date).slice(0, 10),
-      equityTwd: Number(r.equity_twd),
-      returnPct: Number(r.return_pct),
-      weekNum: Number(r.week_num),
-      source: String(r.source),
-    }));
-
-    const weeks = weekRows.map((r) => ({
-      weekNum: Number(r.week_num),
-      basketDate: String(r.basket_date).slice(0, 10),
-      realizedPnlTwd: r.realized_pnl_twd !== null ? Number(r.realized_pnl_twd) : null,
-      equityAfterTwd: Number(r.equity_after_twd),
-      cashResidualTwd: Number(r.cash_residual_twd),
-      basketCostTwd: Number(r.basket_cost_twd),
-      source: String(r.source),
-    }));
-
-    const lastNav = navCurve[navCurve.length - 1] ?? null;
-    const lastWeek = weekRows[weekRows.length - 1] ?? null;
-    const initialEquity = 10_000_000;
-    const totalRealizedPnl = weekRows
-      .filter((r) => r.realized_pnl_twd !== null)
-      .reduce((s, r) => s + Number(r.realized_pnl_twd), 0);
-
-    const summary = lastNav
-      ? {
-          initialEquity,
-          currentEquity: lastNav.equityTwd,
-          cumulativeReturnPct: lastNav.returnPct,
-          totalRealizedPnlTwd: Math.round(totalRealizedPnl),
-          currentWeekNum: lastWeek ? Number(lastWeek.week_num) : null,
-          lastNavDate: lastNav.navDate,
-        }
-      : null;
-
-    return c.json({
-      ok: true,
-      source: navCurve.length > 0 ? "sim_ledger_live" : "empty_ledger",
-      navCurve,
-      weeks,
-      summary,
-      asOf: new Date().toISOString(),
-    });
+    const { buildFAutoNavFull } = await import("./track-record-handlers.js");
+    const payload = await buildFAutoNavFull();
+    return c.json(payload);
   } catch (e) {
     console.error("[portfolio/f-auto/nav] error:", e);
+    return c.json({ error: "NAV_READ_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+// GET /api/v1/track-record/nav — public whitelisted NAV read (P0-C, Jason 2026-07-05)
+//
+// Same-source read as /api/v1/portfolio/f-auto/nav above (both call
+// buildFAutoNavFull() in track-record-handlers.ts) — the Owner-only route is
+// NOT loosened; this is a separate, deliberately thinner public surface for
+// the /track-record public scorecard page. Gate = login-only (no role check
+// beyond the global /api/v1/* session middleware), matching G-PUB.
+// Whitelist: navCurve[] (date/equity/source), weeks[], summary (4 top-line
+// fields only) — see toPublicNav() for the exact field list + rationale.
+app.get("/api/v1/track-record/nav", async (c) => {
+  try {
+    const { buildFAutoNavFull, toPublicNav } = await import("./track-record-handlers.js");
+    const full = await buildFAutoNavFull();
+    return c.json(toPublicNav(full));
+  } catch (e) {
+    console.error("[track-record/nav] error:", e);
     return c.json({ error: "NAV_READ_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
@@ -20237,6 +20180,22 @@ app.get("/api/v1/admin/ai-rec/performance", async (c) => {
   const perf = await getAiRecPerformance({ fromDate, toDate });
 
   return c.json(perf);
+});
+
+// GET /api/v1/track-record/performance — public whitelisted scorecard read (P0-C, Jason 2026-07-05)
+//
+// Same-source read as /api/v1/admin/ai-rec/performance above (both call
+// getAiRecPerformance()) — the Owner-only route is NOT loosened; this is a
+// separate, deliberately thinner public surface for the /track-record public
+// scorecard page. Gate = login-only (no role check beyond the global
+// /api/v1/* session middleware), matching G-PUB. Whitelist: hit-rate/excess/
+// sample-count/date/benchmark fields only — no by_bucket breakdown, no
+// per-pick detail. See toPublicPerformance() for the exact field list.
+app.get("/api/v1/track-record/performance", async (c) => {
+  const { getAiRecPerformance } = await import("./ai-rec-perf-store.js");
+  const { toPublicPerformance } = await import("./track-record-handlers.js");
+  const perf = await getAiRecPerformance({});
+  return c.json(toPublicPerformance(perf));
 });
 
 // POST /api/v1/admin/ai-rec/perf/backfill — Owner-only historical rebuild.

@@ -20232,6 +20232,181 @@ test("UTA-C3-11: adapterKeyToBrokerKind('fubon') maps to 'paper' pending BrokerK
   assert.equal(adapterKeyToBrokerKind("fubon"), "paper");
 });
 
+// =============================================================================
+// TRACK-RECORD PUBLIC ENDPOINTS (P0-C, Jason 2026-07-05)
+// GET /api/v1/track-record/performance + GET /api/v1/track-record/nav —
+// login-only, whitelisted public reads that reuse (not replace) the existing
+// Owner-only /api/v1/admin/ai-rec/performance + /api/v1/portfolio/f-auto/nav
+// aggregation logic. See apps/api/src/track-record-handlers.ts.
+// =============================================================================
+
+test("TRK-1: server.ts has both new public track-record routes, calling the same-source whitelist helpers", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
+
+  assert.match(source, /app\.get\("\/api\/v1\/track-record\/performance"/);
+  assert.match(source, /app\.get\("\/api\/v1\/track-record\/nav"/);
+
+  const perfSection = source.slice(source.indexOf('app.get("/api/v1/track-record/performance"'));
+  assert.ok(
+    perfSection.slice(0, 400).includes("toPublicPerformance"),
+    "TRK-1: /track-record/performance must whitelist through toPublicPerformance()"
+  );
+  assert.ok(
+    perfSection.slice(0, 400).includes("getAiRecPerformance"),
+    "TRK-1: /track-record/performance must call the same getAiRecPerformance() aggregation as the Owner route"
+  );
+
+  const navSection = source.slice(source.indexOf('app.get("/api/v1/track-record/nav"'));
+  assert.ok(
+    navSection.slice(0, 400).includes("toPublicNav"),
+    "TRK-1: /track-record/nav must whitelist through toPublicNav()"
+  );
+  assert.ok(
+    navSection.slice(0, 400).includes("buildFAutoNavFull"),
+    "TRK-1: /track-record/nav must call the same buildFAutoNavFull() aggregation as the Owner route"
+  );
+});
+
+test("TRK-2: the two new public routes are login-only — no Owner/role gate in their handler bodies", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
+
+  const perfStart = source.indexOf('app.get("/api/v1/track-record/performance"');
+  const perfEnd = source.indexOf("\n});", perfStart);
+  const perfBody = source.slice(perfStart, perfEnd);
+  assert.equal(
+    /OWNER_ONLY|forbidden_role|role !== "Owner"|requireMinRole/.test(perfBody),
+    false,
+    "TRK-2: /track-record/performance must NOT re-add a role gate — G-PUB is login-only"
+  );
+
+  const navStart = source.indexOf('app.get("/api/v1/track-record/nav"');
+  const navEnd = source.indexOf("\n});", navStart);
+  const navBody = source.slice(navStart, navEnd);
+  assert.equal(
+    /OWNER_ONLY|forbidden_role|role !== "Owner"|requireMinRole/.test(navBody),
+    false,
+    "TRK-2: /track-record/nav must NOT re-add a role gate — G-PUB is login-only"
+  );
+});
+
+test("TRK-3: the original Owner-only endpoints are NOT loosened", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
+
+  const adminPerfStart = source.indexOf('app.get("/api/v1/admin/ai-rec/performance"');
+  const adminPerfBody = source.slice(adminPerfStart, source.indexOf("\n});", adminPerfStart));
+  assert.ok(
+    adminPerfBody.includes('role !== "Owner"'),
+    "TRK-3: /api/v1/admin/ai-rec/performance must stay Owner-only"
+  );
+
+  const ownerNavStart = source.indexOf('app.get("/api/v1/portfolio/f-auto/nav"');
+  const ownerNavBody = source.slice(ownerNavStart, source.indexOf("\n});", ownerNavStart));
+  assert.ok(
+    ownerNavBody.includes('role !== "Owner"'),
+    "TRK-3: /api/v1/portfolio/f-auto/nav must stay Owner-only"
+  );
+});
+
+test("TRK-4: toPublicPerformance() output key set is exactly the whitelist (no by_bucket/latest_pick_date/computed_at)", async () => {
+  const { toPublicPerformance } = await import("../apps/api/src/track-record-handlers.ts");
+
+  const fullFixture = {
+    overall_hit_rate_1d: 0.55,
+    overall_hit_rate_5d: 0.5,
+    overall_hit_rate_20d: 0.48,
+    avg_excess_1d: 0.002,
+    avg_excess_5d: -0.001,
+    avg_excess_20d: -0.009,
+    total_picks: 42,
+    picks_with_ret_1d: 40,
+    picks_with_ret_5d: 35,
+    picks_with_ret_20d: 20,
+    by_bucket: [{ bucket: "A+", sampleCount: 5, hit_rate_1d: 0.6, hit_rate_5d: 0.5, hit_rate_20d: 0.4, avg_excess_1d: 0.01, avg_excess_5d: 0.02, avg_excess_20d: 0.03 }],
+    earliest_pick_date: "2026-06-02",
+    latest_pick_date: "2026-07-03",
+    benchmark: "0050",
+    computed_at: "2026-07-05T00:00:00.000Z",
+  };
+
+  const publicPayload = toPublicPerformance(fullFixture as any);
+  const actualKeys = Object.keys(publicPayload).sort();
+  assert.deepEqual(actualKeys, [
+    "avg_excess_1d",
+    "avg_excess_20d",
+    "avg_excess_5d",
+    "benchmark",
+    "earliest_pick_date",
+    "overall_hit_rate_1d",
+    "overall_hit_rate_20d",
+    "overall_hit_rate_5d",
+    "picks_with_ret_1d",
+    "picks_with_ret_20d",
+    "picks_with_ret_5d",
+    "total_picks",
+  ]);
+  assert.equal("by_bucket" in publicPayload, false, "TRK-4: by_bucket must never reach the public response");
+  assert.equal("latest_pick_date" in publicPayload, false);
+  assert.equal("computed_at" in publicPayload, false);
+  assert.equal(publicPayload.total_picks, 42);
+  assert.equal(publicPayload.benchmark, "0050");
+});
+
+test("TRK-5: toPublicNav() navCurve keeps only date/equity/source, summary keeps only 4 top-line fields, weeks[] untrimmed", async () => {
+  const { toPublicNav } = await import("../apps/api/src/track-record-handlers.ts");
+
+  const fullFixture = {
+    ok: true as const,
+    source: "sim_ledger_live",
+    navCurve: [
+      { navDate: "2026-06-02", equityTwd: 10_000_000, returnPct: 0, weekNum: 1, source: "backfill" },
+      { navDate: "2026-06-30", equityTwd: 9_365_680, returnPct: -6.34, weekNum: 5, source: "live" },
+    ],
+    weeks: [
+      { weekNum: 1, basketDate: "2026-06-02", realizedPnlTwd: null, equityAfterTwd: 10_000_000, cashResidualTwd: 5_498_850, basketCostTwd: 4_501_150, source: "backfill" },
+      { weekNum: 5, basketDate: "2026-06-30", realizedPnlTwd: -218_700, equityAfterTwd: 9_365_680, cashResidualTwd: 1_000_000, basketCostTwd: 8_365_680, source: "live" },
+    ],
+    summary: {
+      initialEquity: 10_000_000,
+      currentEquity: 9_365_680,
+      cumulativeReturnPct: -6.34,
+      totalRealizedPnlTwd: -634_320,
+      currentWeekNum: 5,
+      lastNavDate: "2026-06-30",
+    },
+    asOf: "2026-07-05T00:00:00.000Z",
+  };
+
+  const publicPayload = toPublicNav(fullFixture as any);
+
+  for (const point of publicPayload.navCurve) {
+    assert.deepEqual(Object.keys(point).sort(), ["date", "equity", "source"]);
+  }
+  assert.equal(publicPayload.navCurve[0]!.date, "2026-06-02");
+  assert.equal(publicPayload.navCurve[0]!.equity, 10_000_000);
+  assert.equal(publicPayload.navCurve[1]!.source, "live");
+
+  const summaryKeys = Object.keys(publicPayload.summary ?? {}).sort();
+  assert.deepEqual(summaryKeys, ["cumulativeReturnPct", "currentEquity", "initialEquity", "totalRealizedPnlTwd"]);
+  assert.equal("currentWeekNum" in (publicPayload.summary ?? {}), false, "TRK-5: currentWeekNum must not reach the public response");
+  assert.equal("lastNavDate" in (publicPayload.summary ?? {}), false);
+  assert.equal(publicPayload.summary?.currentEquity, 9_365_680);
+
+  assert.equal(publicPayload.weeks.length, 2, "TRK-5: weeks[] is kept as-is (already weekly-granularity, not per-trade detail)");
+  assert.equal(publicPayload.weeks[1]!.realizedPnlTwd, -218_700);
+});
+
+test("TRK-6: toPublicNav() passes through empty ledger (null summary, empty navCurve) unchanged", async () => {
+  const { toPublicNav } = await import("../apps/api/src/track-record-handlers.ts");
+  const emptyFixture = { ok: true as const, source: "empty_ledger", navCurve: [], weeks: [], summary: null };
+  const publicPayload = toPublicNav(emptyFixture as any);
+  assert.equal(publicPayload.summary, null);
+  assert.deepEqual(publicPayload.navCurve, []);
+  assert.equal(publicPayload.source, "empty_ledger");
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
