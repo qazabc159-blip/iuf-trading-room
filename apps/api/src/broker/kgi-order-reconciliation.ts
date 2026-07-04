@@ -235,6 +235,152 @@ export function reconcileKgiOrders(params: {
   return params.orders.map((order) => reconcileKgiOrder({ ...params, order }));
 }
 
+// ── UTA-C2 委託回報輪詢 (2026-07-04) ────────────────────────────────────────
+//
+// Polls the KGI SIM gateway's trades/deals/order-events and reconciles them
+// against unified_orders rows still resting on the kgi channel
+// (submitted/partial_fill), writing filled_qty/filled_price/status back.
+// Also flags "stuck pending" rows — a unified_orders row that was written
+// pending-first (D3) but never transitioned to submitted/rejected, meaning
+// the channel call's post-submit update failed (half-order). Per D3 §6,
+// stuck rows are NEVER auto-resubmitted; this only reports them.
+//
+// Design: reports/epic_trading_desk_20260702/S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md D3
+//         reports/fubon_adapter/FUBON_ADAPTER_INTERFACE_FREEZE_v1.md §附錄 UTA-C2
+
+export type KgiUnifiedOrderSyncSummary = {
+  checked: number;
+  updated: number;
+  stuckPending: Array<{ id: string; symbol: string; ageMs: number }>;
+  skippedGatewayScheduledOff: boolean;
+};
+
+const DEFAULT_STUCK_PENDING_MS = 3 * 60 * 1000; // 3 minutes
+
+function stuckPendingThresholdMs(): number {
+  const raw = Number(process.env["UTA_C2_STUCK_PENDING_MS"]);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_STUCK_PENDING_MS;
+}
+
+/** Maps a reconciled KGI lifecycle status to the unified_orders status enum. null = no change (still resting). */
+function mapReconciledStatusToUnified(
+  status: KgiOrderLifecycleStatus
+): "filled" | "partial_fill" | "cancelled" | "rejected" | null {
+  switch (status) {
+    case "filled":
+      return "filled";
+    case "partially_filled":
+      return "partial_fill";
+    case "cancelled":
+      return "cancelled";
+    case "rejected":
+      return "rejected";
+    case "accepted":
+    case "unconfirmed":
+    default:
+      return null;
+  }
+}
+
+export async function syncKgiUnifiedOrders(params: {
+  workspaceId: string;
+  gatewayBaseUrl?: string;
+  /** TEST ONLY — bypass the gateway-hours window guard. */
+  _ignoreScheduleWindow?: boolean;
+}): Promise<KgiUnifiedOrderSyncSummary> {
+  const summary: KgiUnifiedOrderSyncSummary = {
+    checked: 0,
+    updated: 0,
+    stuckPending: [],
+    skippedGatewayScheduledOff: false
+  };
+
+  if (!params._ignoreScheduleWindow) {
+    const { isKgiGatewayScheduledOff } = await import("./kgi-gateway-schedule.js");
+    if (isKgiGatewayScheduledOff()) {
+      summary.skippedGatewayScheduledOff = true;
+      return summary;
+    }
+  }
+
+  const { listUnifiedOrders, updateUnifiedOrderFill } = await import("./unified-order-store.js");
+  const rows = await listUnifiedOrders(params.workspaceId, 200);
+  const kgiRows = rows.filter((r) => r.adapterKey === "kgi");
+
+  // Stuck-pending scan — log only, never auto-resubmit (D3 半單協議).
+  const stuckThreshold = stuckPendingThresholdMs();
+  const now = Date.now();
+  for (const row of kgiRows) {
+    if (row.status !== "pending") continue;
+    const ageMs = now - new Date(row.createdAt).getTime();
+    if (ageMs >= stuckThreshold) {
+      summary.stuckPending.push({ id: row.id, symbol: row.symbol, ageMs });
+    }
+  }
+  if (summary.stuckPending.length > 0) {
+    console.warn(
+      `[uta-c2-sync] ${summary.stuckPending.length} kgi unified_orders row(s) stuck pending >= ${stuckThreshold}ms:`,
+      summary.stuckPending.map((s) => `${s.id}(${s.symbol})`).join(", ")
+    );
+  }
+
+  const syncable = kgiRows.filter(
+    (r) => (r.status === "submitted" || r.status === "partial_fill") && r.externalOrderId
+  );
+  if (syncable.length === 0) return summary;
+
+  const { KgiGatewayClient } = await import("./kgi-gateway-client.js");
+  const client = new KgiGatewayClient({
+    gatewayBaseUrl: params.gatewayBaseUrl ?? process.env["KGI_GATEWAY_URL"] ?? "http://127.0.0.1:8787",
+    ignoreScheduleGuard: true
+  });
+
+  let trades: unknown = null;
+  let deals: unknown = null;
+  let events: unknown = null;
+  try {
+    [trades, deals, events] = await Promise.all([
+      client.getTrades(true).catch(() => null),
+      client.getDeals().catch(() => null),
+      client.getRecentOrderEvents().catch(() => null)
+    ]);
+  } catch {
+    // Gateway unreachable this tick — leave rows untouched, retry next tick.
+    return summary;
+  }
+
+  for (const row of syncable) {
+    summary.checked += 1;
+    const reconciled = reconcileKgiOrder({
+      order: {
+        tradeId: row.externalOrderId,
+        symbol: row.symbol,
+        side: row.action === "Buy" ? "buy" : "sell",
+        requestedQty: row.qty,
+        submittedAt: row.submittedAt
+      },
+      trades,
+      deals,
+      events
+    });
+
+    const nextStatus = mapReconciledStatusToUnified(reconciled.status);
+    if (!nextStatus || nextStatus === row.status) continue;
+
+    const nowIso = new Date().toISOString();
+    await updateUnifiedOrderFill(row.id, {
+      status: nextStatus,
+      filledQty: reconciled.filledQty,
+      filledPrice: reconciled.avgFillPrice,
+      filledAt: nextStatus === "filled" ? reconciled.confirmedAt ?? nowIso : null,
+      cancelledAt: nextStatus === "cancelled" ? reconciled.confirmedAt ?? nowIso : null
+    });
+    summary.updated += 1;
+  }
+
+  return summary;
+}
+
 export function summarizeKgiReconciliationEvidence(params: {
   trades?: unknown;
   deals?: unknown;
