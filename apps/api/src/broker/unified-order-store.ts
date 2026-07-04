@@ -186,6 +186,37 @@ export async function updateUnifiedOrderRejected(
     .where(eq(unifiedOrders.id, orderId));
 }
 
+export async function updateUnifiedOrderCancelled(
+  orderId: string
+): Promise<UnifiedOrderRecord | null> {
+  const db = getDb();
+  const now = nowIso();
+  if (!db || !isDatabaseMode()) {
+    const existing = _memStore.get(orderId);
+    if (!existing) return null;
+    const updated: UnifiedOrderRecord = {
+      ...existing,
+      status: "cancelled",
+      cancelledAt: now,
+      updatedAt: now
+    };
+    _memStore.set(orderId, updated);
+    return updated;
+  }
+
+  const [row] = await db
+    .update(unifiedOrders)
+    .set({
+      status: "cancelled",
+      cancelledAt: new Date(now),
+      updatedAt: new Date(now)
+    })
+    .where(eq(unifiedOrders.id, orderId))
+    .returning();
+
+  return row ? dbRowToRecord(row) : null;
+}
+
 export async function listUnifiedOrders(
   workspaceId: string,
   limit = 50
