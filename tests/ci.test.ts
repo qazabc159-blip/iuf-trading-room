@@ -330,9 +330,14 @@ test("SCHEDULER-BOOT-1: DB-heavy schedulers must not starve auth and K-line read
 test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB failures", () => {
   const authStoreSrc = readFileSync("apps/api/src/auth-store.ts", "utf8");
   const serverSrc = readFileSync("apps/api/src/server.ts", "utf8");
+  // PR-C (2026-07-04): the dead `registerWithInvite` helper (previously the
+  // boundary marker here) was removed as unused code — zero routes called it,
+  // the live invite-registration route uses invite-store.ts's
+  // validateAndClaimWorkspaceInvite instead. getUserById now directly follows
+  // loginWithPassword, so that section comment is the new boundary.
   const loginBlock = authStoreSrc.slice(
     authStoreSrc.indexOf("export async function loginWithPassword"),
-    authStoreSrc.indexOf("// ── register with invite")
+    authStoreSrc.indexOf("// ── get user by id")
   );
   const getUserBlock = authStoreSrc.slice(
     authStoreSrc.indexOf("export async function getUserById"),
@@ -19228,9 +19233,11 @@ test("INVITE-6: auth-store is_active guard in login and session hydration", () =
     "INVITE-6: authUserColumns must select isActive"
   );
   // login path checks isActive
+  // PR-C (2026-07-04): boundary marker updated — dead registerWithInvite
+  // helper removed, getUserById now directly follows loginWithPassword.
   const loginBlock = src.slice(
     src.indexOf("export async function loginWithPassword"),
-    src.indexOf("// ── register with invite")
+    src.indexOf("// ── get user by id")
   );
   assert.ok(
     loginBlock.includes("isActive === false"),

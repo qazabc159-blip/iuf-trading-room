@@ -238,7 +238,6 @@ import {
   getUserById,
   loginWithPassword,
   parseSessionCookie,
-  registerWithInvite,
   seedOwnerIfEmpty
 } from "./auth-store.js";
 import {
@@ -1632,6 +1631,14 @@ app.post("/api/v1/trading/orders/cancel", async (c) => {
 // by adapter_key; workspace ownership enforced via cancelUnifiedOrder's
 // getUnifiedOrderById(workspaceId, ...) lookup — a foreign order 404s.
 app.post("/api/v1/trading/orders/:id/cancel", async (c) => {
+  // PR-C G-PORT gap fix (2026-07-04): UTA-C1 (#1168) added this route without
+  // a role gate. G-PORT dictates paper/模擬下單 writes are Trader+; this cancel
+  // path drives real state transitions on unified_orders same as the legacy
+  // /trading/orders/cancel above (which already has this gate).
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const session = c.get("session");
   const workspaceId = (session.workspace as { id?: string } | undefined)?.id;
   if (!workspaceId) {

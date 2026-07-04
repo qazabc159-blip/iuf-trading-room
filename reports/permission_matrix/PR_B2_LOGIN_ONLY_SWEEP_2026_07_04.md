@@ -253,3 +253,34 @@
 - `pnpm test` / `pnpm typecheck` / W6 no-real-order audit / secret regression 全綠（見 PR 說明）。
 - diff 只動 role 檢查：`apps/api/src/server.ts`（51 處 `requireMinRole` 插入 + 1 行 import）、`apps/api/src/auth/role-matrix.test.ts`（新增測試）、`tests/ci.test.ts`（既有 UOF-D6-3 文字視窗因新增 4 行 role 閘而擴大，純測試調整不動斷言邏輯）。
 - 未動：`broker/*`、`kgi-gateway`、W6、migrations、`apps/web`；豁免清單三端點（`briefs/:id`、`dashboard/snapshot`、`paper/e2e`）與「留 29」不重分類（本輪為 login-only 池，非 READ_DRAFT_ROLES 51 處，兩池不重疊）。
+
+## PR-C G-PORT 複查（2026-07-04）
+
+**範圍**：對照 `PERMISSION_MATRIX_v1.md` §2 D3「G-PORT 模擬交易（讀=Viewer 可，寫=Trader 起）」，覆查本檔上方 51 處補閘清單中歸屬 G-PORT 的每一項，加上 PR-B2 之後新 merge 到 `origin/main` 的寫端點（#1163~#1168），確認全部 paper/模擬下單寫端點都有 `requireMinRole(..., "Trader")`（或更高）閘。
+
+**方法**：`git grep -n 'app\.\(get\|post\|patch\|put\|delete\)('  apps/api/src/server.ts` 抓出所有 `paper|trading|plans|reviews|risk|strategy|uta|kgi/quote/subscribe|promote-to-paper` 路由，逐一核對緊接在 handler 開頭是否有 `requireMinRole` 呼叫（或等價的 inline Owner-only 檢查，用於 G-OWNER 群）。
+
+### 複查結果
+
+| 端點 | 現況 | 判定 |
+|---|---|---|
+| `POST /api/v1/trading/orders` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/trading/orders/cancel`（legacy，accountId+orderId） | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/trading/orders/:id/cancel`（UTA-C1 統一撤單路徑，#1168 新 merge） | **零閘**——#1168 merge 於 PR-B2（#1167）之後，新路由未補閘，是本輪要抓的漏洞 | **🔴 補閘（本 PR 修）** |
+| `POST /api/v1/risk/limits` / `checks` / `strategy-limits`（POST+DELETE）/ `symbol-limits`（POST+DELETE） | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/risk/kill-switch`、`POST /api/v1/portfolio/kill-mode` | Owner 閘（G-OWNER，非 G-PORT，PR-B2 已裁決升 Owner） | OK（群別正確，非 G-PORT 缺口） |
+| `POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-submit` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/strategy/ideas/:ideaId/promote-to-paper-preview` | 無閘 | OK——純預覽（`previewOrder`，不落 Order row），D3 對齊「讀=Viewer 可」的預覽精神，比照 `trading/orders/preview` |
+| `POST /api/v1/strategy/runs/:id/confirm-token`、`POST /api/v1/strategy/runs/:id/execute` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/plans`、`PATCH /api/v1/plans/:id` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/reviews` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/kgi/quote/subscribe`、`POST /api/v1/kgi/quote/subscribe/kbar` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/paper/orders` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/paper/orders/:id/cancel` | Trader 閘（PR-B2 已補，另有 ownership check） | OK |
+| `POST /api/v1/paper/orders/preview`、`POST /api/v1/paper/preview` | 無閘 | OK——純預覽，不落單，同 promote-to-paper-preview |
+| `POST /api/v1/paper/submit` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/uta/orders` | Trader 閘（PR-B2 已補） | OK |
+| `POST /api/v1/portfolio/snapshots/capture-paper` | inline `role !== "Owner"` 檢查 | OK——非 G-PORT（快照擷取為 G-OWNER ops 動作），已高於 Trader 下限，非本輪缺口 |
+| `POST /api/v1/strategy/:strategyId/toggle-mode` | inline `role !== "Owner"` 檢查 | OK——真金模式切換，G-OWNER，設計本就 Owner-only，本輪不改（禁區鄰近：真金路徑相關） |
+
+**結論**：G-PORT 群唯一缺口是 `POST /api/v1/trading/orders/:id/cancel`（UTA-C1 #1168，merge 時間晚於 PR-B2 掃描，掃描清單天然沒收到）——已在本 PR 補上 `requireMinRole(session, "Trader")`，並在 `apps/api/src/auth/role-matrix.test.ts` `GATE_CASES` 新增一列（`POST /api/v1/trading/orders/role-matrix-x/cancel`，minRole Trader）。其餘 G-PORT 寫端點於 PR-B2 已全數補閘，複查後零殘留缺口；G-OWNER（kill-switch/kill-mode/toggle-mode/capture-paper）與純預覽端點（promote-to-paper-preview/paper preview 系列）維持現狀，符合設計。
