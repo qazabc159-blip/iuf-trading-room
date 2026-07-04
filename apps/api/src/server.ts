@@ -199,6 +199,7 @@ import {
 } from "./broker/paper-broker.js";
 import { cancelOrder, KgiChannelUnavailableError, previewOrder, submitOrder } from "./broker/trading-service.js";
 import { listExecutionEvents } from "./broker/execution-events-store.js";
+import { requireMinRole } from "./auth/require-min-role.js";
 import {
   getCompanyGraphSearchResults,
   getCompanyGraphStats,
@@ -796,6 +797,10 @@ app.get("/api/v1/entitlements/me", (c) => {
 });
 
 app.get("/api/v1/audit-logs/summary", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = auditLogSummaryQuerySchema.parse(c.req.query());
   return c.json({
     data: await getAuditLogSummary({
@@ -814,6 +819,10 @@ app.get("/api/v1/audit-logs/summary", async (c) => {
 });
 
 app.get("/api/v1/audit-logs/export", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = auditLogExportQuerySchema.parse(c.req.query());
   const entries = await listAuditLogEntries({
     session: c.get("session"),
@@ -842,6 +851,10 @@ app.get("/api/v1/audit-logs/export", async (c) => {
 });
 
 app.get("/api/v1/audit-logs", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = auditLogListQuerySchema.parse(c.req.query());
   return c.json({
     data: await listAuditLogEntries({
@@ -863,6 +876,10 @@ app.get("/api/v1/audit-logs", async (c) => {
 });
 
 app.get("/api/v1/event-history", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = eventHistoryQuerySchema.parse(c.req.query());
   return c.json({
     data: await getEventHistory({
@@ -882,6 +899,10 @@ app.get("/api/v1/event-history", async (c) => {
 });
 
 app.get("/api/v1/event-history/summary", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = eventHistoryQuerySchema.parse(c.req.query());
   return c.json({
     data: await getEventHistorySummary({
@@ -900,6 +921,10 @@ app.get("/api/v1/event-history/summary", async (c) => {
 });
 
 app.get("/api/v1/event-history/export", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = eventHistoryExportQuerySchema.parse(c.req.query());
   const items = await getEventHistory({
     session: c.get("session"),
@@ -926,6 +951,10 @@ app.get("/api/v1/event-history/export", async (c) => {
 });
 
 app.get("/api/v1/ops/snapshot", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = opsSnapshotQuerySchema.parse(c.req.query());
   return c.json({
     data: await getOpsSnapshot({
@@ -939,6 +968,10 @@ app.get("/api/v1/ops/snapshot", async (c) => {
 });
 
 app.get("/api/v1/ops/trends", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = opsTrendsQuerySchema.parse(c.req.query());
   return c.json({
     data: await getOpsTrends({
@@ -1127,6 +1160,10 @@ app.get("/api/v1/market-data/bars/diagnostics", async (c) => {
 });
 
 app.post("/api/v1/market-data/manual-quotes", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = manualQuoteUpsertSchema.parse(await c.req.json());
   return c.json(
     {
@@ -1140,6 +1177,10 @@ app.post("/api/v1/market-data/manual-quotes", async (c) => {
 });
 
 app.post("/api/v1/market-data/paper-quotes", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = manualQuoteUpsertSchema.parse(await c.req.json());
   return c.json(
     {
@@ -1303,6 +1344,10 @@ app.get("/api/v1/risk/limits", async (c) => {
 });
 
 app.post("/api/v1/risk/limits", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = riskLimitUpsertInputSchema.parse(await c.req.json());
   return c.json({
     data: await upsertRiskLimitState({
@@ -1323,6 +1368,10 @@ app.get("/api/v1/risk/kill-switch", async (c) => {
 });
 
 app.post("/api/v1/risk/kill-switch", async (c) => {
+  if (!requireMinRole(c.get("session"), "Owner")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = killSwitchInputSchema.parse(await c.req.json());
   return c.json({
     data: await setKillSwitchState({
@@ -1333,6 +1382,10 @@ app.post("/api/v1/risk/kill-switch", async (c) => {
 });
 
 app.post("/api/v1/risk/checks", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = riskCheckInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -1392,6 +1445,10 @@ app.get("/api/v1/risk/strategy-limits", async (c) => {
 });
 
 app.post("/api/v1/risk/strategy-limits", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = strategyRiskLimitUpsertInputSchema.parse(await c.req.json());
   return c.json({
     data: await upsertStrategyRiskLimit({
@@ -1402,6 +1459,10 @@ app.post("/api/v1/risk/strategy-limits", async (c) => {
 });
 
 app.delete("/api/v1/risk/strategy-limits", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = z
     .object({
       accountId: z.string().min(1),
@@ -1442,6 +1503,10 @@ app.get("/api/v1/risk/symbol-limits", async (c) => {
 });
 
 app.post("/api/v1/risk/symbol-limits", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = symbolRiskLimitUpsertInputSchema.parse(await c.req.json());
   return c.json({
     data: await upsertSymbolRiskLimit({
@@ -1452,6 +1517,10 @@ app.post("/api/v1/risk/symbol-limits", async (c) => {
 });
 
 app.delete("/api/v1/risk/symbol-limits", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = z
     .object({
       accountId: z.string().min(1),
@@ -1502,6 +1571,10 @@ app.get("/api/v1/trading/orders", async (c) => {
 });
 
 app.post("/api/v1/trading/orders", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = orderCreateInputSchema.parse(await c.req.json());
   try {
     const result = await submitOrder({
@@ -1532,6 +1605,10 @@ app.post("/api/v1/trading/orders/preview", async (c) => {
 });
 
 app.post("/api/v1/trading/orders/cancel", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = orderCancelInputSchema.parse(await c.req.json());
   const accountId = c.req.query("accountId");
   if (!accountId) {
@@ -1625,6 +1702,10 @@ app.get("/api/v1/company-graph/stats", async (c) => {
 });
 
 app.get("/api/v1/companies/duplicates", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = companyDuplicateReportQuerySchema.parse(c.req.query());
   return c.json({
     data: await getCompanyDuplicateReport({
@@ -1637,6 +1718,10 @@ app.get("/api/v1/companies/duplicates", async (c) => {
 });
 
 app.get("/api/v1/companies/merge-preview", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const query = companyMergePreviewQuerySchema.parse(c.req.query());
   const preview = await getCompanyMergePreview({
     session: c.get("session"),
@@ -1657,6 +1742,10 @@ app.get("/api/v1/companies/merge-preview", async (c) => {
 });
 
 app.post("/api/v1/companies/merge", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = companyMergeInputSchema.parse(await c.req.json());
   const result = await executeCompanyMerge({
     session: c.get("session"),
@@ -1920,6 +2009,10 @@ app.get("/api/v1/themes/index", async (c) => {
 });
 
 app.post("/api/v1/themes", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   // F3 prevention: sanitize CP950 mojibake at write-time before persisting to DB.
   const rawPayload = themeCreateInputSchema.parse(await c.req.json());
   const payload = sanitizeThemeInput(rawPayload);
@@ -2037,6 +2130,10 @@ app.get("/api/v1/themes/:id", async (c) => {
 });
 
 app.patch("/api/v1/themes/:id", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   // F3 prevention: sanitize CP950 mojibake at write-time before persisting to DB.
   const rawPayload = themeUpdateInputSchema.parse(await c.req.json());
   const payload = sanitizeThemeInput(rawPayload);
@@ -2085,6 +2182,10 @@ app.get("/api/v1/companies/lite", async (c) => {
 });
 
 app.post("/api/v1/companies", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = companyCreateInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -2112,6 +2213,10 @@ app.get("/api/v1/companies/:id/relations", async (c) => {
 });
 
 app.put("/api/v1/companies/:id/relations", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
@@ -2143,6 +2248,10 @@ app.get("/api/v1/companies/:id/keywords", async (c) => {
 });
 
 app.put("/api/v1/companies/:id/keywords", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
     workspaceSlug: c.get("session").workspace.slug
   });
@@ -2194,6 +2303,10 @@ app.get("/api/v1/companies/:id", async (c) => {
 });
 
 app.patch("/api/v1/companies/:id", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = companyUpdateInputSchema.parse(await c.req.json());
   // Resolve ticker→UUID so updateCompany always receives a UUID.
   const resolved = await resolveCompany(c.get("repo"), c.req.param("id"), {
@@ -2336,6 +2449,10 @@ const promoteSubmitBodySchema = z.object({
 });
 
 app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const ideaId = c.req.param("ideaId");
   const session = c.get("session");
   const repo = c.get("repo");
@@ -2440,6 +2557,10 @@ app.post("/api/v1/strategy/ideas/:ideaId/promote-to-paper-submit", async (c) => 
 });
 
 app.post("/api/v1/strategy/runs", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = strategyRunCreateInputSchema.parse(await c.req.json().catch(() => ({})));
   return c.json(
     {
@@ -2485,12 +2606,20 @@ app.get("/api/v1/strategy/runs/:id", async (c) => {
 // Autopilot Phase 2 (c) — Issue a one-time confirm token for dryRun:false execute.
 // Token is bound to the runId path param; TTL = 60s; one-time use.
 app.post("/api/v1/strategy/runs/:id/confirm-token", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const runId = c.req.param("id");
   const tokenResponse = issueConfirmToken(runId);
   return c.json({ data: tokenResponse }, 201);
 });
 
 app.post("/api/v1/strategy/runs/:id/execute", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const runId = c.req.param("id");
   const payload = autopilotExecuteInputSchema.parse(await c.req.json().catch(() => ({})));
 
@@ -2826,6 +2955,10 @@ app.get("/api/v1/realtime/snapshot", async (c) => {
 });
 
 app.post("/api/v1/signals", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = signalCreateInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -2848,6 +2981,10 @@ app.get("/api/v1/signals/:id", async (c) => {
 });
 
 app.patch("/api/v1/signals/:id", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = signalUpdateInputSchema.parse(await c.req.json());
   const signal = await c.get("repo").updateSignal(c.req.param("id"), payload, {
     workspaceSlug: c.get("session").workspace.slug
@@ -2870,6 +3007,10 @@ app.get("/api/v1/plans", async (c) => {
 });
 
 app.post("/api/v1/plans", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = tradePlanCreateInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -3250,6 +3391,10 @@ app.get("/api/v1/plans/:id", async (c) => {
 });
 
 app.patch("/api/v1/plans/:id", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = tradePlanUpdateInputSchema.parse(await c.req.json());
   const plan = await c.get("repo").updateTradePlan(c.req.param("id"), payload, {
     workspaceSlug: c.get("session").workspace.slug
@@ -3271,6 +3416,10 @@ app.get("/api/v1/reviews", async (c) => {
 });
 
 app.post("/api/v1/reviews", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = reviewEntryCreateInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -3576,6 +3725,10 @@ app.get("/api/v1/briefs/search", async (c) => {
 });
 
 app.post("/api/v1/briefs", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const payload = dailyBriefCreateInputSchema.parse(await c.req.json());
   return c.json(
     {
@@ -4266,6 +4419,10 @@ app.post("/api/v1/webhooks/tradingview", async (c) => {
 // Import
 
 app.post("/api/v1/import/my-tw-coverage", async (c) => {
+  if (!requireMinRole(c.get("session"), "Admin")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const body = await c.req.json().catch(() => ({}));
   const typed = body as Record<string, unknown>;
   const coveragePath =
@@ -5934,6 +6091,10 @@ const kgiSubscribeSchema = z.object({
 });
 
 app.post("/api/v1/kgi/quote/subscribe", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   try {
     const body = kgiSubscribeSchema.parse(await c.req.json());
 
@@ -6098,6 +6259,10 @@ const kgiSubscribeKbarSchema = z.object({
 });
 
 app.post("/api/v1/kgi/quote/subscribe/kbar", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   try {
     const body = kgiSubscribeKbarSchema.parse(await c.req.json());
     const result = await getKgiQuoteClient().subscribeSymbolKbar(body.symbol, {
@@ -6272,6 +6437,10 @@ app.get("/api/v1/paper/flags", (c) => {
 // Returns 422 with rich { blocked, decision, riskCheck, quoteGate, guards, reasonCodes }
 // if risk or gate blocks; otherwise 201 + { data: OrderState }.
 app.post("/api/v1/paper/orders", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   // Layer 0: parse + validate input
   let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
   try {
@@ -6566,6 +6735,10 @@ app.get("/api/v1/paper/positions", async (c) => {
 
 // POST /api/v1/paper/orders/:id/cancel — cancel a PENDING/ACCEPTED order
 app.post("/api/v1/paper/orders/:id/cancel", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const session = c.get("session");
   const orderId = c.req.param("id");
   const state = await getOrder(orderId);
@@ -6856,6 +7029,10 @@ const radarKillModeToBackend: Record<
 };
 
 app.post("/api/v1/portfolio/kill-mode", async (c) => {
+  if (!requireMinRole(c.get("session"), "Owner")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   let payload: ReturnType<typeof portfolioKillModeSchema.parse>;
   try {
     payload = portfolioKillModeSchema.parse(await c.req.json());
@@ -13210,6 +13387,10 @@ app.post("/api/v1/paper/preview", async (c) => {
 //   - Idempotency preserved (existing behavior not regressed).
 //   - Blocked order: zero fill rows, zero portfolio change.
 app.post("/api/v1/paper/submit", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   let payload: ReturnType<typeof paperOrderCreateInputSchema.parse>;
   try {
     payload = paperOrderCreateInputSchema.parse(await c.req.json());
@@ -14445,6 +14626,10 @@ const labBundleIntakeSchema = z.object({
 // Does NOT promote. Does NOT trigger paper. Does NOT compute Sharpe.
 // Status always starts at "pending_review".
 app.post("/api/v1/lab/bundles/intake", async (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   let payload: ReturnType<typeof labBundleIntakeSchema.parse>;
   try {
     payload = labBundleIntakeSchema.parse(await c.req.json());
@@ -14486,6 +14671,10 @@ app.post("/api/v1/lab/bundles/intake", async (c) => {
 // Optional ?source=athena filter.
 // Returns newest-first.
 app.get("/api/v1/lab/bundles", (c) => {
+  if (!requireMinRole(c.get("session"), "Analyst")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const statusFilter = c.req.query("status");
   const sourceFilter = c.req.query("source");
 
@@ -21144,6 +21333,10 @@ app.get("/api/v1/uta/adapters", async (c) => {
 
 // GET /api/v1/uta/accounts — this workspace's broker connections + status
 app.get("/api/v1/uta/accounts", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const session = c.get("session");
   if (!isDatabaseMode()) return c.json({ data: [] });
   const db = getDb();
@@ -21403,6 +21596,10 @@ app.post("/api/v1/uta/accounts/disconnect", async (c) => {
 
 // POST /api/v1/uta/orders — submit a unified order through the specified adapter
 app.post("/api/v1/uta/orders", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const bodySchema = z.object({
     adapterKey: z.enum(["kgi", "paper"]),
     symbol: z.string().min(1),
@@ -21469,6 +21666,10 @@ app.post("/api/v1/uta/orders", async (c) => {
 
 // GET /api/v1/uta/positions — unified positions from adapter
 app.get("/api/v1/uta/positions", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const adapterKey = c.req.query("adapterKey") ?? "paper";
   const session = c.get("session");
   try {
@@ -21490,6 +21691,10 @@ app.get("/api/v1/uta/positions", async (c) => {
 
 // GET /api/v1/uta/orders — list recent unified orders for the workspace
 app.get("/api/v1/uta/orders", async (c) => {
+  if (!requireMinRole(c.get("session"), "Trader")) {
+    return c.json({ error: "forbidden_role" }, 403);
+  }
+
   const session = c.get("session");
   const workspaceId = (session.workspace as { id?: string } | undefined)?.id;
   if (!workspaceId) return c.json({ error: "Workspace not resolved" }, 400);

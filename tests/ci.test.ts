@@ -17862,7 +17862,11 @@ test("UOF-D6-3: GET /uta/accounts calls ensureDefaultBrokerAccounts before listi
   );
   const routeIdx = src.indexOf('app.get("/api/v1/uta/accounts"');
   assert.ok(routeIdx >= 0, "UOF-D6-3: GET /uta/accounts route must exist");
-  const window = src.slice(routeIdx, routeIdx + 900);
+  // Window widened 900->1400 (PR-B2, 2026-07-04): the route now opens with a
+  // requireMinRole(..., "Trader") gate (permission matrix G-SELF), which pushes
+  // the SELECT further from the route index. Behavior asserted here (seed call
+  // before SELECT) is unchanged — only the fixed text-window size grew.
+  const window = src.slice(routeIdx, routeIdx + 1400);
   assert.match(window, /ensureDefaultBrokerAccounts/, "UOF-D6-3: route must call ensureDefaultBrokerAccounts");
   const seedCallIdx = window.indexOf("ensureDefaultBrokerAccounts(session.workspace.id)");
   const selectIdx = window.indexOf("SELECT ba.id");

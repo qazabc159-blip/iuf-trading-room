@@ -29,7 +29,7 @@ import test, { after, before, describe } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { ROLES_BY_RANK, type Role } from "./require-min-role.js";
+import { ROLE_RANK, ROLES_BY_RANK, type Role } from "./require-min-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
@@ -71,9 +71,11 @@ async function waitForHealth(url: string, attempts = 60): Promise<void> {
     : new Error("role-matrix.test.ts: API did not become healthy in time.");
 }
 
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 async function requestAs(
   role: Role,
-  method: "GET" | "POST",
+  method: HttpMethod,
   routePath: string
 ): Promise<Response> {
   return fetch(`${baseUrl}${routePath}`, {
@@ -270,6 +272,111 @@ describe("role-matrix PR-B — over-grant guard on the 3 pre-classified exemptio
           403,
           `PR-B exemption must stay Analyst+: ${role} should still get 403 on ${exemptCase.path}, got ${res.status}`
         );
+        await res.text().catch(() => undefined);
+      });
+    }
+  }
+});
+
+// PR-B2 (2026-07-04) — login-only sweep gate verification.
+//
+// Design: reports/permission_matrix/PERMISSION_MATRIX_v1.md §4 PR-B2 row.
+// These 51 cases correspond 1:1 to every endpoint gated in this PR (see
+// reports/permission_matrix/PR_B2_LOGIN_ONLY_SWEEP_2026_07_04.md for the full
+// per-endpoint group/action/reason breakdown covering all ~196 login-only
+// candidates, not just these 51).
+//
+// Each case only asserts the boundary the gate itself is responsible for:
+//   - every role ranked BELOW minRole must get exactly 403 (forbidden_role) —
+//     requireMinRole() is the first statement in each handler body, so no
+//     downstream body-parsing / DB lookup ever runs first for a blocked role.
+//   - every role ranked AT-OR-ABOVE minRole must NOT get 403 — whatever
+//     status downstream logic then produces (200/201/400/404/409/500,
+//     depending on memory-mode state, a deliberately-empty body, or the
+//     `role-matrix-x` placeholder used in place of a real :id/:ideaId param)
+//     is out of scope here; only the permission boundary is pinned.
+// Path params use the literal placeholder "role-matrix-x" — same pattern as
+// the G-REVIEW case above (role check runs before any param/DB lookup).
+interface GateOnlyCase {
+  group: string;
+  method: HttpMethod;
+  path: string;
+  minRole: Role;
+}
+
+const GATE_CASES: GateOnlyCase[] = [
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/audit-logs/summary", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/audit-logs/export", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/audit-logs", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/event-history", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/event-history/summary", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/event-history/export", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/ops/snapshot", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "GET", path: "/api/v1/ops/trends", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "POST", path: "/api/v1/market-data/manual-quotes", minRole: "Admin" },
+  { group: "G-ADMIN-ish", method: "POST", path: "/api/v1/market-data/paper-quotes", minRole: "Admin" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/risk/limits", minRole: "Trader" },
+  { group: "G-OWNER", method: "POST", path: "/api/v1/risk/kill-switch", minRole: "Owner" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/risk/checks", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/risk/strategy-limits", minRole: "Trader" },
+  { group: "G-PORT", method: "DELETE", path: "/api/v1/risk/strategy-limits", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/risk/symbol-limits", minRole: "Trader" },
+  { group: "G-PORT", method: "DELETE", path: "/api/v1/risk/symbol-limits", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/trading/orders", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/trading/orders/cancel", minRole: "Trader" },
+  { group: "G-RESEARCH", method: "GET", path: "/api/v1/companies/duplicates", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "GET", path: "/api/v1/companies/merge-preview", minRole: "Analyst" },
+  { group: "G-ADMIN-ish", method: "POST", path: "/api/v1/companies/merge", minRole: "Admin" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/themes", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "PATCH", path: "/api/v1/themes/role-matrix-x", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/companies", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "PUT", path: "/api/v1/companies/role-matrix-x/relations", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "PUT", path: "/api/v1/companies/role-matrix-x/keywords", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "PATCH", path: "/api/v1/companies/role-matrix-x", minRole: "Analyst" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/strategy/ideas/role-matrix-x/promote-to-paper-submit", minRole: "Trader" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/strategy/runs", minRole: "Analyst" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/strategy/runs/role-matrix-x/confirm-token", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/strategy/runs/role-matrix-x/execute", minRole: "Trader" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/signals", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "PATCH", path: "/api/v1/signals/role-matrix-x", minRole: "Analyst" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/plans", minRole: "Trader" },
+  { group: "G-PORT", method: "PATCH", path: "/api/v1/plans/role-matrix-x", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/reviews", minRole: "Trader" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/briefs", minRole: "Analyst" },
+  { group: "G-ADMIN-ish", method: "POST", path: "/api/v1/import/my-tw-coverage", minRole: "Admin" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/kgi/quote/subscribe", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/kgi/quote/subscribe/kbar", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/paper/orders", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/paper/orders/role-matrix-x/cancel", minRole: "Trader" },
+  { group: "G-OWNER", method: "POST", path: "/api/v1/portfolio/kill-mode", minRole: "Owner" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/paper/submit", minRole: "Trader" },
+  { group: "G-RESEARCH", method: "POST", path: "/api/v1/lab/bundles/intake", minRole: "Analyst" },
+  { group: "G-RESEARCH", method: "GET", path: "/api/v1/lab/bundles", minRole: "Analyst" },
+  { group: "G-SELF", method: "GET", path: "/api/v1/uta/accounts", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/uta/orders", minRole: "Trader" },
+  { group: "G-SELF", method: "GET", path: "/api/v1/uta/positions", minRole: "Trader" },
+  { group: "G-SELF", method: "GET", path: "/api/v1/uta/orders", minRole: "Trader" }
+];
+
+describe("role-matrix (PR-B2 — login-only sweep, 51 newly-gated endpoints)", () => {
+  for (const gc of GATE_CASES) {
+    for (const role of ROLES_BY_RANK) {
+      const shouldBlock = ROLE_RANK[role] < ROLE_RANK[gc.minRole];
+      test(`${gc.group} :: ${gc.method} ${gc.path} :: ${role} -> ${shouldBlock ? "403" : "not-403"}`, async () => {
+        const res = await requestAs(role, gc.method, gc.path);
+        if (shouldBlock) {
+          assert.equal(
+            res.status,
+            403,
+            `expected ${role} (rank < ${gc.minRole}) to be blocked at ${gc.method} ${gc.path}, got ${res.status}`
+          );
+        } else {
+          assert.notEqual(
+            res.status,
+            403,
+            `expected ${role} (rank >= ${gc.minRole}) to pass the role gate at ${gc.method} ${gc.path}, got 403`
+          );
+        }
         await res.text().catch(() => undefined);
       });
     }
