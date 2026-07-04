@@ -238,14 +238,18 @@ export const SECONDARY_ADMIN_SURFACES = [
   },
   {
     path: "/admin/invites",
-    title: "邀請管理",
+    title: "邀請管理（舊）",
     shortTitle: "邀請",
-    sub: "註冊邀請",
-    kind: "admin",
-    disposition: "secondary",
+    sub: "已併入團隊管理",
+    kind: "legacy",
+    disposition: "redirect",
     activePaths: ["/admin/invites"],
-    // G-ADMIN：邀請/用戶管理＝Admin 起。
+    // P1-2 legacy invite converge (2026-07-05)：invite_codes 簽發端點已下線
+    // (/auth/issue-invite → 410)，本頁改為薄轉址頁，permanentRedirect 到
+    // /admin/team（workspace_invites／migration 0050 系統）。
+    // G-ADMIN：仍維持 Admin 起。
     minRole: "Admin",
+    replacementPath: "/admin/team",
   },
 ] as const satisfies readonly WebSurface[];
 

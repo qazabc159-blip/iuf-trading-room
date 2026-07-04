@@ -234,7 +234,6 @@ import {
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
-  createInviteCode,
   getUserById,
   loginWithPassword,
   parseSessionCookie,
@@ -6414,33 +6413,23 @@ app.post("/auth/logout", (c) => {
   return c.json({ ok: true });
 });
 
-const issueInviteSchema = z.object({
-  code: z.string().min(4).max(64).optional(),
-  ttlMinutes: z.number().int().min(1).max(60 * 24 * 30).optional()
-});
-
-// Owner-gated invite issuance. Used by verify scripts to produce a fresh
-// Viewer-role test user, and by the Owner to onboard real teammates without
-// running the seed script through a DB shell.
-// Note: /auth/* is outside the /api/v1/* session middleware, so we resolve the
-// session from the cookie inline (same pattern as /auth/me).
-app.post("/auth/issue-invite", async (c) => {
-  const cookieHeader = c.req.header("cookie");
-  const { parseSessionCookie, getUserById } = await import("./auth-store.js");
-  const userId = parseSessionCookie(cookieHeader);
-  if (!userId) return c.json({ error: "unauthenticated" }, 401);
-  const user = await getUserById(userId);
-  if (!user) return c.json({ error: "user_not_found" }, 401);
-  if (user.role !== "Owner") {
-    return c.json({ error: "forbidden_role" }, 403);
-  }
-  const body = issueInviteSchema.parse(await c.req.json().catch(() => ({})));
-  const result = await createInviteCode({
-    issuerId: user.id,
-    code: body.code,
-    ttlMs: body.ttlMinutes ? body.ttlMinutes * 60_000 : undefined
-  });
-  return c.json({ data: { code: result.code, expiresAt: result.expiresAt.toISOString() } });
+// RETIRED 2026-07-05 (P1-2 legacy invite converge). This was the old
+// Owner-only invite_codes issuance path, superseded by the workspace_invites
+// system (migration 0050): POST /api/v1/admin/invites (Admin+) to issue,
+// POST /auth/register-with-invite to redeem. invite_codes table/data are
+// left untouched (historical, no destructive migration) — this route now
+// answers 410 Gone rather than a bare 404 so any stale caller (old front-end
+// page, verify scripts) gets an honest signal instead of silence.
+app.post("/auth/issue-invite", (c) => {
+  return c.json(
+    {
+      error: "endpoint_retired",
+      message:
+        "/auth/issue-invite has been retired. Issue invites via POST /api/v1/admin/invites (Admin+), then redeem with POST /auth/register-with-invite.",
+      replacement: "/api/v1/admin/invites"
+    },
+    410
+  );
 });
 
 app.get("/auth/me", async (c) => {

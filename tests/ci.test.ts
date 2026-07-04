@@ -338,13 +338,18 @@ test("AUTH-LOGIN-1: owner login reads only stable auth columns and reports DB fa
   // the live invite-registration route uses invite-store.ts's
   // validateAndClaimWorkspaceInvite instead. getUserById now directly follows
   // loginWithPassword, so that section comment is the new boundary.
+  // P1-2 (2026-07-05): the legacy `createInviteCode` helper (invite_codes /
+  // /auth/issue-invite issuance path, previously the boundary marker here)
+  // was also removed — the route it backed now returns 410 Gone, superseded
+  // by workspace_invites (migration 0050) / POST /api/v1/admin/invites.
+  // getUserById is now directly followed by the password-policy section.
   const loginBlock = authStoreSrc.slice(
     authStoreSrc.indexOf("export async function loginWithPassword"),
     authStoreSrc.indexOf("// ── get user by id")
   );
   const getUserBlock = authStoreSrc.slice(
     authStoreSrc.indexOf("export async function getUserById"),
-    authStoreSrc.indexOf("// ── issue an invite code")
+    authStoreSrc.indexOf("// ── password policy")
   );
 
   assert.ok(
