@@ -198,6 +198,7 @@ import {
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
 import { cancelOrder, KgiChannelUnavailableError, previewOrder, submitOrder } from "./broker/trading-service.js";
+import { cancelUnifiedOrder } from "./broker/trading-cancel-service.js";
 import { listExecutionEvents } from "./broker/execution-events-store.js";
 import { requireMinRole } from "./auth/require-min-role.js";
 import {
@@ -1623,6 +1624,34 @@ app.post("/api/v1/trading/orders/cancel", async (c) => {
     return c.json({ error: "order_not_found" }, 404);
   }
   return c.json({ data: order });
+});
+
+// POST /api/v1/trading/orders/:id/cancel — UTA-C1 統一撤單路徑 (2026-07-04)
+// Cancels a unified_orders row by id (not the legacy paper-only
+// /trading/orders/cancel above, which takes accountId+orderId). Dispatches
+// by adapter_key; workspace ownership enforced via cancelUnifiedOrder's
+// getUnifiedOrderById(workspaceId, ...) lookup — a foreign order 404s.
+app.post("/api/v1/trading/orders/:id/cancel", async (c) => {
+  const session = c.get("session");
+  const workspaceId = (session.workspace as { id?: string } | undefined)?.id;
+  if (!workspaceId) {
+    return c.json({ error: "workspace_not_resolved" }, 400);
+  }
+  const orderId = c.req.param("id");
+  const result = await cancelUnifiedOrder({ session, workspaceId, orderId });
+
+  switch (result.outcome) {
+    case "not_found":
+      return c.json({ error: "order_not_found" }, 404);
+    case "already_cancelled":
+      return c.json({ data: result.order, status: "already_cancelled" }, 200);
+    case "cancel_not_supported_kgi_sim":
+      return c.json({ error: "cancel_not_supported_kgi_sim", data: result.order }, 409);
+    case "not_cancellable":
+      return c.json({ error: "order_not_cancellable", reason: result.reason, data: result.order }, 409);
+    case "cancelled":
+      return c.json({ data: result.order }, 200);
+  }
 });
 
 app.get("/api/v1/trading/status", async (c) => {

@@ -118,6 +118,7 @@ import {
   previewOrder,
   submitOrder
 } from "../apps/api/src/broker/trading-service.ts";
+import { cancelUnifiedOrder } from "../apps/api/src/broker/trading-cancel-service.ts";
 import { orderCreateInputSchema, kgiChannelUnavailableReasonSchema } from "../packages/contracts/src/broker.ts";
 import { quantityUnitSchema } from "../packages/contracts/src/paper.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
@@ -17898,6 +17899,329 @@ test("UOF-D6-5: paper channel dual-write failure is caught and marks the pending
     "'pending forever' gap when placePaperOrder throws"
   );
   assert.ok(rethrowIdx > catchIdx, "UOF-D6-5: catch must rethrow so the caller still sees the original error");
+});
+
+// ── UTA-C1 統一撤單路徑 (2026-07-04) ─────────────────────────────────────────
+//
+// POST /api/v1/trading/orders/:id/cancel — cancels a unified_orders row by
+// id, dispatched by adapter_key. Design: FUBON_ADAPTER_INTERFACE_FREEZE_v1.md
+// §附錄 UTA-C1 + S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md D3.
+
+test("UTA-C1-1: paper channel — a resting (unfilled) limit order cancels successfully and the unified_orders row transitions to cancelled", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac1-paper-${randomUUID()}` });
+  const accountId = "utac1-paper-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UTAC1PAPER",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  // Buy limit far below the market price so it rests open (does not fill),
+  // leaving the underlying paper order cancellable.
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "UTAC1PAPER", accountId, type: "limit", price: 10, quantity: 1000, quantity_unit: "SHARE" })
+  });
+  assert.equal(result.blocked, false, "UTA-C1-1: resting limit order must not be blocked");
+
+  const rows = await listUnifiedOrders(session.workspace.id);
+  const row = rows.find((r) => r.symbol === "UTAC1PAPER");
+  assert.ok(row, "UTA-C1-1: unified_orders row must exist");
+
+  const cancelResult = await cancelUnifiedOrder({
+    session,
+    workspaceId: session.workspace.id,
+    orderId: row!.id
+  });
+  assert.equal(cancelResult.outcome, "cancelled", "UTA-C1-1: cancel must succeed for a resting limit order");
+  assert.equal((cancelResult as { order: { status: string } }).order.status, "cancelled");
+
+  const rowsAfter = await listUnifiedOrders(session.workspace.id);
+  const rowAfter = rowsAfter.find((r) => r.id === row!.id);
+  assert.equal(rowAfter?.status, "cancelled", "UTA-C1-1: unified_orders row must transition to cancelled");
+  assert.ok(rowAfter?.cancelledAt, "UTA-C1-1: cancelledAt must be set");
+});
+
+test("UTA-C1-2: cancelling an already-cancelled order is idempotent (already_cancelled, not an error)", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac1-idem-${randomUUID()}` });
+  const accountId = "utac1-idem-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UTAC1IDEM",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "UTAC1IDEM", accountId, type: "limit", price: 10, quantity: 1000, quantity_unit: "SHARE" })
+  });
+  const rows = await listUnifiedOrders(session.workspace.id);
+  const row = rows.find((r) => r.symbol === "UTAC1IDEM");
+  assert.ok(row);
+
+  const first = await cancelUnifiedOrder({ session, workspaceId: session.workspace.id, orderId: row!.id });
+  assert.equal(first.outcome, "cancelled");
+
+  const second = await cancelUnifiedOrder({ session, workspaceId: session.workspace.id, orderId: row!.id });
+  assert.equal(second.outcome, "already_cancelled", "UTA-C1-2: repeat cancel must be idempotent, not an error");
+});
+
+test("UTA-C1-3: filled paper order is not_cancellable (terminal state, never becomes cancelled)", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac1-filled-${randomUUID()}` });
+  const accountId = "utac1-filled-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UTAC1FILLED",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  // Market order against a usable quote fills immediately.
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "UTAC1FILLED", accountId, type: "market", quantity: 1000, quantity_unit: "SHARE" })
+  });
+  assert.equal(result.blocked, false);
+
+  const rows = await listUnifiedOrders(session.workspace.id);
+  const row = rows.find((r) => r.symbol === "UTAC1FILLED");
+  assert.ok(row);
+
+  const cancelResult = await cancelUnifiedOrder({ session, workspaceId: session.workspace.id, orderId: row!.id });
+  assert.equal(cancelResult.outcome, "not_cancellable", "UTA-C1-3: a filled order must refuse cancellation");
+});
+
+test("UTA-C1-4: kgi channel — gateway has no /order/cancel, returns cancel_not_supported_kgi_sim honestly (no fake success)", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac1-kgi-${randomUUID()}` });
+  const accountId = "utac1-kgi-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertManualQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "UTAC1KGI",
+        market: "OTHER",
+        source: "kgi",
+        last: 100,
+        bid: 99.9,
+        ask: 100.1,
+        open: 100,
+        high: 100,
+        low: 100,
+        prevClose: 100,
+        volume: 5000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  const originalEnv = {
+    KGI_ENV: process.env["KGI_ENV"],
+    KGI_GATEWAY_URL: process.env["KGI_GATEWAY_URL"]
+  };
+  const originalFetch = globalThis.fetch;
+  process.env["KGI_ENV"] = "sim";
+  process.env["KGI_GATEWAY_URL"] = "http://utac1-kgi-gateway.test";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://utac1-kgi-gateway.test/order/create") {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          sim_only: true,
+          status: "accepted",
+          kgi_response_repr: "OrderResponse(nid=1779199594999999999 status=Accepted)"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const result = await submitOrder({
+      session,
+      repo,
+      order: uofTestOrder({ symbol: "UTAC1KGI", accountId, quantity: 1000, quantity_unit: "SHARE" }),
+      _testBrokerKindOverride: "kgi"
+    });
+    assert.equal(result.blocked, false, "UTA-C1-4: kgi SIM order must submit successfully first");
+
+    const rows = await listUnifiedOrders(session.workspace.id);
+    const row = rows.find((r) => r.symbol === "UTAC1KGI");
+    assert.ok(row);
+
+    // cancelOrder() never calls fetch — kgi-gateway-client.ts hardcodes the
+    // W1-gateway-has-no-cancel-endpoint throw. No mock needed for this call.
+    const cancelResult = await cancelUnifiedOrder({ session, workspaceId: session.workspace.id, orderId: row!.id });
+    assert.equal(
+      cancelResult.outcome,
+      "cancel_not_supported_kgi_sim",
+      "UTA-C1-4: kgi cancel must honestly refuse, never fake success"
+    );
+
+    const rowsAfter = await listUnifiedOrders(session.workspace.id);
+    const rowAfter = rowsAfter.find((r) => r.id === row!.id);
+    assert.equal(
+      rowAfter?.status,
+      "submitted",
+      "UTA-C1-4: unsupported cancel must NOT mutate the row's status to cancelled"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("UTA-C1-5: workspace isolation — cancelling another workspace's order returns not_found (404), never leaks", async () => {
+  const { _resetUnifiedOrderStoreForTests, createUnifiedOrder, getUnifiedOrderById } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const ownerSession = await repo.getSession({ workspaceSlug: `utac1-owner-${randomUUID()}` });
+  const intruderSession = await repo.getSession({ workspaceSlug: `utac1-intruder-${randomUUID()}` });
+
+  const record = await createUnifiedOrder(
+    ownerSession.workspace.id,
+    "paper",
+    {
+      symbol: "UTAC1ISOL",
+      action: "Buy",
+      qty: 1000,
+      quantityUnit: "SHARE",
+      priceType: "Market"
+    },
+    null
+  );
+
+  const crossWorkspaceResult = await cancelUnifiedOrder({
+    session: intruderSession,
+    workspaceId: intruderSession.workspace.id,
+    orderId: record.id
+  });
+  assert.equal(
+    crossWorkspaceResult.outcome,
+    "not_found",
+    "UTA-C1-5: another workspace's order id must resolve to not_found, not leak state"
+  );
+
+  // Sanity: the owner's own workspace can still resolve the same order id —
+  // proves the not_found above is workspace scoping, not a broken lookup.
+  const ownerRecord = await getUnifiedOrderById(ownerSession.workspace.id, record.id);
+  assert.ok(ownerRecord, "UTA-C1-5: the owning workspace must resolve the order");
+});
+
+test("UTA-C1-6: POST /trading/orders/:id/cancel route wiring (server.ts source) — status codes match the state machine", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeIdx = src.indexOf('app.post("/api/v1/trading/orders/:id/cancel"');
+  assert.ok(routeIdx >= 0, "UTA-C1-6: /trading/orders/:id/cancel route must exist");
+  const window = src.slice(routeIdx, routeIdx + 1200);
+  assert.match(window, /cancelUnifiedOrder/, "UTA-C1-6: route must call cancelUnifiedOrder");
+  assert.match(window, /"order_not_found"[\s\S]*404/, "UTA-C1-6: not_found must map to 404");
+  assert.match(window, /"already_cancelled"/, "UTA-C1-6: already_cancelled outcome must be surfaced");
+  assert.match(window, /"cancel_not_supported_kgi_sim"[\s\S]*409/, "UTA-C1-6: kgi unsupported cancel must map to 409");
 });
 
 // ── OPENALICE-M1 tests ─────────────────────────────────────────────────────────
