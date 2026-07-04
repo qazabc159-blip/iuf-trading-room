@@ -9,7 +9,8 @@
 
 - 掃描到的 login-only 候選端點：**196**（原始掃描 196，含 2 個 middleware 外的 `/` `/health`）
 - **補閘：51** 處（本 PR 新增 `requireMinRole` 閘）
-  - 升至 **Admin**：14 處
+  - 升至 **Owner**：2 處（kill-switch 類 toggle — coordinator 審查裁決：D3 G-OWNER 群明列「kill」，安全開關不下放 Admin）
+  - 升至 **Admin**：12 處
   - 升至 **Analyst**：14 處
   - 升至 **Trader**：23 處
 - **維持登入即可（G-PUB / G-SELF-personal 等，不動）：121** 處
@@ -40,7 +41,7 @@
 | 1129 | `POST /api/v1/market-data/manual-quotes` | G-ADMIN-ish | Admin | 手動覆寫全站報價，影響所有使用者看到的行情與風控計算，資料完整性操作，設 Admin |
 | 1142 | `POST /api/v1/market-data/paper-quotes` | G-ADMIN-ish | Admin | 覆寫模擬交易撮合用報價，可操縱 paper 撮合結果，設 Admin |
 | 1305 | `POST /api/v1/risk/limits` | G-PORT | Trader | 風控上限寫入，G-PORT 寫=Trader |
-| 1325 | `POST /api/v1/risk/kill-switch` | G-ADMIN-ish | Admin | 全域停損/停手開關，安全關鍵操作，影響全體帳戶，不確定=從嚴設 Admin（非單純 Trader 下單寫入） |
+| 1325 | `POST /api/v1/risk/kill-switch` | G-OWNER | Owner | 全域停損/停手開關，blast radius=全帳戶；D3 G-OWNER 群明列「kill」，安全開關不下放（coordinator 審查裁決 2026-07-04，初判 Admin 已更正） |
 | 1335 | `POST /api/v1/risk/checks` | G-PORT | Trader | 下單流程內的風控檢查呼叫，G-PORT 寫=Trader |
 | 1394 | `POST /api/v1/risk/strategy-limits` | G-PORT | Trader | 策略層風控上限寫入 |
 | 1404 | `DELETE /api/v1/risk/strategy-limits` | G-PORT | Trader | 策略層風控上限刪除 |
@@ -72,7 +73,7 @@
 | 6119 | `POST /api/v1/kgi/quote/subscribe/kbar` | G-PORT | Trader | 同 subscribe，消耗共用訂閱額度 |
 | 6293 | `POST /api/v1/paper/orders` | G-PORT | Trader | 建立紙上單，真送單動作，高優先缺口 |
 | 6587 | `POST /api/v1/paper/orders/:id/cancel` | G-PORT | Trader | 取消紙上單，寫入(已有 ownership check) |
-| 6877 | `POST /api/v1/portfolio/kill-mode` | G-ADMIN-ish | Admin | UI 端 kill switch 切換，同 risk/kill-switch 安全關鍵性，設 Admin |
+| 6877 | `POST /api/v1/portfolio/kill-mode` | G-OWNER | Owner | UI 端 kill switch 切換（底層同 setKillSwitchState），同 risk/kill-switch 歸 G-OWNER「kill」，安全開關不下放（coordinator 審查裁決 2026-07-04，初判 Admin 已更正） |
 | 13251 | `POST /api/v1/paper/submit` | G-PORT | Trader | 真送紙上單，高優先缺口，同 paper/orders |
 | 14486 | `POST /api/v1/lab/bundles/intake` | G-RESEARCH | Analyst | 設計預列必修：研究 bundle 送入，研究內容→Analyst |
 | 14527 | `GET /api/v1/lab/bundles` | G-RESEARCH | Analyst | 設計預列必修：研究 bundle 清單，研究內容→Analyst |

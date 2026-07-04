@@ -1368,7 +1368,7 @@ app.get("/api/v1/risk/kill-switch", async (c) => {
 });
 
 app.post("/api/v1/risk/kill-switch", async (c) => {
-  if (!requireMinRole(c.get("session"), "Admin")) {
+  if (!requireMinRole(c.get("session"), "Owner")) {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
@@ -7029,7 +7029,7 @@ const radarKillModeToBackend: Record<
 };
 
 app.post("/api/v1/portfolio/kill-mode", async (c) => {
-  if (!requireMinRole(c.get("session"), "Admin")) {
+  if (!requireMinRole(c.get("session"), "Owner")) {
     return c.json({ error: "forbidden_role" }, 403);
   }
 
