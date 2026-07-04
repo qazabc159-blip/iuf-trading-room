@@ -18614,6 +18614,36 @@ function startSchedulers(workspaceSlug: string): void {
     console.log("THEME-REFRESH-CRON (5min tick, fires 17:30-18:30 TST weekdays) started");
   }
 
+  // UTA-C2-SYNC-CRON: KGI SIM order reconciliation for unified_orders (2026-07-04).
+  // Polls the gateway's trades/deals/order-events and syncs submitted/partial_fill
+  // rows to filled/partial_fill/cancelled/rejected. Window guard (gateway hours)
+  // lives inside syncKgiUnifiedOrders itself, so a tick outside hours is a cheap
+  // no-op. Also logs any unified_orders row stuck at pending past the threshold
+  // (half-order from a submit whose post-call DB update failed) — never resubmits.
+  {
+    const UTA_C2_SYNC_TICK_MS = 5 * 60 * 1000;
+    ui(async () => {
+      if (!isDatabaseMode()) return;
+      const db2 = getDb();
+      if (!db2) return;
+      try {
+        const wsSlugResolved = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows = await db2
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlugResolved))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string }>);
+        if (!wsRows.length) return;
+        const { syncKgiUnifiedOrders } = await import("./broker/kgi-order-reconciliation.js");
+        await syncKgiUnifiedOrders({ workspaceId: wsRows[0].id });
+      } catch (e) {
+        console.error("[uta-c2-sync-cron] tick failed:", e instanceof Error ? e.message : e);
+      }
+    }, UTA_C2_SYNC_TICK_MS);
+    console.log("UTA-C2-SYNC-CRON (5min tick, gateway-hours window guard internal) started");
+  }
+
   // =============================================================================
   // B-TAG-2: EOD Portfolio Snapshot Cron (P0-12 Phase B)
   //

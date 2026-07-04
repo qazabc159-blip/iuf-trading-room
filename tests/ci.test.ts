@@ -119,6 +119,7 @@ import {
   submitOrder
 } from "../apps/api/src/broker/trading-service.ts";
 import { cancelUnifiedOrder } from "../apps/api/src/broker/trading-cancel-service.ts";
+import { syncKgiUnifiedOrders } from "../apps/api/src/broker/kgi-order-reconciliation.ts";
 import { orderCreateInputSchema, kgiChannelUnavailableReasonSchema } from "../packages/contracts/src/broker.ts";
 import { quantityUnitSchema } from "../packages/contracts/src/paper.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
@@ -18172,12 +18173,21 @@ test("UTA-C1-5: workspace isolation — cancelling another workspace's order ret
     await import("../apps/api/src/broker/unified-order-store.ts");
   _resetUnifiedOrderStoreForTests();
 
+  // NOTE: MemoryTradingRoomRepository.getSession() returns the SAME fixed
+  // session.workspace.id for every call regardless of workspaceSlug (only
+  // slug varies) — see packages/domain/src/memory-repository.ts. Using two
+  // "different" sessions' workspace.id here would silently collide and
+  // defeat the isolation check. cancelUnifiedOrder's workspace scoping is
+  // driven purely by its `workspaceId` argument (independent of `session`,
+  // which paper-channel dispatch only uses for account resolution), so we
+  // use two explicit distinct ids to genuinely exercise that scoping.
   const repo = new MemoryTradingRoomRepository();
-  const ownerSession = await repo.getSession({ workspaceSlug: `utac1-owner-${randomUUID()}` });
-  const intruderSession = await repo.getSession({ workspaceSlug: `utac1-intruder-${randomUUID()}` });
+  const anySession = await repo.getSession({ workspaceSlug: `utac1-isol-${randomUUID()}` });
+  const ownerWorkspaceId = randomUUID();
+  const intruderWorkspaceId = randomUUID();
 
   const record = await createUnifiedOrder(
-    ownerSession.workspace.id,
+    ownerWorkspaceId,
     "paper",
     {
       symbol: "UTAC1ISOL",
@@ -18190,8 +18200,8 @@ test("UTA-C1-5: workspace isolation — cancelling another workspace's order ret
   );
 
   const crossWorkspaceResult = await cancelUnifiedOrder({
-    session: intruderSession,
-    workspaceId: intruderSession.workspace.id,
+    session: anySession,
+    workspaceId: intruderWorkspaceId,
     orderId: record.id
   });
   assert.equal(
@@ -18200,9 +18210,9 @@ test("UTA-C1-5: workspace isolation — cancelling another workspace's order ret
     "UTA-C1-5: another workspace's order id must resolve to not_found, not leak state"
   );
 
-  // Sanity: the owner's own workspace can still resolve the same order id —
+  // Sanity: the owner's own workspace id can still resolve the same order id —
   // proves the not_found above is workspace scoping, not a broken lookup.
-  const ownerRecord = await getUnifiedOrderById(ownerSession.workspace.id, record.id);
+  const ownerRecord = await getUnifiedOrderById(ownerWorkspaceId, record.id);
   assert.ok(ownerRecord, "UTA-C1-5: the owning workspace must resolve the order");
 });
 
@@ -18218,6 +18228,196 @@ test("UTA-C1-6: POST /trading/orders/:id/cancel route wiring (server.ts source) 
   assert.match(window, /"order_not_found"[\s\S]*404/, "UTA-C1-6: not_found must map to 404");
   assert.match(window, /"already_cancelled"/, "UTA-C1-6: already_cancelled outcome must be surfaced");
   assert.match(window, /"cancel_not_supported_kgi_sim"[\s\S]*409/, "UTA-C1-6: kgi unsupported cancel must map to 409");
+});
+
+// ── UTA-C2 委託回報輪詢 (2026-07-04) ─────────────────────────────────────────
+//
+// syncKgiUnifiedOrders — polls kgi gateway trades/deals/order-events and
+// syncs unified_orders rows (submitted/partial_fill → filled/etc), plus
+// flags stuck-pending half-orders. Design: FUBON_ADAPTER_INTERFACE_FREEZE_v1.md
+// §附錄 UTA-C2 + S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md D3.
+
+test("UTA-C2-1: kgi submitted order syncs to filled via deals evidence (submitted -> filled)", async () => {
+  const { _resetUnifiedOrderStoreForTests, createUnifiedOrder, updateUnifiedOrderSubmitted, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac2-fill-${randomUUID()}` });
+
+  const record = await createUnifiedOrder(
+    session.workspace.id,
+    "kgi",
+    { symbol: "UTAC2FILL", action: "Buy", qty: 1000, quantityUnit: "SHARE", priceType: "Market" },
+    null
+  );
+  await updateUnifiedOrderSubmitted(record.id, "9001", { ok: true, status: "accepted" });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.startsWith("http://utac2-fill-gateway.test/trades")) {
+      return new Response(JSON.stringify({ trades: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.startsWith("http://utac2-fill-gateway.test/deals")) {
+      return new Response(
+        JSON.stringify({ deals: [{ trade_id: "9001", filled_qty: 1000, avg_fill_price: 52.5 }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (url.startsWith("http://utac2-fill-gateway.test/events/order/recent")) {
+      return new Response(JSON.stringify({ events: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error: "unexpected test URL " + url }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const summary = await syncKgiUnifiedOrders({
+      workspaceId: session.workspace.id,
+      gatewayBaseUrl: "http://utac2-fill-gateway.test",
+      _ignoreScheduleWindow: true
+    });
+    assert.equal(summary.checked, 1, "UTA-C2-1: exactly one syncable kgi row must be checked");
+    assert.equal(summary.updated, 1, "UTA-C2-1: the row must be updated");
+
+    const rows = await listUnifiedOrders(session.workspace.id);
+    const row = rows.find((r) => r.id === record.id);
+    assert.equal(row?.status, "filled", "UTA-C2-1: submitted -> filled transition");
+    assert.equal(row?.filledQty, 1000);
+    assert.equal(row?.filledPrice, 52.5);
+    assert.ok(row?.filledAt, "UTA-C2-1: filledAt must be set");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("UTA-C2-2: workspace isolation — sync only touches rows in the given workspaceId", async () => {
+  const { _resetUnifiedOrderStoreForTests, createUnifiedOrder, updateUnifiedOrderSubmitted, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  // NOTE: syncKgiUnifiedOrders takes a plain workspaceId string (no session
+  // involved) — MemoryTradingRoomRepository.getSession()'s workspace.id is a
+  // fixed constant regardless of workspaceSlug (see UTA-C1-5's note), so two
+  // explicit distinct ids are used here to genuinely exercise scoping rather
+  // than relying on session identity.
+  const targetWorkspaceId = randomUUID();
+  const otherWorkspaceId = randomUUID();
+
+  const otherRecord = await createUnifiedOrder(
+    otherWorkspaceId,
+    "kgi",
+    { symbol: "UTAC2OTHER", action: "Buy", qty: 1000, quantityUnit: "SHARE", priceType: "Market" },
+    null
+  );
+  await updateUnifiedOrderSubmitted(otherRecord.id, "9002", { ok: true, status: "accepted" });
+
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response(JSON.stringify({ error: "must not be called — no syncable rows in target workspace" }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const summary = await syncKgiUnifiedOrders({
+      workspaceId: targetWorkspaceId,
+      gatewayBaseUrl: "http://utac2-iso-gateway.test",
+      _ignoreScheduleWindow: true
+    });
+    assert.equal(summary.checked, 0, "UTA-C2-2: target workspace has no kgi rows to check");
+    assert.equal(fetchCalled, false, "UTA-C2-2: gateway must not be called when there is nothing to sync in this workspace");
+
+    const otherRows = await listUnifiedOrders(otherWorkspaceId);
+    const otherRowAfter = otherRows.find((r) => r.id === otherRecord.id);
+    assert.equal(otherRowAfter?.status, "submitted", "UTA-C2-2: another workspace's row must be untouched");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("UTA-C2-3: stuck-pending half-orders are flagged, never auto-resubmitted or status-changed", async () => {
+  const { _resetUnifiedOrderStoreForTests, createUnifiedOrder, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `utac2-stuck-${randomUUID()}` });
+
+  const record = await createUnifiedOrder(
+    session.workspace.id,
+    "kgi",
+    { symbol: "UTAC2STUCK", action: "Buy", qty: 1000, quantityUnit: "SHARE", priceType: "Market" },
+    null
+  );
+  // Record stays "pending" — never gets a submitted/rejected update, mirroring
+  // the half-order scenario (insert succeeded, post-submit update failed).
+  await delay(5);
+
+  const originalThreshold = process.env["UTA_C2_STUCK_PENDING_MS"];
+  process.env["UTA_C2_STUCK_PENDING_MS"] = "1";
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response(JSON.stringify({ error: "must not be called for a pending-only workspace" }), { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const summary = await syncKgiUnifiedOrders({
+      workspaceId: session.workspace.id,
+      gatewayBaseUrl: "http://utac2-stuck-gateway.test",
+      _ignoreScheduleWindow: true
+    });
+    assert.equal(summary.stuckPending.length, 1, "UTA-C2-3: the stuck pending row must be flagged");
+    assert.equal(summary.stuckPending[0]?.id, record.id);
+    assert.equal(fetchCalled, false, "UTA-C2-3: a pending (never submitted) row has no externalOrderId to sync — gateway must not be called");
+
+    const rows = await listUnifiedOrders(session.workspace.id);
+    const rowAfter = rows.find((r) => r.id === record.id);
+    assert.equal(rowAfter?.status, "pending", "UTA-C2-3: stuck row must NEVER be auto-resubmitted or have its status changed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalThreshold === undefined) delete process.env["UTA_C2_STUCK_PENDING_MS"];
+    else process.env["UTA_C2_STUCK_PENDING_MS"] = originalThreshold;
+  }
+});
+
+test("UTA-C2-4: gateway-hours window guard + cron registration (source check)", () => {
+  const reconciliationSrc = readFileSync(
+    new URL("../apps/api/src/broker/kgi-order-reconciliation.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    reconciliationSrc,
+    /export async function syncKgiUnifiedOrders/,
+    "UTA-C2-4: must export syncKgiUnifiedOrders"
+  );
+  assert.match(
+    reconciliationSrc,
+    /isKgiGatewayScheduledOff/,
+    "UTA-C2-4: sync must consult the gateway-hours window guard"
+  );
+  assert.match(
+    reconciliationSrc,
+    /skippedGatewayScheduledOff/,
+    "UTA-C2-4: outside-hours skip must be reported in the summary, not silently swallowed"
+  );
+
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /UTA-C2-SYNC-CRON/,
+    "UTA-C2-4: cron registration comment must exist in server.ts"
+  );
+  assert.match(
+    serverSrc,
+    /syncKgiUnifiedOrders/,
+    "UTA-C2-4: cron tick must call syncKgiUnifiedOrders"
+  );
 });
 
 // ── OPENALICE-M1 tests ─────────────────────────────────────────────────────────
