@@ -3336,8 +3336,9 @@ app.get("/api/v1/briefs", async (c) => {
 //
 // Uses Postgres FTS (to_tsvector + plainto_tsquery) on sections JSONB text.
 // Falls back to ILIKE if FTS index is not available.
-// Only returns rows where status IN ('published','approved') or
-// (status='draft' AND generated_by='worker') — mirrors listBriefs normalization.
+// Only returns rows where status IN ('published','approved') — strictly
+// published/approved. Unreviewed worker drafts are NEVER searchable here
+// (former worker-draft OR branch removed 2026-07-04, Pete review #1166).
 //
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, published/approved
 // briefs only, no audit chain; sibling /api/v1/briefs list has no gate at all)
@@ -3375,13 +3376,14 @@ app.get("/api/v1/briefs/search", async (c) => {
 
   const workspaceId = c.get("session").workspace.id;
 
-  // ── Published-only filter (mirrors listBriefs normalization) ──────────────
-  // published | approved. Worker rule-template drafts are excluded — they never
-  // meet the v2 template contract (empty-shell briefs, 6/10 audit).
-  const publishedFilter = or(
-    eq(dailyBriefs.status, "published"),
-    eq(dailyBriefs.status, "approved")
-  );
+  // ── Published-only filter ──────────────────────────────────────────────────
+  // Every query below (FTS, ILIKE fallback, and both COUNTs) restricts to
+  // status IN ('published','approved') ONLY. The former worker-draft OR branch
+  // leaked unreviewed draft body text (summary_preview) to any logged-in role
+  // once PR-B dropped the READ_DRAFT_ROLES gate — removed 2026-07-04 (Pete
+  // review #1166); role-matrix.test.ts source-scans this handler to keep it out.
+  // Worker rule-template drafts also never meet the v2 template contract
+  // (empty-shell briefs, 6/10 audit), so nothing product-visible is lost.
 
   // ── FTS search using raw SQL ───────────────────────────────────────────────
   // sections is JSONB array of {heading,body}. We concatenate all heading+body
@@ -3434,10 +3436,7 @@ app.get("/api/v1/briefs/search", async (c) => {
     WHERE workspace_id = ${workspaceId}
       AND date >= ${fromDate}
       AND date <= ${toDate}
-      AND (
-        status IN ('published','approved')
-        OR (status = 'draft' AND generated_by = 'worker')
-      )
+      AND status IN ('published','approved')
       AND to_tsvector('simple',
         COALESCE(
           (SELECT string_agg(
@@ -3478,10 +3477,7 @@ app.get("/api/v1/briefs/search", async (c) => {
         WHERE workspace_id = ${workspaceId}
           AND date >= ${fromDate}
           AND date <= ${toDate}
-          AND (
-            status IN ('published','approved')
-            OR (status = 'draft' AND generated_by = 'worker')
-          )
+          AND status IN ('published','approved')
           AND sections::text ILIKE ${ilikePattern}
         ORDER BY date DESC
         LIMIT ${limit + 1}
@@ -3533,10 +3529,7 @@ app.get("/api/v1/briefs/search", async (c) => {
         WHERE workspace_id = ${workspaceId}
           AND date >= ${fromDate}
           AND date <= ${toDate}
-          AND (
-            status IN ('published','approved')
-            OR (status = 'draft' AND generated_by = 'worker')
-          )
+          AND status IN ('published','approved')
           AND to_tsvector('simple',
             COALESCE(
               (SELECT string_agg(
@@ -3560,10 +3553,7 @@ app.get("/api/v1/briefs/search", async (c) => {
         WHERE workspace_id = ${workspaceId}
           AND date >= ${fromDate}
           AND date <= ${toDate}
-          AND (
-            status IN ('published','approved')
-            OR (status = 'draft' AND generated_by = 'worker')
-          )
+          AND status IN ('published','approved')
           AND sections::text ILIKE ${ilikePattern}
       `;
       const countResult = await db.execute(countQuery);

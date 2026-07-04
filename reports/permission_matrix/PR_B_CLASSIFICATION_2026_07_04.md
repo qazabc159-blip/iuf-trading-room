@@ -15,7 +15,7 @@
 | # | 端點 | 判定 | 理由（handler 讀後證據） |
 |---|---|---|---|
 | 1 | `GET /api/v1/realtime/snapshot` | 降 | TWSE MIS intraday + STOCK_DAY_ALL EOD 報價快照，欄位僅 symbol/price/freshness_mode，無治理/審計/策略內部/執行旗標 |
-| 2 | `GET /api/v1/briefs/search` | 降 | FTS 只查 `status IN ('published','approved')` 簡報全文，不含 auditChain；姊妹端點 `GET /api/v1/briefs`（list）本就零角色檢查 |
+| 2 | `GET /api/v1/briefs/search` | 降（附修） | Pete 審 #1166 抓到原 SQL 4 處（FTS/ILIKE 主查詢＋兩個 COUNT）帶 `OR (status='draft' AND generated_by='worker')` 分支，會把未審 worker draft 內文（summary_preview 前 200 字）洩給 Viewer — 本 PR 已 4 處一併移除，現嚴格 `status IN ('published','approved')`，不含 auditChain；姊妹端點 `GET /api/v1/briefs`（list）本就零角色檢查。附 source-scan 測試鎖 worker-draft 分支不得回歸 |
 | 3 | `GET /api/v1/announcements` | 降 | 官方重大訊息（tw_announcements）+ FinMind tw_stock_news fallback，純市場公告 |
 | 4 | `GET /api/v1/sources` | 降 | 8 固定來源（finmind/kline/company/openalice/topic/strategy/signal/news）新鮮度狀態（live/stale/empty），無治理內容，屬產品誠實揭露機制的一部分 |
 | 5 | `GET /api/v1/finmind/health` | 降 | 供應商配額/circuit 狀態；handler 內明註「HARD LINE: never return token」，sponsor 欄位僅顯示模糊 tier 標籤 |
@@ -76,3 +76,4 @@
 - 51/51 齊：降 22 + 留 29 = 51，與 `server.ts` 內 `if (!READ_DRAFT_ROLES.has(role))` 檢查數一致（改動前 grep 計數 51，改動後剩 29）。
 - 三個豁免清單端點（`/briefs/:id`、`/dashboard/snapshot`、`/paper/e2e`）維持 Analyst+，未降級。
 - 零關鍵字分類：三個表面上像「純行情」但實際含執行旗標的端點（`/lab/strategy/:strategyId/snapshot`、`/meta`）與一個表面像「狀態頁」但實際含審核治理內容的端點（`/openalice/status`）皆判定「留」，證明分類是讀 handler 而非讀端點名。
+- Pete 獨立審 #1166 修正 1 處：`/briefs/search` 原分類理由「只查 published/approved」與實際 SQL 不符（漏看 worker-draft OR 分支）— 已改 SQL 使行為與分類一致（見上表 #2），並以 source-scan 測試（`role-matrix.test.ts`）鎖住不得回歸。

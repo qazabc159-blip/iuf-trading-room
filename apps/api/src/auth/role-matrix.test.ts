@@ -194,6 +194,18 @@ const CASES: MatrixCase[] = [
     path: "/api/v1/announcements",
     expected: { Owner: 200, Admin: 200, Analyst: 200, Trader: 200, Viewer: 200 },
     note: "PR-B: official market announcements + FinMind news fallback; READ_DRAFT_ROLES check removed."
+  },
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/briefs/search)",
+    method: "GET",
+    path: "/api/v1/briefs/search?q=role-matrix-probe",
+    // Memory mode has no DB, so the handler 503s at its database_unavailable
+    // guard — for EVERY role. The point of this row is the Viewer/Trader
+    // column: 503 (not 403) proves the READ_DRAFT_ROLES gate is gone and low
+    // roles reach the handler body. The published-only content guarantee is
+    // pinned by the source-scan test below (the SQL is unreachable in memory mode).
+    expected: { Owner: 503, Admin: 503, Analyst: 503, Trader: 503, Viewer: 503 },
+    note: "PR-B: role gate removed; memory mode short-circuits at database_unavailable for all roles."
   }
 ];
 
@@ -262,4 +274,42 @@ describe("role-matrix PR-B — over-grant guard on the 3 pre-classified exemptio
       });
     }
   }
+});
+
+describe("role-matrix PR-B — briefs/search must stay published/approved-only (Pete review #1166)", () => {
+  // The worker-draft OR branch `OR (status = 'draft' AND generated_by = 'worker')`
+  // used to sit in all four briefs/search SQL blocks (FTS main, ILIKE fallback,
+  // and both COUNT queries). Once PR-B dropped the READ_DRAFT_ROLES gate, that
+  // branch would have leaked unreviewed worker-draft body text (summary_preview)
+  // to any logged-in role. The matrix suite runs in memory mode where the SQL is
+  // unreachable (database_unavailable short-circuit), so this is a source-scan
+  // pin — same pattern as the repo's other SQL-shape regression tests.
+  test("briefs/search handler SQL has no worker-draft branch and 4 strict published/approved filters", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(serverEntry, "utf8");
+
+    const start = source.indexOf('app.get("/api/v1/briefs/search"');
+    assert.notEqual(start, -1, "briefs/search route not found in server.ts");
+    // Handler ends at the next route registration after it.
+    const end = source.indexOf('app.post("/api/v1/briefs"', start);
+    assert.notEqual(end, -1, "route following briefs/search not found in server.ts");
+    const handler = source.slice(start, end);
+
+    assert.ok(
+      !handler.includes("generated_by = 'worker'"),
+      "briefs/search SQL must NOT contain the worker-draft OR branch — it leaks unreviewed draft text to Viewer (Pete review #1166)"
+    );
+    assert.ok(
+      !/status\s*=\s*'draft'/.test(handler),
+      "briefs/search SQL must NOT reference status='draft' in any WHERE clause"
+    );
+
+    const strictFilterCount =
+      handler.split("AND status IN ('published','approved')").length - 1;
+    assert.equal(
+      strictFilterCount,
+      4,
+      `expected the strict published/approved filter in all 4 SQL blocks (FTS main, ILIKE fallback, FTS COUNT, ILIKE COUNT); found ${strictFilterCount}`
+    );
+  });
 });
