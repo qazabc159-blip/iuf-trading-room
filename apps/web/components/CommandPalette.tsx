@@ -9,7 +9,8 @@ import {
   getThemes,
   listStrategyRuns,
 } from "@/lib/api";
-import { PRODUCT_COMMAND_SURFACES } from "@/lib/canonical-surfaces";
+import { apiGetMe } from "@/lib/auth-client";
+import { meetsMinRole, PRODUCT_COMMAND_SURFACES } from "@/lib/canonical-surfaces";
 import type {
   Company,
   StrategyIdea,
@@ -29,12 +30,13 @@ type Item = {
 
 type LoadState = "idle" | "loading" | "live" | "empty" | "blocked";
 
-const ROUTES: Item[] = PRODUCT_COMMAND_SURFACES.map((surface) => ({
+const ROUTES_ALL = PRODUCT_COMMAND_SURFACES.map((surface) => ({
   code: surface.commandCode,
   label: surface.title,
   sub: surface.commandSub,
   href: surface.path,
-  group: "頁面",
+  group: "頁面" as const,
+  minRole: surface.minRole,
 }));
 
 function clip(value: string | null | undefined, max = 72) {
@@ -86,7 +88,21 @@ export function CommandPalette() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [ideas, setIdeas] = useState<StrategyIdea[]>([]);
   const [runs, setRuns] = useState<StrategyRunListItem[]>([]);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void apiGetMe().then((result) => {
+      if (cancelled) return;
+      setUserRole(result.ok ? result.user.role : null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -179,9 +195,13 @@ export function CommandPalette() {
             ]
           : [];
 
+    const visibleRoutes: Item[] = ROUTES_ALL.filter((route) => meetsMinRole(userRole, route.minRole)).map(
+      ({ code, label, sub, href, group }) => ({ code, label, sub, href, group })
+    );
+
     const all: Item[] = [
       ...stateItem,
-      ...ROUTES,
+      ...visibleRoutes,
       ...themes.map((theme) => ({
         code: `T${theme.priority}`,
         label: theme.name,
@@ -221,7 +241,7 @@ export function CommandPalette() {
         item.sub.toLowerCase().includes(needle)
       )
       .slice(0, 48);
-  }, [companies, ideas, loadError, loadState, q, runs, themes]);
+  }, [companies, ideas, loadError, loadState, q, runs, themes, userRole]);
 
   const go = useCallback((href: string | null) => {
     if (!href) return;

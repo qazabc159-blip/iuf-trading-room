@@ -10,16 +10,22 @@ describe("admin owner route gate", () => {
     expect(adminLayoutSource).toContain("<AdminOwnerGate>{children}</AdminOwnerGate>");
   });
 
-  it("does not render admin children until /auth/me confirms Owner", () => {
+  it("keeps AdminOwnerGate as a zero-call-site-break Owner wrapper around the generic RoleGate", () => {
+    expect(gateSource).toContain("export function RoleGate({ children, minRole = \"Owner\" }");
+    expect(gateSource).toContain("export function AdminOwnerGate({ children }: { children: ReactNode }) {");
+    expect(gateSource).toContain('return <RoleGate minRole="Owner">{children}</RoleGate>;');
+  });
+
+  it("does not render gated children until /auth/me confirms the required role rank", () => {
     expect(gateSource).toContain("apiGetMe");
-    expect(gateSource).toContain('result.ok && result.user.role === "Owner"');
-    expect(gateSource).toContain('if (state.status !== "ready") return <GateShell state={state} />');
+    expect(gateSource).toContain("meetsMinRole(result.user.role, minRole)");
+    expect(gateSource).toContain('if (state.status !== "ready") return <GateShell state={state} minRole={minRole} />');
     expect(gateSource).toContain("return <>{children}</>");
   });
 
-  it("redirects non-owner accounts away from admin routes", () => {
+  it("redirects under-ranked accounts away from the gated route", () => {
     expect(gateSource).toContain('reason: result.ok ? "not_owner"');
     expect(gateSource).toContain('state.reason === "unauthenticated"');
-    expect(gateSource).toContain('router.replace(target)');
+    expect(gateSource).toContain("router.replace(target)");
   });
 });

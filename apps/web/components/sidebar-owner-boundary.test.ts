@@ -14,10 +14,12 @@ const contractEntitlementSource = readFileSync(
 );
 
 describe("product navigation owner boundary", () => {
-  it("shows internal controls only after the current account is confirmed as Owner", () => {
+  it("shows internal controls only after the current account's role rank is confirmed (minRole filtering, not a hardcoded Owner boolean)", () => {
     expect(sidebarSource).toContain("apiGetMe");
+    expect(sidebarSource).toContain("meetsMinRole");
+    expect(sidebarSource).toContain("filter((item) => meetsMinRole(userRole, item.minRole))");
+    expect(sidebarSource).toContain("visibleInternalAdminNav.length > 0 && (");
     expect(sidebarSource).toContain('const isOwner = userRole === "Owner"');
-    expect(sidebarSource).toContain("{isOwner && (");
     expect(sidebarSource).toContain("CANONICAL_PRODUCT_SURFACES");
     expect(sidebarSource).toContain("OWNER_PRODUCT_SURFACES");
     expect(sidebarSource).toContain("INTERNAL_ADMIN_SURFACES");

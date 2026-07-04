@@ -1,3 +1,5 @@
+import type { SessionUser } from "@iuf-trading-room/contracts";
+
 export type WebSurfaceKind = "external" | "owner" | "admin" | "support" | "legacy";
 
 export type WebSurfaceDisposition =
@@ -10,6 +12,29 @@ export type WebSurfaceDisposition =
   | "frame"
   | "auth";
 
+/** Workspace role name, kept aligned with `sessionUserSchema` in packages/contracts. */
+export type WorkspaceRole = SessionUser["role"];
+
+/**
+ * Strict ladder rank table — permission matrix v1 D1 (`reports/permission_matrix/PERMISSION_MATRIX_v1.md`).
+ * Must stay numerically identical to `ROLE_RANK` in `apps/api/src/auth/require-min-role.ts`
+ * (front/back rank tables are two independent copies by design — web has no import path into
+ * apps/api/src — but the *numbers* must never drift).
+ */
+export const ROLE_RANK: Record<WorkspaceRole, number> = {
+  Viewer: 0,
+  Trader: 1,
+  Analyst: 2,
+  Admin: 3,
+  Owner: 4,
+};
+
+/** True when `role`'s rank is >= `minRole`'s rank on the D1 ladder. Unknown/missing role = false (fail-closed). */
+export function meetsMinRole(role: string | null | undefined, minRole: WorkspaceRole): boolean {
+  if (!role || !(role in ROLE_RANK)) return false;
+  return ROLE_RANK[role as WorkspaceRole] >= ROLE_RANK[minRole];
+}
+
 export type WebSurface = {
   path: string;
   title: string;
@@ -18,6 +43,8 @@ export type WebSurface = {
   kind: WebSurfaceKind;
   disposition: WebSurfaceDisposition;
   activePaths: readonly string[];
+  /** Minimum role (permission matrix D1 ladder) required to see/use this surface. */
+  minRole: WorkspaceRole;
   commandCode?: string;
   commandSub?: string;
   replacementPath?: string;
@@ -33,6 +60,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/"],
+    minRole: "Viewer",
     commandCode: "01",
     commandSub: "大盤、觀察清單、重大訊息與策略總覽",
   },
@@ -44,6 +72,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/market-intel"],
+    minRole: "Viewer",
     commandCode: "02",
     commandSub: "公司公告、新聞線索與市場情報",
   },
@@ -55,6 +84,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/ai-recommendations", "/ideas", "/runs", "/signals"],
+    minRole: "Viewer",
     commandCode: "03",
     commandSub: "今日推薦、觀察名單與風控分層",
   },
@@ -66,6 +96,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/portfolio", "/plans"],
+    minRole: "Viewer",
     commandCode: "04",
     commandSub: "模擬資金、部位、委託、成交與風控",
   },
@@ -77,6 +108,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/companies", "/themes"],
+    minRole: "Viewer",
     commandCode: "05",
     commandSub: "公司池、主題板、產業鏈與 K 線",
   },
@@ -88,6 +120,7 @@ export const CANONICAL_PRODUCT_SURFACES = [
     kind: "external",
     disposition: "canonical",
     activePaths: ["/quant-strategies"],
+    minRole: "Viewer",
     commandCode: "06",
     commandSub: "Athena strategy input 與 SIM-only 訂閱",
   },
@@ -102,6 +135,7 @@ export const OWNER_PRODUCT_SURFACES = [
     kind: "owner",
     disposition: "owner",
     activePaths: ["/ops/f-auto"],
+    minRole: "Owner",
   },
 ] as const satisfies readonly WebSurface[];
 
@@ -114,6 +148,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/brain/llm"],
+    minRole: "Owner",
   },
   {
     path: "/admin/brain/decisions",
@@ -123,6 +158,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/brain/decisions"],
+    minRole: "Owner",
   },
   {
     path: "/admin/events",
@@ -132,6 +168,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/events"],
+    minRole: "Owner",
   },
   {
     path: "/admin/portfolio/snapshots",
@@ -141,6 +178,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/portfolio/snapshots"],
+    minRole: "Owner",
   },
   {
     path: "/admin/tools",
@@ -150,6 +188,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/tools"],
+    minRole: "Owner",
   },
   {
     path: "/admin/uta/accounts",
@@ -159,6 +198,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/uta"],
+    minRole: "Owner",
   },
   {
     path: "/admin/strategies",
@@ -168,6 +208,7 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/strategies"],
+    minRole: "Owner",
   },
   {
     path: "/admin/team",
@@ -177,6 +218,9 @@ export const INTERNAL_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "internal",
     activePaths: ["/admin/team"],
+    // G-ADMIN 群 carve-out (PERMISSION_MATRIX_v1 §2 D3 / PM-O3)：邀請/用戶管理是唯一留在
+    // Admin 級的 G-ADMIN 內容，brain/themes 治理其餘全維持 Owner。
+    minRole: "Admin",
   },
 ] as const satisfies readonly WebSurface[];
 
@@ -189,6 +233,8 @@ export const SECONDARY_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "secondary",
     activePaths: ["/admin/content-drafts"],
+    // G-RESEARCH：content-drafts 讀取＝原 READ_DRAFT_ROLES 本意，Analyst 起。
+    minRole: "Analyst",
   },
   {
     path: "/admin/invites",
@@ -198,6 +244,8 @@ export const SECONDARY_ADMIN_SURFACES = [
     kind: "admin",
     disposition: "secondary",
     activePaths: ["/admin/invites"],
+    // G-ADMIN：邀請/用戶管理＝Admin 起。
+    minRole: "Admin",
   },
 ] as const satisfies readonly WebSurface[];
 
@@ -210,6 +258,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/settings"],
+    minRole: "Viewer",
   },
   {
     path: "/settings/account",
@@ -219,6 +268,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/settings/account"],
+    minRole: "Viewer",
   },
   {
     path: "/settings/broker",
@@ -228,6 +278,8 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/settings/broker"],
+    // G-SELF：自己的券商 gateway 配對＝Trader 起。
+    minRole: "Trader",
   },
   {
     path: "/settings/subscription",
@@ -237,6 +289,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/settings/subscription"],
+    minRole: "Viewer",
   },
   {
     path: "/briefs",
@@ -246,6 +299,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/briefs"],
+    minRole: "Viewer",
   },
   {
     path: "/alerts",
@@ -255,6 +309,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/alerts"],
+    minRole: "Viewer",
   },
   {
     path: "/login",
@@ -264,6 +319,8 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "auth",
     activePaths: ["/login"],
+    // 未登入公開頁；minRole 只是佔位值（Viewer=最低），過濾邏輯不套用在 auth 頁。
+    minRole: "Viewer",
   },
   {
     path: "/register",
@@ -273,6 +330,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "auth",
     activePaths: ["/register"],
+    minRole: "Viewer",
   },
   {
     path: "/m",
@@ -282,6 +340,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "secondary",
     activePaths: ["/m"],
+    minRole: "Viewer",
   },
   {
     path: "/final-v031/market-intel",
@@ -291,6 +350,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "frame",
     activePaths: ["/final-v031/market-intel"],
+    minRole: "Viewer",
   },
   {
     path: "/final-v031/ideas",
@@ -300,6 +360,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "frame",
     activePaths: ["/final-v031/ideas"],
+    minRole: "Viewer",
   },
   {
     path: "/final-v031/portfolio",
@@ -309,6 +370,7 @@ export const SUPPORT_WEB_SURFACES = [
     kind: "support",
     disposition: "frame",
     activePaths: ["/final-v031/portfolio"],
+    minRole: "Viewer",
   },
 ] as const satisfies readonly WebSurface[];
 
@@ -321,6 +383,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "redirect",
     activePaths: ["/ideas"],
+    minRole: "Viewer",
     replacementPath: "/ai-recommendations",
     note: "保留 301 與深連結相容，不列為正式導航。",
   },
@@ -332,6 +395,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/runs"],
+    minRole: "Viewer",
     replacementPath: "/ai-recommendations",
     note: "批次清單與詳情可深連結，但入口收斂到 AI 推薦。",
   },
@@ -343,6 +407,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/signals"],
+    minRole: "Viewer",
     replacementPath: "/ai-recommendations",
   },
   {
@@ -353,6 +418,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/plans"],
+    minRole: "Viewer",
     replacementPath: "/portfolio",
   },
   {
@@ -363,6 +429,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/themes"],
+    minRole: "Viewer",
     replacementPath: "/companies",
   },
   {
@@ -373,6 +440,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/quote"],
+    minRole: "Viewer",
     replacementPath: "/companies",
   },
   {
@@ -383,6 +451,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "secondary",
     activePaths: ["/reviews"],
+    minRole: "Viewer",
     replacementPath: "/portfolio",
     note: "保留歷史檢視，不列為正式導航。",
   },
@@ -394,6 +463,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/drafts"],
+    minRole: "Analyst",
     replacementPath: "/admin/content-drafts",
   },
   {
@@ -404,6 +474,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "redirect",
     activePaths: ["/lab"],
+    minRole: "Viewer",
     replacementPath: "/quant-strategies",
     note: "全節點 301 到量化策略。",
   },
@@ -415,6 +486,7 @@ export const LEGACY_WEB_SURFACES = [
     kind: "legacy",
     disposition: "grouped",
     activePaths: ["/ops"],
+    minRole: "Owner",
     replacementPath: "/ops/f-auto",
   },
 ] as const satisfies readonly WebSurface[];
