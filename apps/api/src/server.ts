@@ -18801,6 +18801,44 @@ function startSchedulers(workspaceSlug: string): void {
     console.log("UTA-C2-SYNC-CRON (5min tick, gateway-hours window guard internal) started");
   }
 
+  // UTA-C2-PAPER-SYNC-CRON: paper channel order reconciliation for unified_orders
+  // (2026-07-05). Self-reported gap at UTA-C2 delivery — the paper adapter's
+  // dual-write always wrote unified_orders status="submitted" regardless of
+  // the actual paper Order outcome (filled/rejected/still-resting). Reads back
+  // the live paper_orders state and syncs submitted/partial_fill rows to
+  // filled/partial_fill/cancelled/rejected. No gateway/market-hours window —
+  // paper fills are synchronous and workspace-local. Also logs any
+  // unified_orders row stuck at pending past the threshold (half-order from a
+  // submit whose post-call DB update failed) — never resubmits.
+  {
+    const UTA_C2_PAPER_SYNC_TICK_MS = 5 * 60 * 1000;
+    ui(async () => {
+      if (!isDatabaseMode()) return;
+      const db2b = getDb();
+      if (!db2b) return;
+      try {
+        const wsSlugResolved = workspaceSlug ?? process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
+        const wsRows = await db2b
+          .select({ id: workspaces.id, name: workspaces.name, slug: workspaces.slug })
+          .from(workspaces)
+          .where(eq(workspaces.slug, wsSlugResolved))
+          .limit(1)
+          .catch(() => [] as Array<{ id: string; name: string; slug: string }>);
+        if (!wsRows.length) return;
+        const syncSession = {
+          workspace: { id: wsRows[0].id, name: wsRows[0].name, slug: wsRows[0].slug },
+          user: { id: "00000000-0000-0000-0000-000000000003", name: "paper-order-sync", email: "cron@system", role: "Owner" as const },
+          persistenceMode: "database" as const
+        };
+        const { syncPaperUnifiedOrders } = await import("./broker/paper-order-sync.js");
+        await syncPaperUnifiedOrders({ session: syncSession });
+      } catch (e) {
+        console.error("[uta-c2-paper-sync-cron] tick failed:", e instanceof Error ? e.message : e);
+      }
+    }, UTA_C2_PAPER_SYNC_TICK_MS);
+    console.log("UTA-C2-PAPER-SYNC-CRON (5min tick) started");
+  }
+
   // =============================================================================
   // B-TAG-2: EOD Portfolio Snapshot Cron (P0-12 Phase B)
   //
