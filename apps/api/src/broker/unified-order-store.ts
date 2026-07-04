@@ -217,6 +217,50 @@ export async function updateUnifiedOrderCancelled(
   return row ? dbRowToRecord(row) : null;
 }
 
+export async function updateUnifiedOrderFill(
+  orderId: string,
+  patch: {
+    status: "submitted" | "partial_fill" | "filled" | "cancelled" | "rejected";
+    filledQty: number;
+    filledPrice: number | null;
+    filledAt?: string | null;
+    cancelledAt?: string | null;
+  }
+): Promise<UnifiedOrderRecord | null> {
+  const db = getDb();
+  const now = nowIso();
+  if (!db || !isDatabaseMode()) {
+    const existing = _memStore.get(orderId);
+    if (!existing) return null;
+    const updated: UnifiedOrderRecord = {
+      ...existing,
+      status: patch.status,
+      filledQty: patch.filledQty,
+      filledPrice: patch.filledPrice,
+      filledAt: patch.filledAt ?? existing.filledAt,
+      cancelledAt: patch.cancelledAt ?? existing.cancelledAt,
+      updatedAt: now
+    };
+    _memStore.set(orderId, updated);
+    return updated;
+  }
+
+  const [row] = await db
+    .update(unifiedOrders)
+    .set({
+      status: patch.status,
+      filledQty: patch.filledQty,
+      filledPrice: patch.filledPrice != null ? String(patch.filledPrice) : null,
+      ...(patch.filledAt ? { filledAt: new Date(patch.filledAt) } : {}),
+      ...(patch.cancelledAt ? { cancelledAt: new Date(patch.cancelledAt) } : {}),
+      updatedAt: new Date(now)
+    })
+    .where(eq(unifiedOrders.id, orderId))
+    .returning();
+
+  return row ? dbRowToRecord(row) : null;
+}
+
 export async function listUnifiedOrders(
   workspaceId: string,
   limit = 50
