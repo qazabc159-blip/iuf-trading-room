@@ -24,7 +24,9 @@ import {
   CANONICAL_PRODUCT_SURFACES,
   INTERNAL_ADMIN_SURFACES,
   OWNER_PRODUCT_SURFACES,
+  meetsMinRole,
   type WebSurface,
+  type WorkspaceRole,
 } from "@/lib/canonical-surfaces";
 
 type NavItem = {
@@ -33,6 +35,7 @@ type NavItem = {
   sub: string;
   Icon: LucideIcon;
   activePaths: readonly string[];
+  minRole: WorkspaceRole;
 };
 
 const SURFACE_ICONS: Record<string, LucideIcon> = {
@@ -60,6 +63,7 @@ function surfaceToNavItem(surface: WebSurface): NavItem {
     sub: surface.sub,
     Icon: SURFACE_ICONS[surface.path] ?? Target,
     activePaths: surface.activePaths,
+    minRole: surface.minRole,
   };
 }
 
@@ -108,8 +112,9 @@ export function Sidebar() {
   }
 
   const isOwner = userRole === "Owner";
-  const primaryNav = isOwner ? [...PRODUCT_NAV, ...OWNER_PRODUCT_NAV] : PRODUCT_NAV;
-  const internalActive = INTERNAL_ADMIN_NAV.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
+  const primaryNav = [...PRODUCT_NAV, ...OWNER_PRODUCT_NAV].filter((item) => meetsMinRole(userRole, item.minRole));
+  const visibleInternalAdminNav = INTERNAL_ADMIN_NAV.filter((item) => meetsMinRole(userRole, item.minRole));
+  const internalActive = visibleInternalAdminNav.some((item) => item.activePaths.some((path) => pathMatches(pathname, path)));
 
   return (
     <aside className="app-sidebar app-tactical-sidebar tac-sidebar">
@@ -150,14 +155,14 @@ export function Sidebar() {
         })}
       </nav>
 
-      {isOwner && (
+      {visibleInternalAdminNav.length > 0 && (
         <details className="tac-sidebar-internal" open={internalActive || undefined}>
           <summary aria-label="內部後台導覽">
             <span>內部後台</span>
-            <small>Owner-only</small>
+            <small>{isOwner ? "Owner-only" : "內部限定"}</small>
           </summary>
           <nav className="tac-nav tac-nav-admin" aria-label="內部後台導覽">
-            {INTERNAL_ADMIN_NAV.map((item) => {
+            {visibleInternalAdminNav.map((item) => {
               const active = mounted && item.activePaths.some((path) => pathMatches(pathname, path));
               const Icon = item.Icon;
               return (
