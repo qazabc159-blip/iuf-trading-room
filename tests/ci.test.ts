@@ -109,6 +109,7 @@ import {
   GATE_OVERRIDE_KEY
 } from "../apps/api/src/broker/execution-gate.ts";
 import {
+  cancelPaperOrder,
   listPaperOrders,
   placePaperOrder
 } from "../apps/api/src/broker/paper-broker.ts";
@@ -120,6 +121,7 @@ import {
 } from "../apps/api/src/broker/trading-service.ts";
 import { cancelUnifiedOrder } from "../apps/api/src/broker/trading-cancel-service.ts";
 import { syncKgiUnifiedOrders } from "../apps/api/src/broker/kgi-order-reconciliation.ts";
+import { syncPaperUnifiedOrders } from "../apps/api/src/broker/paper-order-sync.ts";
 import { orderCreateInputSchema, kgiChannelUnavailableReasonSchema } from "../packages/contracts/src/broker.ts";
 import { quantityUnitSchema } from "../packages/contracts/src/paper.ts";
 import { listExecutionEvents } from "../apps/api/src/broker/execution-events-store.ts";
@@ -18426,6 +18428,305 @@ test("UTA-C2-4: gateway-hours window guard + cron registration (source check)", 
     serverSrc,
     /syncKgiUnifiedOrders/,
     "UTA-C2-4: cron tick must call syncKgiUnifiedOrders"
+  );
+});
+
+// ── UTA-C2 paper channel gap 委託回報回讀 (2026-07-05) ───────────────────────
+//
+// syncPaperUnifiedOrders — self-reported gap at UTA-C2 delivery: the paper
+// adapter's dual-write (trading-service.ts, locked file) always calls
+// markUnifiedOrderSubmitted() after placePaperOrder() returns without
+// throwing, hardcoding status="submitted" even when the real paper Order is
+// already filled/rejected. This sweep reads paper_orders back and reconciles
+// unified_orders onto it. Design: S1_UNIFIED_ORDER_FLOW_DESIGN_v1.md D3.
+
+test("PAPER-SYNC-1: paper market order fills immediately, sweep syncs submitted -> filled (with price/qty)", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `paper-sync-fill-${randomUUID()}` });
+  const accountId = "paper-sync-fill-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PSYNCFILL",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  // Market order against a usable quote fills immediately inside
+  // placePaperOrder — but trading-service.ts's dual-write still records the
+  // unified_orders row as "submitted" (the bug this sweep exists to fix).
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "PSYNCFILL", accountId, type: "market", quantity: 1000, quantity_unit: "SHARE" })
+  });
+  assert.equal(result.blocked, false);
+  assert.equal(result.order?.status, "filled", "sanity: the real paper order is already filled");
+
+  const rowsBefore = await listUnifiedOrders(session.workspace.id);
+  const rowBefore = rowsBefore.find((r) => r.symbol === "PSYNCFILL");
+  assert.equal(rowBefore?.status, "submitted", "reproduces the gap: unified row stuck at submitted despite a filled paper order");
+
+  const summary = await syncPaperUnifiedOrders({ session });
+  assert.equal(summary.checked, 1, "PAPER-SYNC-1: exactly one syncable paper row must be checked");
+  assert.equal(summary.updated, 1, "PAPER-SYNC-1: the row must be updated");
+
+  const rowsAfter = await listUnifiedOrders(session.workspace.id);
+  const rowAfter = rowsAfter.find((r) => r.symbol === "PSYNCFILL");
+  assert.equal(rowAfter?.status, "filled", "PAPER-SYNC-1: submitted -> filled transition");
+  assert.equal(rowAfter?.filledQty, 1000);
+  assert.equal(rowAfter?.filledPrice, result.order?.avgFillPrice);
+  assert.ok(rowAfter?.filledAt, "PAPER-SYNC-1: filledAt must be set");
+});
+
+test("PAPER-SYNC-2: paper market order rejected for missing quote, sweep syncs submitted -> rejected", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `paper-sync-reject-${randomUUID()}` });
+  const accountId = "paper-sync-reject-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  // No quote is set up for this symbol. A limit order (not market) with a
+  // price keeps the risk engine's non-overridable stale_quote guard at "warn"
+  // (only market orders / priceless orders escalate it to a hard block), and
+  // the gate fails open (quote_unknown, not blocked) — so the order reaches
+  // placePaperOrder, which rejects it there (quote_not_paper_safe: no quote
+  // means paperUsable=false). trading-service.ts still records the unified
+  // row as "submitted" because placePaperOrder didn't throw.
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "PSYNCREJECT", accountId, type: "limit", price: 10, quantity: 1000, quantity_unit: "SHARE" })
+  });
+  assert.equal(result.blocked, false);
+  assert.equal(result.order?.status, "rejected", "sanity: the real paper order is already rejected");
+
+  const rowsBefore = await listUnifiedOrders(session.workspace.id);
+  const rowBefore = rowsBefore.find((r) => r.symbol === "PSYNCREJECT");
+  assert.equal(rowBefore?.status, "submitted", "reproduces the gap: unified row stuck at submitted despite a rejected paper order");
+
+  const summary = await syncPaperUnifiedOrders({ session });
+  assert.equal(summary.updated, 1, "PAPER-SYNC-2: the row must be updated");
+
+  const rowsAfter = await listUnifiedOrders(session.workspace.id);
+  const rowAfter = rowsAfter.find((r) => r.symbol === "PSYNCREJECT");
+  assert.equal(rowAfter?.status, "rejected", "PAPER-SYNC-2: submitted -> rejected transition");
+  assert.equal(rowAfter?.filledQty, 0);
+});
+
+test("PAPER-SYNC-3: resting limit order cancelled out-of-band, sweep syncs submitted -> cancelled", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `paper-sync-cancel-${randomUUID()}` });
+  const accountId = "paper-sync-cancel-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PSYNCCANCEL",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  // Limit buy far below the quote — does not fill immediately, order stays
+  // "acknowledged" (resting). Unified row is recorded as "submitted".
+  const result = await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "PSYNCCANCEL", accountId, type: "limit", price: 1, quantity: 1000, quantity_unit: "SHARE" })
+  });
+  assert.equal(result.blocked, false);
+  assert.equal(result.order?.status, "acknowledged", "sanity: the real paper order is resting, not yet filled");
+
+  // Cancel via the paper broker directly (out-of-band from UTA-C1's
+  // trading-cancel-service.ts) so this test exercises the sweep's own
+  // read-back, independent of the dedicated cancel path.
+  const cancelled = await cancelPaperOrder({
+    session,
+    accountId,
+    payload: { orderId: result.order!.id, reason: "test-cancel" }
+  });
+  assert.equal(cancelled?.status, "canceled");
+
+  const summary = await syncPaperUnifiedOrders({ session });
+  assert.equal(summary.updated, 1, "PAPER-SYNC-3: the row must be updated");
+
+  const rowsAfter = await listUnifiedOrders(session.workspace.id);
+  const rowAfter = rowsAfter.find((r) => r.symbol === "PSYNCCANCEL");
+  assert.equal(rowAfter?.status, "cancelled", "PAPER-SYNC-3: submitted -> cancelled transition");
+  assert.ok(rowAfter?.cancelledAt, "PAPER-SYNC-3: cancelledAt must be set");
+});
+
+test("PAPER-SYNC-4: idempotent — re-running the sweep does not re-update an already-synced row", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `paper-sync-idem-${randomUUID()}` });
+  const accountId = "paper-sync-idem-acct";
+
+  await upsertRiskLimitState({
+    session,
+    payload: { accountId, tradingHoursStart: "00:00", tradingHoursEnd: "23:59" }
+  });
+
+  const now = new Date().toISOString();
+  await upsertPaperQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "PSYNCIDEM",
+        market: "OTHER",
+        source: "manual",
+        last: 50,
+        bid: 49.9,
+        ask: 50.1,
+        open: 50,
+        high: 50,
+        low: 50,
+        prevClose: 50,
+        volume: 2000,
+        changePct: 0,
+        timestamp: now
+      }
+    ]
+  });
+
+  await submitOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "PSYNCIDEM", accountId, type: "market", quantity: 1000, quantity_unit: "SHARE" })
+  });
+
+  const first = await syncPaperUnifiedOrders({ session });
+  assert.equal(first.updated, 1, "PAPER-SYNC-4: first sweep updates the row");
+
+  const rowsAfterFirst = await listUnifiedOrders(session.workspace.id);
+  const rowAfterFirst = rowsAfterFirst.find((r) => r.symbol === "PSYNCIDEM");
+  assert.equal(rowAfterFirst?.status, "filled");
+
+  const second = await syncPaperUnifiedOrders({ session });
+  assert.equal(second.checked, 0, "PAPER-SYNC-4: re-run finds nothing left to sync (row is already terminal)");
+  assert.equal(second.updated, 0, "PAPER-SYNC-4: re-run must not re-update the row");
+
+  const rowsAfterSecond = await listUnifiedOrders(session.workspace.id);
+  const rowAfterSecond = rowsAfterSecond.find((r) => r.symbol === "PSYNCIDEM");
+  assert.deepEqual(rowAfterSecond, rowAfterFirst, "PAPER-SYNC-4: row must be byte-for-byte unchanged on the idempotent re-run");
+});
+
+test("PAPER-SYNC-5: stuck-pending half-orders are flagged, never auto-resubmitted or status-changed", async () => {
+  const { _resetUnifiedOrderStoreForTests, createUnifiedOrder, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `paper-sync-stuck-${randomUUID()}` });
+
+  const record = await createUnifiedOrder(
+    session.workspace.id,
+    "paper",
+    { symbol: "PSYNCSTUCK", action: "Buy", qty: 1000, quantityUnit: "SHARE", priceType: "Market" },
+    null
+  );
+  // Record stays "pending" — never gets a submitted/rejected update, mirroring
+  // the half-order scenario (insert succeeded, post-submit update failed).
+  await delay(5);
+
+  const originalThreshold = process.env["UTA_C2_STUCK_PENDING_MS"];
+  process.env["UTA_C2_STUCK_PENDING_MS"] = "1";
+
+  try {
+    const summary = await syncPaperUnifiedOrders({ session });
+    assert.equal(summary.stuckPending.length, 1, "PAPER-SYNC-5: the stuck pending row must be flagged");
+    assert.equal(summary.stuckPending[0]?.id, record.id);
+
+    const rows = await listUnifiedOrders(session.workspace.id);
+    const rowAfter = rows.find((r) => r.id === record.id);
+    assert.equal(rowAfter?.status, "pending", "PAPER-SYNC-5: stuck row must NEVER be auto-resubmitted or have its status changed");
+  } finally {
+    if (originalThreshold === undefined) delete process.env["UTA_C2_STUCK_PENDING_MS"];
+    else process.env["UTA_C2_STUCK_PENDING_MS"] = originalThreshold;
+  }
+});
+
+test("PAPER-SYNC-6: cron registration (source check)", () => {
+  const syncSrc = readFileSync(
+    new URL("../apps/api/src/broker/paper-order-sync.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    syncSrc,
+    /export async function syncPaperUnifiedOrders/,
+    "PAPER-SYNC-6: must export syncPaperUnifiedOrders"
+  );
+
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /UTA-C2-PAPER-SYNC-CRON/,
+    "PAPER-SYNC-6: cron registration comment must exist in server.ts"
+  );
+  assert.match(
+    serverSrc,
+    /syncPaperUnifiedOrders/,
+    "PAPER-SYNC-6: cron tick must call syncPaperUnifiedOrders"
   );
 });
 
