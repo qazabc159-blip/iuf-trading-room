@@ -324,6 +324,7 @@ const GATE_CASES: GateOnlyCase[] = [
   { group: "G-PORT", method: "DELETE", path: "/api/v1/risk/symbol-limits", minRole: "Trader" },
   { group: "G-PORT", method: "POST", path: "/api/v1/trading/orders", minRole: "Trader" },
   { group: "G-PORT", method: "POST", path: "/api/v1/trading/orders/cancel", minRole: "Trader" },
+  { group: "G-PORT", method: "POST", path: "/api/v1/trading/orders/role-matrix-x/cancel", minRole: "Trader" },
   { group: "G-RESEARCH", method: "GET", path: "/api/v1/companies/duplicates", minRole: "Analyst" },
   { group: "G-RESEARCH", method: "GET", path: "/api/v1/companies/merge-preview", minRole: "Analyst" },
   { group: "G-ADMIN-ish", method: "POST", path: "/api/v1/companies/merge", minRole: "Admin" },
