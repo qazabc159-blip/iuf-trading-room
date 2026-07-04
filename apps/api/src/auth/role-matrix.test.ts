@@ -171,6 +171,75 @@ const CASES: MatrixCase[] = [
     path: "/api/v1/themes/index",
     expected: { Owner: 200, Admin: 403, Analyst: 403, Trader: 403, Viewer: 403 },
     note: "current gate = Owner only; representative of the real-money / ops-core group."
+  },
+
+  // ── PR-B (2026-07-04): G-PUB READ_DRAFT_ROLES downgrade ──────────────────
+  // Design: reports/permission_matrix/PERMISSION_MATRIX_v1.md §4 PR-B row.
+  // Classification evidence: reports/permission_matrix/PR_B_CLASSIFICATION_2026_07_04.md
+  //
+  // Under-grant direction: G-PUB representative endpoints that were previously
+  // gated Owner/Admin/Analyst-only now pass every role, including Viewer/Trader.
+  // Both endpoints below are deterministic in memory mode (no DB, no network
+  // fan-out) so this suite stays fast and non-flaky.
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/quotes)",
+    method: "GET",
+    path: "/api/v1/quotes",
+    expected: { Owner: 200, Admin: 200, Analyst: 200, Trader: 200, Viewer: 200 },
+    note: "PR-B: pure quote data (KGI channel blocked -> static empty stub); READ_DRAFT_ROLES check removed."
+  },
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/announcements)",
+    method: "GET",
+    path: "/api/v1/announcements",
+    expected: { Owner: 200, Admin: 200, Analyst: 200, Trader: 200, Viewer: 200 },
+    note: "PR-B: official market announcements + FinMind news fallback; READ_DRAFT_ROLES check removed."
+  },
+  {
+    group: "G-PUB — downgraded to login-only (server.ts /api/v1/briefs/search)",
+    method: "GET",
+    path: "/api/v1/briefs/search?q=role-matrix-probe",
+    // Memory mode has no DB, so the handler 503s at its database_unavailable
+    // guard — for EVERY role. The point of this row is the Viewer/Trader
+    // column: 503 (not 403) proves the READ_DRAFT_ROLES gate is gone and low
+    // roles reach the handler body. The published-only content guarantee is
+    // pinned by the source-scan test below (the SQL is unreachable in memory mode).
+    expected: { Owner: 503, Admin: 503, Analyst: 503, Trader: 503, Viewer: 503 },
+    note: "PR-B: role gate removed; memory mode short-circuits at database_unavailable for all roles."
+  }
+];
+
+// ── PR-B over-grant guard: the 3 pre-classified exemptions stay Analyst+ ───
+// (briefs/:id auditChain, dashboard/snapshot audit_stats+lab_strategies fan-out,
+// paper/e2e kill-switch/execution flags). These must NOT be reachable by
+// Viewer/Trader even after the G-PUB downgrade above.
+interface ExemptCase {
+  name: string;
+  method: "GET" | "POST";
+  path: string;
+  /** Only asserted for roles below the gate — Owner/Admin/Analyst status varies
+   *  by memory-mode DB availability and is not the point of this guard. */
+  deniedRoles: readonly Role[];
+}
+
+const EXEMPT_CASES: ExemptCase[] = [
+  {
+    name: "briefs/:id (auditChain — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/briefs/role-matrix-nonexistent-brief",
+    deniedRoles: ["Viewer", "Trader"]
+  },
+  {
+    name: "dashboard/snapshot (audit_stats + lab_strategies fan-out — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/dashboard/snapshot",
+    deniedRoles: ["Viewer", "Trader"]
+  },
+  {
+    name: "paper/e2e (kill-switch / execution flags — Analyst+ exemption)",
+    method: "GET",
+    path: "/api/v1/paper/e2e",
+    deniedRoles: ["Viewer", "Trader"]
   }
 ];
 
@@ -189,4 +258,58 @@ describe("role-matrix (PR-A skeleton — pins CURRENT server.ts behavior)", () =
       });
     }
   }
+});
+
+describe("role-matrix PR-B — over-grant guard on the 3 pre-classified exemptions", () => {
+  for (const exemptCase of EXEMPT_CASES) {
+    for (const role of exemptCase.deniedRoles) {
+      test(`${exemptCase.name} :: ${exemptCase.method} ${exemptCase.path} :: ${role} -> 403`, async () => {
+        const res = await requestAs(role, exemptCase.method, exemptCase.path);
+        assert.equal(
+          res.status,
+          403,
+          `PR-B exemption must stay Analyst+: ${role} should still get 403 on ${exemptCase.path}, got ${res.status}`
+        );
+        await res.text().catch(() => undefined);
+      });
+    }
+  }
+});
+
+describe("role-matrix PR-B — briefs/search must stay published/approved-only (Pete review #1166)", () => {
+  // The worker-draft OR branch `OR (status = 'draft' AND generated_by = 'worker')`
+  // used to sit in all four briefs/search SQL blocks (FTS main, ILIKE fallback,
+  // and both COUNT queries). Once PR-B dropped the READ_DRAFT_ROLES gate, that
+  // branch would have leaked unreviewed worker-draft body text (summary_preview)
+  // to any logged-in role. The matrix suite runs in memory mode where the SQL is
+  // unreachable (database_unavailable short-circuit), so this is a source-scan
+  // pin — same pattern as the repo's other SQL-shape regression tests.
+  test("briefs/search handler SQL has no worker-draft branch and 4 strict published/approved filters", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(serverEntry, "utf8");
+
+    const start = source.indexOf('app.get("/api/v1/briefs/search"');
+    assert.notEqual(start, -1, "briefs/search route not found in server.ts");
+    // Handler ends at the next route registration after it.
+    const end = source.indexOf('app.post("/api/v1/briefs"', start);
+    assert.notEqual(end, -1, "route following briefs/search not found in server.ts");
+    const handler = source.slice(start, end);
+
+    assert.ok(
+      !handler.includes("generated_by = 'worker'"),
+      "briefs/search SQL must NOT contain the worker-draft OR branch — it leaks unreviewed draft text to Viewer (Pete review #1166)"
+    );
+    assert.ok(
+      !/status\s*=\s*'draft'/.test(handler),
+      "briefs/search SQL must NOT reference status='draft' in any WHERE clause"
+    );
+
+    const strictFilterCount =
+      handler.split("AND status IN ('published','approved')").length - 1;
+    assert.equal(
+      strictFilterCount,
+      4,
+      `expected the strict published/approved filter in all 4 SQL blocks (FTS main, ILIKE fallback, FTS COUNT, ILIKE COUNT); found ${strictFilterCount}`
+    );
+  });
 });
