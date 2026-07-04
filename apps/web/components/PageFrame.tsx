@@ -79,6 +79,7 @@ function displayCode(code: string) {
     SIG: "訊號",
     SRC: "資料來源",
     THM: "主題",
+    TRK: "績效記帳",
     WCH: "觀察清單",
   };
 

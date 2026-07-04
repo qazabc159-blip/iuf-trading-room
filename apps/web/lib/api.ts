@@ -367,6 +367,30 @@ export async function getAiRecPerformance(): Promise<AiRecPerformance | null> {
   }
 }
 
+/**
+ * Same endpoint as `getAiRecPerformance()`, but keeps the "forbidden vs
+ * genuinely unavailable" distinction instead of collapsing both to `null`.
+ * Used by /track-record so the honest empty-state copy can say the right
+ * thing (role gate vs data-service outage) instead of one generic message.
+ * Mirrors the `getWeeklyReview()` reason-classification pattern below.
+ */
+export type AiRecPerformanceResult =
+  | { ok: true; data: AiRecPerformance }
+  | { ok: false; reason: "forbidden" | "unavailable" };
+
+export async function getAiRecPerformanceResult(): Promise<AiRecPerformanceResult> {
+  try {
+    const data = await requestRaw<AiRecPerformance>("/api/v1/admin/ai-rec/performance", { cache: "no-store" });
+    return { ok: true, data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err ?? "");
+    if (/403|401|forbidden|unauthorized/i.test(message)) {
+      return { ok: false, reason: "forbidden" };
+    }
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 export async function sendRecommendationFeedback(id: string, input: RecommendationFeedback) {
   return requestRaw<{ ok: true }>(`/api/v1/recommendations/${encodeURIComponent(id)}/feedback`, {
     method: "POST",
