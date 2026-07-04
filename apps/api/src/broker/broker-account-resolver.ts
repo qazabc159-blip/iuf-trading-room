@@ -26,7 +26,14 @@ import { sql as drizzleSql } from "drizzle-orm";
 /** Maps raw adapter_key strings from DB to our BrokerKind contract enum. */
 export function adapterKeyToBrokerKind(adapterKey: string): BrokerKind {
   if (adapterKey === "kgi") return "kgi";
-  // "paper" and anything unrecognised → paper (safe default)
+  // "fubon" (UTA-C3 skeleton, 2026-07-04): packages/contracts/src/broker.ts's
+  // brokerKindSchema is out of this round's unlocked scope, so there is no
+  // "fubon" BrokerKind literal yet — route through "paper" risk-gate handling
+  // like any other adapter_key we don't have a dedicated kind for. This does
+  // NOT grant any live-order capability: FubonBrokerAdapter.submitOrder()/
+  // cancelOrder() are hard-locked (FUBON_ORDER_WRITE_LOCKED=true) regardless
+  // of how this function maps the account.
+  // "paper", "manual", and anything else unrecognised → paper (safe default)
   return "paper";
 }
 

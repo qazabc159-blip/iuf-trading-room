@@ -19686,6 +19686,246 @@ test("S1-PERSIST-TPEX-2: TPEX persist uses SecuritiesCompanyCode as ticker and C
   );
 });
 
+// ============================================================================
+// UTA-C3 — Fubon adapter skeleton + contract-mock gateway (2026-07-04)
+// ============================================================================
+//
+// Mock-first: 楊董's 富邦開戶/Neo API 尚未申請 (安全閘 spec O-4). Every test here
+// runs against services/fubon-gateway-mock (in-process http.Server, fixture
+// only) — never a real broker. FUBON_ORDER_WRITE_LOCKED keeps submitOrder/
+// cancelOrder locked at the API layer regardless of gateway env state.
+// Spec: reports/fubon_adapter/FUBON_ADAPTER_INTERFACE_FREEZE_v1.md §2-§5
+
+import {
+  createFubonMockGatewayServer,
+  _resetFubonMockGatewayStateForTests
+} from "../services/fubon-gateway-mock/server.ts";
+import {
+  FubonGatewayClient,
+  FubonGatewayReadOnlyBlockedError,
+  FubonGatewayStageGateBlockedError
+} from "../apps/api/src/broker/fubon-gateway-client.ts";
+import { FubonBroker } from "../apps/api/src/broker/fubon-broker.ts";
+import {
+  FubonBrokerAdapter,
+  FUBON_ORDER_WRITE_LOCKED,
+  FubonOrderWriteLockedError,
+  toShareQuantity,
+  sharesToLots
+} from "../apps/api/src/broker/fubon-broker-adapter.ts";
+import { adapterKeyToBrokerKind } from "../apps/api/src/broker/broker-account-resolver.ts";
+
+async function startFubonMock(): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createFubonMockGatewayServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve()))
+  };
+}
+
+function withEnv(name: string, value: string | undefined, fn: () => Promise<void>): Promise<void> {
+  const original = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  return fn().finally(() => {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  });
+}
+
+test("UTA-C3-1: fubon mock gateway starts and all 7 GAP-v1 endpoints return contract shapes", async () => {
+  const mock = await startFubonMock();
+  try {
+    const health = await fetch(`${mock.url}/health`).then((r) => r.json()) as Record<string, unknown>;
+    assert.equal(health.ok, true);
+    assert.equal(health.broker, "fubon");
+    assert.equal(typeof health.is_simulation, "boolean");
+    assert.equal(typeof health.read_only_mode, "boolean");
+
+    const session = await fetch(`${mock.url}/session/status`).then((r) => r.json()) as Record<string, unknown>;
+    assert.equal(typeof session.logged_in, "boolean");
+    assert.equal(typeof session.account_masked, "string");
+
+    const positions = await fetch(`${mock.url}/positions`).then((r) => r.json()) as { positions: unknown[] };
+    assert.ok(Array.isArray(positions.positions) && positions.positions.length > 0,
+      "UTA-C3-1: /positions must return a non-empty fixture array");
+    const firstPos = positions.positions[0] as Record<string, unknown>;
+    assert.equal(typeof firstPos.symbol, "string");
+    assert.equal(typeof firstPos.qty, "number");
+
+    const balances = await fetch(`${mock.url}/balances`).then((r) => r.json()) as Record<string, unknown>;
+    assert.equal(typeof balances.cash_available, "number");
+
+    const ordersToday = await fetch(`${mock.url}/orders/today`).then((r) => r.json()) as { orders: unknown[] };
+    assert.ok(Array.isArray(ordersToday.orders), "UTA-C3-1: /orders/today must return an orders array");
+
+    // /order/create and /order/cancel are locked by default (403) — the error
+    // envelope is itself part of the GAP-v1 contract shape.
+    const createRes = await fetch(`${mock.url}/order/create`, { method: "POST", body: "{}" });
+    assert.equal(createRes.status, 403);
+    const createBody = await createRes.json() as { error: { code: string } };
+    assert.equal(createBody.error.code, "FUBON_READ_ONLY_MODE_BLOCKED");
+
+    const cancelRes = await fetch(`${mock.url}/order/cancel`, { method: "POST", body: "{}" });
+    assert.equal(cancelRes.status, 403);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("UTA-C3-2: read e2e — FubonBrokerAdapter.getPositions() aligns fixture to UnifiedPosition shape", async () => {
+  const mock = await startFubonMock();
+  try {
+    const adapter = new FubonBrokerAdapter({ gatewayBaseUrl: mock.url });
+    const positions = await adapter.getPositions();
+    assert.equal(positions.length, 2, "UTA-C3-2: must surface both fixture positions");
+    const oddLot = positions.find((p) => p.symbol === "00981A");
+    assert.ok(oddLot, "UTA-C3-2: odd-lot fixture position must be present");
+    assert.equal(oddLot?.qty, 36);
+    assert.equal(oddLot?.broker, "fubon");
+    for (const p of positions) {
+      assert.equal(typeof p.symbol, "string");
+      assert.equal(typeof p.qty, "number");
+      assert.equal(typeof p.avgPrice, "number");
+      assert.equal(typeof p.lastPrice, "number");
+      assert.equal(typeof p.unrealized, "number");
+      assert.equal(typeof p.realized, "number");
+    }
+  } finally {
+    await mock.close();
+  }
+});
+
+test("UTA-C3-3: read e2e — FubonBroker.getBalances() shape + board-lot enrichment on getPositions()", async () => {
+  const mock = await startFubonMock();
+  try {
+    const broker = new FubonBroker({ gatewayBaseUrl: mock.url });
+    const balances = await broker.getBalances();
+    assert.equal(balances.cashAvailable, 5_000_000);
+
+    const positions = await broker.getPositions();
+    const regular = positions.find((p) => p.symbol === "2330");
+    const odd = positions.find((p) => p.symbol === "00981A");
+    assert.equal(regular?.boardLot, 1000);
+    assert.equal(regular?.isOddLot, false, "UTA-C3-3: 1000-share position is a full lot, not odd");
+    assert.equal(odd?.isOddLot, true, "UTA-C3-3: 36-share position is odd-lot");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("UTA-C3-4: mock gateway stage-gate — read-only default blocks createOrder with FubonGatewayReadOnlyBlockedError", async () => {
+  const mock = await startFubonMock();
+  try {
+    const client = new FubonGatewayClient({ gatewayBaseUrl: mock.url });
+    await assert.rejects(
+      () => client.createOrder({ symbol: "2330", action: "Buy", qty: 1000 }),
+      FubonGatewayReadOnlyBlockedError,
+      "UTA-C3-4: default FUBON_READ_ONLY_MODE=true must block createOrder"
+    );
+  } finally {
+    await mock.close();
+  }
+});
+
+test("UTA-C3-5: mock gateway stage-gate — with read-only off, live-trading default still blocks with FubonGatewayStageGateBlockedError (create + cancel)", async () => {
+  await withEnv("FUBON_READ_ONLY_MODE", "false", async () => {
+    const mock = await startFubonMock();
+    try {
+      const client = new FubonGatewayClient({ gatewayBaseUrl: mock.url });
+      await assert.rejects(
+        () => client.createOrder({ symbol: "2330", action: "Buy", qty: 1000 }),
+        FubonGatewayStageGateBlockedError,
+        "UTA-C3-5: FUBON_LIVE_TRADING_ENABLED default false must block createOrder"
+      );
+      await assert.rejects(
+        () => client.cancelOrder("fubon-mock-1"),
+        FubonGatewayStageGateBlockedError,
+        "UTA-C3-5: cancelOrder must share the same stage gate as createOrder"
+      );
+    } finally {
+      await mock.close();
+    }
+  });
+});
+
+test("UTA-C3-6: stage-gate error code literal — mock returns the exact FUBON_LIVE_DISABLED_STAGE_GATE string", async () => {
+  await withEnv("FUBON_READ_ONLY_MODE", "false", async () => {
+    const mock = await startFubonMock();
+    try {
+      const res = await fetch(`${mock.url}/order/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: "2330", action: "Buy", qty: 1000 })
+      });
+      assert.equal(res.status, 409);
+      const body = await res.json() as { error: { code: string } };
+      assert.equal(body.error.code, "FUBON_LIVE_DISABLED_STAGE_GATE");
+    } finally {
+      await mock.close();
+    }
+  });
+});
+
+test("UTA-C3-7: mock /order/cancel is idempotent — repeat cancel of the same id returns already_cancelled", async () => {
+  await withEnv("FUBON_READ_ONLY_MODE", "false", async () => {
+    await withEnv("FUBON_LIVE_TRADING_ENABLED", "true", async () => {
+      const mock = await startFubonMock();
+      try {
+        const client = new FubonGatewayClient({ gatewayBaseUrl: mock.url });
+        const first = await client.cancelOrder("fubon-mock-idem-1");
+        assert.equal(first.status, "cancelled");
+        const second = await client.cancelOrder("fubon-mock-idem-1");
+        assert.equal(second.status, "already_cancelled", "UTA-C3-7: repeat cancel of same id must be idempotent");
+      } finally {
+        await mock.close();
+        _resetFubonMockGatewayStateForTests();
+      }
+    });
+  });
+});
+
+test("UTA-C3-8: FUBON_ORDER_WRITE_LOCKED is hardcoded true, and FubonBrokerAdapter refuses submit/cancel before any network call", async () => {
+  assert.equal(FUBON_ORDER_WRITE_LOCKED, true, "UTA-C3-8: FUBON_ORDER_WRITE_LOCKED must be hardcoded true");
+
+  // Nothing listens on this address — if the adapter ever reached the network
+  // before checking the lock, this would throw a connection error instead of
+  // FubonOrderWriteLockedError.
+  const adapter = new FubonBrokerAdapter({ gatewayBaseUrl: "http://127.0.0.1:1" });
+  await assert.rejects(
+    () => adapter.submitOrder({ symbol: "2330", action: "Buy", qty: 1, priceType: "Market" }),
+    FubonOrderWriteLockedError,
+    "UTA-C3-8: submitOrder must refuse locally before any gateway call"
+  );
+  await assert.rejects(
+    () => adapter.cancelOrder("any-id"),
+    FubonOrderWriteLockedError,
+    "UTA-C3-8: cancelOrder must refuse locally before any gateway call"
+  );
+});
+
+test("UTA-C3-9: toShareQuantity converts LOT->shares and passes SHARE through, including the odd-lot boundary", () => {
+  assert.equal(toShareQuantity(1, "LOT"), 1000);
+  assert.equal(toShareQuantity(2, "LOT"), 2000);
+  assert.equal(toShareQuantity(1, undefined), 1000, "UTA-C3-9: undefined unit defaults to LOT (existing UnifiedOrderInput convention)");
+  assert.equal(toShareQuantity(1, "SHARE"), 1, "UTA-C3-9: odd-lot boundary — 1 share stays 1 share");
+  assert.equal(toShareQuantity(999, "SHARE"), 999);
+});
+
+test("UTA-C3-10: sharesToLots is the inverse direction, including the odd-lot remainder", () => {
+  assert.deepEqual(sharesToLots(1000), { lots: 1, remainderShares: 0 });
+  assert.deepEqual(sharesToLots(2000), { lots: 2, remainderShares: 0 });
+  assert.deepEqual(sharesToLots(1), { lots: 0, remainderShares: 1 }, "UTA-C3-10: 1 share is 0 lots + 1 odd-lot remainder");
+  assert.deepEqual(sharesToLots(1500), { lots: 1, remainderShares: 500 });
+});
+
+test("UTA-C3-11: adapterKeyToBrokerKind('fubon') maps to 'paper' pending BrokerKind contract extension", () => {
+  assert.equal(adapterKeyToBrokerKind("fubon"), "paper");
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");
