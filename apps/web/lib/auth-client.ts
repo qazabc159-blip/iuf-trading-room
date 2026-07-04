@@ -41,14 +41,6 @@ export type AuthFailure = {
 
 export type AuthResult = AuthSuccess | AuthFailure;
 
-export type InviteIssueSuccess = {
-  ok: true;
-  code: string;
-  expiresAt: string;
-};
-
-export type InviteIssueResult = InviteIssueSuccess | AuthFailure;
-
 function missingApi(): AuthFailure {
   return { ok: false, error: "api_base_unconfigured" };
 }
@@ -104,32 +96,10 @@ export async function apiRegister(
   }
 }
 
-export async function apiIssueInvite(ttlMinutes: number): Promise<InviteIssueResult> {
-  if (!API_BASE) return missingApi();
-
-  try {
-    const res = await fetch(`${API_BASE}/auth/issue-invite`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ ttlMinutes }),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      return { ok: false, error: body.error ?? `server_error_${res.status}` };
-    }
-
-    const body = await res.json() as { data: { code: string; expiresAt: string } };
-    return {
-      ok: true,
-      code: body.data.code,
-      expiresAt: body.data.expiresAt,
-    };
-  } catch {
-    return { ok: false, error: "network_error" };
-  }
-}
+// NOTE: apiIssueInvite() (POST /auth/issue-invite) was removed 2026-07-05
+// (P1-2 legacy invite converge). The invite_codes-backed issuance path is
+// retired server-side (410 Gone); use the workspace_invites system instead —
+// POST /api/v1/admin/invites from the /admin/team page.
 
 export async function apiLogout(): Promise<void> {
   try {

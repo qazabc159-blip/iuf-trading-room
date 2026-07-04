@@ -2,8 +2,11 @@
  * paper-e2e-order-unit.test.ts — Paper E2E + Order Unit Guard (Bruce P3)
  *
  * // PENDING_JASON_COMMIT
- * // PENDING_OPERATOR_SESSION — requires 楊董 to provide session cookie via
- * //   /auth/issue-invite before this test can run against production.
+ * // PENDING_OPERATOR_SESSION — requires 楊董 to provide a session cookie
+ * //   before this test can run against production. /auth/issue-invite is
+ * //   retired (P1-2, 2026-07-05, → 410 Gone); mint an invite via
+ * //   POST /api/v1/admin/invites (Admin+) then /auth/register-with-invite,
+ * //   or log in directly with an existing operator account.
  *   Set env: PAPER_E2E_BASE_URL and PAPER_E2E_SESSION_COOKIE
  *
  * Coverage (HTTP E2E — requires running API server + valid session):
@@ -34,8 +37,8 @@
  * Stop-line: if SESSION_COOKIE is not set, auth tests skip (unauth probes still run).
  */
 
-// PENDING_JASON_COMMIT — Blocked on: /auth/issue-invite operator session from 楊董
-// PENDING_OPERATOR_SESSION — see header above
+// PENDING_JASON_COMMIT — Blocked on: operator session cookie from 楊董
+// PENDING_OPERATOR_SESSION — see header above (old /auth/issue-invite path retired P1-2 2026-07-05)
 
 import assert from "node:assert/strict";
 import test from "node:test";

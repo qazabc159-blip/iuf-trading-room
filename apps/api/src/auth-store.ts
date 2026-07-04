@@ -1,18 +1,25 @@
 /**
- * auth-store.ts — login / register-with-invite / logout helpers
+ * auth-store.ts — login / logout helpers
  *
  * Uses Node built-in `crypto.scrypt` (no extra deps) for password hashing.
  * Session is stored as a signed cookie ("iuf_session") containing the user id.
  * Cookie signing uses HMAC-SHA256 with AUTH_SECRET env var.
  *
  * Format: `<userId>.<hmac_hex>`
+ *
+ * Note: register-with-invite (the workspace_invites-backed registration flow,
+ * migration 0050) lives in invite-store.ts, not here. This file used to also
+ * own the legacy invite_codes issuance helper (`createInviteCode`); that path
+ * was retired 2026-07-05 (P1-2 legacy invite converge) in favor of
+ * POST /api/v1/admin/invites. invite_codes table/data are left untouched
+ * (historical, no destructive migration).
  */
 import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 
 import { eq } from "drizzle-orm";
 
-import { getDb, inviteCodes, users, workspaces } from "@iuf-trading-room/db";
+import { getDb, users, workspaces } from "@iuf-trading-room/db";
 
 const scryptAsync = promisify(scrypt);
 
@@ -235,24 +242,6 @@ export async function getUserById(userId: string): Promise<(AuthUser & { workspa
     workspaceId: row.workspaceId ?? null,
     workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug }
   };
-}
-
-// ── issue an invite code (Owner-gated; called from server route) ─────────────
-export async function createInviteCode(opts: {
-  issuerId: string;
-  ttlMs?: number;
-  code?: string;
-}): Promise<{ code: string; expiresAt: Date }> {
-  const db = requireDb();
-  const ttl = Math.max(60_000, opts.ttlMs ?? 60 * 60_000); // default 1h, min 1min
-  const expiresAt = new Date(Date.now() + ttl);
-  const code = (opts.code ?? randomBytes(6).toString("base64url")).slice(0, 64);
-  await db.insert(inviteCodes).values({
-    code,
-    issuedBy: opts.issuerId,
-    expiresAt,
-  });
-  return { code, expiresAt };
 }
 
 // ── password policy ───────────────────────────────────────────────────────────
