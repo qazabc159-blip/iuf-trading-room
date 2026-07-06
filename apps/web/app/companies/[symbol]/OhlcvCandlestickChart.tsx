@@ -1043,6 +1043,22 @@ const INDICATOR_CSS = `
   .kline-signal-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kline-viewport-tools .count { margin-left: 0; }
 }
+/* M2 mobile pass (2026-07-06): indicator toggle chips (25px) and viewport
+   zoom/reset buttons (24px) measured below the 44px touch minimum at 390px.
+   Scoped to <=480px; kept below the full 44px bar deliberately — these are
+   dense secondary chart controls (8-9 chips + 5 tools in one toolbar) and a
+   literal 44px would force most of them onto their own row, working against
+   the chart's already-tight vertical budget on a 390px screen. Bumped to a
+   still-meaningfully-larger 34px, which keeps 3-4 chips per row. */
+@media (max-width: 480px) {
+  ._ind-toggle-btn {
+    min-height: 34px;
+    padding: 5px 9px;
+  }
+  .kline-viewport-tools button {
+    min-height: 34px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   ._ind-toggle-btn { transition: none; }
 }

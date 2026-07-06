@@ -1,0 +1,1182 @@
+[
+ {
+  "route": "/companies/2330",
+  "docScrollWidth": 390,
+  "docClientWidth": 390,
+  "bodyScrollWidth": 390,
+  "bodyClientWidth": 390,
+  "vw": 390,
+  "offenders": [
+   {
+    "tag": "BUTTON",
+    "cls": "outline-button",
+    "width": 89,
+    "right": 419
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-meta",
+    "width": 23,
+    "right": 408
+   },
+   {
+    "tag": "BUTTON",
+    "cls": "outline-button",
+    "width": 89,
+    "right": 513
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-main",
+    "width": 24,
+    "right": 459
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-meta",
+    "width": 35,
+    "right": 502
+   },
+   {
+    "tag": "BUTTON",
+    "cls": "outline-button",
+    "width": 89,
+    "right": 607
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-main",
+    "width": 24,
+    "right": 553
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-meta",
+    "width": 35,
+    "right": 596
+   },
+   {
+    "tag": "BUTTON",
+    "cls": "outline-button",
+    "width": 86,
+    "right": 698
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-main",
+    "width": 24,
+    "right": 647
+   },
+   {
+    "tag": "SPAN",
+    "cls": "company-data-tab-meta",
+    "width": 29,
+    "right": 687
+   },
+   {
+    "tag": "TABLE",
+    "cls": "data-table",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "THEAD",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TH",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TH",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TH",
+    "cls": "",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TH",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TBODY",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "up",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "up",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "down",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "down",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 415
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 515
+   },
+   {
+    "tag": "TD",
+    "cls": "muted",
+    "width": 99,
+    "right": 614
+   },
+   {
+    "tag": "TD",
+    "cls": "",
+    "width": 99,
+    "right": 713
+   },
+   {
+    "tag": "TR",
+    "cls": "",
+    "width": 680,
+    "right": 713
+   }
+  ],
+  "a11yAudit": {
+   "smallText": [
+    {
+     "tag": "SPAN",
+     "cls": "header-dock-count",
+     "fontSize": 9,
+     "text": "48"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg page-code",
+     "fontSize": 11,
+     "text": "03-2330"
+    },
+    {
+     "tag": "B",
+     "cls": "",
+     "fontSize": 11,
+     "text": "2026/7/6 13:57:24"
+    },
+    {
+     "tag": "B",
+     "cls": "gold",
+     "fontSize": 11,
+     "text": "正式資料"
+    },
+    {
+     "tag": "DIV",
+     "cls": "tg session-pill ",
+     "fontSize": 11,
+     "text": "研究 / 前端資料"
+    },
+    {
+     "tag": "A",
+     "cls": "_co-back-btn",
+     "fontSize": 11,
+     "text": "← 返回公司列表"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "badge badge-blue",
+     "fontSize": 11,
+     "text": "上市"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "badge badge-yellow",
+     "fontSize": 11,
+     "text": "核心受惠"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 9.5,
+     "text": "加入觀察清單可看即時報價"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_co-kpi-label",
+     "fontSize": 10,
+     "text": "最新價"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_co-kpi-sub",
+     "fontSize": 10,
+     "text": "TWD"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg panel-code",
+     "fontSize": 11,
+     "text": "K線"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg muted",
+     "fontSize": 11,
+     "text": "/"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg gold",
+     "fontSize": 11,
+     "text": "K 線圖"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "badge badge-green",
+     "fontSize": 11,
+     "text": "FinMind / TEJ"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "kline-symbol-chip",
+     "fontSize": 11,
+     "text": "2330"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ind-toggle-bar-label",
+     "fontSize": 10,
+     "text": "指標"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn is-on",
+     "fontSize": 10,
+     "text": "均線"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma5 is-on",
+     "fontSize": 10,
+     "text": "MA5"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma10",
+     "fontSize": 10,
+     "text": "MA10"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma20 is-on",
+     "fontSize": 10,
+     "text": "MA20"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma60",
+     "fontSize": 10,
+     "text": "MA60"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _vwap is-on",
+     "fontSize": 10,
+     "text": "VWAP"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _sr is-on",
+     "fontSize": 10,
+     "text": "量價支撐/壓力"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _plan is-on",
+     "fontSize": 10,
+     "text": "計畫點位"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn",
+     "fontSize": 10,
+     "text": "RSI"
+    },
+    {
+     "tag": "B",
+     "cls": "",
+     "fontSize": 10,
+     "text": "2,263.96"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 10.5,
+     "text": "最新收盤"
+    },
+    {
+     "tag": "SMALL",
+     "cls": "",
+     "fontSize": 10.5,
+     "text": "2026-07-03"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "kline-toolbar-label",
+     "fontSize": 10.5,
+     "text": "日線"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "kline-tab is-active",
+     "fontSize": 10.8,
+     "text": "日K"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "kline-tab",
+     "fontSize": 10.8,
+     "text": "週K"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "label",
+     "fontSize": 10,
+     "text": "視窗"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "",
+     "fontSize": 10,
+     "text": "放大"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "count",
+     "fontSize": 10,
+     "text": "顯示 519 / 2,436 根"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg state-ok",
+     "fontSize": 11,
+     "text": "正常"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg soft",
+     "fontSize": 11,
+     "text": "FinMind Sponsor 2026-07-03 已回傳"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 11,
+     "text": "正式 OHLCV"
+    },
+    {
+     "tag": "SMALL",
+     "cls": "",
+     "fontSize": 9.16667,
+     "text": "2026-07-03"
+    },
+    {
+     "tag": "SMALL",
+     "cls": "kline-readout-detail",
+     "fontSize": 9.16667,
+     "text": "開 2,415 / 高 2,465 / 低 2,415 / "
+    },
+    {
+     "tag": "SPAN",
+     "cls": "ascii-head-bracket",
+     "fontSize": 11,
+     "text": "知識圖譜"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg soft",
+     "fontSize": 10,
+     "text": "業務 / 供應鏈 / 客戶"
+    },
+    {
+     "tag": "DIV",
+     "cls": "",
+     "fontSize": 10,
+     "text": "業務簡介"
+    },
+    {
+     "tag": "P",
+     "cls": "",
+     "fontSize": 13,
+     "text": "[[台積電]] 成立於 1987 年，總部位於台灣[[新竹]"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 12,
+     "text": "ASML"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 10,
+     "text": "資料來源: My-TW-Coverage (MIT)"
+    },
+    {
+     "tag": "A",
+     "cls": "_ig-graph-search-link",
+     "fontSize": 10,
+     "text": "在公司圖譜搜尋 2330"
+    },
+    {
+     "tag": "text",
+     "cls": "[object SVGAnimatedString]",
+     "fontSize": 8,
+     "text": "ASML"
+    },
+    {
+     "tag": "text",
+     "cls": "[object SVGAnimatedString]",
+     "fontSize": 10,
+     "text": "2330"
+    },
+    {
+     "tag": "text",
+     "cls": "[object SVGAnimatedString]",
+     "fontSize": 7,
+     "text": "台積電"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_ai-lock-msg",
+     "fontSize": 13,
+     "text": "需要分析權限"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_ai-lock-sub dim",
+     "fontSize": 12,
+     "text": "目前帳號無法生成深度報告；頁面不顯示假分析內容。"
+    },
+    {
+     "tag": "P",
+     "cls": "",
+     "fontSize": 11.5,
+     "text": "公司資料庫 / 產業分類 / 驗證狀態"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "company-info-eyebrow",
+     "fontSize": 11,
+     "text": "代號"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 11.5,
+     "text": "半導體"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "badge",
+     "fontSize": 11,
+     "text": "上市"
+    },
+    {
+     "tag": "DT",
+     "cls": "",
+     "fontSize": 11,
+     "text": "市場"
+    },
+    {
+     "tag": "DD",
+     "cls": "",
+     "fontSize": 12.5,
+     "text": "上市"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "",
+     "fontSize": 12.5,
+     "text": "半導體"
+    },
+    {
+     "tag": "B",
+     "cls": "",
+     "fontSize": 12,
+     "text": "3"
+    },
+    {
+     "tag": "DIV",
+     "cls": "company-inline-empty company-inline-empt",
+     "fontSize": 13,
+     "text": "尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼"
+    },
+    {
+     "tag": "PRE",
+     "cls": "company-notes company-notes-compact",
+     "fontSize": 13,
+     "text": "台積電 成立於 1987 年，總部位於台灣新竹。公司是全球最"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "state-reason",
+     "fontSize": 11,
+     "text": "KGI 唯讀五檔目前尚未回傳有效委買委賣，系統會持續輪詢；這"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "dim",
+     "fontSize": 9.5,
+     "text": "最近 20 筆 / 5s 更新"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "dim",
+     "fontSize": 10,
+     "text": "2026-07-03"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_inst-label",
+     "fontSize": 9.5,
+     "text": "外資"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_inst-sub",
+     "fontSize": 9.5,
+     "text": "張"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_inst-total-label",
+     "fontSize": 10.5,
+     "text": "三大法人合計"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_inst-total-val sell",
+     "fontSize": 10.5,
+     "text": "-1106.3萬 張"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ms-label",
+     "fontSize": 9.5,
+     "text": "融資餘額"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ms-change up",
+     "fontSize": 10.5,
+     "text": "+996 張"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ms-sub",
+     "fontSize": 9.5,
+     "text": "vs 前日"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ms-change down",
+     "fontSize": 10.5,
+     "text": "-32 張"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_ms-util-label",
+     "fontSize": 10,
+     "text": "券資比 0.1%"
+    },
+    {
+     "tag": "B",
+     "cls": "tg",
+     "fontSize": 11,
+     "text": "公司主檔"
+    },
+    {
+     "tag": "SMALL",
+     "cls": "tg soft",
+     "fontSize": 11,
+     "text": "工作區公司資料"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "source-status-detail tg soft",
+     "fontSize": 11,
+     "text": "更新 04/14 20:37：已在登入工作區找到這檔股票。"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "badge badge-red",
+     "fontSize": 11,
+     "text": "BLOCKED"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_co-theme-name",
+     "fontSize": 13,
+     "text": "Apple"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_co-theme-tier",
+     "fontSize": 11,
+     "text": "核心受惠"
+    },
+    {
+     "tag": "SMALL",
+     "cls": "",
+     "fontSize": 12.5,
+     "text": "財報、籌碼、公告與盤中資料各自揭露來源狀態；沒有資料就顯示無"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "dim",
+     "fontSize": 11,
+     "text": "FinMind：財報 / 月營收 / 資產負債 / 現金流 "
+    },
+    {
+     "tag": "SMALL",
+     "cls": "",
+     "fontSize": 11.5,
+     "text": "EPS / 毛利率 / 營益率，每頁 10 筆；可切換資料表"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "company-data-tab-main",
+     "fontSize": 12,
+     "text": "財報"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "company-data-tab-meta",
+     "fontSize": 10,
+     "text": "24 筆"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "",
+     "fontSize": 11,
+     "text": "上一頁"
+    },
+    {
+     "tag": "STRONG",
+     "cls": "",
+     "fontSize": 11,
+     "text": "1 / 3"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "tg",
+     "fontSize": 11,
+     "text": "外資近 30 日買賣超"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_co-ann-date",
+     "fontSize": 10,
+     "text": "2444-01-25"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_co-ann-badge --material",
+     "fontSize": 9.5,
+     "text": "重大訊息"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_co-ann-title",
+     "fontSize": 12.8,
+     "text": "115年05月法人說明會簡報"
+    },
+    {
+     "tag": "DIV",
+     "cls": "_co-ann-expand",
+     "fontSize": 9.5,
+     "text": "展開公告內容與來源"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "_co-ann-badge --general",
+     "fontSize": 9.5,
+     "text": "財務報告"
+    },
+    {
+     "tag": "SPAN",
+     "cls": "state-reason",
+     "fontSize": 12,
+     "text": "此區不會用假資料冒充可交易權證或選擇權。接入正式權證與選擇權"
+    },
+    {
+     "tag": "TH",
+     "cls": "",
+     "fontSize": 10,
+     "text": "時間"
+    },
+    {
+     "tag": "TD",
+     "cls": "",
+     "fontSize": 11,
+     "text": "2026-07-03 13:30"
+    },
+    {
+     "tag": "TD",
+     "cls": "muted",
+     "fontSize": 11,
+     "text": "2,445"
+    },
+    {
+     "tag": "TD",
+     "cls": "up",
+     "fontSize": 11,
+     "text": "2,455"
+    },
+    {
+     "tag": "TD",
+     "cls": "down",
+     "fontSize": 11,
+     "text": "2,450"
+    },
+    {
+     "tag": "DIV",
+     "cls": "tg soft",
+     "fontSize": 11,
+     "text": "最新交易日 2026-07-03：外資 -12,536,52"
+    }
+   ],
+   "smallTargets": [
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn is-on",
+     "height": 34,
+     "width": 40,
+     "text": "均線"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma5 is-on",
+     "height": 34,
+     "width": 38,
+     "text": "MA5"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma10",
+     "height": 34,
+     "width": 44,
+     "text": "MA10"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma20 is-on",
+     "height": 34,
+     "width": 44,
+     "text": "MA20"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _ma60",
+     "height": 34,
+     "width": 44,
+     "text": "MA60"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _vwap is-on",
+     "height": 34,
+     "width": 44,
+     "text": "VWAP"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _sr is-on",
+     "height": 34,
+     "width": 86,
+     "text": "量價支撐/壓力"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn _plan is-on",
+     "height": 34,
+     "width": 60,
+     "text": "計畫點位"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "_ind-toggle-btn",
+     "height": 34,
+     "width": 38,
+     "text": "RSI"
+    },
+    {
+     "tag": "BUTTON",
+     "cls": "",
+     "height": 34,
+     "width": 40,
+     "text": "放大"
+    },
+    {
+     "tag": "A",
+     "cls": "",
+     "height": 19,
+     "width": 35,
+     "text": ""
+    }
+   ]
+  },
+  "consoleErrors": [
+   "Failed to load resource: the server responded with a status of 401 ()",
+   "Failed to load resource: the server responded with a status of 401 ()",
+   "Failed to load resource: the server responded with a status of 401 ()",
+   "Failed to load resource: the server responded with a status of 401 ()"
+  ],
+  "shotPath": null
+ }
+]
