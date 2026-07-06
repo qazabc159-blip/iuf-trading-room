@@ -114,7 +114,9 @@ import {
   placePaperOrder
 } from "../apps/api/src/broker/paper-broker.ts";
 import {
+  assertFubonChannelAvailable,
   assertKgiSimChannel,
+  FubonChannelComingSoonError,
   KgiChannelUnavailableError,
   previewOrder,
   submitOrder
@@ -17837,6 +17839,91 @@ test("UOF-D2-5: POST /trading/orders catches KgiChannelUnavailableError and retu
   assert.match(window, /,\s*409\s*\)/, "UOF-D2-5: route must respond with HTTP 409 for channel-unavailable errors");
 });
 
+// ── 統一下單流 D2 fubon branch (fixed 2026-07-06, UTA-C3 #1172 gap fix) ──────
+//
+// Fubon has no live channel yet — every fubon-routed order/preview must be
+// rejected with a structured channel_coming_soon response, and must never
+// fall through to the paper matching path (adapterKeyToBrokerKind previously
+// aliased fubon → paper; see UTA-C3-11 above for the resolver-level fix).
+
+test("UOF-D2-FUBON-1: assertFubonChannelAvailable always throws FubonChannelComingSoonError", () => {
+  assert.throws(
+    () => assertFubonChannelAvailable(),
+    (err: unknown) => err instanceof FubonChannelComingSoonError && err.broker === "fubon"
+  );
+});
+
+test("UOF-D2-FUBON-2: submitOrder rejects a fubon-routed order with channel_coming_soon — no unified_orders row, no gateway/paper-broker call", async () => {
+  const { _resetUnifiedOrderStoreForTests, listUnifiedOrders } =
+    await import("../apps/api/src/broker/unified-order-store.ts");
+  _resetUnifiedOrderStoreForTests();
+
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `uof-fubon-${randomUUID()}` });
+
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    throw new Error("UOF-D2-FUBON-2: no adapter/gateway must ever be reached for a fubon-routed order");
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      submitOrder({
+        session,
+        repo,
+        order: uofTestOrder({ symbol: "UOFFUBON", accountId: "fubon-test-acct" }),
+        _testBrokerKindOverride: "fubon"
+      }),
+      (err: unknown) => err instanceof FubonChannelComingSoonError && err.broker === "fubon"
+    );
+    assert.equal(fetchCalled, false, "UOF-D2-FUBON-2: fetch must never fire — rejection happens before any channel call");
+    const rows = await listUnifiedOrders(session.workspace.id);
+    assert.equal(
+      rows.some((r) => r.symbol === "UOFFUBON"),
+      false,
+      "UOF-D2-FUBON-2: no unified_orders row — the guard runs before the pending-first dual-write, so a fubon " +
+      "order never enters the paper matching path via the shared dual-write helper"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("UOF-D2-FUBON-3: previewOrder returns a blocked quoteGate with channel_coming_soon:fubon for a fubon-routed order", async () => {
+  const repo = new MemoryTradingRoomRepository();
+  const session = await repo.getSession({ workspaceSlug: `uof-fubon-preview-${randomUUID()}` });
+
+  const result = await previewOrder({
+    session,
+    repo,
+    order: uofTestOrder({ symbol: "UOFFUBONPREVIEW", accountId: "fubon-preview-acct" }),
+    _testBrokerKindOverride: "fubon"
+  });
+
+  assert.equal(result.order, null, "UOF-D2-FUBON-3: preview never produces an order row for fubon");
+  assert.equal(result.blocked, true, "UOF-D2-FUBON-3: fubon preview must be blocked");
+  assert.equal(result.quoteGate?.decision, "block");
+  assert.ok(
+    result.quoteGate?.reasons.includes("channel_coming_soon:fubon"),
+    "UOF-D2-FUBON-3: quoteGate.reasons must surface channel_coming_soon:fubon"
+  );
+});
+
+test("UOF-D2-FUBON-4: POST /trading/orders catches FubonChannelComingSoonError and returns structured 409 (server.ts source)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeIdx = src.indexOf('app.post("/api/v1/trading/orders"');
+  assert.ok(routeIdx >= 0, "UOF-D2-FUBON-4: /trading/orders route must exist");
+  const window = src.slice(routeIdx, routeIdx + 1600);
+  assert.match(window, /FubonChannelComingSoonError/, "UOF-D2-FUBON-4: route must import/catch FubonChannelComingSoonError");
+  assert.match(window, /"channel_coming_soon"/, "UOF-D2-FUBON-4: route must respond with error: channel_coming_soon");
+  assert.match(window, /,\s*409\s*\)/, "UOF-D2-FUBON-4: route must respond with HTTP 409 for channel_coming_soon");
+});
+
 // ── 統一下單流 PR-2 (D6, 2026-07-04) ─────────────────────────────────────────
 //
 // Account seeding + proxy allowlist. Design §4 PR-2:
@@ -20228,8 +20315,12 @@ test("UTA-C3-10: sharesToLots is the inverse direction, including the odd-lot re
   assert.deepEqual(sharesToLots(1500), { lots: 1, remainderShares: 500 });
 });
 
-test("UTA-C3-11: adapterKeyToBrokerKind('fubon') maps to 'paper' pending BrokerKind contract extension", () => {
-  assert.equal(adapterKeyToBrokerKind("fubon"), "paper");
+test("UTA-C3-11: adapterKeyToBrokerKind('fubon') maps to 'fubon', not 'paper' (fixed 2026-07-06)", () => {
+  // UTA-C3 (#1172) self-reported this as a correctness gap: fubon previously
+  // aliased to "paper" because BrokerKind had no dedicated literal. Fixed by
+  // adding "fubon" to brokerKindSchema (packages/contracts/src/broker.ts) —
+  // a fubon account must never be routed through the paper matching path.
+  assert.equal(adapterKeyToBrokerKind("fubon"), "fubon");
 });
 
 // =============================================================================

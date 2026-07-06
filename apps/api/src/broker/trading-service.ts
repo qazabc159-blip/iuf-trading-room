@@ -53,6 +53,36 @@ export class KgiChannelUnavailableError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Fubon channel guard (統一下單流 D2 — fubon branch, fixed 2026-07-06)
+//
+// UTA-C3 (#1172) self-reported a correctness gap: adapterKeyToBrokerKind
+// temporarily mapped "fubon" → "paper" because BrokerKind had no "fubon"
+// literal yet. Now that the contract has the literal (broker.ts), a fubon-
+// routed order must never fall through to the paper channel — D2 says it
+// must be rejected with a structured channel_coming_soon response before
+// touching risk/gate/unified-orders/paper matching. FubonBrokerAdapter's own
+// write path is separately hard-locked (FUBON_ORDER_WRITE_LOCKED=true); this
+// guard is the trading-service-level equivalent for the unified pipeline.
+// ---------------------------------------------------------------------------
+
+export class FubonChannelComingSoonError extends Error {
+  readonly broker = "fubon" as const;
+  constructor(message?: string) {
+    super(message ?? "Fubon channel is not yet available (channel_coming_soon).");
+    this.name = "FubonChannelComingSoonError";
+  }
+}
+
+/**
+ * assertFubonChannelAvailable — always throws. The fubon adapter has no live
+ * channel yet (Stage 2, per FUBON_ADAPTER_INTERFACE_FREEZE_v1.md §4); every
+ * fubon-routed order must be rejected with channel_coming_soon.
+ */
+export function assertFubonChannelAvailable(): void {
+  throw new FubonChannelComingSoonError();
+}
+
 /**
  * assertKgiSimChannel — pre-flight checks ported from the standalone
  * POST /api/v1/kgi/sim/order route (server.ts), minus the Owner-role gate
@@ -445,6 +475,14 @@ export async function submitOrder(input: {
     assertKgiSimChannel(input.order);
   }
 
+  // Fubon channel guard (統一下單流 D2 fubon branch, fixed 2026-07-06) — always
+  // throws FubonChannelComingSoonError. Runs before risk/gate/unified-orders so
+  // a fubon-routed order never writes a pending row and never reaches the
+  // paper matching path below (no risk check, no dual-write, no broker call).
+  if (brokerKind === "fubon") {
+    assertFubonChannelAvailable();
+  }
+
   const riskCheck = await runRiskCheck({ ...input, commit: true, brokerKind });
 
   if (riskCheck.decision === "block") {
@@ -564,6 +602,23 @@ export async function previewOrder(input: {
         }
       };
     }
+  }
+
+  // Fubon channel guard (統一下單流 D2 fubon branch, fixed 2026-07-06) — preview
+  // always reports channel_coming_soon rather than falling through to the
+  // paper-context risk/gate result below. Never calls the broker adapter.
+  if (brokerKind === "fubon") {
+    return {
+      order: null,
+      riskCheck,
+      blocked: true,
+      quoteGate: {
+        ...quoteGate,
+        blocked: true,
+        decision: "block",
+        reasons: ["channel_coming_soon:fubon", ...quoteGate.reasons]
+      }
+    };
   }
 
   const blocked = riskCheck.decision === "block" || quoteGate.blocked;

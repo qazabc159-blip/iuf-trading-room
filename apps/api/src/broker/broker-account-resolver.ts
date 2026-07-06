@@ -1,8 +1,8 @@
 /**
  * broker-account-resolver.ts — account ID → brokerKind lookup
  *
- * Resolves the brokerKind ("kgi" | "paper") for a given accountId by querying
- * the broker_accounts table. Falls back to "paper" when:
+ * Resolves the brokerKind ("kgi" | "paper" | "fubon") for a given accountId by
+ * querying the broker_accounts table. Falls back to "paper" when:
  *   - DB is unavailable (non-database mode)
  *   - accountId is missing / empty
  *   - no matching row found
@@ -13,7 +13,13 @@
  * Phase constraints:
  *   - adapterKey "kgi" is allowed to route but callers MUST apply the
  *     SIM/prod_write_blocked guard before touching any KGI write path.
- *   - adapterKey "manual" (if registered) also maps to "paper" for order
+ *   - adapterKey "fubon" resolves to its own BrokerKind ("fubon") — it does
+ *     NOT route through "paper" (fixed 2026-07-06, see UTA-C3 self-reported
+ *     gap below). trading-service.ts's channel dispatch rejects fubon-routed
+ *     orders with a structured channel_coming_soon response before reaching
+ *     risk/gate/unified-orders/paper matching. FubonBrokerAdapter's own write
+ *     path is separately hard-locked (FUBON_ORDER_WRITE_LOCKED=true).
+ *   - adapterKey "manual" (if registered) still maps to "paper" for order
  *     routing purposes (no live order path exists for manual).
  *
  * Lane: broker/ (Jason)
@@ -26,13 +32,16 @@ import { sql as drizzleSql } from "drizzle-orm";
 /** Maps raw adapter_key strings from DB to our BrokerKind contract enum. */
 export function adapterKeyToBrokerKind(adapterKey: string): BrokerKind {
   if (adapterKey === "kgi") return "kgi";
-  // "fubon" (UTA-C3 skeleton, 2026-07-04): packages/contracts/src/broker.ts's
-  // brokerKindSchema is out of this round's unlocked scope, so there is no
-  // "fubon" BrokerKind literal yet — route through "paper" risk-gate handling
-  // like any other adapter_key we don't have a dedicated kind for. This does
-  // NOT grant any live-order capability: FubonBrokerAdapter.submitOrder()/
-  // cancelOrder() are hard-locked (FUBON_ORDER_WRITE_LOCKED=true) regardless
-  // of how this function maps the account.
+  // "fubon" (fixed 2026-07-06 — UTA-C3's #1172 self-reported gap):
+  // packages/contracts/src/broker.ts's brokerKindSchema now has a dedicated
+  // "fubon" literal, so fubon accounts resolve to their own kind instead of
+  // silently aliasing to "paper". This does NOT grant any live-order
+  // capability by itself: trading-service.ts's channel dispatch rejects
+  // fubon-routed submitOrder/previewOrder calls with a structured
+  // channel_coming_soon response, and FubonBrokerAdapter.submitOrder()/
+  // cancelOrder() remain separately hard-locked (FUBON_ORDER_WRITE_LOCKED=true)
+  // regardless of how this function maps the account.
+  if (adapterKey === "fubon") return "fubon";
   // "paper", "manual", and anything else unrecognised → paper (safe default)
   return "paper";
 }
