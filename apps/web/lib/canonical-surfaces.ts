@@ -306,6 +306,16 @@ export const SUPPORT_WEB_SURFACES = [
     minRole: "Viewer",
   },
   {
+    path: "/track-record",
+    title: "公開績效記帳",
+    shortTitle: "記帳",
+    sub: "AI 判斷成績單",
+    kind: "support",
+    disposition: "secondary",
+    activePaths: ["/track-record"],
+    minRole: "Viewer",
+  },
+  {
     path: "/alerts",
     title: "警示",
     shortTitle: "警示",

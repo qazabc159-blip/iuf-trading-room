@@ -367,6 +367,47 @@ export async function getAiRecPerformance(): Promise<AiRecPerformance | null> {
   }
 }
 
+/**
+ * /track-record public performance read (P0-C, #1177 backend half-piece).
+ * `GET /api/v1/track-record/performance` is login-only (any role, no Owner
+ * check) — a deliberately thinner whitelist of the same source data as
+ * `getAiRecPerformance()` above: no `computed_at` / `latest_pick_date` /
+ * `by_bucket`. Kept as a separate type (not reusing `AiRecPerformance`) so a
+ * future field drift on either endpoint fails typecheck instead of silently
+ * reading undefined. Reason-classification mirrors `getWeeklyReview()` below.
+ */
+export type TrackRecordPerformance = {
+  overall_hit_rate_1d: number | null;
+  overall_hit_rate_5d: number | null;
+  overall_hit_rate_20d: number | null;
+  avg_excess_1d: number | null;
+  avg_excess_5d: number | null;
+  avg_excess_20d: number | null;
+  total_picks: number;
+  picks_with_ret_1d: number;
+  picks_with_ret_5d: number;
+  picks_with_ret_20d: number;
+  earliest_pick_date: string | null;
+  benchmark: string;
+};
+
+export type TrackRecordPerformanceResult =
+  | { ok: true; data: TrackRecordPerformance }
+  | { ok: false; reason: "forbidden" | "unavailable" };
+
+export async function getTrackRecordPerformance(): Promise<TrackRecordPerformanceResult> {
+  try {
+    const data = await requestRaw<TrackRecordPerformance>("/api/v1/track-record/performance", { cache: "no-store" });
+    return { ok: true, data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err ?? "");
+    if (/403|401|forbidden|unauthorized/i.test(message)) {
+      return { ok: false, reason: "forbidden" };
+    }
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 export async function sendRecommendationFeedback(id: string, input: RecommendationFeedback) {
   return requestRaw<{ ok: true }>(`/api/v1/recommendations/${encodeURIComponent(id)}/feedback`, {
     method: "POST",

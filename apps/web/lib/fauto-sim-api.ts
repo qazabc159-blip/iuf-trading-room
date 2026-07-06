@@ -870,6 +870,38 @@ export async function getFAutoNav() {
   return apiFetch<FAutoNavResponse>("/api/v1/portfolio/f-auto/nav");
 }
 
+// ── Public NAV read (P0-C /track-record, #1177 backend half-piece) ──────────
+// GET /api/v1/track-record/nav — login-only (any role, no Owner check),
+// whitelisted subset of the same buildFAutoNavFull() aggregate as
+// getFAutoNav() above. navCurve entries are shortened to {date, equity,
+// source} (drops returnPct/weekNum) and summary drops currentWeekNum/
+// lastNavDate — both derivable client-side, see
+// `adaptTrackRecordNavForPanel()` in lib/track-record-format.ts.
+
+export type TrackRecordNavCurvePoint = {
+  date: string;
+  equity: number;
+  source: string;
+};
+
+export type TrackRecordNavSummary = {
+  initialEquity: number;
+  currentEquity: number;
+  cumulativeReturnPct: number;
+  totalRealizedPnlTwd: number;
+};
+
+export type TrackRecordNavResponse = {
+  source: string;
+  navCurve: TrackRecordNavCurvePoint[];
+  weeks: NavWeekRow[];
+  summary: TrackRecordNavSummary | null;
+};
+
+export async function getTrackRecordNav() {
+  return apiFetch<TrackRecordNavResponse>("/api/v1/track-record/nav");
+}
+
 // ─── display helpers ───────────────────────────────────────────────────────────
 
 export function fmtTwd(value: number | null | undefined): string {
