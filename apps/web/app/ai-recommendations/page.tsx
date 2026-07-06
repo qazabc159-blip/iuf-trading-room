@@ -1354,6 +1354,33 @@ export default async function AiRecommendationsPage() {
             display: grid;
           }
         }
+        /* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
+           Touch targets ≥44px + legible body text for the buttons/copy a
+           trader actually taps and reads on this page (feedback actions,
+           handoff CTA, entry/stop/reason copy). Card grids already collapse
+           to 1fr above at 760px; this block only tightens target size + type
+           scale, no structural change. */
+        @media (max-width: 480px) {
+          ._rec-tabs a,
+          ._rec-prefill,
+          ._rec-detail-link {
+            min-height: 44px;
+          }
+          ._rec-feedback button {
+            min-height: 44px;
+          }
+          ._rec-reasons ul,
+          ._rec-risks,
+          ._rec-trade-grid small,
+          ._rec-trade-grid p,
+          ._rec-targets small,
+          ._rec-empty-text {
+            font-size: 14px;
+          }
+          ._rec-quant small {
+            font-size: 12px;
+          }
+        }
       `}</style>
 
       <div className="_rec-tabs" aria-label="AI 推薦導覽">

@@ -256,6 +256,9 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           border-color: rgba(230, 57, 70, 0.34);
           background: rgba(230, 57, 70, 0.06);
         }
+        ._src-score-scroll {
+          overflow-x: auto;
+        }
         ._src-score-table {
           width: 100%;
           table-layout: fixed;
@@ -386,6 +389,23 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           ._src-head { display: grid; }
           ._src-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
+        /* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
+           The 8-column sub-score table stays a real <table> (matches the
+           existing v3-preview pattern elsewhere on this page) but now scrolls
+           horizontally inside its own container instead of compressing to
+           illegible columns; the page body itself never scrolls sideways.
+           Also floors caption text so trade-plan copy stays readable. */
+        @media (max-width: 480px) {
+          ._src-score-table {
+            min-width: 480px;
+          }
+          ._src-p,
+          ._src-source-code,
+          ._src-source-state small,
+          ._src-sizing {
+            font-size: 13px;
+          }
+        }
       `}</style>
       <article className="_src-card" data-bucket={rec.bucket}>
         <div className="_src-head">
@@ -406,22 +426,24 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           </div>
         </div>
 
-        <table className="_src-score-table" aria-label={`${rec.ticker} v3 sub score`}>
-          <thead>
-            <tr>
-              {SUB_SCORE_ROWS.map((row) => (
-                <th key={row.key}>{row.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {SUB_SCORE_ROWS.map((row) => (
-                <td key={row.key}>{fmtScore(scores[row.key], row.max)}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
+        <div className="_src-score-scroll">
+          <table className="_src-score-table" aria-label={`${rec.ticker} v3 sub score`}>
+            <thead>
+              <tr>
+                {SUB_SCORE_ROWS.map((row) => (
+                  <th key={row.key}>{row.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {SUB_SCORE_ROWS.map((row) => (
+                  <td key={row.key}>{fmtScore(scores[row.key], row.max)}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div className="_src-entry">
           <div className="_src-entry-label">建議進場區間</div>

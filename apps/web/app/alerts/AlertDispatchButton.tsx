@@ -54,6 +54,7 @@ export function AlertDispatchButton() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <button
+        className="_alr-dispatch-btn"
         onClick={handleDispatch}
         disabled={state === "loading"}
         style={{

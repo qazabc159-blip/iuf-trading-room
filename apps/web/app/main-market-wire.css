@@ -36,6 +36,19 @@
   box-shadow: inset 0 0 0 1px rgba(226, 184, 92, 0.12);
 }
 
+/* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
+   Heatmap mode tabs measured ~42px tall on phones, just under the 44px
+   touch target floor; the tab strip already scrolls horizontally on
+   overflow (.tac-heat-mode-tabs), so this only adds a couple px of
+   vertical padding, no structural change. */
+@media (max-width: 480px) {
+  .tac-heat-mode-tabs a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
 .tac-market-wide-heatmap {
   min-height: 420px;
   border: 1px solid rgba(145, 160, 181, 0.16);

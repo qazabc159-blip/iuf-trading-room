@@ -14478,6 +14478,27 @@ body:has(.tactical-dashboard) .app-sidebar {
   }
 }
 
+/* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
+   .tac-fresh-list a is a clickable row (links to /companies, /portfolio,
+   etc.) but had no padding/min-height, so it rendered ~13px tall on phones —
+   far under a usable touch target. Give it real height + a legible label
+   size; layout (3-column grid) is unchanged. Scoped to .tac-fresh-list /
+   .tac-source-table, which page.tsx is the sole user of. */
+@media (max-width: 480px) {
+  .tac-fresh-list a {
+    min-height: 44px;
+    padding: 6px 4px;
+  }
+
+  .tac-fresh-list b {
+    font-size: 13px;
+  }
+
+  .tac-fresh-list small {
+    font-size: 12px;
+  }
+}
+
 /* Product shell alignment: pages outside the homepage inherit the same tactical room language. */
 .app-main-shell > .page-frame {
   color: var(--tac-fg-1);
