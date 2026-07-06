@@ -22,6 +22,7 @@ import {
   type NavCurvePoint,
   type NavWeekRow,
 } from "@/lib/fauto-sim-api";
+import { DataStateBadge } from "@/components/DataStateBadge";
 
 // ─── colour constants (CRT palette) ──────────────────────────────────────────
 
@@ -423,7 +424,9 @@ export function FAutoNavPanel({ data, phase, errorMessage }: FAutoNavPanelProps)
       {/* Body */}
       <div className="_fnav-body">
         {phase === "loading" && (
-          <div className="_fnav-state">NAV 曲線載入中…</div>
+          <div className="_fnav-state">
+            <DataStateBadge state="empty" label="NAV 曲線載入中…" testId="fnav-loading-badge" />
+          </div>
         )}
         {phase === "error" && (
           <div className="_fnav-state _fnav-state-err">

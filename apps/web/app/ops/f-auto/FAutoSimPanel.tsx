@@ -947,7 +947,11 @@ function SmokeHistoryPanel({ state }: { state: AsyncState<DailySmokeHistory> }) 
 // ─── Shared micro-components ──────────────────────────────────────────────────
 
 function PanelLoading() {
-  return <div className="_fauto-panel-loading">資料載入中…</div>;
+  return (
+    <div className="_fauto-panel-loading">
+      <DataStateBadge state="empty" label="資料載入中…" testId="fauto-panel-loading-badge" />
+    </div>
+  );
 }
 
 function PanelEmpty({ label }: { label: string }) {

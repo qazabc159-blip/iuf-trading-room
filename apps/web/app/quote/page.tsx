@@ -66,7 +66,7 @@ function quoteSourceLabel(source: EffectiveMarketQuote["selectedSource"]) {
 
 function freshnessLabel(status: EffectiveMarketQuote["freshnessStatus"]) {
   if (status === "fresh") return "即時";
-  if (status === "stale") return "偏舊";
+  if (status === "stale") return "略舊";
   return "缺資料";
 }
 
@@ -77,7 +77,7 @@ function reasonLabel(reason: string) {
   if (reason === "age_exceeded") return "資料逾時";
   if (reason === "missing_last") return "缺成交價";
   if (reason === "provider_unavailable") return "資料源未連線";
-  if (reason === "higher_priority_stale") return "優先資料偏舊";
+  if (reason === "higher_priority_stale") return "優先資料略舊";
   if (reason === "higher_priority_missing") return "優先資料缺漏";
   if (reason === "higher_priority_unavailable") return "優先資料源未連線";
   return reason;
@@ -357,8 +357,14 @@ function LegacyKgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote |
     );
   }
 
-  const sourceBadge = realtime.state === "LIVE" ? "badge-green" : "badge-yellow";
-  const sourceLabel = realtime.state === "LIVE" ? "即時" : realtime.state === "CLOSE" ? "今日收盤" : "略舊";
+  const dataStateBadge =
+    realtime.state === "LIVE" ? (
+      <DataStateBadge state="live" testId="quote-legacy-live-badge" />
+    ) : realtime.state === "CLOSE" ? (
+      <DataStateBadge state="close" asOf={realtime.dataDate} testId="quote-legacy-close-badge" />
+    ) : (
+      <DataStateBadge state="delayed" label="略舊" testId="quote-legacy-stale-badge" />
+    );
 
   return (
     <Panel
@@ -366,7 +372,7 @@ function LegacyKgiRealtimePanel({ realtime }: { realtime: CompanyRealtimeQuote |
       title="即時報價"
       right={
         <span className="source-line" style={{ margin: 0 }}>
-          <span className={`badge ${sourceBadge}`}>{sourceLabel}</span>
+          {dataStateBadge}
           <span>更新 {formatDateTime(realtime.updatedAt)}</span>
         </span>
       }

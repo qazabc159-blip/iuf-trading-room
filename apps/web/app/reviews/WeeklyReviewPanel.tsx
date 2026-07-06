@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Panel } from "@/components/PageFrame";
+import { DataStateBadge } from "@/components/DataStateBadge";
 import { getWeeklyReview, type AiRecPerformance, type WeeklyReview } from "@/lib/api";
 import {
   shiftWeekAnchor,
@@ -167,7 +168,9 @@ function TaiexCard({ taiex }: { taiex: WeeklyReview["taiex"] }) {
     <div className="_wrv-card">
       <div className="_wrv-card-title">大盤週表現（加權指數）</div>
       {taiex.days.length === 0 ? (
-        <div className="_wrv-note">本週尚無加權指數收盤資料。</div>
+        <div className="_wrv-note">
+          <DataStateBadge state="empty" label="本週尚無加權指數收盤資料。" testId="wrv-taiex-empty-badge" />
+        </div>
       ) : (
         <>
           {taiex.days.map((day) => (

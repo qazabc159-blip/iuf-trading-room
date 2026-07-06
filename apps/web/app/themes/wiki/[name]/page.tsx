@@ -16,6 +16,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
+import { DataStateBadge } from "@/components/DataStateBadge";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -312,7 +313,7 @@ export default function ThemeWikiPage() {
         {/* Status states */}
         {loadState.status === "loading" && (
           <div className="_wk-state-box">
-            <span className="_wk-spin" /> 資料載入中...
+            <DataStateBadge state="empty" label="資料載入中..." testId="wk-loading-badge" />
           </div>
         )}
 

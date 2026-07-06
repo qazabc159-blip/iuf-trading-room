@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 
 import { unwrapEventLogApiPayload } from "@/lib/eventlog-api-payload";
 import { normalizeOutboxDiag, outboxPendingLabel } from "@/lib/eventlog-outbox";
+import { DataStateBadge } from "@/components/DataStateBadge";
 
 const API_BASE =
   typeof window !== "undefined"
@@ -537,7 +538,11 @@ export default function EventsAdminPage() {
               <span>事件流</span>
               <span>{filteredStreams.length} 個</span>
             </div>
-            {streamsLoading && <div className="_ev-empty">載入中…</div>}
+            {streamsLoading && (
+              <div className="_ev-empty">
+                <DataStateBadge state="empty" label="載入中…" testId="ev-streams-loading-badge" />
+              </div>
+            )}
             {streamsError && (
               <div className="_ev-empty" style={{ color: "#ef5350" }}>
                 EventLog 資料目前不可讀
@@ -605,7 +610,11 @@ export default function EventsAdminPage() {
                   </span>
                 </div>
                 <div className="tg soft">
-                  {eventsLoading ? "載入中…" : `${events.length} 筆`}
+                  {eventsLoading ? (
+                    <DataStateBadge state="empty" label="載入中…" testId="ev-events-loading-badge" />
+                  ) : (
+                    `${events.length} 筆`
+                  )}
                 </div>
               </div>
 
