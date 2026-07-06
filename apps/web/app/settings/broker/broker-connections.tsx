@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { Check, Clipboard, KeyRound, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
+import { DataStateBadge } from "@/components/DataStateBadge";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_DEFAULT_WORKSPACE_SLUG ?? "primary-desk";
@@ -382,7 +383,7 @@ export function BrokerConnections() {
 
       <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
         {conns === null ? (
-          <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 13 }}>讀取中...</div>
+          <DataStateBadge state="empty" label="讀取中..." testId="broker-connections-loading-badge" />
         ) : conns.length === 0 ? (
           <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 13 }}>尚未連線任何券商。在下方加入一個連線。</div>
         ) : (

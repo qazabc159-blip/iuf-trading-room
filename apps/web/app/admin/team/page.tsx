@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { DataStateBadge } from "@/components/DataStateBadge";
 import {
   apiGetMe,
   apiCreateInvite,
@@ -796,7 +797,7 @@ export default function TeamPage() {
 
   if (phase === "loading") {
     return (
-      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note="載入中…">
+      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note={<DataStateBadge state="empty" label="載入中…" testId="team-page-loading-badge" />}>
         <style>{TEAM_CSS}</style>
         <div className="state-panel">
           <span className="badge badge-amber">讀取中</span>

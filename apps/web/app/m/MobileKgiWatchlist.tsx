@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatMobileKgiBlockedReason } from "./mobile-kgi-copy";
 import { isKgiGatewayScheduledOff } from "@/lib/kgi-trading-hours";
+import { DataStateBadge } from "@/components/DataStateBadge";
 
 type QuoteState =
   | { status: "loading" }
@@ -186,7 +187,7 @@ function TickerCell({ item, q }: { item: WatchItem; q: QuoteState }) {
         <div className="_mob-kgi-symbol">{item.symbol}</div>
         <div className={`_mob-kgi-price loading`}>--.-</div>
         <div className="_mob-kgi-chg flat">--</div>
-        <div className="_mob-kgi-vol">載入中…</div>
+        <div className="_mob-kgi-vol"><DataStateBadge state="empty" label="載入中…" testId="mob-kgi-loading-badge" /></div>
       </div>
     );
   }
