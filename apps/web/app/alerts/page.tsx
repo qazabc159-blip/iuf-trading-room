@@ -563,6 +563,23 @@ const ALERTS_CSS = `
   ._alr-hero-main { grid-column: 1 / -1; }
   ._alr-meta-grid { grid-template-columns: 1fr 1fr; }
 }
+/* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
+   At 640px the hero KPI row is 2 columns, which leaves an odd empty cell
+   (4 stat cells don't divide evenly) and cramps the 52px hero number. Below
+   480px, stack the KPI cards full-width/single-column instead — same data,
+   same order, just one column. Also floors caption/body text that a trader
+   actually reads (rule name/desc, alert summary) and gives the admin-only
+   dispatch button a real touch target. */
+@media (max-width: 480px) {
+  ._alr-hero-row { grid-template-columns: 1fr; }
+  ._alr-hero-main { grid-column: auto; }
+  ._alr-meta-grid { grid-template-columns: 1fr 1fr; }
+  ._alr-hero-lbl { font-size: 12px; }
+  ._alr-rule-label { font-size: 14px; }
+  ._alr-rule-desc { font-size: 13px; }
+  ._alr-meta-dd { font-size: 14px; }
+  ._alr-dispatch-btn { min-height: 44px; padding: 0 18px !important; }
+}
 `;
 
 export default async function AlertsPage() {

@@ -1,0 +1,1020 @@
+[
+  {
+    "route": "/",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "bodyScrollWidth": 390,
+    "bodyClientWidth": 390,
+    "vw": 390,
+    "offenders": [
+      {
+        "tag": "A",
+        "cls": "",
+        "width": 142,
+        "right": 452
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "width": 70,
+        "right": 426
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "width": 70,
+        "right": 426
+      },
+      {
+        "tag": "SMALL",
+        "cls": "",
+        "width": 70,
+        "right": 426
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "width": 142,
+        "right": 602
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tac-nav-icon",
+        "width": 24,
+        "right": 494
+      },
+      {
+        "tag": "svg",
+        "cls": "",
+        "width": 17,
+        "right": 491
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 13,
+        "right": 488
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 9,
+        "right": 487
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "width": 70,
+        "right": 576
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "width": 70,
+        "right": 576
+      },
+      {
+        "tag": "SMALL",
+        "cls": "",
+        "width": 70,
+        "right": 576
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "width": 142,
+        "right": 752
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tac-nav-icon",
+        "width": 24,
+        "right": 644
+      },
+      {
+        "tag": "svg",
+        "cls": "",
+        "width": 17,
+        "right": 641
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 3,
+        "right": 633
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 3,
+        "right": 633
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 3,
+        "right": 633
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 14,
+        "right": 639
+      },
+      {
+        "tag": "path",
+        "cls": "",
+        "width": 9,
+        "right": 636
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "width": 70,
+        "right": 726
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "width": 70,
+        "right": 726
+      },
+      {
+        "tag": "SMALL",
+        "cls": "",
+        "width": 70,
+        "right": 726
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "width": 142,
+        "right": 902
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tac-nav-icon",
+        "width": 24,
+        "right": 794
+      }
+    ],
+    "shotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\.claude\\worktrees\\agent-aef6a9f5745f407bd\\reports\\mobile_m1_20260705\\_shots\\after2_home_390.png",
+    "consoleErrors": [
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    ],
+    "a11yAudit": {
+      "smallText": [
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "戰情台"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "今日總覽"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "市場情報"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "AI 精選"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "AI 推薦"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "推薦股票"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "交易室"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "Paper / SIM"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "公司 / 主題"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "公司雷達"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 13,
+          "text": "量化策略"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "SIM-only"
+        },
+        {
+          "tag": "DIV",
+          "cls": "tac-ticker-label",
+          "fontSize": 10,
+          "text": "正式資料"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 12,
+          "text": "TAIEX"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 12,
+          "text": "加權指數"
+        },
+        {
+          "tag": "STRONG",
+          "cls": "",
+          "fontSize": 12,
+          "text": "46,781"
+        },
+        {
+          "tag": "STRONG",
+          "cls": "up",
+          "fontSize": 12,
+          "text": "+36.46 (+0.08%)"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 12,
+          "text": "TAIEX"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 12,
+          "text": "加權指數"
+        },
+        {
+          "tag": "STRONG",
+          "cls": "",
+          "fontSize": 12,
+          "text": "46,781"
+        },
+        {
+          "tag": "STRONG",
+          "cls": "up",
+          "fontSize": 12,
+          "text": "+36.46 (+0.08%)"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 12,
+          "text": "台股目前盤後或週末休市，顯示 07/03 (五) 收盤 (週"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "即時行情將於下一交易日 09:00 恢復"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "盤勢總覽 · AI 簡報 · 紙上交易工作流"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 10,
+          "text": "D+0 · 觀察日"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "07/05 00:46 台北"
+        },
+        {
+          "tag": "KBD",
+          "cls": "",
+          "fontSize": 10,
+          "text": "⌘ K"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tac-chip live ",
+          "fontSize": 10,
+          "text": "可用正式資料"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 10,
+          "text": "正式資料"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 9,
+          "text": "今日節奏"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "09:00"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "開盤"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "10:30"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "盤中排行"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "13:30"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "收盤"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "14:30"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "策略候選掃描"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "15:00"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "AI 簡報"
+        }
+      ],
+      "smallTargets": [
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": "通知中心沒有未讀"
+        },
+        {
+          "tag": "A",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "",
+          "height": 32,
+          "text": "搜尋 ⌘ K"
+        }
+      ]
+    }
+  },
+  {
+    "route": "/ai-recommendations",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "bodyScrollWidth": 390,
+    "bodyClientWidth": 390,
+    "vw": 390,
+    "offenders": [],
+    "shotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\.claude\\worktrees\\agent-aef6a9f5745f407bd\\reports\\mobile_m1_20260705\\_shots\\after2_ai-recommendations_390.png",
+    "consoleErrors": [
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    ],
+    "a11yAudit": {
+      "smallText": [
+        {
+          "tag": "SPAN",
+          "cls": "tg page-code",
+          "fontSize": 11,
+          "text": "AI 推薦"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "台北 / 2026/7/5 00:46:42"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "2026/7/5 00:46:42"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "資料 / 正式資料"
+        },
+        {
+          "tag": "B",
+          "cls": "gold",
+          "fontSize": 11,
+          "text": "正式資料"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "模式 / 觀察與研究"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "觀察與研究"
+        },
+        {
+          "tag": "DIV",
+          "cls": "tg session-pill ",
+          "fontSize": 11,
+          "text": "研究 / 前端資料"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 12,
+          "text": "台股目前盤後或週末休市，顯示 07/03 (五) 收盤 (週"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "即時行情將於下一交易日 09:00 恢復"
+        },
+        {
+          "tag": "DIV",
+          "cls": "_msb-placeholder",
+          "fontSize": 11,
+          "text": "市場狀態分數等待 v3 後端接入，現在只顯示推薦清單與資料品"
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "fontSize": 11,
+          "text": "量化策略"
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "fontSize": 11,
+          "text": "訊號中心"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg panel-code",
+          "fontSize": 11,
+          "text": "AI 推薦"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg muted",
+          "fontSize": 11,
+          "text": "/"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg gold",
+          "fontSize": 11,
+          "text": "今日 AI 推薦"
+        },
+        {
+          "tag": "DIV",
+          "cls": "tg soft",
+          "fontSize": 11,
+          "text": "0 檔"
+        },
+        {
+          "tag": "P",
+          "cls": "",
+          "fontSize": 12,
+          "text": "AI 推薦服務暫時無法讀取資料。"
+        },
+        {
+          "tag": "DT",
+          "cls": "",
+          "fontSize": 10,
+          "text": "推薦數量"
+        },
+        {
+          "tag": "DD",
+          "cls": "",
+          "fontSize": 11,
+          "text": "0/0"
+        },
+        {
+          "tag": "DT",
+          "cls": "",
+          "fontSize": 10,
+          "text": "生成狀態"
+        },
+        {
+          "tag": "DD",
+          "cls": "",
+          "fontSize": 11,
+          "text": "需留意"
+        },
+        {
+          "tag": "DT",
+          "cls": "",
+          "fontSize": 10,
+          "text": "備援補牌"
+        },
+        {
+          "tag": "DD",
+          "cls": "",
+          "fontSize": 11,
+          "text": "未使用"
+        },
+        {
+          "tag": "DT",
+          "cls": "",
+          "fontSize": 10,
+          "text": "官方公告"
+        },
+        {
+          "tag": "DD",
+          "cls": "",
+          "fontSize": 11,
+          "text": "待接入"
+        },
+        {
+          "tag": "P",
+          "cls": "",
+          "fontSize": 12,
+          "text": "等待 v3 推薦引擎回傳正式資料；前端不用舊資料補卡。"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg panel-code",
+          "fontSize": 11,
+          "text": "AI 推薦 / 詳情"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg muted",
+          "fontSize": 11,
+          "text": "/"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg gold",
+          "fontSize": 11,
+          "text": "研究參考（非主推薦）"
+        },
+        {
+          "tag": "DIV",
+          "cls": "tg soft",
+          "fontSize": 11,
+          "text": "3 檔"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "此區塊為 brain_react v2 輸出，非 v3 SO"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "80+"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "1 檔"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "70-79"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "1 檔"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "60-69"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "1 檔"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "<60"
+        },
+        {
+          "tag": "SMALL",
+          "cls": "",
+          "fontSize": 11,
+          "text": "0 檔"
+        }
+      ],
+      "smallTargets": [
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": "通知中心沒有未讀"
+        },
+        {
+          "tag": "A",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        }
+      ]
+    }
+  },
+  {
+    "route": "/alerts",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "bodyScrollWidth": 390,
+    "bodyClientWidth": 390,
+    "vw": 390,
+    "offenders": [],
+    "shotPath": "C:\\Users\\User\\Desktop\\小楊機密\\交易\\IUF_TRADING_ROOM_APP\\.claude\\worktrees\\agent-aef6a9f5745f407bd\\reports\\mobile_m1_20260705\\_shots\\after2_alerts_390.png",
+    "consoleErrors": [
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "Failed to load resource: net::ERR_FAILED",
+      "Access to fetch at 'http://localhost:3001/auth/me' from origin 'http://127.0.0.1:3300' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource."
+    ],
+    "a11yAudit": {
+      "smallText": [
+        {
+          "tag": "SPAN",
+          "cls": "tg page-code",
+          "fontSize": 11,
+          "text": "警示"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "台北 / 2026/7/5 00:46:47"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "2026/7/5 00:46:47"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "資料 / 正式資料"
+        },
+        {
+          "tag": "B",
+          "cls": "gold",
+          "fontSize": 11,
+          "text": "正式資料"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 11,
+          "text": "模式 / 觀察與研究"
+        },
+        {
+          "tag": "B",
+          "cls": "",
+          "fontSize": 11,
+          "text": "觀察與研究"
+        },
+        {
+          "tag": "DIV",
+          "cls": "tg session-pill ",
+          "fontSize": 11,
+          "text": "研究 / 前端資料"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-hero-lbl",
+          "fontSize": 12,
+          "text": "今日警示"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-hero-lbl",
+          "fontSize": 12,
+          "text": "待處理"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-hero-lbl",
+          "fontSize": 12,
+          "text": "緊急"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-hero-lbl",
+          "fontSize": 12,
+          "text": "注意"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-label",
+          "fontSize": 9,
+          "text": "警示狀態"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-sub",
+          "fontSize": 10,
+          "text": "警示引擎"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-label",
+          "fontSize": 9,
+          "text": "今日警示"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-sub",
+          "fontSize": 10,
+          "text": "待處理"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-label",
+          "fontSize": 9,
+          "text": "引擎狀態"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "parity-kpi-sub",
+          "fontSize": 10,
+          "text": "風控引擎"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg soft",
+          "fontSize": 12,
+          "text": "等待巡檢"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "tg soft",
+          "fontSize": 12,
+          "text": "本輪觸發 0 筆"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-panel-title",
+          "fontSize": 11,
+          "text": "監控規則 — 10 類事件"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-panel-sub",
+          "fontSize": 11,
+          "text": "引擎每 5 分鐘巡檢一次；FinMind 資料同步完成後規則"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "R01"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-desc",
+          "fontSize": 13,
+          "text": "月營收 YoY > 50%（近 35 天）"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-fired _alr-rule-fired-no",
+          "fontSize": 10,
+          "text": "24h 內無觸發記錄"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-dep",
+          "fontSize": 10,
+          "text": "依賴: FinMind tw_monthly_revenue"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "R02"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-desc",
+          "fontSize": 13,
+          "text": "外資 + 投信 + 自營商 5 日均淨買（近 7 日）"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-fired _alr-rule-fired-no",
+          "fontSize": 10,
+          "text": "24h 內無觸發記錄"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-dep",
+          "fontSize": 10,
+          "text": "依賴: FinMind tw_institutional_b"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "R03"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-desc",
+          "fontSize": 13,
+          "text": "外資 + 投信 + 自營商 5 日均淨賣（近 7 日）"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-fired _alr-rule-fired-no",
+          "fontSize": 10,
+          "text": "24h 內無觸發記錄"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-dep",
+          "fontSize": 10,
+          "text": "依賴: FinMind tw_institutional_b"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "R04"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-desc",
+          "fontSize": 13,
+          "text": "大股東持股 HHI 突破近期高點（集中度異常）"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-fired _alr-rule-fired-no",
+          "fontSize": 10,
+          "text": "24h 內無觸發記錄"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-dep",
+          "fontSize": 10,
+          "text": "依賴: FinMind tw_shareholding"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "",
+          "fontSize": 10,
+          "text": "R05"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "_alr-rule-desc",
+          "fontSize": 13,
+          "text": "月營收 YoY < -30%（近 35 天）"
+        }
+      ],
+      "smallTargets": [
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": "通知中心沒有未讀"
+        },
+        {
+          "tag": "A",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "header-dock-button",
+          "height": 36,
+          "text": ""
+        }
+      ]
+    }
+  }
+]
