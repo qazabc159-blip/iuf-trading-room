@@ -2,24 +2,26 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectNoServerError, saveRouteScreenshot } from "./helpers";
 
 /**
- * Mobile 390px anti-regression baseline — M1 (2026-07-05).
+ * Mobile 390px anti-regression baseline — M1 (2026-07-05) + M2 (2026-07-06).
  *
- * Targets the three highest-frequency READ paths first: 首頁戰情台 (/), AI
- * 推薦 (/ai-recommendations), 警示 (/alerts). Runs on the "mobile-iphone-13"
- * Playwright project (390x844 viewport — see playwright.config.ts), so no
- * viewport override is needed here; the spec skips itself on other
- * projects so it stays a dedicated 390px gate rather than a general one.
+ * M1 targeted the three highest-frequency READ paths: 首頁戰情台 (/), AI
+ * 推薦 (/ai-recommendations), 警示 (/alerts). M2 adds 公司頁
+ * (/companies/2330) — one of the highest-value pages (K線/五檔/AI分析/主題).
+ * Runs on the "mobile-iphone-13" Playwright project (390x844 viewport — see
+ * playwright.config.ts), so no viewport override is needed here; the spec
+ * skips itself on other projects so it stays a dedicated 390px gate rather
+ * than a general one.
  *
  * Asserts, per route:
  *  1. No page-level horizontal overflow (scrollWidth <= clientWidth + 1px).
  *     Component-level horizontal-scroll containers are allowed and expected
  *     (e.g. the sidebar nav tab strip on home, the sub-score table on AI
- *     recommendation cards) — only the page BODY itself must never scroll
- *     sideways at this width.
+ *     recommendation cards, the 財報/月營收 tab strip on the company page)
+ *     — only the page BODY itself must never scroll sideways at this width.
  *  2. A route-specific key element is visible, proving the page rendered
  *     real content (not a blank/broken shell) at 390px.
  *
- * Later M2-M4 waves append more routes to ROUTES below — keep this one file
+ * Later M3-M4 waves append more routes to ROUTES below — keep this one file
  * as the running mobile regression ledger rather than splitting per page.
  */
 
@@ -57,6 +59,17 @@ const ROUTES: MobileRoute[] = [
     assertVisible: async (page) => {
       await expect(page.locator(".page-frame")).toBeVisible();
       await expect(page.locator("._alr-hero-row")).toBeVisible();
+    },
+  },
+  {
+    path: "/companies/2330",
+    label: "公司頁",
+    assertVisible: async (page) => {
+      // .company-workbench-shell wraps the K-line chart (main visual);
+      // .company-side-column wraps BidAsk/tick-stream/institutional panels.
+      // Both render regardless of LIVE/BLOCKED/EMPTY data state.
+      await expect(page.locator(".company-workbench-shell")).toBeVisible();
+      await expect(page.locator(".company-side-column")).toBeVisible();
     },
   },
 ];

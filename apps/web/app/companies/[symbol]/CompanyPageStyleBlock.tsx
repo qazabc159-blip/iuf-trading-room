@@ -220,6 +220,27 @@ export function CompanyPageStyleBlock() {
 }
 @media (max-width: 480px) {
   ._co-theme-grid { grid-template-columns: 1fr; }
+
+  /* M2 mobile pass (2026-07-06): back button measured 30px tall at 390px —
+     below the 44px touch minimum. */
+  ._co-back-btn {
+    min-height: 44px;
+    padding: 5px 12px;
+    font-size: 11px;
+  }
+
+  /* Theme card text measured 12.5px/10px — bumped for mobile readability.
+     !important guards against DOM-order ties with each panel's own inline
+     <style> tag (this block renders earlier in the page than most panels). */
+  ._co-theme-name { font-size: 13px !important; }
+  ._co-theme-tier { font-size: 11px !important; }
+
+  /* Industry graph panel's "在公司圖譜搜尋" link measured 27px tall (inline
+     style, no min-height) at 390px. */
+  ._ig-graph-search-link {
+    min-height: 44px !important;
+    padding: 8px 12px !important;
+  }
 }
 
 /* ── AI Analyst Report Panel (_ai-*) ── */
@@ -481,6 +502,11 @@ export function CompanyPageStyleBlock() {
 ._ai-lock-sub {
   font-size: 10.5px;
   color: rgba(255,255,255,0.32);
+}
+/* M2 mobile pass (2026-07-06): lock message measured 11px/10.5px at 390px. */
+@media (max-width: 480px) {
+  ._ai-lock-msg { font-size: 13px; }
+  ._ai-lock-sub { font-size: 12px; }
 }
 ._ai-generate-btn {
   margin-top: 6px;

@@ -7623,6 +7623,31 @@ body:has(.login-route) > div {
   cursor: not-allowed;
 }
 
+/* M2 mobile pass (2026-07-06): 財報/月營收 tab strip + pagination measured
+   below the 44px touch minimum at 390px. Scoped to <=480px — desktop tab
+   strip sizing (and its intentional horizontal scroll) is unchanged.
+   Also resets the FinancialsPanel table's fixed 560px min-width so it does
+   not fight the shared .company-data-table-fit mobile card conversion below
+   (without this reset the card rows render wider than the viewport and the
+   right-hand columns become unreachable — no scrollbar, content just cut
+   off). !important throughout: this selector/its pagination sibling are
+   redeclared unconditionally multiple times further down this file (Pass
+   114/116 history), so plain cascade order cannot be relied on here. */
+@media (max-width: 480px) {
+  .company-data-tabs.finmind-tabs.company-finance-tabs .mini-button,
+  .company-data-tabs.finmind-tabs.company-finance-tabs .outline-button {
+    min-height: 44px !important;
+  }
+
+  .company-finance-pagination button {
+    min-height: 44px !important;
+  }
+
+  .company-finance-table {
+    min-width: 0 !important;
+  }
+}
+
 .company-finance-state {
   min-height: 96px;
   padding: 14px;
@@ -9024,6 +9049,14 @@ body:has(.login-route) > div {
   .company-workbench-shell .paper-order-panel .ascii-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* M2 mobile pass (2026-07-06): 日K/週K/月K interval tabs measured 28px tall
+   at 390px — below the 44px touch minimum. Scoped to <=480px only. */
+@media (max-width: 480px) {
+  .company-workbench-shell .kline-tab {
+    min-height: 44px;
   }
 }
 
@@ -14931,6 +14964,22 @@ body:has(.mobile-route) .header-dock-drawer {
 
   .app-tactical-sidebar .tac-nav {
     padding-right: 10px;
+  }
+}
+
+/* M2 mobile touch-target pass (2026-07-06): header dock icon buttons and the
+   home page's "搜尋 ⌘K" affordance measured below the 44px touch minimum at
+   390px. Scoped to <=480px only — desktop/tablet sizing above is unchanged. */
+@media (max-width: 480px) {
+  .header-dock-button {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .tac-topbar button {
+    min-height: 44px;
   }
 }
 

@@ -361,6 +361,7 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
         <span>資料來源: My-TW-Coverage (MIT)</span>
         <Link
           href={`/companies?tab=graph&q=${encodeURIComponent(ticker)}`}
+          className="_ig-graph-search-link"
           style={{
             border: "1px solid var(--accent,#c8943f)",
             borderRadius: 4,
@@ -369,6 +370,8 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
             textDecoration: "none",
             fontFamily: "var(--mono,monospace)",
             fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
           }}
         >
           在公司圖譜搜尋 {ticker}
