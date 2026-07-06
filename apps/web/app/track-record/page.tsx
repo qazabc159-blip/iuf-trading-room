@@ -1,52 +1,37 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { DataStateBadge } from "@/components/DataStateBadge";
-import { getAiRecPerformanceResult, type AiRecPerformance, type AiRecPerformanceResult } from "@/lib/api";
-import { getFAutoNav } from "@/lib/fauto-sim-api";
+import { getTrackRecordPerformance, type TrackRecordPerformance, type TrackRecordPerformanceResult } from "@/lib/api";
+import { getTrackRecordNav } from "@/lib/fauto-sim-api";
 import { FAutoNavPanel } from "@/app/ops/f-auto/FAutoNavPanel";
 import { formatFractionPct, formatSignedFractionPct, signTone } from "@/lib/weekly-review-format";
-import { buildTrackRecordScoreWindows, formatTrackRecordRangeText } from "@/lib/track-record-format";
+import { adaptTrackRecordNavForPanel, buildTrackRecordScoreWindows, formatTrackRecordRangeText } from "@/lib/track-record-format";
 
 // Both sections do a per-request SSR fetch that forwards the visiting user's
 // session cookie (see requestRaw / apiFetch in lib/api.ts + lib/fauto-sim-api.ts).
 // Without this, Next.js would statically prerender the page once at build time
-// with no cookie context, baking in a permanent "forbidden" snapshot for everyone.
+// with no cookie context, baking in a permanent stale snapshot for everyone.
 export const dynamic = "force-dynamic";
 
 /**
  * /track-record — 公開績效記帳頁 (P0-C)
  *
  * 三區塊，全部走誠實四態（見 DataStateBadge）：
- *   A. AI 推薦成績單 — GET /api/v1/admin/ai-rec/performance（目前 Owner-only）
- *   B. F-AUTO 策略連續 NAV — GET /api/v1/portfolio/f-auto/nav（目前 Owner-only，沿用 #1155 FAutoNavPanel）
+ *   A. AI 推薦成績單 — GET /api/v1/track-record/performance（login-only 公開唯讀端點，#1177）
+ *   B. F-AUTO 策略連續 NAV — GET /api/v1/track-record/nav（login-only 公開唯讀端點，#1177，沿用 #1155 FAutoNavPanel）
  *   C. 策略把關紀錄 — 靜態文字，說明自家統計檢定如何淘汰過擬合策略
  *
- * 已知落差（見本頁 PR 說明）：A/B 兩支後端 endpoint 目前限 Owner 角色才能讀取。
- * 本頁註冊為 Viewer 可見的公開頁面，但非 Owner 訪客現在只會看到誠實的
- * 「此度量目前僅擁有者權限可查驗」空狀態，而不是實際數字。要讓這頁真正對
- * 所有登入用戶開放，需要後端加開唯讀公開版本或調整角色門檻 — 這是後端
- * lane 的工作，本頁前端已經按照現有 payload 做好可以直接生效的呈現。
+ * A/B 兩支端點原本是 Owner-only（`/api/v1/admin/ai-rec/performance`、
+ * `/api/v1/portfolio/f-auto/nav`）——裁決是不鬆綁那兩支，改由 #1177 開了兩支
+ * 白名單欄位的 login-only 公開版本。本頁改吃這兩支新端點；任何已登入角色皆可讀。
+ * 欄位比 Owner 版本瘦（見 `lib/api.ts` / `lib/fauto-sim-api.ts` 的型別註解），
+ * NAV 曲線缺的 returnPct/weekNum 由 `adaptTrackRecordNavForPanel()` 在前端補算。
  */
 
-function fmtComputedAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function OwnerGatedNotice({ code, title, sub }: { code: string; title: string; sub: string }) {
+function AuthIssueNotice({ code, title, sub }: { code: string; title: string; sub: string }) {
   return (
     <Panel code={code} title={title} sub={sub}>
       <div className="_trk-empty">
-        <DataStateBadge
-          state="empty"
-          reason="此度量目前僅擁有者權限可查驗；已列入後端待辦，開放唯讀公開版本後將自動顯示於此"
-        />
+        <DataStateBadge state="empty" reason="登入階段異常，請重新整理或重新登入後再試" />
       </div>
     </Panel>
   );
@@ -62,15 +47,15 @@ function UnavailableNotice({ code, title, sub }: { code: string; title: string; 
   );
 }
 
-function AiRecScorecardSection({ result }: { result: AiRecPerformanceResult }) {
+function AiRecScorecardSection({ result }: { result: TrackRecordPerformanceResult }) {
   if (!result.ok) {
     if (result.reason === "forbidden") {
-      return <OwnerGatedNotice code="TRK-AI" title="AI 推薦成績單" sub="每一筆 AI 判斷都被記帳" />;
+      return <AuthIssueNotice code="TRK-AI" title="AI 推薦成績單" sub="每一筆 AI 判斷都被記帳" />;
     }
     return <UnavailableNotice code="TRK-AI" title="AI 推薦成績單" sub="每一筆 AI 判斷都被記帳" />;
   }
 
-  const perf: AiRecPerformance = result.data;
+  const perf: TrackRecordPerformance = result.data;
 
   if (perf.total_picks === 0) {
     return (
@@ -90,7 +75,7 @@ function AiRecScorecardSection({ result }: { result: AiRecPerformanceResult }) {
       code="TRK-AI"
       title="AI 推薦成績單"
       sub="每一筆 AI 判斷都被記帳"
-      right={`基準 ${perf.benchmark} · 計算於 ${fmtComputedAt(perf.computed_at)}`}
+      right={`基準 ${perf.benchmark}`}
     >
       <div className="_trk-sample-line">
         樣本 <b>{perf.total_picks}</b> 筆推薦{rangeText ? `，${rangeText}` : ""}
@@ -125,16 +110,16 @@ function AiRecScorecardSection({ result }: { result: AiRecPerformanceResult }) {
 }
 
 async function FAutoNavSection() {
-  const res = await getFAutoNav();
+  const res = await getTrackRecordNav();
 
   if (!res.ok) {
-    if (res.status === 403) {
-      return <OwnerGatedNotice code="TRK-NAV" title="F-AUTO 策略連續 NAV" sub="S1 全流程實單記帳" />;
+    if (res.status === 401 || res.status === 403) {
+      return <AuthIssueNotice code="TRK-NAV" title="F-AUTO 策略連續 NAV" sub="S1 全流程實單記帳" />;
     }
     return <UnavailableNotice code="TRK-NAV" title="F-AUTO 策略連續 NAV" sub="S1 全流程實單記帳" />;
   }
 
-  return <FAutoNavPanel data={res.data} phase="live" />;
+  return <FAutoNavPanel data={adaptTrackRecordNavForPanel(res.data)} phase="live" />;
 }
 
 function StrategyGateSection() {
@@ -159,7 +144,7 @@ function StrategyGateSection() {
 }
 
 export default async function TrackRecordPage() {
-  const aiRecResult = await getAiRecPerformanceResult();
+  const aiRecResult = await getTrackRecordPerformance();
 
   return (
     <PageFrame code="TRK" title="公開績效記帳" sub="每個 AI 判斷都被記帳，好壞都攤在這裡">

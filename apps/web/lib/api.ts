@@ -368,19 +368,36 @@ export async function getAiRecPerformance(): Promise<AiRecPerformance | null> {
 }
 
 /**
- * Same endpoint as `getAiRecPerformance()`, but keeps the "forbidden vs
- * genuinely unavailable" distinction instead of collapsing both to `null`.
- * Used by /track-record so the honest empty-state copy can say the right
- * thing (role gate vs data-service outage) instead of one generic message.
- * Mirrors the `getWeeklyReview()` reason-classification pattern below.
+ * /track-record public performance read (P0-C, #1177 backend half-piece).
+ * `GET /api/v1/track-record/performance` is login-only (any role, no Owner
+ * check) — a deliberately thinner whitelist of the same source data as
+ * `getAiRecPerformance()` above: no `computed_at` / `latest_pick_date` /
+ * `by_bucket`. Kept as a separate type (not reusing `AiRecPerformance`) so a
+ * future field drift on either endpoint fails typecheck instead of silently
+ * reading undefined. Reason-classification mirrors `getWeeklyReview()` below.
  */
-export type AiRecPerformanceResult =
-  | { ok: true; data: AiRecPerformance }
+export type TrackRecordPerformance = {
+  overall_hit_rate_1d: number | null;
+  overall_hit_rate_5d: number | null;
+  overall_hit_rate_20d: number | null;
+  avg_excess_1d: number | null;
+  avg_excess_5d: number | null;
+  avg_excess_20d: number | null;
+  total_picks: number;
+  picks_with_ret_1d: number;
+  picks_with_ret_5d: number;
+  picks_with_ret_20d: number;
+  earliest_pick_date: string | null;
+  benchmark: string;
+};
+
+export type TrackRecordPerformanceResult =
+  | { ok: true; data: TrackRecordPerformance }
   | { ok: false; reason: "forbidden" | "unavailable" };
 
-export async function getAiRecPerformanceResult(): Promise<AiRecPerformanceResult> {
+export async function getTrackRecordPerformance(): Promise<TrackRecordPerformanceResult> {
   try {
-    const data = await requestRaw<AiRecPerformance>("/api/v1/admin/ai-rec/performance", { cache: "no-store" });
+    const data = await requestRaw<TrackRecordPerformance>("/api/v1/track-record/performance", { cache: "no-store" });
     return { ok: true, data };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err ?? "");

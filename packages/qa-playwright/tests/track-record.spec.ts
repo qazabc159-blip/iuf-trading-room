@@ -8,11 +8,13 @@ import { WEB_BASE_URL, expectNoServerError, saveRouteScreenshot } from "./helper
  * projects by default (see playwright.config.ts) — this is the page's
  * mobile-first screenshot evidence.
  *
- * The AI-rec performance + F-AUTO NAV endpoints are currently Owner-only
- * (see PR body). The default project storageState is an Owner session
- * (auth.setup.ts), so this smoke exercises the "live data" path when a real
- * Owner session is available, and only asserts the page never 500s / never
- * shows forbidden wording either way.
+ * Consumes the login-only public endpoints added in #1177
+ * (`GET /api/v1/track-record/performance`, `GET /api/v1/track-record/nav`) —
+ * any authenticated role gets 200, not just Owner. The default project
+ * storageState is an Owner session (auth.setup.ts), so this smoke exercises
+ * the "live data" path, and asserts the page never 500s / never shows
+ * forbidden wording either way (the whole app still requires login per
+ * middleware — the second test below covers the unauthenticated case).
  *
  * @smoke tag: runs in CI against the local PR build.
  */
