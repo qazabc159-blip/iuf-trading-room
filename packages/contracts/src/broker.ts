@@ -6,7 +6,14 @@ import { riskCheckResultSchema } from "./risk.js";
 // Broker kind is intentionally narrow and extensible. "paper" is the default
 // for Phase 0/1 so the full execution path can be exercised before touching a
 // real brokerage account.
-export const brokerKindSchema = z.enum(["kgi", "paper", "manual"]);
+// "fubon" (UTA-C3 self-reported gap fix, 2026-07-06): adapterKeyToBrokerKind
+// previously had no dedicated literal for the fubon adapter_key and routed it
+// through "paper" as a stopgap (see broker-account-resolver.ts's prior
+// comment). Adding the literal here lets the resolver map fubon accounts to
+// their own kind so trading-service.ts's channel dispatch can reject them
+// with a structured channel_coming_soon response instead of silently
+// entering the paper matching path.
+export const brokerKindSchema = z.enum(["kgi", "paper", "manual", "fubon"]);
 
 export const orderSideSchema = z.enum(["buy", "sell"]);
 

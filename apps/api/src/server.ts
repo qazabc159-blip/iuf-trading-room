@@ -197,7 +197,13 @@ import {
   listPaperPositions,
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
-import { cancelOrder, KgiChannelUnavailableError, previewOrder, submitOrder } from "./broker/trading-service.js";
+import {
+  cancelOrder,
+  FubonChannelComingSoonError,
+  KgiChannelUnavailableError,
+  previewOrder,
+  submitOrder
+} from "./broker/trading-service.js";
 import { cancelUnifiedOrder } from "./broker/trading-cancel-service.js";
 import { listExecutionEvents } from "./broker/execution-events-store.js";
 import { requireMinRole } from "./auth/require-min-role.js";
@@ -1588,6 +1594,12 @@ app.post("/api/v1/trading/orders", async (c) => {
     // client maps `reason` to a product-grade message, never renders raw text.
     if (err instanceof KgiChannelUnavailableError) {
       return c.json({ error: "kgi_channel_unavailable", reason: err.reason }, 409);
+    }
+    // 統一下單流 D2 fubon branch (fixed 2026-07-06): fubon has no live channel
+    // yet — structured 409 so the client can show "即將開放" instead of
+    // silently routing to paper.
+    if (err instanceof FubonChannelComingSoonError) {
+      return c.json({ error: "channel_coming_soon", broker: err.broker }, 409);
     }
     throw err;
   }
