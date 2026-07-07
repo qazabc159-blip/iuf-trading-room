@@ -3,13 +3,14 @@
 /**
  * /admin/brain/decisions — 主腦決策流 UI (M3)
  *
- * Owner-only. Consumes GET /api/v1/openalice/orchestrator/state
+ * Owner-only — gated by the nested `app/admin/brain/layout.tsx`
+ * (permission matrix v1 D3/PM-O3, `reports/permission_matrix/PERMISSION_MATRIX_v1.md`),
+ * not by this component. Consumes GET /api/v1/openalice/orchestrator/state
  * Read-only. No write actions or order triggers.
  */
 
 import { useEffect, useState } from "react";
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { apiGetMe } from "@/lib/auth-client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1025,45 +1026,6 @@ const CSS = `
     max-width: 380px;
   }
 
-  ._dec-gate-loading {
-    padding: 56px 0;
-    text-align: center;
-    font-size: 13px;
-    color: rgba(145,160,181,0.55);
-    font-style: italic;
-  }
-  ._dec-gate-locked {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-    padding: 64px 32px;
-    text-align: center;
-  }
-  ._dec-gate-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: rgba(230,57,70,0.07);
-    border: 2px solid rgba(230,57,70,0.35);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    color: #ff6b77;
-  }
-  ._dec-gate-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #c6d0de;
-    margin-bottom: 6px;
-  }
-  ._dec-gate-sub {
-    font-size: 13px;
-    color: #566276;
-    line-height: 1.6;
-  }
-
   ._dec-load-state {
     padding: 40px 0;
     text-align: center;
@@ -1248,24 +1210,16 @@ const CSS = `
 `;
 
 // ── Main component ─────────────────────────────────────────────────────────
+// Access gating (Owner-only) is handled by the nested
+// `app/admin/brain/layout.tsx` (`AdminOwnerGate`), not here — this component
+// starts straight at data loading.
 
-type PagePhase = "gate-loading" | "not-owner" | "loading" | "error" | "ready";
+type PagePhase = "loading" | "error" | "ready";
 
 export default function DecisionsPage() {
-  const [phase, setPhase] = useState<PagePhase>("gate-loading");
+  const [phase, setPhase] = useState<PagePhase>("loading");
   const [state, setState] = useState<OrchestratorState | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
-
-  // Owner gate
-  useEffect(() => {
-    apiGetMe().then((result) => {
-      if (!result.ok || result.user.role !== "Owner") {
-        setPhase("not-owner");
-      } else {
-        setPhase("loading");
-      }
-    });
-  }, []);
 
   // Data fetch (only when phase is "loading")
   useEffect(() => {
@@ -1302,20 +1256,6 @@ export default function DecisionsPage() {
       note="Owner 限定 · 唯讀 · 顯示主腦看到什麼 → 怎麼推理 → 決定什麼動作 → 執行結果。不含任何真單路徑。"
     >
       <style>{CSS}</style>
-
-      {phase === "gate-loading" && (
-        <div className="_dec-gate-loading">驗證身份中…</div>
-      )}
-
-      {phase === "not-owner" && (
-        <div className="_dec-gate-locked">
-          <div className="_dec-gate-icon">✕</div>
-          <div>
-            <div className="_dec-gate-title">此頁面僅限帳號擁有者檢視</div>
-            <div className="_dec-gate-sub">主腦決策流屬 Owner 限定資料，請使用擁有者帳號登入。</div>
-          </div>
-        </div>
-      )}
 
       {phase === "loading" && (
         <div className="_dec-load-state">讀取主腦狀態中…</div>

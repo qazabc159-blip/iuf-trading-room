@@ -3,14 +3,18 @@
 /**
  * /admin/team — 團隊與邀請管理
  *
- * Owner-only.
+ * Page-level access is Admin+ (permission matrix v1 D3 PM-O3 carve-out,
+ * `reports/permission_matrix/PERMISSION_MATRIX_v1.md`) — gated by the
+ * nested `app/admin/team/layout.tsx`, not by this component.
  *
  * Invite section (Owner + Admin):
  *   POST /api/v1/admin/invites  — issue invite
  *   GET  /api/v1/admin/invites  — list invites
  *   POST /api/v1/admin/invites/:id/revoke
  *
- * Users section (Owner only):
+ * Users section (Owner only — backend enforces this independently of the
+ * page-level Admin+ gate above; Admin accounts see a "Owner-only" note
+ * instead of the table, see `usersRestricted` below):
  *   GET  /api/v1/admin/users
  *   POST /api/v1/admin/users/:id/role
  *   POST /api/v1/admin/users/:id/deactivate
@@ -692,43 +696,26 @@ function UserList({
 
 // ── Page state machine ────────────────────────────────────────────────────────
 
-type Phase =
-  | "gate-loading"
-  | "not-owner"
-  | "loading"
-  | "ready"
-  | "error";
+type Phase = "loading" | "ready" | "error";
 
 type PageData = {
   invites: InviteRecord[];
   users: UserRecord[];
+  /** true when the signed-in account is Admin (not Owner) — GET /admin/users is Owner-only server-side. */
+  usersRestricted: boolean;
 };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+// Access gating (Admin+) is handled by the nested `app/admin/team/layout.tsx`
+// (`RoleGate`), not here. This component only handles data loading.
 
 export default function TeamPage() {
-  const [phase, setPhase] = useState<Phase>("gate-loading");
+  const [phase, setPhase] = useState<Phase>("loading");
   const [currentUserId, setCurrentUserId] = useState("");
-  const [data, setData] = useState<PageData>({ invites: [], users: [] });
+  const [data, setData] = useState<PageData>({ invites: [], users: [], usersRestricted: false });
   const [errMsg, setErrMsg] = useState("");
   const [newInvite, setNewInvite] = useState<CreatedInvite | null>(null);
 
-  // Phase 1: gate check
-  useEffect(() => {
-    let cancelled = false;
-    void apiGetMe().then((result) => {
-      if (cancelled) return;
-      if (!result.ok || result.user.role !== "Owner") {
-        setPhase("not-owner");
-        return;
-      }
-      setCurrentUserId(result.user.id);
-      setPhase("loading");
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Phase 2: data fetch (triggered by phase === "loading")
   const fetchRef = useRef(0);
   useEffect(() => {
     if (phase !== "loading") return;
@@ -737,11 +724,18 @@ export default function TeamPage() {
 
     async function load() {
       try {
-        const [invRes, usrRes] = await Promise.all([apiListInvites(), apiListUsers()]);
+        const [meRes, invRes, usrRes] = await Promise.all([apiGetMe(), apiListInvites(), apiListUsers()]);
         if (cancelled || fetchRef.current !== fetchSeq) return;
+        if (meRes.ok) setCurrentUserId(meRes.user.id);
         if (!invRes.ok) throw new Error(invRes.error);
-        if (!usrRes.ok) throw new Error(usrRes.error);
-        setData({ invites: invRes.invites, users: usrRes.users });
+        // Users list is Owner-only server-side (see docblock above); an
+        // Admin account gets an expected 403 here — that is not a
+        // page-level failure, just a narrower view of this same page.
+        if (usrRes.ok) {
+          setData({ invites: invRes.invites, users: usrRes.users, usersRestricted: false });
+        } else {
+          setData({ invites: invRes.invites, users: [], usersRestricted: true });
+        }
         setPhase("ready");
       } catch (err) {
         if (cancelled || fetchRef.current !== fetchSeq) return;
@@ -758,33 +752,9 @@ export default function TeamPage() {
     setPhase("loading");
   }
 
-  if (phase === "gate-loading") {
-    return (
-      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note="驗證身份中…">
-        <style>{TEAM_CSS}</style>
-        <div className="state-panel">
-          <span className="badge badge-amber">驗證中</span>
-          <span className="state-reason">驗證身份中，請稍候。</span>
-        </div>
-      </PageFrame>
-    );
-  }
-
-  if (phase === "not-owner") {
-    return (
-      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note="此功能僅限 Owner 使用">
-        <style>{TEAM_CSS}</style>
-        <div className="state-panel">
-          <span className="badge badge-red">無權限</span>
-          <span className="state-reason">此功能僅限 Owner 帳號使用。</span>
-        </div>
-      </PageFrame>
-    );
-  }
-
   if (phase === "error") {
     return (
-      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note="載入失敗">
+      <PageFrame code="TEAM" title="團隊與邀請" sub="Admin+" note="載入失敗">
         <style>{TEAM_CSS}</style>
         <div className="state-panel">
           <span className="badge badge-red">載入失敗</span>
@@ -797,7 +767,7 @@ export default function TeamPage() {
 
   if (phase === "loading") {
     return (
-      <PageFrame code="TEAM" title="團隊與邀請" sub="Owner-only" note={<DataStateBadge state="empty" label="載入中…" testId="team-page-loading-badge" />}>
+      <PageFrame code="TEAM" title="團隊與邀請" sub="Admin+" note={<DataStateBadge state="empty" label="載入中…" testId="team-page-loading-badge" />}>
         <style>{TEAM_CSS}</style>
         <div className="state-panel">
           <span className="badge badge-amber">讀取中</span>
@@ -811,8 +781,8 @@ export default function TeamPage() {
     <PageFrame
       code="TEAM"
       title="團隊與邀請"
-      sub="Owner-only"
-      note={`${data.invites.length} 筆邀請 / ${data.users.length} 位用戶`}
+      sub="Admin+"
+      note={`${data.invites.length} 筆邀請${data.usersRestricted ? "" : ` / ${data.users.length} 位用戶`}`}
     >
       <style>{TEAM_CSS}</style>
 
@@ -840,10 +810,18 @@ export default function TeamPage() {
 
       {/* Users section */}
       <Panel code="TEAM-USERS" title="用戶管理" right="Owner-only">
-        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 12 }}>
-          停用操作立即生效。停用後該用戶下次請求即失去存取權。無法更改自己的角色，亦無法操作 Owner 帳號。
-        </p>
-        <UserList users={data.users} currentUserId={currentUserId} onRefresh={handleRefresh} />
+        {data.usersRestricted ? (
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+            用戶管理僅限 Owner 帳號使用，Admin 帳號僅能管理邀請。
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 12 }}>
+              停用操作立即生效。停用後該用戶下次請求即失去存取權。無法更改自己的角色，亦無法操作 Owner 帳號。
+            </p>
+            <UserList users={data.users} currentUserId={currentUserId} onRefresh={handleRefresh} />
+          </>
+        )}
       </Panel>
     </PageFrame>
   );

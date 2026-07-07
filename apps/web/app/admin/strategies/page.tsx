@@ -6,17 +6,15 @@
  * Ground truth source: Codex S1 file 2026-05-18 11:29 TST
  *   reports/data_lane/codex_quant_lab_elva_current_state_2026_05_18_v1.md
  *
- * Owner-only: non-Owner roles are redirected to /login.
+ * Owner-only — gated by the nested `app/admin/strategies/layout.tsx`
+ * (permission matrix v1 D3, `reports/permission_matrix/PERMISSION_MATRIX_v1.md`),
+ * not by this component.
  * No backend Lab API is called — state is static disk-backed Codex truth.
  *
  * Wording rules (F2):
  *   OK  → "owner-review packet exists"
  *   NOT → "capital-approved" / "alpha confirmed" / "live-ready" / "paper-ready"
  */
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { apiGetMe } from "@/lib/auth-client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -475,45 +473,10 @@ function LaneCardView({ lane }: { lane: LaneCard }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-
-type PagePhase = "loading" | "no-access" | "ready";
+// Access gating (Owner-only) is handled by the nested
+// `app/admin/strategies/layout.tsx` (`AdminOwnerGate`), not here.
 
 export default function AdminStrategiesPage() {
-  const router = useRouter();
-  const [phase, setPhase] = useState<PagePhase>("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    apiGetMe().then(result => {
-      if (cancelled) return;
-      if (!result.ok || result.user.role !== "Owner") {
-        setPhase("no-access");
-        router.replace("/login");
-        return;
-      }
-      setPhase("ready");
-    }).catch(() => {
-      if (cancelled) return;
-      setPhase("no-access");
-      router.replace("/login");
-    });
-
-    return () => { cancelled = true; };
-  }, [router]);
-
-  if (phase === "loading") {
-    return (
-      <main style={{ padding: "40px 24px", color: "rgba(255,255,255,0.4)", fontFamily: "var(--mono, monospace)", fontSize: 12 }}>
-        驗證身份中…
-      </main>
-    );
-  }
-
-  if (phase === "no-access") {
-    return null;
-  }
-
   return (
     <>
       <style>{`
