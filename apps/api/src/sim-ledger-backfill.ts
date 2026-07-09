@@ -681,7 +681,12 @@ export async function getLatestLedgerState(db: ReturnType<typeof getDb>): Promis
  * Closes previous week (computes realized PnL from EOD prices), opens new week,
  * and writes daily NAV row. Idempotent via sim_ledger_weeks UNIQUE(basket_date,source).
  *
- * Called only when snapshot.pricingComplete=true AND today is Tuesday.
+ * Called when (snapshot.pricingComplete OR snapshot.fullyPriced) AND today is
+ * Tuesday (2026-07-09 ledger stall fix — see s1-sim-runner.ts
+ * S1PositionsSnapshot.fullyPriced doc comment: a day where official TWSE/TPEX
+ * EOD never publishes in time but MIS already has a same-day close for every
+ * position must still be able to advance the ledger). Pass `pricingQuality`
+ * to record which gate admitted the write.
  */
 export async function writeLiveLedgerAfterEod(options: {
   rebalanceDate: string;  // today's Tuesday date YYYY-MM-DD

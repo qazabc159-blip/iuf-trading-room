@@ -1032,6 +1032,34 @@ export interface S1PositionsSnapshot {
 }
 
 /**
+ * Parses a TWSE/TPEX EOD `Date` field (ROC calendar) into an ISO `YYYY-MM-DD`
+ * string, or `null` if the value doesn't match a known shape. Both official
+ * EOD sources (STOCK_DAY_ALL, tpex_mainboard_daily_close_quotes) have shipped
+ * two wire formats historically:
+ *   - compact 7-digit ROC, no separator: "1150709" (current, live-verified 7/9)
+ *   - legacy slash-separated ROC: "115/07/09"
+ * Used by the tier-1b EOD stale-date guards in buildS1PositionsSnapshot — a
+ * `null` return means the caller treats the source as unvalidated (same as
+ * "no date to check"), never as an exception.
+ */
+export function _parseRocEodDateIso(raw: string | undefined): string | null {
+  const trimmed = raw?.trim() ?? "";
+  const slashParts = trimmed.split("/");
+  if (slashParts.length === 3) {
+    const y = parseInt(slashParts[0], 10) + 1911;
+    if (isFinite(y) && y > 1900) {
+      return `${y}-${(slashParts[1] ?? "").padStart(2, "0")}-${(slashParts[2] ?? "").padStart(2, "0")}`;
+    }
+    return null;
+  }
+  if (/^\d{7}$/.test(trimmed)) {
+    const y = parseInt(trimmed.slice(0, 3), 10) + 1911;
+    return `${y}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
+  }
+  return null;
+}
+
+/**
  * Builds the current S1 holdings view. Shared by the daily EOD report and the
  * trading-room portfolio endpoint (B3) — single source of truth for the
  * gateway → audit-rebuild → order-file source chain (audit R4).
@@ -1228,26 +1256,28 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       // YELLOW-1 fix: validate TWSE STOCK_DAY_ALL date before using it.
       // TWSE publishes today's official closes at ~14:30-15:00 TST. Before that
       // window the endpoint still serves YESTERDAY's data. If we detect that
-      // stockRows[0].Date (ROC "115/06/30") maps to a date other than today,
-      // skip the entire mark-to-market pass so pricingComplete stays false and
-      // the 15-min scheduler retry can try again after TWSE publishes.
+      // stockRows[0].Date maps to a date other than today, skip the entire
+      // mark-to-market pass so pricingComplete stays false and the 15-min
+      // scheduler retry can try again after TWSE publishes.
       //
       // Concrete failure mode (6/30 observed): at 14:08 TST, STOCK_DAY_ALL
       // returned yesterday's close. The S1 basket entry price (avg_cost) is also
       // yesterday's close. mark-to-market set last_price = yesterday close = avg_cost
       // → unrealized = 0, officialCloseMarkedCount = 8 = positions.length →
       // pricingComplete = true → _eodLastFiredDate locked today → NO more retries.
-      const stockDateRaw = (stockRows[0] as { Date?: string } | undefined)?.Date?.trim() ?? "";
-      const stockDateIso = (() => {
-        const parts = stockDateRaw.split("/");
-        if (parts.length === 3) {
-          const y = parseInt(parts[0], 10) + 1911;
-          if (isFinite(y) && y > 1900) {
-            return `${y}-${(parts[1] ?? "").padStart(2, "0")}-${(parts[2] ?? "").padStart(2, "0")}`;
-          }
-        }
-        return null;
-      })();
+      //
+      // 2026-07-09 YELLOW-1 follow-up: the wire format for this field has two
+      // historical shapes — legacy slash-separated ROC "115/06/30" and current
+      // compact ROC "1150709" (7 digits, no separator; live-verified 7/9). The
+      // original parser here only handled the slash shape, so against the
+      // compact shape it silently returned null and the guard never fired
+      // (fell through to "fresh" unconditionally) — the date check looked
+      // present but was a no-op for live traffic. _parseRocEodDateIso below
+      // handles both; TPEX's daily_close_quotes Date field uses the same ROC
+      // encoding and is validated the same way (see TPEX freshness check further
+      // down) — previously TPEX had no date check at all, so a stale TPEX
+      // payload could be merged in as if it were today's close.
+      const stockDateIso = _parseRocEodDateIso(stockRows[0]?.Date);
       if (stockDateIso && stockDateIso !== todayTst) {
         notes.push(
           `twse_eod_stale: STOCK_DAY_ALL data_date=${stockDateIso} != today=${todayTst}` +
@@ -1256,16 +1286,32 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
         // Fall through with officialCloseMarkedCount=0 → pricingComplete=false → retry enabled.
       } else {
         // TWSE data is fresh (or no date to check) — proceed with mark-to-market.
+        // TPEX freshness is validated independently of TWSE: TPEX and TWSE
+        // publish on separate schedules, so a stale TPEX payload must not be
+        // merged in as today's close even when TWSE itself is fresh. Unlike
+        // the TWSE guard above (which skips the entire pass), a stale TPEX
+        // date only skips the TPEX merge — TWSE-listed positions still get
+        // priced, and OTC positions fall through to the MIS (tier 1c) or DB
+        // (tier 1d) fallback instead of a possibly-stale TPEX close.
+        const tpexDateIso = _parseRocEodDateIso(tpexRows[0]?.Date);
+        const tpexFresh = !tpexDateIso || tpexDateIso === todayTst;
         if (tpexRows.length === 0) {
           notes.push("tpex_eod_unavailable: OTC closes missing (fetch failed or empty) — OTC positions stay unpriced");
+        } else if (!tpexFresh) {
+          notes.push(
+            `tpex_eod_stale: daily_close_quotes data_date=${tpexDateIso} != today=${todayTst}` +
+            ` — TPEX close skipped, OTC positions fall through to MIS/DB fallback`
+          );
         }
 
         const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
-        for (const row of tpexRows) {
-          const code = row.SecuritiesCompanyCode?.trim();
-          if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
-          const close = parseFloat(row.Close ?? "");
-          if (isFinite(close)) closeBySymbol.set(code, close);
+        if (tpexFresh) {
+          for (const row of tpexRows) {
+            const code = row.SecuritiesCompanyCode?.trim();
+            if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
+            const close = parseFloat(row.Close ?? "");
+            if (isFinite(close)) closeBySymbol.set(code, close);
+          }
         }
 
         let marked = 0;
