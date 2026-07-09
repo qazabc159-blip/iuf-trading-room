@@ -19679,6 +19679,111 @@ test("SIM-LEDGER-14: s1-sim-runner EOD path hooks live ledger writes (fire-and-f
   );
 });
 
+// =============================================================================
+// SIM-LEDGER-16..18: 2026-07-09 ledger stall fix
+// =============================================================================
+//
+// Root cause (reports/ledger_stall_20260709/): the Phase 2 ledger write
+// (writeLiveLedgerAfterEod / writeDailyNavRow) was nested inside
+// `if (snapshot.pricingComplete)`, which requires officialCloseMarkedCount > 0
+// (TWSE/TPEX EOD specifically, per YELLOW-1's stale-date guard). On
+// 2026-07-07, TWSE STOCK_DAY_ALL never published inside the 14:45-15:30 TST
+// EOD window, so officialCloseMarkedCount stayed 0 all day even though MIS
+// (tier 1c, already date-validated) fully priced all 8 positions. Result:
+// sim_ledger_weeks stuck at basket_date=2026-06-30 (no week 6 for the 7/7
+// rebalance) and no NAV row for 7/7 — a permanent gap, since the ledger has
+// no catch-up mechanism for a missed EOD window.
+//
+// Fix: add `fullyPriced` (officialCloseMarkedCount + misTodayMarkedCount ===
+// positions.length) as a second, ledger-only gate. The audit-log write
+// (writeS1ObservationAudit / completion_status in the s1_sim_daily report)
+// stays strictly gated on `pricingComplete` alone — unchanged, still
+// protected by the YELLOW-1 stale-data guard for that surface.
+
+test("SIM-LEDGER-16: S1PositionsSnapshot exposes fullyPriced, computed from official+MIS today-validated tiers only", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("fullyPriced: boolean"),
+    "SIM-LEDGER-16: S1PositionsSnapshot must declare fullyPriced: boolean"
+  );
+  assert.ok(
+    /misTodayMarkedCount/.test(src),
+    "SIM-LEDGER-16: must track a separate today-validated MIS-priced counter (misTodayMarkedCount)"
+  );
+  assert.ok(
+    /const fullyPriced = positions\.length > 0 &&\s*\n\s*\(officialCloseMarkedCount \+ misTodayMarkedCount\) === positions\.length/.test(src),
+    "SIM-LEDGER-16: fullyPriced must be officialCloseMarkedCount + misTodayMarkedCount === positions.length (excludes tier 1d DB fallback)"
+  );
+  // Regression guard: fullyPriced must NOT be defined as pricedPositions.length
+  // === positions.length alone — that would silently include the tier 1d DB
+  // persisted-close fallback, which can replay a stale prior-day close.
+  assert.doesNotMatch(
+    src,
+    /const fullyPriced = pricedPositions\.length === positions\.length/,
+    "SIM-LEDGER-16: fullyPriced must exclude tier 1d (DB persisted fallback) — it can be stale"
+  );
+});
+
+test("SIM-LEDGER-17: ledger write gate is pricingComplete OR fullyPriced; audit-log write stays pricingComplete-only", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("if (snapshot.pricingComplete || snapshot.fullyPriced)"),
+    "SIM-LEDGER-17: Phase 2 ledger write block must fire on pricingComplete OR fullyPriced"
+  );
+  // The eod_generated audit-log write must remain in its own strictly-gated
+  // if-block (not merged into the loosened ledger gate).
+  const auditBlockIdx = src.indexOf("S1_AUDIT_ACTIONS.eodGenerated");
+  const auditIfIdx = src.lastIndexOf("if (snapshot.pricingComplete) {", auditBlockIdx);
+  assert.ok(
+    auditIfIdx > 0 && auditBlockIdx > auditIfIdx,
+    "SIM-LEDGER-17: eod_generated audit write must stay behind its own `if (snapshot.pricingComplete) {` gate"
+  );
+  const ledgerGateIdx = src.indexOf("if (snapshot.pricingComplete || snapshot.fullyPriced)");
+  assert.ok(
+    ledgerGateIdx > auditBlockIdx,
+    "SIM-LEDGER-17: the loosened ledger gate must be a separate block after the strict audit-log write, not the same block"
+  );
+});
+
+test("SIM-LEDGER-18: pricingQuality threaded through to ledger notes for traceability", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    /pricingQuality = snapshot\.pricingComplete \? "official" : "mis_fallback_full"/.test(runnerSrc),
+    "SIM-LEDGER-18: s1-sim-runner must derive pricingQuality from snapshot.pricingComplete"
+  );
+  assert.ok(
+    runnerSrc.includes("pricingQuality,") ,
+    "SIM-LEDGER-18: pricingQuality must be passed into writeLiveLedgerAfterEod/writeDailyNavRow options"
+  );
+
+  const backfillSrc = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    backfillSrc.includes('pricingQuality?: "official" | "mis_fallback_full"'),
+    "SIM-LEDGER-18: writeLiveLedgerAfterEod/writeDailyNavRow must accept an optional pricingQuality option"
+  );
+  assert.ok(
+    /pricing_quality: \$\{pricingQuality\}/.test(backfillSrc),
+    "SIM-LEDGER-18: non-official pricingQuality must be recorded in ledger notes for traceability"
+  );
+  // sim_ledger_weeks/sim_ledger_nav source columns must NOT change — no migration needed.
+  assert.ok(
+    backfillSrc.includes("'live',") && backfillSrc.includes("'live_eod'"),
+    "SIM-LEDGER-18: source columns must stay 'live'/'live_eod' regardless of pricingQuality (no schema change)"
+  );
+});
+
 test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts", () => {
   const src = readFileSync(
     new URL("../apps/api/src/server.ts", import.meta.url),

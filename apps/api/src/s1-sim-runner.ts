@@ -1013,6 +1013,22 @@ export interface S1PositionsSnapshot {
   totalMarketValueTwd: number | null;
   pricedPositionCount: number;
   pricingComplete: boolean;
+  /**
+   * True when every current position has a same-day, date-validated closing
+   * price from EITHER the official TWSE/TPEX EOD source (tier 1b) OR the
+   * MIS post-session close fallback (tier 1c) — both validate the price's
+   * date against today before use. Deliberately excludes tier 1d (DB
+   * persisted-close fallback), which can replay a STALE prior-day close and
+   * must never be mistaken for "today's price is in".
+   *
+   * Weaker than `pricingComplete` (which additionally requires the official
+   * TWSE/TPEX source specifically, per YELLOW-1's stale-date guard) — added
+   * 2026-07-09 so the ledger write path (see runS1EodReportTickOnce) is not
+   * permanently blocked on days TWSE STOCK_DAY_ALL never publishes in the
+   * 14:45-15:30 EOD window while MIS already has same-day closes for every
+   * position (2026-07-07 ledger stall root cause: reports/ledger_stall_20260709/).
+   */
+  fullyPriced: boolean;
 }
 
 /**
@@ -1192,6 +1208,11 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   // map leaves OTC positions (e.g. 5701) permanently un-priced (last_price=null
   // forever), which in turn nulls out the whole-portfolio totals below.
   let officialCloseMarkedCount = 0;
+  // Same-day, date-validated MIS fallback count (tier 1c below) — kept separate
+  // from officialCloseMarkedCount so `fullyPriced` can recognize "today's price
+  // is in" even when only MIS (not TWSE/TPEX) published in time. See
+  // S1PositionsSnapshot.fullyPriced doc comment for why tier 1d is excluded.
+  let misTodayMarkedCount = 0;
   if (positions.length > 0) {
     try {
       // TPEX closes via the shared cached getter — the 6/11 inline fetch used
@@ -1342,6 +1363,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     // MIS post-session close is date-validated above (d === todayYmd), so it is
     // equivalent to TWSE/TPEX official EOD for mark-to-market purposes.
     const misPriced = stillNullPositions.filter((p) => p.last_price !== null);
+    misTodayMarkedCount = misPriced.length;
     if (misPriced.length > 0) {
       const dbForMis = getDb();
       if (dbForMis) {
@@ -1401,6 +1423,12 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
   const pricingComplete = positions.length > 0 &&
     officialCloseMarkedCount > 0 &&
     pricedPositions.length === positions.length;
+  // fullyPriced: every position priced via a same-day date-validated source
+  // (TWSE/TPEX tier 1b OR MIS tier 1c), excluding the tier 1d DB persisted
+  // fallback (which can replay a stale prior-day close). Used by the ledger
+  // write path only — see S1PositionsSnapshot.fullyPriced doc comment.
+  const fullyPriced = positions.length > 0 &&
+    (officialCloseMarkedCount + misTodayMarkedCount) === positions.length;
   const unrealizedKnownPositions = positions.filter((p) => p.unrealized_pnl_twd !== null);
   const totalUnrealized = unrealizedKnownPositions.length > 0
     ? unrealizedKnownPositions.reduce((s, p) => s + (p.unrealized_pnl_twd ?? 0), 0)
@@ -1431,6 +1459,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     totalMarketValueTwd: totalMarketValue,
     pricedPositionCount: pricedPositions.length,
     pricingComplete,
+    fullyPriced,
   };
 }
 
@@ -1517,10 +1546,22 @@ async function runS1EodReportTickOnce(): Promise<void> {
         data: report,
       });
     }
+  }
 
-    // Phase 2: live ledger writes — SIM-ONLY, fire-and-forget (never block EOD).
-    // Tuesday (rebalance day): close prev week + open new week + NAV row.
-    // Other weekdays: daily NAV row only.
+  // Phase 2: live ledger writes — SIM-ONLY, fire-and-forget (never block EOD).
+  // Tuesday (rebalance day): close prev week + open new week + NAV row.
+  // Other weekdays: daily NAV row only.
+  //
+  // Gate is `pricingComplete || fullyPriced` (NOT `pricingComplete` alone,
+  // unlike the audit-log write above): a day where TWSE STOCK_DAY_ALL never
+  // publishes inside the 14:45-15:30 window but MIS already has a same-day
+  // close for every position must still be able to advance the ledger — the
+  // ledger has no catch-up mechanism, so a `pricingComplete`-only gate turns
+  // one bad TWSE day into a permanent gap (2026-07-07 root cause: no week 6 /
+  // no NAV row, weeks table stuck at basket_date=2026-06-30 for 2 days).
+  // See reports/ledger_stall_20260709/ for the prod evidence trail.
+  if (snapshot.pricingComplete || snapshot.fullyPriced) {
+    const pricingQuality = snapshot.pricingComplete ? "official" : "mis_fallback_full";
     const taipeiMs = Date.now() + 8 * 3600 * 1000;
     const taipeiDay = new Date(taipeiMs).getUTCDay(); // 2 = Tuesday
     void (async () => {
@@ -1539,11 +1580,13 @@ async function runS1EodReportTickOnce(): Promise<void> {
             })),
             cashResidualTwd: snapshot.cashResidualTwd,
             totalMarketValueTwd: snapshot.totalMarketValueTwd,
+            pricingQuality,
           });
           console.log(
             `[s1-ledger] Tuesday rebalance ledger: written=${ledgerResult.written} ` +
             `weekNum=${ledgerResult.weekNum} realizedPnl=${ledgerResult.realizedPnlTwd} ` +
-            `equity=${ledgerResult.equityAfterTwd} costs=${ledgerResult.transactionCostsTwd}`
+            `equity=${ledgerResult.equityAfterTwd} costs=${ledgerResult.transactionCostsTwd} ` +
+            `pricingQuality=${pricingQuality}`
           );
         } else {
           // Non-Tuesday: daily NAV row only (requires backfill already applied)
@@ -1551,8 +1594,9 @@ async function runS1EodReportTickOnce(): Promise<void> {
             navDate: todayTst,
             cashResidualTwd: snapshot.cashResidualTwd,
             totalMarketValueTwd: snapshot.totalMarketValueTwd,
+            pricingQuality,
           });
-          console.log(`[s1-ledger] daily NAV row written: ${todayTst}`);
+          console.log(`[s1-ledger] daily NAV row written: ${todayTst} pricingQuality=${pricingQuality}`);
         }
       } catch (e) {
         console.warn("[s1-ledger] live ledger write failed (non-fatal):", e instanceof Error ? e.message : String(e));
