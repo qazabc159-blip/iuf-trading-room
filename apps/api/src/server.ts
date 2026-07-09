@@ -21469,12 +21469,9 @@ app.post("/api/v1/uta/accounts/:id/gateway/pair-token", async (c) => {
 
   const accountId = c.req.param("id");
 
-  // Confirm the broker account belongs to this workspace.
-  const acct = dbExecRows<{ id: string }>(await db.execute(drizzleSql`
-    SELECT id FROM broker_accounts
-    WHERE id = ${accountId} AND workspace_id = ${session.workspace.id}
-    LIMIT 1
-  `))[0];
+  // G-SELF ownership check (PERMISSION_MATRIX_v1.md §2 D3 / PR-D, 2026-07-09).
+  const { findOwnedBrokerAccount } = await import("./broker/broker-account-ownership.js");
+  const acct = await findOwnedBrokerAccount(db, accountId, session.workspace.id);
   if (!acct) return c.json({ error: "account_not_found" }, 404);
 
   // Generate a one-time pairing token; persist only its hash.
@@ -21596,6 +21593,16 @@ app.post("/api/v1/uta/accounts/:id/gateway/revoke", async (c) => {
   if (!db) return c.json({ error: "db_unavailable" }, 503);
 
   const accountId = c.req.param("id");
+
+  // G-SELF ownership check (PERMISSION_MATRIX_v1.md §2 D3 / PR-D, 2026-07-09):
+  // confirm the broker account belongs to THIS workspace before touching its
+  // pairing — same pattern as pair-token issuance above. Least-disclosure:
+  // an accountId that doesn't exist and one that belongs to another workspace
+  // are indistinguishable to the caller — both 404.
+  const { findOwnedBrokerAccount } = await import("./broker/broker-account-ownership.js");
+  const acct = await findOwnedBrokerAccount(db, accountId, session.workspace.id);
+  if (!acct) return c.json({ error: "account_not_found" }, 404);
+
   const revoked = dbExecRows<{ id: string }>(await db.execute(drizzleSql`
     UPDATE broker_gateway_pairings gp
     SET status = 'revoked', updated_at = NOW()
@@ -21651,6 +21658,15 @@ app.post("/api/v1/uta/accounts/disconnect", async (c) => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return c.json({ error: "invalid_id" }, 400);
   const db = getDb();
   if (!db) return c.json({ error: "db_unavailable" }, 503);
+
+  // G-SELF ownership check (PERMISSION_MATRIX_v1.md §2 D3 / PR-D, 2026-07-09):
+  // same pattern as gateway/pair-token and gateway/revoke above — confirm the
+  // account belongs to THIS workspace before disconnecting it. Least-disclosure:
+  // 404 whether the id doesn't exist or belongs to another workspace.
+  const { findOwnedBrokerAccount } = await import("./broker/broker-account-ownership.js");
+  const acct = await findOwnedBrokerAccount(db, id, session.workspace.id);
+  if (!acct) return c.json({ error: "account_not_found" }, 404);
+
   await db.execute(drizzleSql`
     UPDATE broker_accounts SET is_active = FALSE, updated_at = NOW()
     WHERE id = ${id}::uuid AND workspace_id = ${session.workspace.id}
