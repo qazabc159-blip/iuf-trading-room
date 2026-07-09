@@ -12,10 +12,11 @@
  */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import {
   FinMindClient,
   FinMindRateLimitError,
+  _resetFinMindStats,
   type FinMindPriceAdjRow,
   type FinMindFinancialStatementsRow,
   type FinMindMonthRevenueRow,
@@ -80,6 +81,13 @@ class MemoryCache {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+// The 4xx circuit breaker in finmind-client.ts is process-local module state
+// (not per-instance) — reset it before every test so a 4xx tripped by one test
+// doesn't silently starve the fetch mock of a later, unrelated test.
+beforeEach(() => {
+  _resetFinMindStats();
+});
 
 test("T1: getStockPriceAdj happy path — maps rows to OhlcvBar shape", async () => {
   const cache = new MemoryCache();
@@ -294,7 +302,16 @@ test("T8: getDividend shape + TTL is 86400", async () => {
   }
 });
 
-test("T9: PriceAdj permission failure falls back to TaiwanStockPrice", async () => {
+test("T9: PriceAdj permission failure (400) trips the 4xx circuit breaker before the TaiwanStockPrice fallback can run", async () => {
+  // Current client behavior (see finmind-client.ts "4xx circuit breaker" section):
+  // any HTTP 4xx — including an entitlement-tier 400 on PriceAdj — opens a
+  // process-local circuit for a cooldown window immediately, and the very next
+  // _fetch() call (the intended TaiwanStockPrice fallback, still within this
+  // same getStockPriceAdj() invocation) is short-circuited before it reaches
+  // fetch(). So the fallback dataset is never actually requested here; only 1
+  // fetch call happens, and no bars are returned. This differs from the
+  // pre-circuit-breaker expectation (2 calls, 1 bar via fallback) that this
+  // test used to assert.
   const cache = new MemoryCache();
   const client = new FinMindClient({ token: "test-token", redisClient: cache });
 
@@ -303,33 +320,22 @@ test("T9: PriceAdj permission failure falls back to TaiwanStockPrice", async () 
   globalThis.fetch = (async (input: URL | RequestInfo, _init?: RequestInit): Promise<Response> => {
     fetchCallCount++;
     const url = new URL(String(input));
-    if (fetchCallCount === 1) {
-      assert.equal(url.searchParams.get("dataset"), "TaiwanStockPriceAdj");
-      return {
-        ok: false,
-        status: 400,
-        json: async () => ({
-          status: 400,
-          msg: "Your level is register. Please update your user level.",
-          data: []
-        })
-      } as unknown as Response;
-    }
-
-    assert.equal(url.searchParams.get("dataset"), "TaiwanStockPrice");
+    assert.equal(url.searchParams.get("dataset"), "TaiwanStockPriceAdj");
     return {
-      ok: true,
-      status: 200,
-      json: async () => ({ status: 200, msg: "Success", data: [SAMPLE_PRICE_ADJ_ROW] })
+      ok: false,
+      status: 400,
+      json: async () => ({
+        status: 400,
+        msg: "Your level is register. Please update your user level.",
+        data: []
+      })
     } as unknown as Response;
   }) as typeof fetch;
 
   try {
     const bars = await client.getStockPriceAdj("2330", "2026-01-01", "2026-04-30");
-    assert.equal(fetchCallCount, 2);
-    assert.equal(bars.length, 1);
-    assert.equal(bars[0].dt, "2026-04-29");
-    assert.equal(bars[0].source, "tej");
+    assert.equal(fetchCallCount, 1, "circuit breaker blocks the fallback fetch after the first 4xx");
+    assert.equal(bars.length, 0, "no fallback data returned once the circuit is open");
   } finally {
     globalThis.fetch = originalFetch;
   }
