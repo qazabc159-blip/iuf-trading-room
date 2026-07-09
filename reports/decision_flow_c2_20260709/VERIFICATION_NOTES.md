@@ -19,3 +19,14 @@
 - **本機測 POST `/api/v1/watchlist`（加觀察寫入）在此 local harness 下回 401**：瀏覽器對 `localhost:3000` → `https://api.eycvector.com` 屬跨站（cross-site，非同網域），Chromium 預設會擋第三方 cookie，導致 `credentials:"include"` 的跨源 POST 帶不到 session cookie。GET 類請求多半吃到 `SAME_ORIGIN_GET_PROXY_PATHS`（`lib/api.ts`）繞經本地 proxy 才躲過這個限制，POST 沒有對應 proxy path。
 - 這不是新問題：`mobile-390.spec.ts` 對 `/`、`/alerts`、`/ai-recommendations`、`/companies/2330`（**4 條全部含我完全沒碰過的路由**）在同一本機環境下全部因相同 401 console noise 失敗，證實是 harness 限制而非本輪改動引入的迴歸。已有先例記錄在 `jim_memory.md` 2026-07-06 PR #1181 條目。
 - Server 端 schema 已核對：`POST /api/v1/watchlist` 回 `{ok:true, symbol}`，`addWatchlistSymbol()` 解析方式吻合。正式部署（`app.eycvector.com` + `api.eycvector.com` 同一 parent domain，session cookie 非跨站）預期不會出現此問題，但**未在真實部署環境對這個新寫入路徑做過 e2e 驗證** — 建議 deploy 後由 Bruce 補打一次「加觀察」點擊 smoke。
+
+## 追加 — Pete fresh-context review 修復（同日）
+
+Pete 審 #1189 抓到本文件第 3 點「141 檔成員全部掛 `MemberQuoteRow`」正是問題本身：無 cap 逐檔 `useEffect` fan-out，會撞 KGI 新星 40-slot 訂閱硬上限（`apps/api/src/kgi-subscription-manager.ts` `MAX_SLOTS=40`）並用 LRU 波及其他頁面正在看的報價。修復：
+
+- 新 `apps/web/app/themes/[short]/member-quote-cap.ts`：`MEMBER_QUOTE_FETCH_CAP=15` + `shouldFetchMemberQuote(index, cap)`，比照既有 `apps/web/components/watchlist/WatchlistTable.tsx` cap=10 先例
+- `MemberQuoteRow` 新增 `fetchQuote` prop；`false` 時完全不呼叫 `getCompanyQuoteRealtime`，顯示「未報價」＋ title 說明（誠實靜態態，非 loading）
+- 新測試 `member-quote-cap.test.ts`：5 斷言，含「141 檔成員只有前 15 個 `fetchQuote=true`」迴歸守門 + 「cap 遠低於 `MAX_SLOTS=40`」守門
+- 同輪一併修：過期訊號「帶入模擬單」CTA 降權為不可點（`SignalCtaRow` 新 `stale` prop）、`_bty-member-watch-btn` 手機觸控目標 34px→44px、`_bty-member-price[data-tone]` 硬編色改用 `var(--tw-up-bright)`/`var(--tw-dn-bright)`
+
+驗證：typecheck 15/15 green / vitest 59 files, 488 tests green（+5）/ build:web 全綠 / rebase onto origin/main（含 #1191）乾淨無衝突。
