@@ -6,7 +6,9 @@
  *   FI2: all 11 datasets present in result.datasets
  *   FI3: skipped datasets have state="skipped" (not "error")
  *   FI4: concurrent run guard returns already_running
- *   FI5: queryAllDatasetStatus returns 11 entries
+ *   FI5: queryAllDatasetStatus returns 12 entries (11 DATASET_REGISTRY sponsor
+ *        datasets + 1 companies_ohlcv/TaiwanStockPriceAdj row tracked outside
+ *        the full-ingest batch job)
  *   FI6: getLastFullIngestResult() null before first run, populated after
  *   FI7: audit log action='finmind.ingest' written per dataset (mock DB path)
  *
@@ -119,10 +121,14 @@ describe("FinMind Full Ingest Orchestrator", () => {
     assert.equal(afterRun, false, "should not be running after completion");
   });
 
-  it("FI5: queryAllDatasetStatus returns 11 entries with required fields", async () => {
+  it("FI5: queryAllDatasetStatus returns 12 entries with required fields", async () => {
     const statuses = await queryAllDatasetStatus();
 
-    assert.equal(statuses.length, 11, "must return 11 dataset status rows");
+    // 11 DATASET_REGISTRY sponsor datasets (see FI2) + 1 companies_ohlcv row
+    // (dataset="TaiwanStockPriceAdj") that queryAllDatasetStatus tracks
+    // separately from the full-ingest batch job — see finmind-full-ingest.ts
+    // queryAllDatasetStatus()'s `[ohlcvRow, ...otherRows]` return.
+    assert.equal(statuses.length, 12, "must return 12 dataset status rows");
 
     for (const s of statuses) {
       assert.ok(s.dataset, "each row must have dataset");

@@ -13,7 +13,7 @@
  */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { createHmac } from "node:crypto";
 import type { createClient } from "redis";
 import {
@@ -232,6 +232,28 @@ test("T8: Idempotency replay — second ingest with same seq rejected", async ()
 //
 // These tests exercise the RedisCacheBackend wrapper via the _setRedisClientForTest
 // escape hatch. No real Redis required in CI (REDIS_URL unset).
+//
+// Mock wiring note: market-ingest.ts's getRedisClient() early-returns null
+// whenever process.env.REDIS_URL is unset — *before* it ever consults the
+// injected _redisClient set via _setRedisClientForTest(). So the escape hatch
+// only takes effect once REDIS_URL is also set. setMockRedisClient() below
+// keeps the two in lockstep: setting a client sets a dummy REDIS_URL (safe —
+// the fake client's isReady=true short-circuits getRedisClient() before any
+// real network connect() is attempted), and clearing the client clears
+// REDIS_URL too (so getRedisClient() early-returns null with no real connect
+// attempt, exactly like the "Redis unavailable" / "Redis dropped" cases these
+// tests simulate). Test-file-only change — production code is untouched.
+
+const ORIGINAL_REDIS_URL = process.env.REDIS_URL;
+
+function setMockRedisClient(client: ReturnType<typeof createClient> | null): void {
+  if (client) {
+    process.env.REDIS_URL = "redis://mock-test-only:6379";
+  } else {
+    delete process.env.REDIS_URL;
+  }
+  _setRedisClientForTest(client);
+}
 
 // Minimal fake Redis client shape used by the tests below.
 interface FakeRedisClientRecord {
@@ -285,7 +307,7 @@ function makeFakeRedisClient(opts: Partial<FakeRedisClientRecord> = {}): {
 // T-new-1: Redis unavailable → fallback to _internalCache, result.cached = true
 test("T-new-1: Redis null path → _internalCache fallback, cached=true", async () => {
   // Force null client (simulates REDIS_URL unset or connection failure)
-  _setRedisClientForTest(null);
+  setMockRedisClient(null);
   _seqTracker.reset();
 
   const symbol = "REDIS-TEST-1.TW";
@@ -317,50 +339,70 @@ test("T-new-2: Redis mock write / null drop / reconnect cycle — no exception t
     return { type: "quote", symbol, ts, seq, hmac, data };
   };
 
-  // Event 1 — Redis mock connected
-  _setRedisClientForTest(mockRedis);
-  await ingestMarketEvent(mkEvent(1));
+  try {
+    // Event 1 — Redis mock connected
+    setMockRedisClient(mockRedis);
+    await ingestMarketEvent(mkEvent(1));
 
-  // Event 2 — simulate Redis drop
-  _setRedisClientForTest(null);
-  await ingestMarketEvent(mkEvent(2));
+    // Event 2 — simulate Redis drop
+    setMockRedisClient(null);
+    await ingestMarketEvent(mkEvent(2));
 
-  // Event 3 — simulate reconnect
-  _setRedisClientForTest(mockRedis);
-  await ingestMarketEvent(mkEvent(3));
+    // Event 3 — simulate reconnect
+    setMockRedisClient(mockRedis);
+    await ingestMarketEvent(mkEvent(3));
 
-  // Events 1 and 3 should have called setEx on the mock
-  const keysWritten = record.setExCalls.map((c) => c.key);
-  const cacheKey = `mkt:quote:${symbol}`;
-  assert.equal(
-    keysWritten.filter((k) => k === cacheKey).length,
-    2,
-    "setEx should have been called for event 1 and event 3 only"
-  );
+    // Events 1 and 3 should have called setEx on the mock
+    const keysWritten = record.setExCalls.map((c) => c.key);
+    const cacheKey = `mkt:quote:${symbol}`;
+    assert.equal(
+      keysWritten.filter((k) => k === cacheKey).length,
+      2,
+      "setEx should have been called for event 1 and event 3 only"
+    );
 
-  // Event 2 should have landed in _internalCache
-  const memValue = _internalCache.raw().get(cacheKey);
-  assert.ok(memValue !== undefined, "Event 2 should be in _internalCache during drop");
+    // Event 2 should have landed in _internalCache
+    const memValue = _internalCache.raw().get(cacheKey);
+    assert.ok(memValue !== undefined, "Event 2 should be in _internalCache during drop");
+  } finally {
+    setMockRedisClient(null);
+  }
 });
 
 // T-new-3: Slow Redis (hangs > 500ms) → timeout fires → cached=false, ok=true
 test("T-new-3: Redis write timeout >500ms → cached=false, ok=true (primary path unblocked)", async () => {
   _seqTracker.reset();
   const { client: slowRedis } = makeFakeRedisClient({ delayMs: 1000 });
-  _setRedisClientForTest(slowRedis);
+  setMockRedisClient(slowRedis);
 
-  const symbol = "REDIS-SLOW.TW";
-  const ts = new Date().toISOString();
-  const seq = 1;
-  const data = { last: 200.0, bid: 199.5, ask: 200.5, open: 199.0, high: 201.0, low: 198.5, prevClose: 199.0, volume: 2000, changePct: 0.5 };
-  const hmac = signEvent("quote", symbol, ts, seq, data);
-  const event: MarketEvent = { type: "quote", symbol, ts, seq, hmac, data };
+  try {
+    const symbol = "REDIS-SLOW.TW";
+    const ts = new Date().toISOString();
+    const seq = 1;
+    const data = { last: 200.0, bid: 199.5, ask: 200.5, open: 199.0, high: 201.0, low: 198.5, prevClose: 199.0, volume: 2000, changePct: 0.5 };
+    const hmac = signEvent("quote", symbol, ts, seq, data);
+    const event: MarketEvent = { type: "quote", symbol, ts, seq, hmac, data };
 
-  const result = await ingestMarketEvent(event);
+    const result = await ingestMarketEvent(event);
 
-  assert.equal(result.ok, true, "Primary path (DB) should succeed despite Redis timeout");
-  assert.equal(result.cached, false, "cached should be false when Redis write timed out");
+    assert.equal(result.ok, true, "Primary path (DB) should succeed despite Redis timeout");
+    assert.equal(result.cached, false, "cached should be false when Redis write timed out");
+  } finally {
+    // Cleanup: reset to null (and clear REDIS_URL) so subsequent tests / test
+    // files sharing this process don't see the slow client or a stale env var.
+    setMockRedisClient(null);
+  }
+});
 
-  // Cleanup: reset to null so subsequent tests don't see slow client
+// Belt-and-suspenders cleanup: restore REDIS_URL to its pre-file state (normally
+// unset) in case any test above threw before its own finally-block cleanup ran —
+// this file's Redis mock wiring must not leak into other test files sharing the
+// same node --test process.
+after(() => {
+  if (ORIGINAL_REDIS_URL === undefined) {
+    delete process.env.REDIS_URL;
+  } else {
+    process.env.REDIS_URL = ORIGINAL_REDIS_URL;
+  }
   _setRedisClientForTest(null);
 });
