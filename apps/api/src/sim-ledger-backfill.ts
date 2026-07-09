@@ -697,6 +697,14 @@ export async function writeLiveLedgerAfterEod(options: {
   totalMarketValueTwd: number | null;
   workspaceId?: string;
   costRates?: CostRates;
+  /**
+   * "official" = every position priced via TWSE/TPEX EOD; "mis_fallback_full" =
+   * TWSE/TPEX never published in time but MIS date-validated closes covered
+   * every position (2026-07-09 ledger stall fix — see s1-sim-runner.ts
+   * S1PositionsSnapshot.fullyPriced doc comment). Recorded in `notes` only —
+   * does not change the `source` column (still 'live', no migration needed).
+   */
+  pricingQuality?: "official" | "mis_fallback_full";
 }): Promise<{
   written: boolean;
   weekNum: number;
@@ -710,8 +718,9 @@ export async function writeLiveLedgerAfterEod(options: {
     return { written: false, weekNum: 0, realizedPnlTwd: null, equityAfterTwd: 0, transactionCostsTwd: 0, notes: ["no_db"] };
   }
 
-  const { rebalanceDate, currentPositions, cashResidualTwd, totalMarketValueTwd, workspaceId, costRates = STANDARD_COST_RATES } = options;
+  const { rebalanceDate, currentPositions, cashResidualTwd, totalMarketValueTwd, workspaceId, costRates = STANDARD_COST_RATES, pricingQuality = "official" } = options;
   const notes: string[] = [];
+  if (pricingQuality !== "official") notes.push(`pricing_quality: ${pricingQuality}`);
 
   try {
     // 1. Get current ledger state to determine week number
@@ -861,13 +870,14 @@ export async function writeLiveLedgerAfterEod(options: {
     const navEquity = Math.round(cashResidualTwd + (totalMarketValueTwd ?? 0));
     const initialEquity = 10_000_000;
     const returnPct = Math.round(((navEquity - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+    const navNotes = pricingQuality === "official" ? "rebalance_tuesday" : `rebalance_tuesday (pricing_quality: ${pricingQuality})`;
     await db.execute(drizzleSql`
       INSERT INTO sim_ledger_nav
         (nav_date, equity_twd, initial_equity, return_pct, week_num, source, notes)
       VALUES
         (${rebalanceDate}::date, ${navEquity}, ${initialEquity},
          ${returnPct}, ${weekNum}, 'live_eod',
-         'rebalance_tuesday')
+         ${navNotes})
       ON CONFLICT (nav_date, source) DO UPDATE SET
         equity_twd = EXCLUDED.equity_twd,
         return_pct = EXCLUDED.return_pct
@@ -892,11 +902,13 @@ export async function writeDailyNavRow(options: {
   navDate: string;          // today YYYY-MM-DD
   cashResidualTwd: number;
   totalMarketValueTwd: number | null;
+  /** See writeLiveLedgerAfterEod's pricingQuality doc comment. */
+  pricingQuality?: "official" | "mis_fallback_full";
 }): Promise<void> {
   const db = getDb();
   if (!db || !isDatabaseMode()) return;
 
-  const { navDate, cashResidualTwd, totalMarketValueTwd } = options;
+  const { navDate, cashResidualTwd, totalMarketValueTwd, pricingQuality = "official" } = options;
 
   const latestState = await getLatestLedgerState(db).catch(() => null);
   if (!latestState) return; // backfill not applied yet
@@ -904,6 +916,7 @@ export async function writeDailyNavRow(options: {
   const navEquity = Math.round(cashResidualTwd + (totalMarketValueTwd ?? 0));
   const initialEquity = 10_000_000;
   const returnPct = Math.round(((navEquity - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+  const notes = pricingQuality === "official" ? "daily_mark_to_market" : `daily_mark_to_market (pricing_quality: ${pricingQuality})`;
 
   try {
     await db.execute(drizzleSql`
@@ -912,7 +925,7 @@ export async function writeDailyNavRow(options: {
       VALUES
         (${navDate}::date, ${navEquity}, ${initialEquity},
          ${returnPct}, ${latestState.weekNum}, 'live_eod',
-         'daily_mark_to_market')
+         ${notes})
       ON CONFLICT (nav_date, source) DO UPDATE SET
         equity_twd = EXCLUDED.equity_twd,
         return_pct = EXCLUDED.return_pct
