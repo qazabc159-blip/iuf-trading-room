@@ -472,6 +472,13 @@ function contentShellOverrides(screen: ScreenKey) {
     .preview {
       grid-template-columns: 1fr !important;
     }
+
+    /* 手機下單流觸控目標（動員令附加，2026-07-09）: 送出鈕在桌面緊湊嵌入模式
+       固定 min-height:40px（非本 media query），390px 下低於 44px 觸控基準
+       線，Playwright 390px 真機驗測到；只在行動裝置寬度加高，不動桌面值。 */
+    .tactions .submit {
+      min-height: 44px !important;
+    }
   }
 </style>`;
   }
