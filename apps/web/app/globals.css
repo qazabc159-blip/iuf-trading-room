@@ -14286,47 +14286,21 @@ body:has(.tactical-dashboard) .app-sidebar {
   }
 }
 
+/* Mobile M5 (2026-07-10): sidebar-collapse selectors (.tactical-dashboard's
+   reserved sidebar column + .tac-sidebar/.tac-brand/.tac-nav/.tac-sidebar-radar
+   /.tac-sidebar-clock) moved out of this 980px block into a dedicated 1000px
+   block below, to align with FinalOnlyFrame.tsx's @media(max-width:1000px)
+   overlay-disable rule and globals.css's own .app-sidebar @media(max-width:1000px)
+   block (line ~4440). Before this fix, the 981-1000px band had the overlay
+   already disabled (in-flow, correct) but the sidebar itself still rendered
+   at natural/expanded height (720px+) because the compact-bar collapse only
+   fired at <=980px — squeezing the /portfolio trading iframe to <200px tall.
+   See reports/mobile_final_acceptance_20260710/BRUCE_MOBILE_FINAL_ACCEPTANCE_2026-07-10.md
+   for the CSSOM root-cause trace. Remaining selectors below (.tac-content,
+   .tac-topbar, .tac-agenda variants, .tac-hero-status, .tac-index-card,
+   .tac-source-table, .tac-heatmap variants) are homepage-only (tactical
+   dashboard body content, not sidebar), left at 980px unchanged. */
 @media (max-width: 980px) {
-  .tactical-dashboard {
-    grid-template-columns: 1fr;
-  }
-
-  .tac-sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    min-height: 0;
-  }
-
-  .tac-brand {
-    display: none;
-  }
-
-  .tac-nav {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    padding: 10px;
-  }
-
-  .tac-nav a {
-    flex: 0 0 auto;
-    width: 142px;
-    min-height: 48px;
-    padding: 8px 10px;
-    border-left: 0;
-    border-bottom: 2px solid transparent;
-  }
-
-  .tac-nav a.active {
-    border-bottom-color: var(--tac-brand);
-  }
-
-  .tac-sidebar-radar,
-  .tac-sidebar-clock {
-    display: none;
-  }
-
   .tac-content {
     padding: 0 18px 28px;
   }
@@ -14382,6 +14356,53 @@ body:has(.tactical-dashboard) .app-sidebar {
 
   .tac-heatmap-groups {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Mobile M5 (2026-07-10): sidebar-collapse rules extracted from the 980px
+   block above, moved to 1000px — see comment there for root-cause. Covers
+   both the shared Sidebar.tsx (`aside.app-sidebar.app-tactical-sidebar
+   .tac-sidebar`, used by /portfolio and every other route) and the
+   homepage's own inline `<aside className="tac-sidebar">` in app/page.tsx. */
+@media (max-width: 1000px) {
+  .tactical-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .tac-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-height: 0;
+  }
+
+  .tac-brand {
+    display: none;
+  }
+
+  .tac-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px;
+  }
+
+  .tac-nav a {
+    flex: 0 0 auto;
+    width: 142px;
+    min-height: 48px;
+    padding: 8px 10px;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+
+  .tac-nav a.active {
+    border-bottom-color: var(--tac-brand);
+  }
+
+  .tac-sidebar-radar,
+  .tac-sidebar-clock {
+    display: none;
   }
 }
 
@@ -15089,7 +15110,10 @@ body:has(.mobile-route) .header-dock-drawer {
   }
 }
 
-@media (max-width: 980px) {
+/* Mobile M5 (2026-07-10): was 980px, moved to 1000px to align with the
+   sidebar-collapse block above and FinalOnlyFrame.tsx's overlay-disable
+   breakpoint — see comments near the 980px/1000px .tac-sidebar split above. */
+@media (max-width: 1000px) {
   .app-tactical-sidebar.tac-sidebar {
     display: block;
     width: 100%;
