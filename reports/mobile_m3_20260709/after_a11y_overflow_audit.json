@@ -1,0 +1,1854 @@
+{
+  "quant-strategies": {
+    "path": "/quant-strategies",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 28,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg page-code",
+        "fontSize": 11,
+        "text": "量化策略"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "台北 / 2026/7/9 14:55:15"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "2026/7/9 14:55:15"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "資料 / 正式資料"
+      },
+      {
+        "tag": "B",
+        "cls": "gold",
+        "fontSize": 11,
+        "text": "正式資料"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "模式 / 觀察與研究"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "觀察與研究"
+      },
+      {
+        "tag": "DIV",
+        "cls": "tg session-pill ",
+        "fontSize": 11,
+        "text": "研究 / 前端資料"
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "fontSize": 11,
+        "text": "S1 策略"
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "fontSize": 11,
+        "text": "資金配置紀錄"
+      },
+      {
+        "tag": "A",
+        "cls": "",
+        "fontSize": 11,
+        "text": "開啟 F-AUTO 持倉與損益"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg panel-code",
+        "fontSize": 11,
+        "text": "量化策略 / 詳情"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg muted",
+        "fontSize": 11,
+        "text": "/"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg gold",
+        "fontSize": 11,
+        "text": "S1 F-AUTO"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_qnt-banner",
+        "fontSize": 12,
+        "text": "SIM-only guard / 這裡配置的是 F-AUTO"
+      },
+      {
+        "tag": "B",
+        "cls": "tg gold",
+        "fontSize": 11,
+        "text": "SIM-only guard"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "觀察中"
+      },
+      {
+        "tag": "P",
+        "cls": "QuantStrategies_role__kajTR",
+        "fontSize": 13,
+        "text": "F-AUTO KGI SIM 觀察主策略 / 每週二 08:"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "產品狀態"
+      },
+      {
+        "tag": "SMALL",
+        "cls": "QuantStrategies_metricHint__hSCmB",
+        "fontSize": 10,
+        "text": "目前正式量化只開 S1，不再混入其他研究策略。"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "SIM 資金"
+      },
+      {
+        "tag": "SMALL",
+        "cls": "QuantStrategies_metricHint__hSCmB",
+        "fontSize": 10,
+        "text": "10,000,000 TWD / latest_subscr"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "命中率"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "最大回撤"
+      },
+      {
+        "tag": "DIV",
+        "cls": "QuantStrategies_notice__UORMy",
+        "fontSize": 13,
+        "text": "SIM-only / real order disabled"
+      },
+      {
+        "tag": "DIV",
+        "cls": "QuantStrategies_notice__UORMy",
+        "fontSize": 13,
+        "text": "LIVE / 核准研究快照 + S1 basket (aud"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "LIVE"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "quant-strategies_detail": {
+    "path": "/quant-strategies/cont_liq_v36",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [
+      {
+        "tag": "TABLE",
+        "cls": "QuantStrategies_holdings__IxKej",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "THEAD",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TBODY",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 552,
+        "width": 520
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "right": 552,
+        "width": 289
+      }
+    ],
+    "smallTextCount": 91,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "P",
+        "cls": "QuantStrategies_eyebrow__E40xe",
+        "fontSize": 12,
+        "text": "IUF QUANT STRATEGY"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "狀態"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "最新 basket"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "研究樣本"
+      },
+      {
+        "tag": "DIV",
+        "cls": "QuantStrategies_notice__UORMy",
+        "fontSize": 13,
+        "text": "S1 是目前唯一正式量化策略。 本頁的資金設定會接到後端 S"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "S1 是目前唯一正式量化策略。"
+      },
+      {
+        "tag": "DIV",
+        "cls": "QuantStrategies_notice__UORMy",
+        "fontSize": 13,
+        "text": "LIVE / 核准研究快照 + S1 basket (aud"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "LIVE"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "研究期淨值曲線"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "相對 0050"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "Sharpe"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "最大回撤"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "命中率"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 10,
+        "text": "再平衡樣本"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 12,
+        "text": "Forward observation curve"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 12,
+        "text": "+222.02%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 12,
+        "text": "Monthly returns"
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "fontSize": 11,
+        "text": "代號"
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "fontSize": 11,
+        "text": "名稱"
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "fontSize": 11,
+        "text": "權重"
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "fontSize": 11,
+        "text": "basket 價格"
+      },
+      {
+        "tag": "TH",
+        "cls": "",
+        "fontSize": 11,
+        "text": "說明"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "1435"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "--"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "+0.27%"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "26.8"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "1,000 股 / 策略分數 23.15 / HARD_CA"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "2466"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "--"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "+5.69%"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "94.8"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "6,000 股 / 策略分數 9.24 / SIZED"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "1617"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "--"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "+6.14%"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "26.7"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "23,000 股 / 策略分數 7.04 / SIZED"
+      },
+      {
+        "tag": "TD",
+        "cls": "QuantStrategies_num__EAq23",
+        "fontSize": 13,
+        "text": "8033"
+      },
+      {
+        "tag": "TD",
+        "cls": "",
+        "fontSize": 13,
+        "text": "--"
+      }
+    ],
+    "smallTargetCount": 1,
+    "smallTargetSample": [
+      {
+        "tag": "INPUT",
+        "cls": "",
+        "w": 13,
+        "h": 13,
+        "text": ""
+      }
+    ]
+  },
+  "market-intel": {
+    "path": "/market-intel",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 1,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "track-record": {
+    "path": "/track-record",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [
+      {
+        "tag": "TABLE",
+        "cls": "_fnav-tbl",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "THEAD",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TH",
+        "cls": "_fnav-r",
+        "right": 477,
+        "width": 86
+      },
+      {
+        "tag": "TBODY",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TD",
+        "cls": "_fnav-r _fnav-muted",
+        "right": 477,
+        "width": 86
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TD",
+        "cls": "_fnav-r _fnav-muted",
+        "right": 477,
+        "width": 86
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TD",
+        "cls": "_fnav-r _fnav-muted",
+        "right": 477,
+        "width": 86
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TD",
+        "cls": "_fnav-r _fnav-muted",
+        "right": 477,
+        "width": 86
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "right": 477,
+        "width": 440
+      },
+      {
+        "tag": "TD",
+        "cls": "_fnav-r _fnav-muted",
+        "right": 477,
+        "width": 86
+      }
+    ],
+    "smallTextCount": 100,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg page-code",
+        "fontSize": 11,
+        "text": "績效記帳"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "台北 / 2026/7/9 14:55:31"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "2026/7/9 14:55:31"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "資料 / 正式資料"
+      },
+      {
+        "tag": "B",
+        "cls": "gold",
+        "fontSize": 11,
+        "text": "正式資料"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "模式 / 觀察與研究"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "觀察與研究"
+      },
+      {
+        "tag": "DIV",
+        "cls": "tg session-pill ",
+        "fontSize": 11,
+        "text": "研究 / 前端資料"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg panel-code",
+        "fontSize": 11,
+        "text": "績效記帳"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg muted",
+        "fontSize": 11,
+        "text": "/"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg gold",
+        "fontSize": 11,
+        "text": "AI 推薦成績單"
+      },
+      {
+        "tag": "DIV",
+        "cls": "tg soft",
+        "fontSize": 11,
+        "text": "基準 0050"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_trk-sample-line",
+        "fontSize": 12,
+        "text": "樣本 189 筆推薦，自 05/19 起"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_trk-cell-label",
+        "fontSize": 10.5,
+        "text": "隔日勝率"
+      },
+      {
+        "tag": "I",
+        "cls": "",
+        "fontSize": 10,
+        "text": "141 筆已驗證"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_trk-cell-label",
+        "fontSize": 10.5,
+        "text": "5 日勝率"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_trk-excess _trk-tone-ok",
+        "fontSize": 10.5,
+        "text": "超額 +7.09% vs 0050"
+      },
+      {
+        "tag": "I",
+        "cls": "",
+        "fontSize": 10,
+        "text": "121 筆已驗證"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_trk-cell-label",
+        "fontSize": 10.5,
+        "text": "20 日勝率"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_trk-excess _trk-tone-bad",
+        "fontSize": 10.5,
+        "text": "超額 -0.62% vs 0050"
+      },
+      {
+        "tag": "I",
+        "cls": "",
+        "fontSize": 10,
+        "text": "27 筆已驗證"
+      },
+      {
+        "tag": "P",
+        "cls": "_trk-note",
+        "fontSize": 11,
+        "text": "勝率＝推薦後相對 0050 有超額報酬的比例。此為事後績效追"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_fnav-code",
+        "fontSize": 9,
+        "text": "NAV-CURVE"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_fnav-sub",
+        "fontSize": 11,
+        "text": "S1 F-AUTO SIM · 6/2 起 · 週 Reba"
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "_fnav-toggle-btn _fnav-toggle-active",
+        "fontSize": 11,
+        "text": "報酬 %"
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "_fnav-toggle-btn ",
+        "fontSize": 11,
+        "text": "權益 TWD"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_fnav-backfill-note",
+        "fontSize": 11,
+        "text": "本曲線為歷史回補（依審計紀錄重建），尚無 live 帳本記錄"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "-9.9%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "-6.7%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "-3.5%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "-0.3%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "+3.0%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "+6.2%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 9,
+        "text": "0%"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "06/02"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "06/08"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "06/12"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "06/18"
+      },
+      {
+        "tag": "text",
+        "cls": "[object SVGAnimatedString]",
+        "fontSize": 10,
+        "text": "06/25"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "settings": {
+    "path": "/settings",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 15,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "SETTINGS"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "ACCOUNT"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "可用"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "變更密碼、重新登入與帳號安全檢查。這裡不保存券商憑證，也不顯"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 13,
+        "text": "進入設定 →"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "BROKER"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "SIM / 唯讀"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "查看 Paper、KGI 唯讀、KGI SIM 與正式下單停"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 13,
+        "text": "進入設定 →"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "PLAN"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "分級權限"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "檢查入門、中級、高級、Owner 內部權限，以及哪些功能已開"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 13,
+        "text": "進入設定 →"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "客戶帳號只看到正式產品功能；Owner 帳號才看得到後台與內"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "settings_account": {
+    "path": "/settings/account",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 9,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "A",
+        "cls": "settings-back-link",
+        "fontSize": 12,
+        "text": "返回設定中心"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "ACCOUNT"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "這裡只處理 IUF 登入密碼。券商 SIM 憑證不會在瀏覽器"
+      },
+      {
+        "tag": "LABEL",
+        "cls": "",
+        "fontSize": 11,
+        "text": "目前密碼"
+      },
+      {
+        "tag": "LABEL",
+        "cls": "",
+        "fontSize": 11,
+        "text": "新密碼"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "至少 12 個字元，建議混合大小寫、數字與符號。"
+      },
+      {
+        "tag": "LABEL",
+        "cls": "",
+        "fontSize": 11,
+        "text": "再次輸入新密碼"
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "",
+        "fontSize": 13,
+        "text": "更新密碼"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "settings_broker": {
+    "path": "/settings/broker",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 46,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "A",
+        "cls": "settings-back-link",
+        "fontSize": 12,
+        "text": "返回設定中心"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "BROKER CONNECTION"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "此頁只管理券商帳號代號、本機連線狀態與一次性配對碼；不收集、"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "已包含"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "平台模擬帳本，不會送到券商。 已包含"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "已包含"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "讀取券商狀態、資金與部位，不送委託。 需要券商憑證、連線與風"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "已包含"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "送到券商模擬環境，和正式下單完全分離。 需要券商憑證、連線與"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "目前方案：高級。KGI 唯讀 / SIM 仍需要憑證、連線與"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "憑證只存在你自己的電腦，永不上傳。這個網站不會看到、也不會儲"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "本機連線程式是安裝在你自己電腦上的一個小程式，負責幫你跟券商"
+      },
+      {
+        "tag": "H3",
+        "cls": "",
+        "fontSize": 13,
+        "text": "連線狀態，白話說"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 12,
+        "text": "未配對"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "還沒裝 — 你的電腦上還沒開始設定本機連線程式。"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 12,
+        "text": "等待配對"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "裝了還沒認親 — 本機連線程式已啟動，但還沒跟你的帳號對上號"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 12,
+        "text": "已連線"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "一切正常 — 你的電腦跟這裡互相認得，心跳持續回報。"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 12,
+        "text": "等待連線"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "失聯 — 你電腦上的本機連線程式停了，或網路斷了，暫時收不到"
+      },
+      {
+        "tag": "H3",
+        "cls": "",
+        "fontSize": 13,
+        "text": "連不上時，先做這三步"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "重新啟動你電腦上的本機連線程式"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "回到這頁重新產生一次配對碼，重新貼一次"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "還是連不上，找我們，不要自己改設定檔"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "先建立券商帳號代號，再產生一次性配對碼貼到您自己電腦上的本機"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "憑證不進網頁"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 13,
+        "text": "尚未連線任何券商。在下方加入一個連線。"
+      },
+      {
+        "tag": "BUTTON",
+        "cls": "",
+        "fontSize": 12,
+        "text": "建立連線"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "無法讀取連線清單，請稍後再試。"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "已開放"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "只寫入 IUF 平台模擬帳本，適合演練交易流程、檢查委託預覽"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "需憑證與連線"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "讀取券商模擬或唯讀資訊，協助比對資金、部位與連線健康，不會下"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "需高級權限"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "使用安全憑證送到凱基模擬環境。此模式仍不是正式下單，所有結果"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "停用"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "正式下單目前維持鎖定。未完成授權、風控與驗收前，產品不提供真"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 13,
+        "text": "憑證只存在您自己的電腦，永不上傳伺服器。"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "settings_subscription": {
+    "path": "/settings/subscription",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 101,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "A",
+        "cls": "settings-back-link",
+        "fontSize": 12,
+        "text": "返回設定中心"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "SUBSCRIPTION / ENTITLEMENTS"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "方案"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "來源"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "Owner 內部權限"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "角色"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "Owner"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "Owner 後台"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "可見"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "權限資料來自 production API。若付款系統尚未接"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "Starter"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "可查看市場情報、有限 AI 推薦與基本 Paper 交易室體"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "想先觀察市場情報、AI 摘要與少量研究候選，不需要券商連線的"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "方案邊界"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "市場情報與 AI 精選可讀，但進階來源與歷史深查有限。"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "AI 推薦顯示研究候選與風險提醒，完整交易計畫數量有限。"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "交易室只開 Paper 模擬基礎檢視，不含 KGI 唯讀或 "
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "適合先熟悉戰情台流程，確認資料與 AI 判斷是否符合自己的交"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "月費"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "價格待設定"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "年費"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "價格待設定"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "Pro"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "打開主要 AI 投研與 Paper 交易流程，適合日常開盤使"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "每天需要 AI 推薦、公司分析、每日簡報與完整 Paper "
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "方案邊界"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "完整 AI 推薦、公司 AI 報告與 AI 每日簡報。"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "交易室可用行情、K 線、指標、Paper 預覽與模擬帳本。"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "策略觀察與自動化為有限開放；KGI SIM 與唯讀需升級到高"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "適合把 IUF 當成日常投研與 Paper 演練工具，但不接"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "月費"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "價格待設定"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "年費"
+      },
+      {
+        "tag": "STRONG",
+        "cls": "",
+        "fontSize": 13,
+        "text": "價格待設定"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "Premium"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 13,
+        "text": "包含 Pro 全部功能，加上策略觀察、KGI read-on"
+      },
+      {
+        "tag": "P",
+        "cls": "",
+        "fontSize": 12,
+        "text": "需要策略觀察、KGI 唯讀、KGI SIM 與更完整自動化監"
+      },
+      {
+        "tag": "DIV",
+        "cls": "",
+        "fontSize": 11,
+        "text": "方案邊界"
+      },
+      {
+        "tag": "LI",
+        "cls": "",
+        "fontSize": 12,
+        "text": "包含中級方案全部 AI、交易室與簡報功能。"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  },
+  "reviews": {
+    "path": "/reviews",
+    "docScrollWidth": 390,
+    "docClientWidth": 390,
+    "pageLevelOverflow": false,
+    "overflowingElements": [],
+    "smallTextCount": 78,
+    "smallTextSample": [
+      {
+        "tag": "SPAN",
+        "cls": "header-dock-count",
+        "fontSize": 9,
+        "text": "50"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg page-code",
+        "fontSize": 11,
+        "text": "複盤"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "台北 / 2026/7/9 14:55:56"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "2026/7/9 14:55:56"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "資料 / 正式資料"
+      },
+      {
+        "tag": "B",
+        "cls": "gold",
+        "fontSize": 11,
+        "text": "正式資料"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 11,
+        "text": "模式 / 觀察與研究"
+      },
+      {
+        "tag": "B",
+        "cls": "",
+        "fontSize": 11,
+        "text": "觀察與研究"
+      },
+      {
+        "tag": "DIV",
+        "cls": "tg session-pill ",
+        "fontSize": 11,
+        "text": "研究 / 前端資料"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg panel-code",
+        "fontSize": 11,
+        "text": "複盤"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg muted",
+        "fontSize": 11,
+        "text": "/"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "tg gold",
+        "fontSize": 11,
+        "text": "本週復盤"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-nav-range",
+        "fontSize": 12,
+        "text": "07/06 ~ 07/10"
+      },
+      {
+        "tag": "A",
+        "cls": "_wrv-nav-link",
+        "fontSize": 11,
+        "text": "← 上週"
+      },
+      {
+        "tag": "A",
+        "cls": "_wrv-nav-link",
+        "fontSize": 11,
+        "text": "下週 →"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_wrv-card-title",
+        "fontSize": 10.5,
+        "text": "大盤週表現（加權指數）"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-date",
+        "fontSize": 11,
+        "text": "07/06"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-close",
+        "fontSize": 11,
+        "text": "46,556"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-tone-bad",
+        "fontSize": 11,
+        "text": "-0.48%"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-date",
+        "fontSize": 11,
+        "text": "07/07"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-close",
+        "fontSize": 11,
+        "text": "45,479"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-tone-bad",
+        "fontSize": 11,
+        "text": "-2.31%"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-date",
+        "fontSize": 11,
+        "text": "07/08"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-close",
+        "fontSize": 11,
+        "text": "45,734"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-tone-ok",
+        "fontSize": 11,
+        "text": "+0.56%"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-date",
+        "fontSize": 11,
+        "text": "07/09"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-taiex-close",
+        "fontSize": 11,
+        "text": "45,355"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-tone-bad",
+        "fontSize": 11,
+        "text": "-0.83%"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "",
+        "fontSize": 12,
+        "text": "週漲跌"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-tone-bad",
+        "fontSize": 12,
+        "text": "-3.05%"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_wrv-card-title",
+        "fontSize": 10.5,
+        "text": "F-AUTO 模擬倉週表現SIM"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-sim-badge",
+        "fontSize": 9,
+        "text": "SIM"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-kv-label",
+        "fontSize": 10,
+        "text": "持有檔數"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-kv-label",
+        "fontSize": 10,
+        "text": "未實現損益"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-kv-label",
+        "fontSize": 10,
+        "text": "週報酬"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-kv-label",
+        "fontSize": 10,
+        "text": "模擬本金"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_wrv-note",
+        "fontSize": 11,
+        "text": "資料來源：依稽核成交紀錄重建（07/07 部位）。此為模擬倉"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_wrv-card-title",
+        "fontSize": 10.5,
+        "text": "簡報出貨"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "_wrv-kv-label",
+        "fontSize": 10,
+        "text": "本週發布"
+      },
+      {
+        "tag": "DIV",
+        "cls": "_wrv-card-title",
+        "fontSize": 10.5,
+        "text": "AI 推薦成績單"
+      }
+    ],
+    "smallTargetCount": 0,
+    "smallTargetSample": []
+  }
+}

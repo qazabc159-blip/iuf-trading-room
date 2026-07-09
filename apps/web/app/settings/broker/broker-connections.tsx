@@ -349,6 +349,7 @@ export function BrokerConnections() {
     <>
       <CredentialTrustCard />
       <section
+      className="broker-connections-panel"
       style={{
         border: "1px solid rgba(200,148,63,0.22)",
         background: "linear-gradient(180deg, rgba(18,18,18,0.96), rgba(8,8,8,0.98))",

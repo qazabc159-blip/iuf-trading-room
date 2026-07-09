@@ -156,6 +156,14 @@ const WEEKLY_REVIEW_CSS = `
 @media (max-width: 640px) {
   ._wrv-nav { flex-direction: column; align-items: flex-start; }
 }
+@media (max-width: 480px) {
+  ._wrv-nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 5px 12px;
+  }
+}
 `;
 
 function toneClass(value: number | null) {
