@@ -6,6 +6,7 @@ import { getCompanies, getSignals, getStrategyIdeas, getThemes } from "@/lib/api
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText, cleanThemeThesis } from "@/lib/operator-copy";
 import { MemberQuoteRow } from "./MemberQuoteRow";
+import { MEMBER_QUOTE_FETCH_CAP, shouldFetchMemberQuote } from "./member-quote-cap";
 
 export const dynamic = "force-dynamic";
 
@@ -352,8 +353,8 @@ const DETAIL_CSS = `
     font-style: normal;
     font-size: 10px;
   }
-  ._bty-member-price[data-tone="up"] { color: #ff6b35; }
-  ._bty-member-price[data-tone="down"] { color: #2ecc71; }
+  ._bty-member-price[data-tone="up"] { color: var(--tw-up-bright, #ff5b6b); }
+  ._bty-member-price[data-tone="down"] { color: var(--tw-dn-bright, #4adb88); }
   ._bty-member-price[data-tone="flat"] { color: rgba(255,255,255,0.5); }
   ._bty-member-watch-btn {
     min-height: 26px;
@@ -381,7 +382,7 @@ const DETAIL_CSS = `
     opacity: 0.85;
   }
   @media (max-width: 480px) {
-    ._bty-member-watch-btn { min-height: 34px; padding: 0 10px; }
+    ._bty-member-watch-btn { min-height: 44px; padding: 0 10px; }
   }
   ._bty-member-ticker {
     font-size: 15px;
@@ -533,9 +534,14 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
           <Panel code="MEM-LST" title="成員公司" sub="正式公司主檔連結" right={detailLive ? `${result.data.companies.length} 檔` : stateLabel(dependentState)}>
             {!detailLive && <div className="terminal-note"><span className={`tg ${dependentTone}`}>{stateLabel(dependentState)}</span> {dependentReason}</div>}
             {detailLive && result.data.companies.length === 0 && <div className="terminal-note"><span className="tg gold">無資料</span> 目前沒有公司掛在此主題。</div>}
+            {detailLive && result.data.companies.length > MEMBER_QUOTE_FETCH_CAP && (
+              <div className="terminal-note">
+                <span className="tg gold">部分即時報價</span> 成員數超過 {MEMBER_QUOTE_FETCH_CAP} 檔，僅前 {MEMBER_QUOTE_FETCH_CAP} 檔顯示即時報價；其餘標「未報價」，點進公司頁看即時價。
+              </div>
+            )}
             {detailLive && result.data.companies.length > 0 && (
               <div className="_bty-member-grid">
-                {result.data.companies.map((company) => (
+                {result.data.companies.map((company, index) => (
                   <div className="_bty-member-card" key={company.id}>
                     <Link className="_bty-member-card-link" href={`/companies/${company.ticker}`}>
                       <span className="_bty-member-ticker">{company.ticker}</span>
@@ -543,7 +549,7 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
                       <span className="_bty-member-meta">{company.market} / {company.chainPosition}</span>
                       <span className="_bty-member-meta">{company.beneficiaryTier}</span>
                     </Link>
-                    <MemberQuoteRow ticker={company.ticker} name={company.name} />
+                    <MemberQuoteRow ticker={company.ticker} name={company.name} fetchQuote={shouldFetchMemberQuote(index)} />
                   </div>
                 ))}
               </div>

@@ -17,10 +17,12 @@ export function SignalCtaRow({
   ticker,
   companyName,
   direction,
+  stale = false,
 }: {
   ticker: string;
   companyName: string;
   direction: "bullish" | "bearish" | "neutral";
+  stale?: boolean;
 }) {
   const [watchState, setWatchState] = useState<WatchState>("idle");
   const side = direction === "bullish" ? "buy" : direction === "bearish" ? "sell" : null;
@@ -46,9 +48,21 @@ export function SignalCtaRow({
       >
         {watchState === "saving" ? "加入中…" : watchState === "saved" ? "已加入" : watchState === "error" ? "加入失敗，重試" : "加觀察"}
       </button>
-      <Link href={buildPrefillHref(ticker, side)} className="mini-button">
-        帶入模擬單
-      </Link>
+      {/* 過期訊號不誘導帶單（design doc §4「灰顯不誘導」）：不給可點連結，用禁用態說明。 */}
+      {stale ? (
+        <span
+          className="mini-button"
+          aria-disabled="true"
+          data-disabled="true"
+          title="此訊號已過期，請先確認最新報價再考慮下單"
+        >
+          帶入模擬單
+        </span>
+      ) : (
+        <Link href={buildPrefillHref(ticker, side)} className="mini-button">
+          帶入模擬單
+        </Link>
+      )}
     </div>
   );
 }

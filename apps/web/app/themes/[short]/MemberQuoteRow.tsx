@@ -6,8 +6,15 @@ import { addWatchlistSymbol, getCompanyQuoteRealtime, type CompanyRealtimeQuote 
 
 // 主題成員列連動（decision-flow C-2）：現價＋今日漲跌＋「加觀察」鍵。
 // 逐檔 lazy fetch（mount 後才打），避免主題頁一次對大量成員發出報價請求拖慢頁面。
+//
+// fetchQuote=false（呼叫端依 cap 決定）時完全不打 quote/realtime，只顯示靜態「未即時報價」——
+// 這不是 loading 狀態的變體，是刻意不發請求。「加觀察」寫入不受影響，永遠可點。
+// Why: 主題成員可達百餘檔，若每列各自 useEffect 無上限發 GET /companies/:id/quote/realtime，
+// 掛載瞬間就是 N 個併發請求，會撞 KGI 新星 40-slot 訂閱硬上限（kgi-subscription-manager.ts
+// MAX_SLOTS=40）並用 LRU 把其他頁面正在看的報價換掉，還會對 MIS 直打 N 次。
 type WatchState = "idle" | "saving" | "saved" | "error";
 type QuoteState =
+  | { status: "not-fetched" }
   | { status: "loading" }
   | { status: "ok"; quote: CompanyRealtimeQuote }
   | { status: "empty" };
@@ -29,11 +36,20 @@ function changeTone(value: number | null | undefined) {
   return "flat";
 }
 
-export function MemberQuoteRow({ ticker, name }: { ticker: string; name: string }) {
-  const [quoteState, setQuoteState] = useState<QuoteState>({ status: "loading" });
+export function MemberQuoteRow({
+  ticker,
+  name,
+  fetchQuote = true,
+}: {
+  ticker: string;
+  name: string;
+  fetchQuote?: boolean;
+}) {
+  const [quoteState, setQuoteState] = useState<QuoteState>(fetchQuote ? { status: "loading" } : { status: "not-fetched" });
   const [watchState, setWatchState] = useState<WatchState>("idle");
 
   useEffect(() => {
+    if (!fetchQuote) return;
     let cancelled = false;
     getCompanyQuoteRealtime(ticker).then((quote) => {
       if (cancelled) return;
@@ -42,7 +58,7 @@ export function MemberQuoteRow({ ticker, name }: { ticker: string; name: string 
     return () => {
       cancelled = true;
     };
-  }, [ticker]);
+  }, [ticker, fetchQuote]);
 
   async function handleAddWatchlist(event: MouseEvent) {
     event.preventDefault();
@@ -60,8 +76,15 @@ export function MemberQuoteRow({ ticker, name }: { ticker: string; name: string 
       <span
         className="_bty-member-price"
         data-tone={tone}
-        title={quoteState.status === "ok" ? `資料狀態：${quoteState.quote.state}` : undefined}
+        title={
+          quoteState.status === "ok"
+            ? `資料狀態：${quoteState.quote.state}`
+            : quoteState.status === "not-fetched"
+              ? "此頁報價請求有上限，未即時報價；點進公司頁看即時價"
+              : undefined
+        }
       >
+        {quoteState.status === "not-fetched" && "未報價"}
         {quoteState.status === "loading" && "讀取中…"}
         {quoteState.status === "empty" && "無報價"}
         {quoteState.status === "ok" && (

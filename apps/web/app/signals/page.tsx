@@ -427,6 +427,14 @@ const SIGNALS_CSS = `
   cursor: default;
   opacity: 0.85;
 }
+._sig-cta-row .mini-button[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+  color: #566276;
+  border-color: rgba(220,228,240,0.14);
+  background: transparent;
+  pointer-events: none;
+}
 @media (max-width: 480px) {
   ._sig-cta-row .mini-button {
     min-height: 44px;
@@ -640,7 +648,7 @@ export default async function SignalsPage() {
                   {/* Links / action CTAs */}
                   <div className="_sig-links">
                     {company ? (
-                      <SignalCtaRow ticker={company.ticker} companyName={company.name} direction={signal.direction} />
+                      <SignalCtaRow ticker={company.ticker} companyName={company.name} direction={signal.direction} stale={stale} />
                     ) : theme ? (
                       <Link href={`/themes/${theme.slug}`} className="mini-button">{themeLinkLabel(theme)}</Link>
                     ) : (
