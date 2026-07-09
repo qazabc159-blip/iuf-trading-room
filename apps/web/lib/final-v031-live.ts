@@ -853,6 +853,90 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (!res.ok) throw new Error((json && (json.error || json.message)) || ("api_" + res.status));
     return unwrap(json);
   };
+  // ── Unified order flow (統一下單流 D1/D5, 2026-07-09) ────────────────────
+  // Single submit entry point for both paper and KGI SIM tickets — replaces
+  // the old dual path (/api/ui-final-v031-paper/submit + direct
+  // /api/v1/kgi/sim/order fetch). Reason-code vocab below mirrors
+  // apps/web/lib/paper-order-vocab.ts's label-map + graceful-fallback
+  // pattern; inlined (not imported) because this whole block ships as a raw
+  // <script> string with no bundler import access — see
+  // app/api/ui-final-v031/[screen]/route.ts's injectLiveData().
+  const KGI_CHANNEL_REASON_LABELS = {
+    not_sim_env: "目前 KGI 模擬環境未啟用，暫時無法送出模擬單",
+    unsupported_order_type: "KGI 模擬單不支援此委託類型",
+    missing_limit_price: "限價單需要填入有效的委託價格",
+    gateway_unreachable: "目前連不到凱基模擬交易主機，請稍後再試",
+    gateway_auth_error: "凱基模擬交易連線驗證失敗，請確認連線狀態",
+    gateway_not_logged_in: "凱基模擬帳號尚未登入，請確認連線狀態",
+    live_order_blocked: "正式下單目前鎖定中，僅能使用模擬單",
+    order_not_enabled: "凱基模擬下單功能目前未開啟",
+    order_validation_rejected: "凱基模擬單未通過委託格式檢查，請確認欄位",
+    order_upstream_error: "凱基模擬交易主機處理委託時發生錯誤，請稍後再試",
+    unknown_error: "凱基模擬單送出失敗，原因不明，請稍後再試"
+  };
+  const kgiChannelReasonLabel = (reason) => KGI_CHANNEL_REASON_LABELS[String(reason || "")] || "凱基模擬單無法送出，請稍後再試";
+  const RISK_GUARD_LABELS = {
+    max_per_trade: "單筆風控上限",
+    max_daily_loss: "單日損失上限",
+    max_single_position: "單一部位上限",
+    max_theme_correlated: "主題關聯曝險上限",
+    max_gross_exposure: "總曝險上限",
+    max_open_orders: "未平倉委託上限",
+    max_orders_per_minute: "每分鐘委託上限",
+    max_absolute_notional: "模擬金額上限",
+    symbol_whitelist: "白名單限制",
+    symbol_blacklist: "黑名單限制",
+    duplicate_order: "重複委託防呆",
+    stale_quote: "報價過舊",
+    trading_hours: "交易時段",
+    broker_disconnected: "券商連線中斷",
+    reconcile_mismatch: "對帳不一致",
+    kill_switch: "停止交易開關",
+    manual_disable: "人工停用"
+  };
+  const riskGuardLabel = (key) => RISK_GUARD_LABELS[String(key || "")] || String(key || "").replace(/_/g, " ");
+  // Builds the Chinese "why blocked" line from a SubmitOrderResult-shaped
+  // body (order:null, riskCheck, blocked:true, quoteGate) — the 422 shape
+  // POST /trading/orders returns when risk or the quote gate rejects.
+  const unifiedBlockedMessage = (data) => {
+    const guards = data && data.riskCheck && Array.isArray(data.riskCheck.guards) ? data.riskCheck.guards : [];
+    const blockedGuards = guards.filter((g) => g && g.decision === "block").map((g) => riskGuardLabel(g.guard));
+    if (blockedGuards.length) return "未通過：" + blockedGuards.join("、");
+    const gate = data && data.quoteGate;
+    if (gate && gate.blocked) {
+      if (gate.freshnessStatus === "stale") return "報價過舊，暫不能送出委託";
+      if (gate.readiness === "blocked") return "報價資料目前不可用";
+      return "報價檢查未通過，暫不能送出委託";
+    }
+    return "委託未通過風控檢查";
+  };
+  // Account picker (D6 prerequisite for D1): resolves the accountId the
+  // active broker should submit under. Full account-strip UI (badges,
+  // localStorage active-account memory) is a separate slice — this is only
+  // enough to route submits correctly. Cached per hydration pass; a fetch
+  // failure degrades to an empty accountId, which the submit-time guard
+  // below refuses to send for the KGI channel (never silently misroutes a
+  // KGI-intended order to paper).
+  let accountsCache = null;
+  const loadBrokerAccounts = async () => {
+    if (accountsCache) return accountsCache;
+    try {
+      accountsCache = await apiGet("/api/v1/uta/accounts");
+    } catch {
+      accountsCache = [];
+    }
+    return accountsCache;
+  };
+  const accountIdForBroker = (brokerKey, accounts) => {
+    const wantKey = brokerKey === "kgi" ? "kgi" : "paper";
+    const match = (accounts || []).find((a) => a && a.adapterKey === wantKey);
+    return match ? String(match.id) : "";
+  };
+  const submitUnifiedOrder = async (payload) => {
+    const res = await apiFetch("/api/v1/trading/orders", { method: "POST", body: JSON.stringify(payload) });
+    const body = await res.json().catch(() => null);
+    return { status: res.status, ok: res.ok, body };
+  };
   const soft = (promise) => promise.then((data) => ({ ok:true, data })).catch((error) => ({ ok:false, error }));
   const softState = (result) => result && result.ok ? "live" : "blocked";
   function shouldFetchRawKgiQuote(quote) {
@@ -2310,7 +2394,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   // Phase 2 (multi-broker, 2026-06-24): broker strip is now clickable — paper is the
-  // default; selecting KGI routes the ticket through the /kgi/sim/order channel.
+  // default; selecting KGI routes the ticket through the unified
+  // POST /api/v1/trading/orders endpoint's KGI SIM channel (統一下單流 D1,
+  // 2026-07-09 — see submitUnifiedOrder()).
   // Fubon stays display-only (disabled button, isActive=false). Real-money channels
   // remain locked (prod_write_blocked guard unchanged).
   function hydrateBrokerStrip() {
@@ -2724,10 +2810,39 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const kgiBlockedLabel = getKgiSubmitLabel();
       if (kgiBlockedLabel) kgiBlockedLabel.textContent = "需要 Owner 登入";
     }
-    if (submit) submit.addEventListener("click", async (event) => {
+    // ── Unified submit (統一下單流 D1, 2026-07-09) ────────────────────────────
+    // Both tickets share one core: build the ticket fields, run the existing
+    // paper/preview risk-check dry-run (unchanged — preview stays on
+    // /api/v1/paper/preview per design §4 PR-3 scope), then POST the single
+    // real submit to /api/v1/trading/orders via submitUnifiedOrder(). Channel
+    // routing (paper vs KGI SIM) is decided server-side from accountId, not
+    // by which endpoint the client calls. No confirmation step is added here
+    // (楊董 F2-O1: SIM tickets stay one-click) — submit cadence is unchanged.
+    //
+    // Self-reported pre-existing bug fixed alongside D1 (not caused by this
+    // change, but it made the new endpoint unverifiable in a real browser so
+    // it had to be fixed here): hydratePaper() re-runs on every refresh cycle
+    // (line ~1672/3152) and this block re-queried submit/kgiSubmit and
+    // called addEventListener() unconditionally each time, stacking a new
+    // listener per hydration pass with no dedup (unlike hydrateBrokerStrip's
+    // dataset.brokerClickWired guard just above). Because the FIRST pass is
+    // always the fastPaperShell placeholder (capitalReady frozen false), and
+    // browsers invoke same-target listeners in registration order, that first
+    // stale listener always ran first and called stopImmediatePropagation()
+    // before its own capitalReady check — permanently swallowing every click
+    // for every later listener, including ones with real, ready data. Fixed
+    // the same way hydrateBrokerStrip does: wire the listener once, and read
+    // capitalReady/selected fresh at click time (from the shared live object,
+    // which IS kept current) instead of the stale hydration-time snapshot.
+    if (submit && !submit.dataset.iufSubmitWired) {
+    submit.dataset.iufSubmitWired = "1";
+    submit.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
+      const capitalTWDNow = live.baseCapitalTWD;
+      const capitalReady = capitalTWDNow !== null && capitalTWDNow !== undefined && !Number.isNaN(Number(capitalTWDNow));
       if (!capitalReady) return;
+      const selected = mergePaperSelectedWithLastGoodQuote(live.selected || {});
       const qty = Number($("#t-qty")?.value || 0);
       const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
       const orderType = $("#t-otype")?.value || "limit";
@@ -2765,29 +2880,30 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           preview = await fetch("/api/ui-final-v031-paper/preview", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
         }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
-        const confirmed = await fetch("/api/ui-final-v031-paper/submit", { method:"POST", credentials:"include", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
-        if (!confirmed.ok) {
-          const details = confirmed.details && typeof confirmed.details === "object" ? confirmed.details : {};
-          const riskCheck = details.riskCheck && typeof details.riskCheck === "object" ? details.riskCheck : {};
-          const reasonCodes = Array.isArray(details.reasonCodes) ? details.reasonCodes.map(String).filter(Boolean) : [];
-          const summary = typeof riskCheck.summary === "string" ? riskCheck.summary : "";
-          const reasonLabel = (code) => {
-            const normalized = String(code || "").trim().toLowerCase();
-            if (normalized === "trading_hours") return "非交易時段";
-            if (normalized === "max_per_trade") return "單筆風控超限";
-            if (normalized === "stale_quote") return "報價過期";
-            if (normalized === "insufficient_cash") return "可用資金不足";
-            if (normalized === "quote_unavailable") return "報價資料不可用";
-            return String(code || "").trim() || "風控未通過";
-          };
-          const reasonText = (reasonCodes.length ? reasonCodes.map(reasonLabel).join("、") : summary || confirmed.error || "風控未通過").slice(0, 80);
-          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未通過";
-          const gate = $(".gate .h .v"); if (gate) gate.textContent = reasonText;
+
+        const accounts = await loadBrokerAccounts();
+        const accountId = accountIdForBroker("paper", accounts);
+        const submitLabel1 = getSubmitLabel(); if (submitLabel1) submitLabel1.textContent = "送單中...";
+        const orderPayload = { accountId, symbol: selected.symbol, side, type: orderType, quantity: qty, quantity_unit: unit, price: orderType === "market" ? null : px };
+        const result = await submitUnifiedOrder(orderPayload);
+
+        if (result.status === 409) {
+          const body = result.body || {};
+          const message = body.error === "channel_coming_soon" ? "此券商通道即將開放，敬請期待" : kgiChannelReasonLabel(body.reason);
+          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未送出";
+          const gate = $(".gate .h .v"); if (gate) gate.textContent = message;
           return;
         }
-        const paperData = confirmed.data && typeof confirmed.data === "object" ? confirmed.data : null;
-        const nestedPaperData = paperData && paperData.data && typeof paperData.data === "object" ? paperData.data : null;
-        const orderId = String((paperData && (paperData.id || paperData.orderId)) || (nestedPaperData && (nestedPaperData.id || nestedPaperData.orderId)) || "");
+        if (!result.ok) {
+          const data = result.body && result.body.data;
+          const message = data ? unifiedBlockedMessage(data) : "紙上單未通過";
+          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未通過";
+          const gate = $(".gate .h .v"); if (gate) gate.textContent = message;
+          return;
+        }
+
+        const order = result.body && result.body.data && result.body.data.order;
+        const orderId = order && order.id ? String(order.id) : "";
         const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = orderId ? "紙上單 #" + orderId : "紙上單已送出";
         // Refresh orders/fills/positions without full reload
         setTimeout(async () => {
@@ -2801,11 +2917,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         setTimeout(() => { submit.disabled = false; }, 1200);
       }
     }, true);
+    }
 
-    if (kgiSubmit) kgiSubmit.addEventListener("click", async (event) => {
+    if (kgiSubmit && !kgiSubmit.dataset.iufSubmitWired) {
+    kgiSubmit.dataset.iufSubmitWired = "1";
+    kgiSubmit.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
+      const capitalTWDNow = live.baseCapitalTWD;
+      const capitalReady = capitalTWDNow !== null && capitalTWDNow !== undefined && !Number.isNaN(Number(capitalTWDNow));
       if (!capitalReady) return;
+      const selected = mergePaperSelectedWithLastGoodQuote(live.selected || {});
+      const activeBrokerCopy = brokerSubmitCopy(activeBrokerKey());
       const qty = Number($("#t-qty")?.value || 0);
       const unit = $("#t-unit .on")?.dataset.unit === "share" ? "SHARE" : "LOT";
       const orderType = String($("#t-otype")?.value || "limit");
@@ -2854,44 +2977,46 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         }
         if (!preview.ok) throw new Error(preview.error || "preview_failed");
 
-        if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 送單中...";
-        const simPayload = {
-          ticker: selected.symbol,
-          side,
-          orderType,
-          quantity: qty,
-          quantityUnit: unit,
-          price: orderType === "market" ? null : px,
-          timeInForce: "ROD",
-          orderCond: "Cash",
-          priceType: orderType === "market" ? "MKT" : undefined,
-        };
-        const response = await fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(simPayload),
-        });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          const message = body && typeof body === "object"
-            ? String(body.message || body.reason || body.error || activeBrokerCopy.shortName + " 送單失敗")
-            : activeBrokerCopy.shortName + " 送單失敗";
-          throw new Error(message);
+        const accounts = await loadBrokerAccounts();
+        const accountId = accountIdForBroker("kgi", accounts);
+        if (!accountId) {
+          if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 帳號未設定";
+          setGate("找不到 KGI 模擬帳號，請重新整理後再試");
+          return;
         }
-        const data = body && typeof body === "object" ? body.data : null;
-        const tradeId = data && typeof data === "object" && data.tradeId ? String(data.tradeId) : "";
+
+        if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 送單中...";
+        const orderPayload = { accountId, symbol: selected.symbol, side, type: orderType, quantity: qty, quantity_unit: unit, price: orderType === "market" ? null : px };
+        const result = await submitUnifiedOrder(orderPayload);
+
+        if (result.status === 409) {
+          const body = result.body || {};
+          const message = body.error === "channel_coming_soon" ? "此券商通道即將開放，敬請期待" : kgiChannelReasonLabel(body.reason);
+          if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 未送出";
+          setGate(message);
+          return;
+        }
+        if (!result.ok) {
+          const data = result.body && result.body.data;
+          const message = data ? unifiedBlockedMessage(data) : activeBrokerCopy.shortName + " 未通過風控";
+          if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 未通過";
+          setGate(message);
+          return;
+        }
+
+        const order = result.body && result.body.data && result.body.data.order;
+        const tradeId = order && order.brokerOrderId ? String(order.brokerOrderId) : (order && order.id ? String(order.id) : "");
         if (kgiLabel) kgiLabel.textContent = tradeId ? activeBrokerCopy.shortName + " #" + tradeId : activeBrokerCopy.shortName + " 已送出";
         setGate(activeBrokerCopy.shortName + " 已送出（正式實單仍鎖定）");
         try { await refreshClientLive(); } catch { /* ignore */ }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
         if (kgiLabel) kgiLabel.textContent = activeBrokerCopy.shortName + " 未送出";
-        setGate(message.slice(0, 80) || activeBrokerCopy.shortName + " 未送出");
+        setGate(activeBrokerCopy.shortName + " 未送出，請確認委託內容或稍後再試");
       } finally {
         setTimeout(() => { kgiSubmit.disabled = false; }, 1200);
       }
     }, true);
+    }
 
     // ── Position banner (real portfolio for selected symbol) ──────────────────
     const selPos = (live.portfolio || []).find((p) => String(p.symbol) === String(selected.symbol));
