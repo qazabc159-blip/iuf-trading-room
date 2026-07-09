@@ -56,12 +56,33 @@ export function toPublicPerformance(perf: AiRecPerfResult): TrackRecordPerforman
 
 // ── F-AUTO NAV: same-source query, shared by Owner + public routes ──────────
 
+/**
+ * Pricing quality for a NAV point: "official" = every position priced from
+ * TWSE/TPEX official EOD closes; "mis_fallback_full" = TWSE/TPEX did not
+ * publish in time but the MIS date-validated fallback covered every position
+ * (2026-07-09 ledger stall fix — see s1-sim-runner.ts
+ * S1PositionsSnapshot.fullyPriced doc comment). Rows written before this
+ * field existed (e.g. Phase 1/2 `backfill_dry_run` rows) carry no quality
+ * marker and read as "official" — they were computed from a historical PIT
+ * source, not degraded live pricing, so "official" is the accurate default.
+ */
+export type FAutoNavPricingQuality = "official" | "mis_fallback_full";
+
+/** Reads the pricing-quality marker sim-ledger-backfill.ts writes into the
+ * `notes` text column (e.g. "daily_mark_to_market (pricing_quality: mis_fallback_full)").
+ * Defaults to "official" when no marker is present. */
+export function derivePricingQuality(notes: string | null): FAutoNavPricingQuality {
+  return notes?.includes("pricing_quality: mis_fallback_full") ? "mis_fallback_full" : "official";
+}
+
 export type FAutoNavCurvePointFull = {
   navDate: string;
   equityTwd: number;
   returnPct: number;
   weekNum: number;
   source: string;
+  /** See FAutoNavPricingQuality doc comment. */
+  pricingQuality: FAutoNavPricingQuality;
 };
 
 export type FAutoNavWeekFull = {
@@ -108,7 +129,7 @@ export async function buildFAutoNavFull(): Promise<FAutoNavFull> {
   const { sql: sqlRaw } = await import("drizzle-orm");
 
   const navRows = (await db.execute(sqlRaw`
-    SELECT nav_date, equity_twd, return_pct, week_num, source
+    SELECT nav_date, equity_twd, return_pct, week_num, source, notes
     FROM sim_ledger_nav
     ORDER BY nav_date ASC
   `)) as unknown as Array<{
@@ -117,6 +138,7 @@ export async function buildFAutoNavFull(): Promise<FAutoNavFull> {
     return_pct: string;
     week_num: number;
     source: string;
+    notes: string | null;
   }>;
 
   const weekRows = (await db.execute(sqlRaw`
@@ -140,6 +162,7 @@ export async function buildFAutoNavFull(): Promise<FAutoNavFull> {
     returnPct: Number(r.return_pct),
     weekNum: Number(r.week_num),
     source: String(r.source),
+    pricingQuality: derivePricingQuality(r.notes),
   }));
 
   const weeks: FAutoNavWeekFull[] = weekRows.map((r) => ({

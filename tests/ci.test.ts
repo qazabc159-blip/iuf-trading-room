@@ -19784,6 +19784,83 @@ test("SIM-LEDGER-18: pricingQuality threaded through to ledger notes for traceab
   );
 });
 
+// =============================================================================
+// SIM-LEDGER-19..21: 2026-07-09 ledger stall YELLOW follow-ups
+// (reports/ledger_stall_20260709/)
+// =============================================================================
+//
+// #1184 root-caused and fixed the 7/7 ledger stall (fullyPriced gate) but left
+// 3 secondary findings from that investigation for a follow-up round:
+//   YELLOW-1: TWSE's tier-1b date guard validates STOCK_DAY_ALL freshness, but
+//     the same tier's TPEX daily_close_quotes merge had NO date validation at
+//     all — a stale TPEX payload could be merged in as if it were today's
+//     close. Also: the TWSE date parser only handled the legacy slash-separated
+//     ROC format ("115/07/09"); live TWSE traffic (verified 2026-07-09) ships
+//     the compact 7-digit format ("1150709") — the parser silently returned
+//     null for that shape, so the "existing" TWSE guard was a no-op against
+//     live data. _parseRocEodDateIso fixes both TWSE and adds TPEX validation.
+//   YELLOW-3: writeLiveLedgerAfterEod's JSDoc still said "Called only when
+//     snapshot.pricingComplete=true" after #1184 changed the call site's gate
+//     to `pricingComplete || fullyPriced`.
+
+test("SIM-LEDGER-19: _parseRocEodDateIso handles both TWSE/TPEX ROC date wire formats", async () => {
+  const { _parseRocEodDateIso } = await import("../apps/api/src/s1-sim-runner.ts");
+
+  // Compact 7-digit ROC (current live format, both TWSE STOCK_DAY_ALL and
+  // TPEX daily_close_quotes — verified live 2026-07-09).
+  assert.equal(_parseRocEodDateIso("1150709"), "2026-07-09");
+  // Legacy slash-separated ROC (still present in some endpoints/fixtures).
+  assert.equal(_parseRocEodDateIso("115/07/09"), "2026-07-09");
+  assert.equal(_parseRocEodDateIso("115/7/9"), "2026-07-09", "must zero-pad single-digit month/day");
+  // Unrecognized / missing input degrades to null (treated as "unvalidated",
+  // never throws — the EOD tick must never crash on a malformed date field).
+  assert.equal(_parseRocEodDateIso(undefined), null);
+  assert.equal(_parseRocEodDateIso(""), null);
+  assert.equal(_parseRocEodDateIso("not-a-date"), null);
+});
+
+test("SIM-LEDGER-20: TPEX tier-1b close is date-validated symmetrically with TWSE (YELLOW-1 follow-up)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // Both TWSE and TPEX freshness must be derived via the shared, dual-format parser.
+  assert.match(src, /const stockDateIso = _parseRocEodDateIso\(stockRows\[0\]\?\.Date\)/,
+    "SIM-LEDGER-20: TWSE date must be parsed via _parseRocEodDateIso");
+  assert.match(src, /const tpexDateIso = _parseRocEodDateIso\(tpexRows\[0\]\?\.Date\)/,
+    "SIM-LEDGER-20: TPEX date must be parsed via _parseRocEodDateIso (previously had no date check)");
+
+  // A stale TPEX payload must be traceable via a dedicated note, distinct from
+  // the pre-existing "tpex_eod_unavailable" (fetch failed/empty) note.
+  assert.match(src, /tpex_eod_stale: daily_close_quotes data_date=/,
+    "SIM-LEDGER-20: stale TPEX close must push a tpex_eod_stale note");
+
+  // The TPEX merge loop must be gated on tpexFresh — a stale TPEX close must
+  // never be merged into closeBySymbol as if it were today's price.
+  assert.match(src, /const tpexFresh = !tpexDateIso \|\| tpexDateIso === todayTst;/);
+  assert.match(src, /if \(tpexFresh\) \{\s*\n\s*for \(const row of tpexRows\) \{/,
+    "SIM-LEDGER-20: TPEX merge loop must be wrapped in `if (tpexFresh)`");
+
+  // Regression guard: the old TWSE-only, slash-only inline parser must be gone
+  // (it silently no-op'd against the live compact-format date field).
+  assert.doesNotMatch(src, /const parts = stockDateRaw\.split\("\/"\)/,
+    "SIM-LEDGER-20: the old slash-only inline date parser must be replaced by _parseRocEodDateIso");
+});
+
+test("SIM-LEDGER-21: writeLiveLedgerAfterEod JSDoc reflects the post-#1184 pricingComplete||fullyPriced gate (YELLOW-3)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url),
+    "utf-8"
+  );
+  // Stale wording from before #1184's gate change must be gone.
+  assert.doesNotMatch(src, /Called only when snapshot\.pricingComplete=true AND today is Tuesday\./,
+    "SIM-LEDGER-21: stale pre-#1184 JSDoc (pricingComplete-only gate) must be updated");
+  // Current JSDoc must describe the actual (pricingComplete || fullyPriced) gate.
+  assert.match(src, /Called when \(snapshot\.pricingComplete OR snapshot\.fullyPriced\)/,
+    "SIM-LEDGER-21: JSDoc must describe the pricingComplete||fullyPriced gate introduced by #1184");
+});
+
 test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts", () => {
   const src = readFileSync(
     new URL("../apps/api/src/server.ts", import.meta.url),
@@ -20601,6 +20678,66 @@ test("TRK-6: toPublicNav() passes through empty ledger (null summary, empty navC
   assert.equal(publicPayload.summary, null);
   assert.deepEqual(publicPayload.navCurve, []);
   assert.equal(publicPayload.source, "empty_ledger");
+});
+
+// =============================================================================
+// TRK-7..9: 2026-07-09 YELLOW-2 follow-up — surface pricing quality on
+// GET /api/v1/portfolio/f-auto/nav (reports/ledger_stall_20260709/)
+// =============================================================================
+//
+// #1184 tags degraded (MIS-fallback) ledger writes with a `pricing_quality`
+// marker in sim_ledger_nav.notes, but the NAV read endpoint never selected or
+// surfaced it — the frontend had no way to honestly label a degraded-pricing
+// point (product law: 缺價/降級定價要可見). Fix: buildFAutoNavFull() now
+// selects `notes` and derives `pricingQuality` per navCurve point.
+
+test("TRK-7: derivePricingQuality() reads the sim_ledger_nav notes marker written by #1184", async () => {
+  const { derivePricingQuality } = await import("../apps/api/src/track-record-handlers.ts");
+
+  assert.equal(derivePricingQuality(null), "official", "no notes marker defaults to official");
+  assert.equal(derivePricingQuality("daily_mark_to_market"), "official", "plain notes with no marker stay official");
+  assert.equal(derivePricingQuality("rebalance_tuesday"), "official");
+  assert.equal(
+    derivePricingQuality("daily_mark_to_market (pricing_quality: mis_fallback_full)"),
+    "mis_fallback_full",
+    "must detect the exact marker text written by writeDailyNavRow"
+  );
+  assert.equal(
+    derivePricingQuality("rebalance_tuesday (pricing_quality: mis_fallback_full)"),
+    "mis_fallback_full",
+    "must detect the exact marker text written by writeLiveLedgerAfterEod"
+  );
+});
+
+test("TRK-8: buildFAutoNavFull() selects notes and threads pricingQuality into every navCurve point (additive field, existing fields unchanged)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/track-record-handlers.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(src, /SELECT nav_date, equity_twd, return_pct, week_num, source, notes\s*\n\s*FROM sim_ledger_nav/,
+    "TRK-8: navRows query must select notes to derive pricingQuality");
+  assert.match(src, /pricingQuality: derivePricingQuality\(r\.notes\)/,
+    "TRK-8: navCurve mapping must attach pricingQuality via derivePricingQuality");
+  // Regression: the 5 pre-existing navCurve fields must be untouched.
+  assert.match(src, /navDate: String\(r\.nav_date\)\.slice\(0, 10\)/);
+  assert.match(src, /equityTwd: Number\(r\.equity_twd\)/);
+  assert.match(src, /returnPct: Number\(r\.return_pct\)/);
+  assert.match(src, /weekNum: Number\(r\.week_num\)/);
+  assert.match(src, /source: String\(r\.source\)/);
+});
+
+test("TRK-9: FAutoNavFull owner response shape is backward compatible — pricingQuality is additive, no db → still returns empty navCurve/weeks/null summary", async () => {
+  const { buildFAutoNavFull } = await import("../apps/api/src/track-record-handlers.ts");
+  // In CI (memory mode / no DB configured) buildFAutoNavFull short-circuits to
+  // the no_db empty state — this is the same regression guard as the
+  // pre-existing empty-ledger contract, just re-asserted here so a future
+  // change to the pricingQuality plumbing can't accidentally break the
+  // no-DB fallback shape.
+  const result = await buildFAutoNavFull();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.navCurve, []);
+  assert.deepEqual(result.weeks, []);
+  assert.equal(result.summary, null);
 });
 
 // Teardown pollers that may be started by imported API modules.
