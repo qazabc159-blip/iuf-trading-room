@@ -7,6 +7,13 @@ name: CI — Validate (code changes only)
 # ci-security.yml — they run on ALL PRs regardless of changed paths.
 #
 # [skip ci] in commit message also skips this workflow (GHA native).
+#
+# db-tests job (#1183/#1185 follow-up, 2026-07-09): runs the subset of
+# apps/api/src tests that require a real Postgres connection (PERSISTENCE_MODE=
+# database). These were previously outside CI entirely — memory-mode `pnpm test`
+# cannot exercise them. NOT wired into branch-protection required checks yet
+# (see job comment) — first live run surfaced pre-existing test-file bugs
+# unrelated to DB availability; flip to required once those are fixed.
 
 on:
   push:
@@ -89,6 +96,80 @@ jobs:
 
       - name: Smoke
         run: pnpm smoke
+
+  db-tests:
+    name: DB-mode Tests (Postgres)
+    # GHA `services:` (Docker service containers) only work on Linux runners.
+    # The self-hosted EC2 runner used by `validate` above is Windows Server
+    # 2022 and cannot host a postgres service container — this job stays on
+    # GitHub-hosted ubuntu-latest intentionally, independent of USE_SELF_HOSTED.
+    #
+    # Status: NOT in branch-protection required checks yet. First real run
+    # (2026-07-09, local repro against postgres:16-alpine + full migration set)
+    # found idempotency-race.test.ts / paper-executor.test.ts /
+    # strategy-ideas.test.ts fail even with a live DB — root cause is two
+    # pre-existing test-file bugs unrelated to DB availability (see PR body):
+    #   1. All three import ledger state from the legacy in-memory
+    #      domain/trading/paper-ledger.js, but order-driver.ts has written
+    #      through domain/trading/paper-ledger-db.js since the W8 2026-05-05
+    #      migration — the tests read a Map that is never written to.
+    #   2. paper-executor.test.ts A2/A3 assert the old hardcoded fallback-
+    #      price-100.0 fill behavior that was deliberately removed (see
+    #      "HARD LINE: never fill at a hardcoded fake price" comment in
+    #      paper-executor.ts) — DB mode now correctly REJECTs with
+    #      no_price_available since no OHLCV row is seeded.
+    # This job's job is to give these tests a place to run, not to fix them.
+    # Flip to required once a test-owner (Jason lane) fixes the two issues
+    # above; until then treat this job's result as informational.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: iuf
+          POSTGRES_PASSWORD: iuf
+          POSTGRES_DB: iuf_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U iuf"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://iuf:iuf@localhost:5432/iuf_ci_test
+      PERSISTENCE_MODE: database
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Activate pnpm
+        run: corepack prepare pnpm@10.29.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build:packages
+
+      - name: Run migrations
+        run: pnpm run migrate
+
+      - name: DB-mode tests
+        run: pnpm run test:db
 
   qa-playwright-smoke:
     name: Playwright P0 Smoke
