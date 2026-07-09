@@ -517,8 +517,32 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("送出 KGI 模擬單");
     // Fubon is always disabled — never selectable
     expect(ticketHtml).toContain('data-broker="fubon" disabled');
-    // UTA adapters fetched to populate live broker catalog
-    expect(liveHydration).toContain('apiGet("/api/v1/uta/adapters")');
+    // D6 (2026-07-09): account strip reads GET /uta/accounts (seeded,
+    // gatewayStatus-bearing), not the old adapter catalog.
+    expect(liveHydration).toContain('apiGet("/api/v1/uta/accounts")');
+    expect(liveHydration).not.toContain('apiGet("/api/v1/uta/adapters")');
+  });
+
+  it("統一下單流 D6: broker strip is the account strip — gatewayStatus badges + accountId reuse (2026-07-09)", () => {
+    // Real, unit-tested badge mapping (see gateway-status-badge.test.ts) is
+    // mirrored inline for DOM rendering — same four states, same wording as
+    // /settings/broker's trust card.
+    expect(liveHydration).toContain("function gatewayBadge(status) {");
+    expect(liveHydration).toContain("'reachable'");
+    expect(liveHydration).toContain("'pending'");
+    expect(liveHydration).toContain("'paired_unreachable'");
+    expect(liveHydration).toContain("已連線");
+    expect(liveHydration).toContain("等待配對");
+    expect(liveHydration).toContain("等待連線");
+    expect(liveHydration).toContain("未配對");
+    // Badge is sourced from live.accounts (D6), matched by adapterKey per button.
+    expect(liveHydration).toContain("const accountsList = Array.isArray(live.accounts) ? live.accounts : [];");
+    expect(liveHydration).toContain("accountsList.find((a) => a && a.adapterKey === bk)");
+    // Submit-time account lookup reuses the strip's already-fetched accounts
+    // instead of a second round-trip.
+    expect(liveHydration).toContain("if (Array.isArray(live.accounts) && live.accounts.length) return live.accounts;");
+    // Fubon excluded from the account strip's selectable set, same as before.
+    expect(liveHydration).toContain("a.adapterKey !== 'fubon'");
   });
 
   it("routes the F-AUTO owner dashboard through the same-origin backend proxy", () => {
