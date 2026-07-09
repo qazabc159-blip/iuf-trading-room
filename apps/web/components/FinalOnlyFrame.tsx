@@ -94,7 +94,7 @@ export function FinalOnlyFrame({ src, title }: FinalOnlyFrameProps) {
            /PR4_VERIFICATION.md). Fix: on mobile, stack the sidebar (natural
            height, in-flow) above the frame in a column instead of layering
            it on top with a fixed height. */
-        @media (max-width: 980px) {
+        @media (max-width: 1000px) {
           body.app-root:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) {
             flex-direction: column !important;
           }
