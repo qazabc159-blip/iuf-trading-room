@@ -7,6 +7,11 @@ import { expectNoServerError, saveRouteScreenshot } from "./helpers";
  * M1 targeted the three highest-frequency READ paths: 首頁戰情台 (/), AI
  * 推薦 (/ai-recommendations), 警示 (/alerts). M2 adds 公司頁
  * (/companies/2330) — one of the highest-value pages (K線/五檔/AI分析/主題).
+ * M3 adds the remaining read paths: 量化策略 (/quant-strategies + detail),
+ * 績效記帳 (/track-record), 複盤 (/reviews), and the 3 /settings sub-pages
+ * (account/broker/subscription) — /market-intel is intentionally excluded:
+ * it is a full-bleed <iframe> wrapper (FinalOnlyFrame), so this parent-DOM
+ * overflow/touch-target audit cannot see inside it.
  * Runs on the "mobile-iphone-13" Playwright project (390x844 viewport — see
  * playwright.config.ts), so no viewport override is needed here; the spec
  * skips itself on other projects so it stays a dedicated 390px gate rather
@@ -70,6 +75,68 @@ const ROUTES: MobileRoute[] = [
       // Both render regardless of LIVE/BLOCKED/EMPTY data state.
       await expect(page.locator(".company-workbench-shell")).toBeVisible();
       await expect(page.locator(".company-side-column")).toBeVisible();
+    },
+  },
+  {
+    path: "/quant-strategies",
+    label: "量化策略",
+    assertVisible: async (page) => {
+      await expect(page.locator(".page-frame")).toBeVisible();
+      await expect(page.locator("._qnt-tabs")).toBeVisible();
+    },
+  },
+  {
+    path: "/quant-strategies/cont_liq_v36",
+    label: "量化策略詳情",
+    assertVisible: async (page) => {
+      await expect(page.getByText("IUF QUANT STRATEGY")).toBeVisible();
+    },
+  },
+  {
+    path: "/track-record",
+    label: "績效記帳",
+    assertVisible: async (page) => {
+      await expect(page.locator(".page-frame")).toBeVisible();
+      await expect(page.getByText("公開績效記帳")).toBeVisible();
+    },
+  },
+  {
+    path: "/reviews",
+    label: "複盤",
+    assertVisible: async (page) => {
+      await expect(page.locator(".page-frame")).toBeVisible();
+      await expect(page.getByText("本週復盤")).toBeVisible();
+    },
+  },
+  {
+    path: "/settings",
+    label: "設定中心",
+    assertVisible: async (page) => {
+      await expect(page.getByText("設定中心")).toBeVisible();
+    },
+  },
+  {
+    path: "/settings/account",
+    label: "設定 / 帳號",
+    assertVisible: async (page) => {
+      await expect(page.getByText("帳號與安全")).toBeVisible();
+      await expect(page.locator(".settings-back-link")).toBeVisible();
+    },
+  },
+  {
+    path: "/settings/broker",
+    label: "設定 / 券商連線",
+    assertVisible: async (page) => {
+      await expect(page.getByText("券商連線與交易模式")).toBeVisible();
+      await expect(page.locator(".broker-connections-panel")).toBeVisible();
+    },
+  },
+  {
+    path: "/settings/subscription",
+    label: "設定 / 訂閱",
+    assertVisible: async (page) => {
+      await expect(page.getByText("訂閱與權限")).toBeVisible();
+      await expect(page.locator(".settings-feature-table")).toBeVisible();
     },
   },
 ];

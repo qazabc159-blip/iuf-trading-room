@@ -348,6 +348,7 @@ function NavWeekTable({ weeks }: { weeks: NavWeekRow[] }) {
   return (
     <div className="_fnav-week-section">
       <div className="_fnav-week-head">逐週紀錄</div>
+      <div className="_fnav-tbl-wrap">
       <table className="_fnav-tbl">
         <thead>
           <tr>
@@ -374,6 +375,7 @@ function NavWeekTable({ weeks }: { weeks: NavWeekRow[] }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -636,6 +638,12 @@ const NAV_CSS = `
   ._fnav-summary-row { grid-template-columns: 1fr; }
   ._fnav-head-left { flex-wrap: wrap; }
 }
+@media (max-width: 480px) {
+  ._fnav-toggle-btn {
+    min-height: 44px;
+    padding: 4px 12px;
+  }
+}
 
 /* Week section */
 ._fnav-week-section { margin-top: 2px; }
@@ -649,8 +657,13 @@ const NAV_CSS = `
 }
 
 /* Weekly table */
+._fnav-tbl-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 ._fnav-tbl {
   width: 100%;
+  min-width: 440px;
   border-collapse: collapse;
   font-size: 11px;
   font-family: var(--mono, monospace);

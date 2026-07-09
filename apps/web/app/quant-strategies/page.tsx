@@ -222,6 +222,13 @@ export default async function QuantStrategiesPage({
         ._qnt-grid-wrap {
           padding: 0 16px 16px;
         }
+        /* Mobile M3 (2026-07-09): 36px tab links are under the 44px touch
+           target baseline on 390px phones. */
+        @media (max-width: 480px) {
+          ._qnt-tabs a {
+            min-height: 44px;
+          }
+        }
       `}</style>
 
       <div className="_qnt-tabs" aria-label="量化策略分頁">

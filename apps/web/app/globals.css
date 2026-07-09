@@ -14532,6 +14532,112 @@ body:has(.tactical-dashboard) .app-sidebar {
   }
 }
 
+/* Mobile M3 (2026-07-09): /settings sub-pages + /settings/broker connection
+   form + /settings/subscription feature table at 390px. These pages are
+   almost entirely React inline styles (not CSS modules), so overriding a
+   property the inline style already sets (padding/min-height/right/etc.)
+   needs !important -- inline style attributes always win over external
+   stylesheet rules regardless of selector specificity. Hook classNames were
+   added directly on the elements in the corresponding page.tsx files; no
+   structural/layout change outside this @media block. */
+@media (max-width: 480px) {
+  /* "返回設定中心" back-links + the "查看券商連線設定" inline link on
+     /settings/account, /settings/broker, /settings/subscription — all
+     rendered at ~17-19px tall (font-size only, no touch padding). */
+  .settings-back-link,
+  .settings-inline-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 6px 0;
+  }
+
+  /* Password change form (/settings/account): 3 inputs sat at ~39px, and
+     the show/hide eye-icon button was a 15x15 icon-only hit target. Widen
+     the input's reserved right padding so the enlarged button doesn't cover
+     the typed text, and flush the button to the input's inner edge. */
+  .settings-password-input {
+    min-height: 44px;
+    padding-right: 54px !important;
+    box-sizing: border-box;
+  }
+
+  .settings-password-toggle {
+    right: 0 !important;
+    width: 44px;
+    height: 44px;
+  }
+
+  /* /settings/broker connection panel (broker-connections.tsx): adapter
+     select + account-ref/label inputs + all action buttons (產生配對碼/
+     複製/撤銷配對/停用連線/建立連線) shared 30-40px heights via inline
+     inputStyle/buttonBaseStyle. */
+  .broker-connections-panel select,
+  .broker-connections-panel input,
+  .broker-connections-panel button {
+    min-height: 44px !important;
+  }
+
+  /* /settings/subscription 功能權限表: 4-column comparison table (功能 +
+     3 fixed tiers Starter/Pro/Premium) forced a 760px min-width inside an
+     overflow-x:auto wrapper -- readable but required sideways scrolling to
+     see Pro/Premium status on a 390px screen. Convert to a stacked card per
+     feature, matching the existing .company-data-table-fit mobile pattern
+     used on the company page. subscriptionTiers is a small fixed 3-item
+     contract (packages/contracts/src/entitlements.ts), so nth-child mapped
+     labels are safe the same way company-data-table-fit hardcodes its
+     column labels. */
+  .settings-feature-table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .settings-feature-table thead {
+    display: none;
+  }
+
+  .settings-feature-table,
+  .settings-feature-table tbody,
+  .settings-feature-table tr,
+  .settings-feature-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .settings-feature-table tr {
+    margin-bottom: 14px;
+    border: 1px solid rgba(200, 148, 63, 0.16);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .settings-feature-table td {
+    border-bottom: none !important;
+    padding: 6px 2px !important;
+  }
+
+  .settings-feature-table td:nth-child(2),
+  .settings-feature-table td:nth-child(3),
+  .settings-feature-table td:nth-child(4) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .settings-feature-table td:nth-child(2)::before,
+  .settings-feature-table td:nth-child(3)::before,
+  .settings-feature-table td:nth-child(4)::before {
+    color: var(--fg-3, #8a93a3);
+    font-size: 11px;
+    font-weight: 900;
+    min-width: 62px;
+  }
+
+  .settings-feature-table td:nth-child(2)::before { content: "Starter"; }
+  .settings-feature-table td:nth-child(3)::before { content: "Pro"; }
+  .settings-feature-table td:nth-child(4)::before { content: "Premium"; }
+}
+
 /* Product shell alignment: pages outside the homepage inherit the same tactical room language. */
 .app-main-shell > .page-frame {
   color: var(--tac-fg-1);

@@ -67,7 +67,11 @@ export default async function BrokerSettingsPage() {
     >
       <div style={{ width: "100%", maxWidth: 1100, margin: "0 auto" }}>
         <header style={{ marginBottom: 28 }}>
-          <Link href="/settings" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
+          <Link
+            href="/settings"
+            className="settings-back-link"
+            style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}
+          >
             返回設定中心
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18 }}>

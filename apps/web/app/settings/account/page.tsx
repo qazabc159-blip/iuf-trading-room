@@ -65,6 +65,7 @@ function PasswordInput({
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           autoComplete={autoComplete}
+          className="settings-password-input"
           style={{
             width: "100%",
             background: "var(--bg-1, #111)",
@@ -84,6 +85,7 @@ function PasswordInput({
           onClick={() => setShow((s) => !s)}
           disabled={disabled}
           aria-label={show ? "隱藏密碼" : "顯示密碼"}
+          className="settings-password-toggle"
           style={{
             position: "absolute",
             right: 10,
@@ -95,6 +97,7 @@ function PasswordInput({
             color: "var(--fg-3, #777)",
             display: "flex",
             alignItems: "center",
+            justifyContent: "center",
             padding: 0,
           }}
         >
@@ -178,7 +181,11 @@ export default function AccountSettingsPage() {
       }}
     >
       <div style={{ width: "100%", maxWidth: 460 }}>
-        <Link href="/settings" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
+        <Link
+          href="/settings"
+          className="settings-back-link"
+          style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}
+        >
           返回設定中心
         </Link>
 

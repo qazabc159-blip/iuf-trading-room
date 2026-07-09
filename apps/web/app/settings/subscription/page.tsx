@@ -97,7 +97,11 @@ export default async function SubscriptionSettingsPage() {
     <main style={pageStyle}>
       <div style={shellStyle}>
         <header style={{ marginBottom: 28 }}>
-          <Link href="/settings" style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}>
+          <Link
+            href="/settings"
+            className="settings-back-link"
+            style={{ color: "var(--fg-3, #888)", fontSize: 12, textDecoration: "none" }}
+          >
             返回設定中心
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18 }}>
@@ -248,7 +252,10 @@ export default async function SubscriptionSettingsPage() {
             <h2 style={{ margin: 0, fontSize: 16 }}>功能權限表</h2>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 13 }}>
+            <table
+              className="settings-feature-table"
+              style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 13 }}
+            >
               <thead>
                 <tr style={{ color: "var(--fg-3, #8a93a3)", textAlign: "left" }}>
                   <th style={{ padding: "10px 8px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>功能</th>
@@ -315,7 +322,11 @@ export default async function SubscriptionSettingsPage() {
               <p style={{ margin: "6px 0 10px", color: "var(--fg-3, #8a93a3)", fontSize: 13, lineHeight: 1.6 }}>
                 KGI 唯讀 / SIM 需要高級方案、有效憑證、gateway 連線與風控檢查，不會因訂閱文字就自動開放。
               </p>
-              <Link href="/settings/broker" style={{ color: "var(--accent, #c8943f)", fontSize: 13, fontWeight: 900, textDecoration: "none" }}>
+              <Link
+                href="/settings/broker"
+                className="settings-inline-link"
+                style={{ color: "var(--accent, #c8943f)", fontSize: 13, fontWeight: 900, textDecoration: "none" }}
+              >
                 查看券商連線設定
               </Link>
             </div>
