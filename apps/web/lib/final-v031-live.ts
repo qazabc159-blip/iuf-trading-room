@@ -1380,13 +1380,22 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // Fubon stays excluded here too — its strip button is static/disabled in
     // the vendor HTML and never becomes selectable.
     let accounts = [];
+    let accountsFetchFailed = false;
     try {
       const accountsRes = await soft(apiGet("/api/v1/uta/accounts"));
       if (accountsRes.ok && Array.isArray(accountsRes.data)) {
         accounts = accountsRes.data.filter((a) => a && a.adapterKey && a.adapterKey !== 'fubon');
+      } else {
+        // Query failed (network/5xx) or returned a malformed body — distinct
+        // from "account genuinely unpaired", which is a real gatewayStatus
+        // value inside a successful response. hydrateBrokerStrip renders a
+        // separate 查詢失敗 badge for this case so the operator isn't told a
+        // paired account is unpaired just because the read failed.
+        accountsFetchFailed = true;
       }
     } catch {
       // fallback to HTML static strip — safe to ignore
+      accountsFetchFailed = true;
     }
     // User-managed watchlist (replaces the hardcoded default symbols). { data: [{symbol,name}] }.
     const myWatchlist = (watchlistResult.ok
@@ -1464,6 +1473,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
       accounts,
+      accountsFetchFailed,
       prefill,
       _companyId: company?.id ?? null,
       _companyIdSymbol: selectedSymbol,
@@ -2471,9 +2481,20 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       // Remove placeholder tooltip from selectable buttons
       if (bk !== 'fubon') btn.removeAttribute('title');
       // D6 帳號帶: gatewayStatus badge, one per selectable broker button.
+      // 查詢失敗態（Pete review 🟡 2026-07-09）: when GET /uta/accounts itself
+      // failed, accountsList is empty for every broker — same shape as a
+      // genuinely unpaired account. Render a distinct grey "查詢失敗" badge in
+      // that case so the operator can tell "read failed, unknown" apart from
+      // "read succeeded, this account really is unpaired" (gatewayBadge's
+      // own 'unpaired' label). Only fires when the fetch actually failed —
+      // never overrides a real gatewayStatus from a successful response.
       const account = accountsList.find((a) => a && a.adapterKey === bk) || null;
-      if (account) {
-        const badge = gatewayBadge(account.gatewayStatus);
+      const badge = account
+        ? gatewayBadge(account.gatewayStatus)
+        : (live.accountsFetchFailed
+          ? { label: '狀態查詢失敗', color: '#9ca3af', border: 'rgba(156,163,175,0.26)', background: 'rgba(156,163,175,0.08)' }
+          : null);
+      if (badge) {
         let stat = btn.querySelector('.bstat');
         if (!stat) {
           stat = document.createElement('span');
@@ -2491,7 +2512,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         stat.style.color = badge.color;
         stat.style.borderColor = badge.border;
         stat.style.background = badge.background;
-        stat.title = account.accountLabel ? account.accountLabel + ' · ' + badge.label : badge.label;
+        stat.title = account && account.accountLabel ? account.accountLabel + ' · ' + badge.label : badge.label;
       }
       if (!btn.dataset.brokerClickWired) {
         btn.dataset.brokerClickWired = '1';
@@ -2963,6 +2984,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
 
         const accounts = await loadBrokerAccounts();
         const accountId = accountIdForBroker("paper", accounts);
+        if (!accountId) {
+          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未送出";
+          const gate = $(".gate .h .v"); if (gate) gate.textContent = "找不到模擬帳號，請重新整理後再試";
+          return;
+        }
         const submitLabel1 = getSubmitLabel(); if (submitLabel1) submitLabel1.textContent = "送單中...";
         const orderPayload = { accountId, symbol: selected.symbol, side, type: orderType, quantity: qty, quantity_unit: unit, price: orderType === "market" ? null : px };
         const result = await submitUnifiedOrder(orderPayload);

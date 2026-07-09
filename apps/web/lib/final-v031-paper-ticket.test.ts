@@ -628,6 +628,42 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiServerSource).not.toContain('history: (enrichedIndex["history"] as unknown[]) ?? []');
   });
 
+  it("guards the paper submit path against a missing accountId, matching the KGI submit guard (Pete review 🟡 #1, 2026-07-09)", () => {
+    // Paper ticket resolves accountId the same way KGI does, but previously
+    // had no explicit guard — a failed /uta/accounts fetch would silently
+    // send accountId:"" into the unified_orders audit trail. Mirror the
+    // existing KGI guard shape (blocked label + gate copy + return, no raw
+    // engineering text).
+    expect(liveHydration).toContain('const accountId = accountIdForBroker("paper", accounts);');
+    expect(liveHydration).toContain('找不到模擬帳號，請重新整理後再試');
+    const paperAccountIdGuardIndex = liveHydration.indexOf('const accountId = accountIdForBroker("paper", accounts);');
+    const paperGuardSlice = liveHydration.slice(paperAccountIdGuardIndex, paperAccountIdGuardIndex + 400);
+    expect(paperGuardSlice).toContain('if (!accountId) {');
+    expect(paperGuardSlice).toContain('找不到模擬帳號，請重新整理後再試');
+    // KGI guard still exists with its own accountId-specific copy, unchanged.
+    expect(liveHydration).toContain('accountIdForBroker("kgi", accounts)');
+    expect(liveHydration).toContain('找不到 KGI 模擬帳號，請重新整理後再試');
+  });
+
+  it("renders a distinct 查詢失敗 badge when GET /uta/accounts itself fails, never mislabeling it as a real unpaired account (Pete review 🟡 #2, 2026-07-09)", () => {
+    // Server-side payload builder tracks fetch failure separately from an
+    // empty-but-successful accounts list.
+    expect(liveHydration).toContain("let accountsFetchFailed = false;");
+    expect(liveHydration).toContain("accountsFetchFailed = true;");
+    expect(liveHydration).toContain("accountsFetchFailed,");
+    // hydrateBrokerStrip only shows the failure badge when there's no
+    // matched account AND the fetch is known to have failed — a real
+    // gatewayStatus from a successful response always wins.
+    expect(liveHydration).toContain("live.accountsFetchFailed");
+    expect(liveHydration).toContain("狀態查詢失敗");
+    const badgeBlockIndex = liveHydration.indexOf("const badge = account");
+    expect(badgeBlockIndex).toBeGreaterThan(-1);
+    const badgeBlockSlice = liveHydration.slice(badgeBlockIndex, badgeBlockIndex + 400);
+    expect(badgeBlockSlice).toContain("gatewayBadge(account.gatewayStatus)");
+    expect(badgeBlockSlice).toContain("live.accountsFetchFailed");
+    expect(badgeBlockSlice).toContain("狀態查詢失敗");
+  });
+
   it("shows a formal institutional-data degraded state instead of a blank syncing line", () => {
     expect(liveHydration).toContain("三大法人資料尚未回傳");
     expect(liveHydration).toContain("本頁不顯示假法人買賣超");
