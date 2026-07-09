@@ -461,14 +461,37 @@ describe("final-v031 paper ticket price gate", () => {
     expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/status");
   });
 
-  it("wires the final-v031 trading room manual ticket to KGI SIM only", () => {
+  it("wires the final-v031 trading room manual ticket through the unified order endpoint", () => {
     expect(ticketHtml).toContain('id="submit-kgi-sim-btn"');
     // Label updated: "送出 KGI 模擬單" (was "送出 KGI SIM" before broker selector)
     expect(ticketHtml).toContain("送出 KGI 模擬單");
-    expect(liveHydration).toContain('fetch("/api/ui-final-v031/backend?path=/api/v1/kgi/sim/order"');
-    expect(liveHydration).toContain('priceType: orderType === "market" ? "MKT" : undefined');
     expect(liveHydration).toContain("正式實單仍鎖定");
-    expect(backendProxy).toContain("^\\/api\\/v1\\/kgi\\/sim\\/order");
+    expect(backendProxy).toContain("^\\/api\\/v1\\/trading\\/orders");
+  });
+
+  it("converges paper and KGI submit into the single unified order endpoint (統一下單流 D1/D5, 2026-07-09)", () => {
+    // Single submit path: both handlers post to the unified endpoint via
+    // submitUnifiedOrder(), not the legacy paper-submit action or a direct
+    // KGI SIM fetch.
+    expect(liveHydration).toContain('const submitUnifiedOrder = async (payload) => {');
+    expect(liveHydration).toContain('await apiFetch("/api/v1/trading/orders", { method: "POST"');
+    expect(liveHydration).not.toContain('fetch("/api/ui-final-v031-paper/submit"');
+    expect(liveHydration).not.toContain('path=/api/v1/kgi/sim/order');
+    // Preview stays on the pre-existing endpoint (design §4 PR-3 scope) —
+    // only the submit leg moved.
+    expect(liveHydration).toContain('apiPost("/api/v1/paper/preview", directPayload)');
+    // accountId resolved from GET /uta/accounts (D6 prerequisite), never
+    // silently defaulted to paper for a KGI-intended submit.
+    expect(liveHydration).toContain('const loadBrokerAccounts = async () => {');
+    expect(liveHydration).toContain('apiGet("/api/v1/uta/accounts")');
+    expect(liveHydration).toContain('accountIdForBroker("kgi", accounts)');
+    expect(liveHydration).toContain('找不到 KGI 模擬帳號，請重新整理後再試');
+    // Reason-code vocab (D5) — backend message/error/reason strings never
+    // render raw; every branch maps through a Chinese label table.
+    expect(liveHydration).toContain('const kgiChannelReasonLabel = (reason) =>');
+    expect(liveHydration).toContain('const unifiedBlockedMessage = (data) =>');
+    expect(liveHydration).not.toContain('body.message || body.reason || body.error');
+    expect(liveHydration).not.toContain('message.slice(0, 80) || activeBrokerCopy.shortName');
   });
 
   it("broker selector defaults to paper and routes KGI through SIM channel", () => {
