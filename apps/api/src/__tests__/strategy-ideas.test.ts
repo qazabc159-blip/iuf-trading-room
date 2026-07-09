@@ -9,8 +9,11 @@
  *
  * Run: node --test --import tsx/esm apps/api/src/__tests__/strategy-ideas.test.ts
  *
- * No HTTP route hit. No DB. No KGI SDK. No broker.submit / live.submit.
- * Tests exercise the same underlying functions the routes delegate to.
+ * No HTTP route hit. No KGI SDK. No broker.submit / live.submit.
+ * S1 reads persisted state through paper-ledger-db.js (driveOrder's real
+ * write path — real Postgres when PERSISTENCE_MODE=database, in-memory
+ * MapAdapter otherwise). Tests exercise the same underlying functions the
+ * routes delegate to.
  */
 
 import assert from "node:assert/strict";
@@ -18,11 +21,12 @@ import test from "node:test";
 
 import { createOrderIntent } from "../domain/trading/order-intent.js";
 import { driveOrder } from "../domain/trading/order-driver.js";
-import {
-  getOrder,
-  _clearLedger,
-  _ledgerSize
-} from "../domain/trading/paper-ledger.js";
+
+// driveOrder() persists through paper-ledger-db.js (real Postgres when
+// PERSISTENCE_MODE=database, in-memory MapAdapter otherwise) since W8
+// 2026-05-05 — see order-driver.ts. The legacy paper-ledger.js Map is never
+// written to by driveOrder and must not be used to verify persistence here.
+import { getOrder } from "../domain/trading/paper-ledger-db.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — mirrors what the promote routes do at the function level
@@ -95,8 +99,6 @@ test("P1: promote preview — OrderIntent draft has SHARE unit, qty=1, correct s
 // ---------------------------------------------------------------------------
 
 test("S1: promote submit — driveOrder persists ledger row, state=FILLED, SHARE unit", async () => {
-  _clearLedger();
-
   const intent = makeIdeaIntent({ symbol: "2330", side: "buy", qty: 1, price: 800.0 });
 
   // This mirrors what the submit route calls after createOrderIntent
@@ -115,8 +117,7 @@ test("S1: promote submit — driveOrder persists ledger row, state=FILLED, SHARE
   }
 
   // Ledger must have the new entry
-  const persisted = getOrder(intent.id);
+  const persisted = await getOrder(intent.id);
   assert.ok(persisted !== undefined, "ledger must contain the order");
   assert.equal(persisted!.intent.status, "FILLED");
-  assert.ok(_ledgerSize() >= 1);
 });

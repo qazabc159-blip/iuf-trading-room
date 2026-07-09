@@ -12,10 +12,15 @@
  *
  * Run: node --test --import tsx/esm apps/api/src/__tests__/paper-executor.test.ts
  *
- * No KGI SDK import. No broker dependency. No DB. No HTTP route.
+ * No KGI SDK import. No broker dependency. No HTTP route.
+ * D4/G3 read persistence through paper-ledger-db.js (driveOrder's real
+ * write path — real Postgres when PERSISTENCE_MODE=database, in-memory
+ * MapAdapter otherwise); the rest of this file exercises paper-executor.ts
+ * / order-driver.ts directly or the legacy paper-ledger.js in isolation.
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { createOrderIntent, IllegalTransitionError } from "../domain/trading/order-intent.js";
@@ -30,6 +35,17 @@ import {
   _clearLedger,
   _ledgerSize
 } from "../domain/trading/paper-ledger.js";
+
+// Sections D/G that exercise driveOrder() must read persistence back through
+// paper-ledger-db.js — driveOrder() has written through that module (DB
+// adapter in DB mode, in-memory MapAdapter otherwise) since W8 2026-05-05
+// (order-driver.ts). The legacy paper-ledger.js Map used elsewhere in this
+// file (sections E/F/G's direct upsertOrder/getOrder/listOrders calls) is
+// never written to by driveOrder.
+import {
+  getOrder as getOrderDb,
+  listOrders as listOrdersDb
+} from "../domain/trading/paper-ledger-db.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,23 +98,28 @@ test("A1: market order with price set → FILLED at intent.price", async () => {
   }
 });
 
-test("A2: market order with no price (null) → FILLED at fallback 100.0", async () => {
+// HARD LINE (paper-executor.ts): the old hardcoded fallback-price-100.0 fill
+// behavior was deliberately removed — a market order with no explicit price
+// and no real DB close price (companies_ohlcv) must REJECT with
+// no_price_available rather than fill at a fabricated price. No OHLCV row is
+// seeded in these tests, so fetchLastClosePrice() also resolves null.
+
+test("A2: market order with no price (null) → REJECTED no_price_available", async () => {
   const intent = makeIntent({ orderType: "market", price: null });
   const result = await executeOrder(intent);
-  assert.equal(result.status, "FILLED");
-  if (result.status === "FILLED") {
-    assert.equal(result.fill.fillPrice, 100.0);
-    assert.equal(result.fill.fillQty, 1000);
+  assert.equal(result.status, "REJECTED");
+  if (result.status === "REJECTED") {
+    assert.ok(result.reason.includes("no_price_available"));
   }
 });
 
-test("A3: market order with price=undefined → FILLED at fallback 100.0", async () => {
+test("A3: market order with price=undefined → REJECTED no_price_available", async () => {
   const intent = makeIntent({ orderType: "market" });
   // createOrderIntent sets price: null when not provided
   const result = await executeOrder(intent);
-  assert.equal(result.status, "FILLED");
-  if (result.status === "FILLED") {
-    assert.equal(result.fill.fillPrice, 100.0);
+  assert.equal(result.status, "REJECTED");
+  if (result.status === "REJECTED") {
+    assert.ok(result.reason.includes("no_price_available"));
   }
 });
 
@@ -209,11 +230,10 @@ test("D3: driveOrder limit with null price → PENDING to REJECTED (executor rej
 });
 
 test("D4: driveOrder persists to ledger — getOrder returns FILLED state", async () => {
-  _clearLedger();
   const intent = makeIntent({ orderType: "market", price: 50.0 });
   const result = await driveOrder(intent);
 
-  const persisted = getOrder(intent.id);
+  const persisted = await getOrderDb(intent.id);
   assert.ok(persisted !== undefined);
   assert.equal(persisted!.intent.status, "FILLED");
   assert.ok(persisted!.fill !== null);
@@ -247,7 +267,10 @@ test("E1: cancelOrder on PENDING intent → CANCELLED", async () => {
 
 test("E2: cancelOrder on FILLED intent → alreadyTerminal, state unchanged", async () => {
   _clearLedger();
-  const intent = makeIntent({ orderType: "market" });
+  // Explicit price: a market order with no price and no seeded OHLCV row
+  // REJECTs (no_price_available, see A2/A3) — this test needs a FILLED
+  // order to exercise the "already terminal" cancel path.
+  const intent = makeIntent({ orderType: "market", price: 150.0 });
   const driverResult = await driveOrder(intent);
   assert.equal(driverResult.finalState.intent.status, "FILLED");
 
@@ -285,7 +308,8 @@ test("E4: cancelOrder on CANCELLED intent → alreadyTerminal (idempotent)", asy
 
 test("F1: driveOrder on non-PENDING intent → throws IllegalTransitionError", async () => {
   _clearLedger();
-  const intent = makeIntent({ orderType: "market" });
+  // Explicit price: see E2 note — a priceless market order now REJECTs.
+  const intent = makeIntent({ orderType: "market", price: 150.0 });
   // Manually drive once to FILLED
   const result = await driveOrder(intent);
   assert.equal(result.finalState.intent.status, "FILLED");
@@ -334,18 +358,22 @@ test("G2: listOrders returns only orders for matching userId", () => {
 });
 
 test("G3: listOrders with status filter returns only matching", async () => {
-  _clearLedger();
-  const i1 = makeIntent({ orderType: "market", price: 100.0 });
-  const i2 = makeIntent({ orderType: "limit", price: null }); // → REJECTED
+  // driveOrder() persists through paper-ledger-db.js, not the legacy
+  // paper-ledger.js used elsewhere in this section — read back via
+  // listOrdersDb. Unique userId per test so results aren't polluted by
+  // other tests' rows in a persistent (real) DB.
+  const userId = randomUUID();
+  const i1 = makeIntent({ orderType: "market", price: 100.0, userId });
+  const i2 = makeIntent({ orderType: "limit", price: null, userId }); // → REJECTED
 
   await driveOrder(i1);
   await driveOrder(i2);
 
-  const filledOrders = listOrders(i1.userId, { status: "FILLED" });
+  const filledOrders = await listOrdersDb(userId, { status: "FILLED" });
   assert.equal(filledOrders.length, 1);
   assert.equal(filledOrders[0]!.intent.id, i1.id);
 
-  const rejectedOrders = listOrders(i2.userId, { status: "REJECTED" });
+  const rejectedOrders = await listOrdersDb(userId, { status: "REJECTED" });
   assert.equal(rejectedOrders.length, 1);
   assert.equal(rejectedOrders[0]!.intent.id, i2.id);
 });
