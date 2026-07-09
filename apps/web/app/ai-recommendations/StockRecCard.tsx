@@ -1,5 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { useState } from "react";
+
+import { addWatchlistSymbol } from "@/lib/api";
+
 export type BucketLabel = "A+" | "A" | "B" | "C";
 
 export interface SubScores {
@@ -125,6 +130,76 @@ function displaySource(source: string | null | undefined): string {
 
 function uniqueParts(parts: string[]) {
   return Array.from(new Set(parts));
+}
+
+// 三鍵連動（decision-flow C-2）：看公司／加觀察／帶入模擬單。
+// v3 卡片沒有多空方向欄位（bucket 只代表推薦強度），所以預填不假設 side，
+// 交由使用者在交易室自行選擇買賣方向。
+function safeCardTicker(value: string | null | undefined) {
+  const ticker = value?.trim().toUpperCase();
+  if (!ticker || !/^[A-Z0-9._-]{1,16}$/.test(ticker)) return null;
+  return ticker;
+}
+
+function buildV3PrefillHref(rec: StockRecCardData): string | null {
+  const ticker = safeCardTicker(rec.ticker);
+  if (!ticker) return null;
+  const params = new URLSearchParams({ ticker, prefill: "true" });
+  if (rec.entry?.ote_low != null) params.set("entry", String(rec.entry.ote_low));
+  if (rec.targets?.sl != null) params.set("stop", String(rec.targets.sl));
+  if (rec.targets?.tp1 != null) params.set("tp", String(rec.targets.tp1));
+  return `/portfolio?${params.toString()}`;
+}
+
+type WatchState = "idle" | "saving" | "saved" | "error";
+
+function AddWatchlistButton({ symbol, name }: { symbol: string; name?: string | null }) {
+  const [state, setState] = useState<WatchState>("idle");
+
+  async function handleClick() {
+    if (state === "saving" || state === "saved") return;
+    setState("saving");
+    const result = await addWatchlistSymbol(symbol, name ?? undefined);
+    setState(result.ok ? "saved" : "error");
+  }
+
+  return (
+    <button
+      type="button"
+      className="_src-cta-btn"
+      onClick={handleClick}
+      disabled={state === "saving" || state === "saved"}
+      data-tone={state === "saved" ? "ok" : state === "error" ? "bad" : undefined}
+    >
+      {state === "saving" ? "加入中…" : state === "saved" ? "已加入" : state === "error" ? "加入失敗，重試" : "加觀察"}
+    </button>
+  );
+}
+
+function LinkageCtaRow({ rec }: { rec: StockRecCardData }) {
+  const ticker = safeCardTicker(rec.ticker);
+  const prefillHref = buildV3PrefillHref(rec);
+  if (!ticker) {
+    return (
+      <div className="_src-cta-row">
+        <span className="_src-cta-unavailable">股票代號格式不完整，暫時無法看公司／加觀察／帶入模擬單。</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="_src-cta-row">
+      <Link href={`/companies/${ticker}`} className="_src-cta-btn">
+        看公司
+      </Link>
+      <AddWatchlistButton symbol={ticker} name={rec.company_name} />
+      {prefillHref && (
+        <Link href={prefillHref} className="_src-cta-btn">
+          帶入模擬單
+        </Link>
+      )}
+    </div>
+  );
 }
 
 export function displaySourceTrail(sourceTrail: string | null | undefined): string {
@@ -385,6 +460,57 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
         }
         ._src-sizing b { color: var(--tac-fg-0, #e8edf5); }
         ._src-sizing-sep { opacity: 0.3; }
+        ._src-cta-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          border-top: 1px solid var(--tac-line, rgba(220,228,240,0.14));
+          padding-top: 10px;
+        }
+        ._src-cta-btn {
+          min-height: 34px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--tac-line, rgba(220,228,240,0.14));
+          border-radius: 6px;
+          padding: 0 12px;
+          color: var(--tac-fg-1, #c6d0de);
+          background: rgba(8, 11, 16, 0.52);
+          font: 850 11.5px/1 var(--sans-tc, sans-serif);
+          text-decoration: none;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        ._src-cta-btn:hover:not(:disabled) {
+          color: var(--tac-fg-0, #e8edf5);
+          border-color: rgba(200, 148, 63, 0.5);
+          background: rgba(200, 148, 63, 0.1);
+        }
+        ._src-cta-btn[data-tone="ok"] {
+          color: var(--tac-ok, #2ecc71);
+          border-color: rgba(46, 204, 113, 0.5);
+          background: rgba(46, 204, 113, 0.1);
+        }
+        ._src-cta-btn[data-tone="bad"] {
+          color: var(--tac-bad, #e63946);
+          border-color: rgba(230, 57, 70, 0.5);
+          background: rgba(230, 57, 70, 0.1);
+        }
+        ._src-cta-btn:disabled {
+          cursor: default;
+          opacity: 0.88;
+        }
+        ._src-cta-unavailable {
+          color: var(--tac-fg-3, #7a8aa0);
+          font-size: 12px;
+          line-height: 1.55;
+        }
+        @media (max-width: 480px) {
+          ._src-cta-btn {
+            min-height: 44px;
+          }
+        }
         @media (max-width: 680px) {
           ._src-head { display: grid; }
           ._src-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -516,6 +642,8 @@ export function StockRecCard({ rec }: { rec: StockRecCardData }) {
           <b>組合上限</b>
           {bucket.max_nav === "0" ? "0" : `${bucket.max_nav} NAV`}
         </div>
+
+        <LinkageCtaRow rec={rec} />
       </article>
     </>
   );

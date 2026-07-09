@@ -5,6 +5,8 @@ import { getCompanies, getSignals, getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline } from "@/lib/operator-copy";
 import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
+import { SignalCtaRow } from "./SignalCtaRow";
+import { isSignalStale, relativeTimeLabel } from "./signal-freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -391,6 +393,53 @@ const SIGNALS_CSS = `
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
+._sig-card[data-stale="true"] {
+  opacity: 0.52;
+  filter: grayscale(0.35);
+}
+._sig-freshness {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+._sig-freshness[data-stale="true"] {
+  color: #566276;
+}
+._sig-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+._sig-cta-row .mini-button[data-tone="ok"] {
+  border-color: rgba(46,204,113,0.55);
+  background: rgba(46,204,113,0.16);
+  color: #4adb88;
+}
+._sig-cta-row .mini-button[data-tone="bad"] {
+  border-color: rgba(230,57,70,0.55);
+  background: rgba(230,57,70,0.16);
+  color: #ff6b77;
+}
+._sig-cta-row .mini-button:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+._sig-cta-row .mini-button[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+  color: #566276;
+  border-color: rgba(220,228,240,0.14);
+  background: transparent;
+  pointer-events: none;
+}
+@media (max-width: 480px) {
+  ._sig-cta-row .mini-button {
+    min-height: 44px;
+  }
+}
 `;
 
 export default async function SignalsPage() {
@@ -543,11 +592,13 @@ export default async function SignalsPage() {
                 : signal.direction === "bearish" ? "_sig-badge-bear"
                 : "_sig-badge-neutral";
               const confColor = signal.confidence >= 4 ? "#e2b85c" : signal.confidence <= 2 ? "#e63946" : "#91a0b5";
+              const stale = isSignalStale(signal.createdAt);
 
               return (
                 <div
                   key={signal.id}
                   className="_sig-card"
+                  data-stale={stale ? "true" : "false"}
                   style={{ borderLeftColor: borderColor }}
                 >
                   {/* Directional glow */}
@@ -560,8 +611,14 @@ export default async function SignalsPage() {
                   <div className="_sig-meta">
                     <span className={`_sig-badge ${badgeCls}`}>{directionLabel(signal.direction)}</span>
                     <span className="_sig-badge _sig-badge-cat">{categoryLabel(signal.category)}</span>
-                    <span className="tg soft" style={{ fontSize: 11, marginLeft: "auto" }}>
-                      {formatDateTime(signal.createdAt)}
+                    <span
+                      className="_sig-freshness"
+                      data-stale={stale ? "true" : "false"}
+                      style={{ marginLeft: "auto" }}
+                      title={formatDateTime(signal.createdAt)}
+                    >
+                      {relativeTimeLabel(signal.createdAt)}
+                      {stale ? "（已過期）" : ""}
                     </span>
                   </div>
 
@@ -588,16 +645,14 @@ export default async function SignalsPage() {
                     </span>
                   </div>
 
-                  {/* Links */}
+                  {/* Links / action CTAs */}
                   <div className="_sig-links">
                     {company ? (
-                      <Link href={`/companies/${company.ticker}`} className="mini-button">
-                        {company.ticker} {company.name}
-                      </Link>
+                      <SignalCtaRow ticker={company.ticker} companyName={company.name} direction={signal.direction} stale={stale} />
                     ) : theme ? (
                       <Link href={`/themes/${theme.slug}`} className="mini-button">{themeLinkLabel(theme)}</Link>
                     ) : (
-                      <span className="tg muted" style={{ fontSize: 12 }}>未連結公司或主題</span>
+                      <span className="tg muted" style={{ fontSize: 12 }}>未連結公司或主題，暫無法看公司／加觀察／下單</span>
                     )}
                     <span className="tg soft" style={{ fontSize: 11, marginLeft: "auto" }}>來源：{result.source}</span>
                   </div>
