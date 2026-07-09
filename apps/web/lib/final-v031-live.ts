@@ -69,6 +69,37 @@ function okValue<T>(result: Settled<T>, fallback: T): T {
   return result.status === "fulfilled" ? result.value : fallback;
 }
 
+export type BrokerGatewayStatus = "unpaired" | "pending" | "paired_unreachable" | "reachable";
+
+export type GatewayStatusBadge = {
+  label: string;
+  color: string;
+  border: string;
+  background: string;
+};
+
+// 統一下單流 D6（帳號帶，2026-07-09）: four-state gatewayStatus -> badge copy,
+// same wording/colors as the /settings/broker trust card (#1163,
+// apps/web/app/settings/broker/broker-connections.tsx's gatewayBadge()) so
+// the trading-room account strip and the settings page never disagree about
+// what "已連線" vs "等待配對" means. Kept as a real, unit-testable function
+// (unlike the rest of the ticket-submit vocab in this file, which has to be
+// inlined as plain JS text inside the <script> template because it ships as
+// a raw string with no bundler import access) — the trading-room hydration
+// script mirrors this exact mapping inline for the same reason.
+export function gatewayStatusBadge(status: string | null | undefined): GatewayStatusBadge {
+  if (status === "reachable") {
+    return { label: "已連線", color: "#34d399", border: "rgba(52,211,153,0.32)", background: "rgba(52,211,153,0.10)" };
+  }
+  if (status === "pending") {
+    return { label: "等待配對", color: "#fbbf24", border: "rgba(251,191,36,0.34)", background: "rgba(251,191,36,0.10)" };
+  }
+  if (status === "paired_unreachable") {
+    return { label: "等待連線", color: "#fbbf24", border: "rgba(251,191,36,0.34)", background: "rgba(251,191,36,0.10)" };
+  }
+  return { label: "未配對", color: "#9ca3af", border: "rgba(156,163,175,0.26)", background: "rgba(156,163,175,0.08)" };
+}
+
 function settledState(result: Settled<unknown>) {
   return result.status === "fulfilled" ? "live" : "blocked";
 }
@@ -919,6 +950,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   // KGI-intended order to paper).
   let accountsCache = null;
   const loadBrokerAccounts = async () => {
+    // D6 (2026-07-09): the account strip (hydrateBrokerStrip) already fetches
+    // GET /uta/accounts on every hydratePaper() refresh for badge rendering —
+    // reuse that instead of a second round-trip when it's already populated.
+    if (Array.isArray(live.accounts) && live.accounts.length) return live.accounts;
     if (accountsCache) return accountsCache;
     try {
       accountsCache = await apiGet("/api/v1/uta/accounts");
@@ -1337,14 +1372,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       soft(apiGet("/api/v1/watchlist"))
     ]);
     const fauto = fautoResult.ok ? fautoResult.data : null;
-    // Phase 2 broker strip: fetch live UTA adapter catalog (kgi + paper).
-    // /uta/accounts is currently empty — we use adapters as the selectable source.
-    // Fubon stays display-only (isActive=false on backend); selector defaults paper.
-    let brokers = [];
+    // Account strip (統一下單流 D6, 2026-07-09): reads GET /uta/accounts, which
+    // #1165 (PR-2) now seeds with a baseline paper + kgi row per workspace so
+    // it's never empty. Replaces the old /uta/adapters catalog fetch (that
+    // endpoint carries no gatewayStatus and pre-dated account seeding — see
+    // final-v031-live.ts's original 2026-06-24 comment, since removed).
+    // Fubon stays excluded here too — its strip button is static/disabled in
+    // the vendor HTML and never becomes selectable.
+    let accounts = [];
     try {
-      const adaptersRes = await soft(apiGet("/api/v1/uta/adapters"));
-      if (adaptersRes.ok && adaptersRes.data && Array.isArray(adaptersRes.data.adapters)) {
-        brokers = adaptersRes.data.adapters.filter((b) => b && b.adapterKey && b.adapterKey !== 'fubon');
+      const accountsRes = await soft(apiGet("/api/v1/uta/accounts"));
+      if (accountsRes.ok && Array.isArray(accountsRes.data)) {
+        accounts = accountsRes.data.filter((a) => a && a.adapterKey && a.adapterKey !== 'fubon');
       }
     } catch {
       // fallback to HTML static strip — safe to ignore
@@ -1424,7 +1463,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       ohlcv,
       bidAsk:bidAskResult.ok ? bidAskResult.data : null,
       ticks:ticksResult.ok ? (ticksResult.data?.ticks || []) : [],
-      brokers,
+      accounts,
       prefill,
       _companyId: company?.id ?? null,
       _companyIdSymbol: selectedSymbol,
@@ -2393,16 +2432,34 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     return { prefix: '送出模擬訂單', sub: '平台模擬', shortName: '模擬訂單' };
   }
 
+  // 統一下單流 D6（帳號帶，2026-07-09）: gatewayStatus -> badge copy/color.
+  // Mirrors the real, unit-tested gatewayStatusBadge() exported from this
+  // same file (final-v031-live.ts, outside this <script> template) and the
+  // /settings/broker trust card's wording 1:1 — inlined here for the same
+  // reason as the D5 reason-code vocab in the submit handlers above: this
+  // whole block ships as a raw string with no bundler import access.
+  function gatewayBadge(status) {
+    if (status === 'reachable') return { label: '已連線', color: '#34d399', border: 'rgba(52,211,153,0.32)', background: 'rgba(52,211,153,0.10)' };
+    if (status === 'pending') return { label: '等待配對', color: '#fbbf24', border: 'rgba(251,191,36,0.34)', background: 'rgba(251,191,36,0.10)' };
+    if (status === 'paired_unreachable') return { label: '等待連線', color: '#fbbf24', border: 'rgba(251,191,36,0.34)', background: 'rgba(251,191,36,0.10)' };
+    return { label: '未配對', color: '#9ca3af', border: 'rgba(156,163,175,0.26)', background: 'rgba(156,163,175,0.08)' };
+  }
+
   // Phase 2 (multi-broker, 2026-06-24): broker strip is now clickable — paper is the
   // default; selecting KGI routes the ticket through the unified
   // POST /api/v1/trading/orders endpoint's KGI SIM channel (統一下單流 D1,
   // 2026-07-09 — see submitUnifiedOrder()).
   // Fubon stays display-only (disabled button, isActive=false). Real-money channels
   // remain locked (prod_write_blocked guard unchanged).
+  //
+  // D6 (2026-07-09): this is now the "帳號帶" — each selectable button also
+  // shows a gatewayStatus badge sourced from live.accounts (GET
+  // /uta/accounts, seeded by #1165 so paper+kgi rows always exist).
   function hydrateBrokerStrip() {
     const strip = $('#broker-strip');
     if (!strip) return;
     const currentKey = activeBrokerKey();
+    const accountsList = Array.isArray(live.accounts) ? live.accounts : [];
     // Apply active class to matching button; ensure fubon stays disabled.
     const btns = strip.querySelectorAll('.bbtn');
     btns.forEach((btn) => {
@@ -2413,6 +2470,29 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       btn.classList.toggle('active', isActive);
       // Remove placeholder tooltip from selectable buttons
       if (bk !== 'fubon') btn.removeAttribute('title');
+      // D6 帳號帶: gatewayStatus badge, one per selectable broker button.
+      const account = accountsList.find((a) => a && a.adapterKey === bk) || null;
+      if (account) {
+        const badge = gatewayBadge(account.gatewayStatus);
+        let stat = btn.querySelector('.bstat');
+        if (!stat) {
+          stat = document.createElement('span');
+          stat.className = 'bstat';
+          stat.style.marginLeft = '6px';
+          stat.style.padding = '1px 6px';
+          stat.style.borderRadius = '999px';
+          stat.style.fontSize = '10px';
+          stat.style.fontWeight = '700';
+          stat.style.letterSpacing = '0.02em';
+          stat.style.border = '1px solid transparent';
+          btn.appendChild(stat);
+        }
+        stat.textContent = badge.label;
+        stat.style.color = badge.color;
+        stat.style.borderColor = badge.border;
+        stat.style.background = badge.background;
+        stat.title = account.accountLabel ? account.accountLabel + ' · ' + badge.label : badge.label;
+      }
       if (!btn.dataset.brokerClickWired) {
         btn.dataset.brokerClickWired = '1';
         btn.addEventListener('click', () => {
