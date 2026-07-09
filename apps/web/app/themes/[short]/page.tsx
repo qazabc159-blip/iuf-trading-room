@@ -5,6 +5,7 @@ import { MetricStrip } from "@/components/RadarWidgets";
 import { getCompanies, getSignals, getStrategyIdeas, getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
 import { cleanExternalHeadline, cleanNarrativeText, cleanThemeThesis } from "@/lib/operator-copy";
+import { MemberQuoteRow } from "./MemberQuoteRow";
 
 export const dynamic = "force-dynamic";
 
@@ -311,18 +312,76 @@ const DETAIL_CSS = `
   ._bty-member-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
     padding: 10px 12px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,184,0,0.15);
     border-radius: 6px;
-    text-decoration: none;
-    color: inherit;
     transition: background 0.1s, border-color 0.1s;
   }
   ._bty-member-card:hover {
     background: rgba(255,184,0,0.06);
     border-color: rgba(255,184,0,0.35);
+  }
+  ._bty-member-card-link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-decoration: none;
+    color: inherit;
+  }
+  ._bty-member-quote-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    position: relative;
+    z-index: 1;
+  }
+  ._bty-member-price {
+    font-family: var(--mono, monospace);
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  ._bty-member-price i {
+    font-style: normal;
+    font-size: 10px;
+  }
+  ._bty-member-price[data-tone="up"] { color: #ff6b35; }
+  ._bty-member-price[data-tone="down"] { color: #2ecc71; }
+  ._bty-member-price[data-tone="flat"] { color: rgba(255,255,255,0.5); }
+  ._bty-member-watch-btn {
+    min-height: 26px;
+    padding: 0 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.03);
+    color: rgba(255,255,255,0.75);
+    font-size: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  ._bty-member-watch-btn[data-tone="ok"] {
+    border-color: rgba(46,204,113,0.5);
+    background: rgba(46,204,113,0.14);
+    color: #4adb88;
+  }
+  ._bty-member-watch-btn[data-tone="bad"] {
+    border-color: rgba(230,57,70,0.5);
+    background: rgba(230,57,70,0.14);
+    color: #ff6b77;
+  }
+  ._bty-member-watch-btn:disabled {
+    cursor: default;
+    opacity: 0.85;
+  }
+  @media (max-width: 480px) {
+    ._bty-member-watch-btn { min-height: 34px; padding: 0 10px; }
   }
   ._bty-member-ticker {
     font-size: 15px;
@@ -477,12 +536,15 @@ export default async function ThemeDetailPage({ params }: { params: Promise<{ sh
             {detailLive && result.data.companies.length > 0 && (
               <div className="_bty-member-grid">
                 {result.data.companies.map((company) => (
-                  <Link className="_bty-member-card" href={`/companies/${company.ticker}`} key={company.id}>
-                    <span className="_bty-member-ticker">{company.ticker}</span>
-                    <span className="_bty-member-name">{company.name}</span>
-                    <span className="_bty-member-meta">{company.market} / {company.chainPosition}</span>
-                    <span className="_bty-member-meta">{company.beneficiaryTier}</span>
-                  </Link>
+                  <div className="_bty-member-card" key={company.id}>
+                    <Link className="_bty-member-card-link" href={`/companies/${company.ticker}`}>
+                      <span className="_bty-member-ticker">{company.ticker}</span>
+                      <span className="_bty-member-name">{company.name}</span>
+                      <span className="_bty-member-meta">{company.market} / {company.chainPosition}</span>
+                      <span className="_bty-member-meta">{company.beneficiaryTier}</span>
+                    </Link>
+                    <MemberQuoteRow ticker={company.ticker} name={company.name} />
+                  </div>
                 ))}
               </div>
             )}

@@ -1562,6 +1562,27 @@ export async function getRealtimeSnapshotMulti(
   return { items, _stub: true };
 }
 
+// ── User-managed watchlist (trade desk) — 「加觀察」CTA (decision-flow C-2) ────
+// Backed by POST /api/v1/watchlist (user_watchlist table, per workspace+user).
+// Not to be confused with WatchlistOverview above (legacy risk-preview /api/watchlist/overview).
+// (Read-back GET /api/v1/watchlist exists server-side but has no consumer yet —
+// out of C-2 scope, a future "watchlist page" would wire it.)
+export type AddWatchlistSymbolResult =
+  | { ok: true; symbol: string }
+  | { ok: false; error: string };
+
+export async function addWatchlistSymbol(symbol: string, name?: string): Promise<AddWatchlistSymbolResult> {
+  try {
+    const result = await requestRaw<{ ok?: boolean; symbol?: string }>("/api/v1/watchlist", {
+      method: "POST",
+      body: JSON.stringify({ symbol, name: name ?? "" }),
+    });
+    return { ok: true, symbol: result.symbol ?? symbol };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 // ── Dashboard Snapshot (PR #326 — 6-panel aggregation, 30s cache) ─────────────
 // GET /api/v1/dashboard/snapshot
 // Returns 6 panels in 1 fetch: industry_heatmap, news_recent, brief_today,
