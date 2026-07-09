@@ -2,6 +2,8 @@
 
 **2026-07-09 追蹤更新**：本檔列出的 3 個「待修（mock/漂移）」檔（finmind-client / market-ingest / finmind-full-ingest）已修復並掛入根 `pnpm test`。詳見文末「2026-07-09 追蹤：3 檔待修已解決」一節。
 
+**2026-07-09 二次追蹤更新**：#1186 新增 `db-tests` CI job（真 Postgres）後，原本標「需 DB」的 3 檔（idempotency-race / paper-executor / strategy-ideas）在真 DB 下逐一驗證仍全紅——根因非缺 Postgres，而是兩個既有測試漂移（legacy ledger import 錯位 + 過期硬編價斷言）。三檔已修復，`pnpm run test:db`（真 Postgres 本地重現）33/33 綠。詳見文末「2026-07-09 追蹤：DB-mode 3 檔已解決」一節。
+
 **背景**：7/4 PR-A（#1162）照出假綠燈 — 根 `pnpm test` 原本只跑 `tests/` 下 4 檔 + PR-A 新增的 2 個 auth 檔（共 6 檔）。`apps/api/src/**/*.test.ts` 底下有 72 個測試檔（不含已掛的 2 個 auth 檔）**從沒進 CI**，等於「明明有測試卻沒在守」。
 
 **本 PR 目標**：把「能安全獨立、記憶體模式（無 Postgres / 無外部服務）跑且綠」的那批啟用，分批穩掛，不貪多炸 CI 時間或引入 flaky。不改任何被測程式碼；不碰 broker 鎖檔。
@@ -52,15 +54,15 @@
 | 檔 | 分類 | 觀察到的失敗/原因 | 後續處理 |
 |---|---|---|---|
 | `__tests__/paper-e2e-order-unit.test.ts` | **需 live API** | `PAPER_E2E_BASE_URL not set. Aborting.` — 名為 unit 實為 e2e，需要跑起來的 API 端點（+DB）。 | 歸到 e2e/整合線，另設 job 帶 `PAPER_E2E_BASE_URL` + DB 才跑；不進純單元 gate。 |
-| `__tests__/idempotency-race.test.ts` | **需 DB** | `T05-D ... expected 5 persisted, got 0` — 記憶體模式下 persistence 為 no-op。 | 待有 Postgres 的 CI job（`DATABASE_URL` + `PERSISTENCE_MODE=database`）再掛。 |
-| `__tests__/paper-executor.test.ts` | **需 DB** | `G3: listOrders ... 0 !== 1` — 訂單未落地。 | 同上，DB job。 |
-| `__tests__/strategy-ideas.test.ts` | **需 DB** | `S1: ... ledger must contain the order`（driveOrder 未持久化）。 | 同上，DB job。 |
+| `__tests__/idempotency-race.test.ts` | ~~需 DB~~ **已修復 2026-07-09** | `T05-D ... expected 5 persisted, got 0` — 記憶體模式下 persistence 為 no-op。 | db-tests job（#1186）下已綠，見文末「2026-07-09 追蹤：DB-mode 3 檔已解決」一節。 |
+| `__tests__/paper-executor.test.ts` | ~~需 DB~~ **已修復 2026-07-09** | `G3: listOrders ... 0 !== 1` — 訂單未落地。 | 同上，db-tests job 下已綠。 |
+| `__tests__/strategy-ideas.test.ts` | ~~需 DB~~ **已修復 2026-07-09** | `S1: ... ledger must contain the order`（driveOrder 未持久化）。 | 同上，db-tests job 下已綠。 |
 | `data-sources/finmind-client.test.ts` | ~~待修（mock 漂移）~~ **已修復 2026-07-09** | `T9 ... 1 !== 2`、`T10 ... 0 !== 2` — fetch mock 呼叫次數/回退路徑期望與現行 client 行為對不上。 | 已掛入根 `pnpm test`。見文末追蹤節。 |
 | `market-ingest.test.ts` | ~~待修（Redis mock）~~ **已修復 2026-07-09** | `T-new-2/3: setEx should have been called ... 0 !== 2`、`cached should be false` — Redis mock 未被觸發/逾時路徑期望漂移。 | 已掛入根 `pnpm test`。見文末追蹤節。 |
 | `__tests__/finmind-full-ingest.test.ts` | ~~待修（測試漂移）~~ **已修復 2026-07-09** | `FI5: ... must return 11 dataset status rows`，實際 `12 !== 11` — dataset registry 已成長到 12，測試硬編 11 過期。 | 已掛入根 `pnpm test`。見文末追蹤節。 |
 | `__tests__/twse-market-overview.test.ts` | **綠但慢** | 獨立綠，但 node 自報 ~10s（client 內部真 `setTimeout` retry backoff；fetch 已全 mock，非網路、非 flaky）。 | 本批為守 CI 時間先不掛；後續可在測試注入 fake timer / 縮短 backoff 後補掛（不動 client 生產路徑）。 |
 
-**分類統計**：需 DB 3 檔、需 live API 1 檔、待修（mock/漂移，已於 2026-07-09 修復並補掛）3 檔、綠但慢 1 檔。
+**分類統計**：需 DB 3 檔（已於 2026-07-09 在 db-tests job 下修復並驗綠，見文末）、需 live API 1 檔、待修（mock/漂移，已於 2026-07-09 修復並補掛）3 檔、綠但慢 1 檔。
 
 ---
 
@@ -127,3 +129,42 @@
 
 - 未發現任何被測程式碼 bug；`finmind-client.ts` 的斷路器搶佔 fallback、`market-ingest.ts` 的 `getRedisClient()` early-return 順序、`finmind-full-ingest.ts` 的 11 vs 12 dataset 範疇差異，皆視為現行既有設計，僅測試檔跟上。
 - `market-ingest.test.ts` 新增的 `setMockRedisClient()` 佈線方式（跟隨環境變數切換）較 hacky，但未動生產程式碼；若之後有人想讓 `_setRedisClientForTest()` 本身在生產碼裡更好測（例如讓 test-only 注入不依賴 `REDIS_URL`），屬於另一個「改善測試性」的獨立 ticket，非本次授權範圍。
+
+---
+
+## 2026-07-09 追蹤：DB-mode 3 檔已解決（#1186 follow-up，分支 `fix/db-tests-ledger-drift-jason-20260709`）
+
+背景：#1186 新增 `db-tests` CI job（真 `postgres:16-alpine` service container + `pnpm run migrate` + `pnpm run test:db`）後，Bruce 本地重現真 DB 環境驗證，發現 `idempotency-race.test.ts` / `paper-executor.test.ts` / `strategy-ideas.test.ts` 三檔即使拿到真 Postgres 仍全紅（33 tests / pass 22 / fail 11）。逐一 root-cause 後確認**兩者皆為測試漂移，非被測程式碼 bug**，只動三個測試檔，未動任何 `apps/api/src` 下的非測試檔。
+
+### 根因 1（3 檔共同，佔 7/11 失敗）：讀了從未被寫入的 legacy ledger
+
+三檔都從 `domain/trading/paper-ledger.js`（純記憶體 Map，W6 Day 1 產物）import `listOrders` / `getOrder` / `_clearLedger` 來驗證持久化結果。但 `order-driver.ts` 的 `driveOrder()` 自 **W8 2026-05-05** 起已改寫進 `domain/trading/paper-ledger-db.js`（DB 模式走 drizzle + Postgres，記憶體模式走內部 `mapAdapter()`）。兩個模組完全不共用儲存 —— 測試讀的 Map 從未被 `driveOrder` 寫過，讀回永遠是空/undefined。這與有沒有 Postgres 無關：即使拿到真 DB，讀的仍是錯的模組。
+
+檢查發現，production 程式碼中 `paper-ledger.js` 唯二的 2 處 import 只是**型別**（`paper-ledger-db.ts`／`paper-executor.ts` 各自 `import type { SimulatedFill }`），沒有任何 runtime 呼叫其 CRUD 函式——這些函式在 production 已是死碼，僅 3 個測試檔還在用。
+
+修法：`idempotency-race.test.ts`／`strategy-ideas.test.ts` 全面改讀 `paper-ledger-db.js` 的 `listOrders`/`getOrder`（改為 `await`）。`paper-executor.test.ts` 混合保留——section E/F/G1/G2/G4-G7 直接呼叫 legacy `upsertOrder`/`getOrder` 等（不經 `driveOrder`，測試 legacy CRUD 本身，本來就會過），只有透過 `driveOrder()` 驗證持久化結果的 D4 和 G3 改讀 `paper-ledger-db.js`（別名 `getOrderDb`/`listOrdersDb`，避免與同檔案既有 legacy import 撞名）。
+
+**測試隔離注意**：`paper_orders.idempotency_key` 有全域 UNIQUE 約束（migration 0015/0021），且真 Postgres 是持久的（不像記憶體模式每個測試進程重來）。`idempotency-race.test.ts` 原本用固定字串 idempotencyKey + 固定 `TEST_USER_ID`，同一支測試檔案重跑第二次會撞到自己上一輪留下的 row。改為每個 test 用 `randomUUID()` 產生的 userId + idempotencyKey 後綴，讓 `listOrders(userId)` 的結果天然隔離，不需要（也做不到——`paper-ledger-db.js` 沒有 `_clearLedger` 這種 test helper）手動清表。CI 的 `db-tests` job 每次都是全新 postgres service container，這個隔離主要是為了本機重複驗證安全；即便如此，本地同一顆容器連續兩輪皆綠（無 flaky）。
+
+### 根因 2（`paper-executor.test.ts` 專屬，佔 4/11 失敗：A2/A3/E2/F1）：斷言已刻意移除的硬編價 fallback
+
+`paper-executor.ts` 檔頭 HARD LINE 註解明寫：market 單無 `intent.price` 時，優先查 `companies_ohlcv` 真實收盤價，查不到就 **REJECTED（`no_price_available`）**——「never fill at a hardcoded fake price (was 100.0)」。測試從未 seed 任何 OHLCV row，所以現行行為必然是 REJECTED，但：
+- A2/A3 直接斷言「FILLED at fallback 100.0」——過期斷言，測試現行行為改為斷言 REJECTED + reason 含 `no_price_available`。
+- E2（cancelOrder on FILLED intent）/ F1（driveOrder on non-PENDING intent throws）用不帶價格的 market 單當「先讓它 FILLED 再測下一步」的前置動作，兩者測試意圖都不是價格 fallback——改為給 intent 一個顯式價格（150.0）讓它照舊 FILLED，不改測試想驗證的行為本身。
+
+此根因與 DB 有無無關：記憶體模式下 `getDb()` 回 null，同樣查不到價、同樣 REJECTED，只是 #1186 的 db-tests job 才第一次真的把這 3 檔跑起來而暴露。
+
+### 驗收證據（2026-07-09）
+
+- 本地 `docker run postgres:16-alpine`（`POSTGRES_USER=iuf POSTGRES_PASSWORD=iuf POSTGRES_DB=iuf_ci_test`，對齊 #1186 `db-tests` job 的 service 設定）+ `pnpm run migrate`（0001→0050 全過）+ `pnpm run test:db`：**`tests 33 / pass 33 / fail 0`**，EXIT 0，重跑 2 次結果一致（無 flaky）。
+- 修復前基線（同一顆容器）：`tests 33 / pass 22 / fail 11`，與 #1186 PR body 的本地重現結果一致，確認根因判斷無誤後才動手。
+- memory-mode `pnpm test`（`env -u DATABASE_URL -u PERSISTENCE_MODE -u FINMIND_API_TOKEN -u FINMIND_TOKEN`）：`tests 1588 / pass 1580 / fail 0 / skipped 8`，EXIT 0——與修復前基線一致（這 3 個檔本來就不在根 `pnpm test` 的檔案清單裡，只在 #1186 新增的 `test:db` 清單），確認未影響既有 CI。
+- `pnpm typecheck`（`turbo run typecheck`）：15/15 綠，`@iuf-trading-room/api:typecheck` 為 cache miss 真跑過。
+- `python scripts/audit/w6_no_real_order_audit.py`：6/6 PASS。
+- `git diff --stat .github/workflows/ci-security.yml`：空（未改動鎖檔）。
+
+### 未處理 / 假設（本次）
+
+- `paper-executor.test.ts` 的 section G（G1/G2/G4-G7）仍測試 legacy `paper-ledger.js` 的 CRUD 本身（不經 `driveOrder`）——這些函式在 production 已是死碼（只剩型別被引用），但這些測試本身沒有壞（本來就綠），視為現況範圍外的既有設計，未動；若之後要清理 legacy 模組本身（非測試檔），屬於另一個獨立 ticket，非本次授權範圍。
+- #1186 的 `db-tests` job 目前是 non-blocking（未進 branch protection required checks）；本次三檔修復後可考慮 flip 成 required，但該項是 GitHub repo 設定變更，不在本次 file scope 內，留給 Elva/楊董決定時機。
+- PR 為 DRAFT，依派工要求會跟 #1186 一起收（不單獨 merge）。

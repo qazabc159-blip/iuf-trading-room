@@ -4,7 +4,9 @@
  * Purpose: Prove that N concurrent paper-order submissions with the same
  * idempotencyKey produce exactly 1 persisted order (1 created + N-1 deduped).
  *
- * Approach: Drives the in-memory domain layer directly (no HTTP, no DB).
+ * Approach: Drives the domain layer directly (no HTTP route). Persistence
+ * goes through paper-ledger-db.js, which uses a real Postgres DB when
+ * PERSISTENCE_MODE=database and an in-memory MapAdapter otherwise.
  * Simulates the route handler logic:
  *   - _registerIdempotencyKey() = in-memory pre-check (same as server.ts line ~2749)
  *   - driveOrder()              = full PENDING→FILLED pipeline
@@ -24,6 +26,7 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -34,18 +37,21 @@ import {
 
 import { driveOrder } from "../domain/trading/order-driver.js";
 
-import {
-  listOrders,
-  _clearLedger
-} from "../domain/trading/paper-ledger.js";
+// NOTE: driveOrder() persists through paper-ledger-db.js (DB adapter when
+// PERSISTENCE_MODE=database, in-memory MapAdapter otherwise) since W8
+// 2026-05-05 — see order-driver.ts. The legacy paper-ledger.js Map is never
+// written to by driveOrder and must not be used to verify persistence here.
+import { listOrders } from "../domain/trading/paper-ledger-db.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const TEST_USER_ID = "00000000-0000-0000-0000-000000000099";
-const TEST_SYMBOL  = "2330";
-const IDEM_KEY     = "t05-race-fixed-key-2026-05-01";
+const TEST_SYMBOL = "2330";
+// idempotency_key has a global UNIQUE constraint (migration 0015/0021) — suffix
+// with a fresh randomUUID per test-file run so re-runs against a persistent
+// (real) Postgres DB never collide with a previous run's rows.
+const IDEM_KEY = `t05-race-fixed-key-${randomUUID()}`;
 
 /**
  * Simulate what the route handler does for a single submission attempt:
@@ -54,8 +60,11 @@ const IDEM_KEY     = "t05-race-fixed-key-2026-05-01";
  *   3. If new → createOrderIntent + driveOrder → return { outcome: "created", id }
  *
  * This mirrors server.ts POST /api/v1/paper/orders logic (idempotency block ~line 2749).
+ *
+ * `userId` is unique per test (see callers) so each test's ledger assertions
+ * are isolated even though the DB ledger persists across tests/runs.
  */
-async function simulateSubmit(idempotencyKey: string): Promise<
+async function simulateSubmit(idempotencyKey: string, userId: string): Promise<
   | { outcome: "created"; orderId: string }
   | { outcome: "deduped" }
   | { outcome: "rejected"; reason: string }
@@ -76,7 +85,7 @@ async function simulateSubmit(idempotencyKey: string): Promise<
     qty: 1,
     quantity_unit: "SHARE",
     price: 800,
-    userId: TEST_USER_ID
+    userId
   });
 
   // Step 3: drive order through pipeline (mirrors driveOrder call in route)
@@ -99,13 +108,13 @@ async function simulateSubmit(idempotencyKey: string): Promise<
 // ---------------------------------------------------------------------------
 
 test("T05-A: sequential n=5 same idempotencyKey → 1 created + 4 deduped", async () => {
-  _clearLedger();
   _clearIdempotencyKeys();
+  const userId = randomUUID();
 
   const n = 5;
   const results = [];
   for (let i = 0; i < n; i++) {
-    results.push(await simulateSubmit(IDEM_KEY));
+    results.push(await simulateSubmit(IDEM_KEY, userId));
   }
 
   const created = results.filter(r => r.outcome === "created").length;
@@ -121,7 +130,7 @@ test("T05-A: sequential n=5 same idempotencyKey → 1 created + 4 deduped", asyn
   assert.equal(errors,   0,    `expected 0 errors, got ${errors}`);
 
   // Verify ledger count
-  const persisted = listOrders(TEST_USER_ID);
+  const persisted = await listOrders(userId);
   assert.equal(persisted.length, 1, `expected 1 persisted order, got ${persisted.length}`);
   assert.equal(persisted[0]!.intent.idempotencyKey, IDEM_KEY);
   assert.equal(persisted[0]!.intent.status, "FILLED");
@@ -134,16 +143,16 @@ test("T05-A: sequential n=5 same idempotencyKey → 1 created + 4 deduped", asyn
 // ---------------------------------------------------------------------------
 
 test("T05-B: concurrent n=5 Promise.all same idempotencyKey → 1 created + 4 deduped", async () => {
-  _clearLedger();
   _clearIdempotencyKeys();
+  const userId = randomUUID();
 
   const n = 5;
-  const idemKey = "t05-race-concurrent-key-2026-05-01";
+  const idemKey = `t05-race-concurrent-key-${randomUUID()}`;
 
   // Fire N promises simultaneously — this is the race condition being tested.
   // The in-memory Set is synchronous, so the first to call _registerIdempotencyKey wins.
   const results = await Promise.all(
-    Array.from({ length: n }, () => simulateSubmit(idemKey))
+    Array.from({ length: n }, () => simulateSubmit(idemKey, userId))
   );
 
   const created = results.filter(r => r.outcome === "created").length;
@@ -159,7 +168,7 @@ test("T05-B: concurrent n=5 Promise.all same idempotencyKey → 1 created + 4 de
   assert.equal(errors,   0,    `expected 0 errors, got ${errors}`);
 
   // Verify exactly 1 order in ledger
-  const persisted = listOrders(TEST_USER_ID);
+  const persisted = await listOrders(userId);
   assert.equal(persisted.length, 1,
     `expected 1 persisted order, got ${persisted.length} — ledger has duplicates`);
   assert.equal(persisted[0]!.intent.idempotencyKey, idemKey);
@@ -174,14 +183,14 @@ test("T05-B: concurrent n=5 Promise.all same idempotencyKey → 1 created + 4 de
 // ---------------------------------------------------------------------------
 
 test("T05-C: concurrent n=10 Promise.all same idempotencyKey → 1 created + 9 deduped", async () => {
-  _clearLedger();
   _clearIdempotencyKeys();
+  const userId = randomUUID();
 
   const n = 10;
-  const idemKey = "t05-race-n10-key-2026-05-01";
+  const idemKey = `t05-race-n10-key-${randomUUID()}`;
 
   const results = await Promise.all(
-    Array.from({ length: n }, () => simulateSubmit(idemKey))
+    Array.from({ length: n }, () => simulateSubmit(idemKey, userId))
   );
 
   const created = results.filter(r => r.outcome === "created").length;
@@ -192,7 +201,7 @@ test("T05-C: concurrent n=10 Promise.all same idempotencyKey → 1 created + 9 d
   assert.equal(created, 1,   `expected 1 created, got ${created}`);
   assert.equal(deduped, n-1, `expected ${n-1} deduped, got ${deduped}`);
 
-  const persisted = listOrders(TEST_USER_ID);
+  const persisted = await listOrders(userId);
   assert.equal(persisted.length, 1, `expected 1 persisted, got ${persisted.length}`);
 
   console.log(`  T05-C persisted=1 PASS`);
@@ -203,13 +212,13 @@ test("T05-C: concurrent n=10 Promise.all same idempotencyKey → 1 created + 9 d
 // ---------------------------------------------------------------------------
 
 test("T05-D: n=5 different idempotencyKeys → 5 created + 0 deduped", async () => {
-  _clearLedger();
   _clearIdempotencyKeys();
+  const userId = randomUUID();
 
   const n = 5;
   const results = await Promise.all(
     Array.from({ length: n }, (_, i) =>
-      simulateSubmit(`t05-unique-key-${i}-2026-05-01`)
+      simulateSubmit(`t05-unique-key-${i}-${randomUUID()}`, userId)
     )
   );
 
@@ -221,7 +230,7 @@ test("T05-D: n=5 different idempotencyKeys → 5 created + 0 deduped", async () 
   assert.equal(created, n, `expected ${n} created, got ${created}`);
   assert.equal(deduped, 0, `expected 0 deduped, got ${deduped}`);
 
-  const persisted = listOrders(TEST_USER_ID);
+  const persisted = await listOrders(userId);
   assert.equal(persisted.length, n, `expected ${n} persisted, got ${persisted.length}`);
 
   console.log(`  T05-D persisted=${n} PASS`);
