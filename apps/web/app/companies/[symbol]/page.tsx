@@ -62,6 +62,14 @@ function signed(value: number | null | undefined, digits = 2) {
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
+function fmtMarketCap(value: number) {
+  if (!Number.isFinite(value)) return "--";
+  if (Math.abs(value) >= 1e12) return `${(value / 1e12).toFixed(1)}兆`;
+  if (Math.abs(value) >= 1e8) return `${(value / 1e8).toFixed(1)}億`;
+  if (Math.abs(value) >= 1e4) return `${(value / 1e4).toFixed(0)}萬`;
+  return value.toLocaleString("zh-TW");
+}
+
 function momentumFromChange(value: number | null | undefined) {
   if (typeof value !== "number") return "待接";
   if (value > 1) return "偏強";
@@ -393,6 +401,23 @@ export default async function CompanyDetailPage({
   const kbarRowCount = kbarView?.rows.length ?? 0;
   const kbarLive = kbarState === "LIVE" && kbarRowCount > 0;
 
+  // ── Round 2: Supplemental HUD stats (all from existing payloads — zero new backend calls) ──
+  // 振幅: today's (high-low)/prevClose — uses realtimeQuote fields
+  const refPrice = realtimeQuote?.referencePrice ?? realtimeQuote?.prevClose
+                   ?? realtimeQuote?.previousClose ?? realtimeQuote?.yesterdayClose ?? null;
+  const todayHigh = realtimeQuote?.high ?? (bars.length > 0 ? bars[bars.length - 1].high : null);
+  const todayLow  = realtimeQuote?.low  ?? (bars.length > 0 ? bars[bars.length - 1].low  : null);
+  const amplitude = (refPrice && refPrice > 0 && todayHigh != null && todayLow != null)
+    ? ((todayHigh - todayLow) / refPrice) * 100
+    : null;
+  // 52週高低: max/min high/low over last 252 bars
+  const w52Bars = bars.slice(-252);
+  const w52High = w52Bars.length > 0 ? Math.max(...w52Bars.map(b => b.high)) : null;
+  const w52Low  = w52Bars.length > 0 ? Math.min(...w52Bars.map(b => b.low))  : null;
+  // 市值 / PBR: from full-profile (already fetched)
+  const heroMarketCap: number | null = fullProfile?.marketIntel?.marketValue?.latest?.marketValue ?? null;
+  const heroPBR:       number | null = fullProfile?.marketIntel?.valuation?.latest?.pbr ?? null;
+
   return (
     <PageFrame
       code={`03-${company.ticker}`}
@@ -418,57 +443,75 @@ export default async function CompanyDetailPage({
         latestRevenue={heroRevenue?.revenue ?? null}
       />
 
-      <div className="company-kpi-strip">
-        <div>
-          <span className="tg soft">資料</span>
-          <b className={`tg ${ohlcvState === "LIVE" ? "up" : ohlcvState === "BLOCKED" ? "down" : "gold"}`}>
-            {ohlcvState === "LIVE" ? "日K已接" : ohlcvState === "BLOCKED" ? "日K暫停" : "日K無資料"}
-          </b>
+      {/* ── Round 2: HUD Stats Strip — 振幅 / 52週高低 / 市值 / PBR ── */}
+      <div className="_co-hud-stats-strip">
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">振幅</div>
+          <div className="_co-hud-stat-val">
+            {amplitude !== null ? `${amplitude.toFixed(2)}%` : "--"}
+          </div>
         </div>
-        <div>
-          <span className="tg soft">動能</span>
-          <b className={`tg ${tone(dailyChangePct)}`}>{momentumFromChange(dailyChangePct)}</b>
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">52週高</div>
+          <div className="_co-hud-stat-val _co-hud-up">
+            {w52High !== null ? w52High.toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : "--"}
+          </div>
         </div>
-        <div>
-          <span className="tg soft">分K</span>
-          <b className={`tg ${kbarLive ? "up" : kbarState === "BLOCKED" ? "down" : "gold"}`}>
-            {kbarLive ? `${kbarRowCount.toLocaleString("zh-TW")}根` : kbarState === "BLOCKED" ? "分K暫停" : "分K無資料"}
-          </b>
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">52週低</div>
+          <div className="_co-hud-stat-val _co-hud-dn">
+            {w52Low !== null ? w52Low.toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : "--"}
+          </div>
         </div>
-        <div>
-          <span className="tg soft">日變動</span>
-          <b className={`num ${tone(dailyChangePct)}`}>{signed(dailyChangePct)}%</b>
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">市值</div>
+          <div className="_co-hud-stat-val">
+            {heroMarketCap !== null ? fmtMarketCap(heroMarketCap) : "--"}
+          </div>
+          <div className="_co-hud-stat-sub">TWD</div>
         </div>
-        {/* Realtime badge — shows LIVE when EC2 KGI gateway returns fresh tick */}
-        <div>
-          <span className="tg soft">即時</span>
-          <b className={`tg ${realtimeLive ? "up" : "muted"}`}>
-            {realtimeLive
-              ? `${realtimeQuote?.state === "LIVE" ? "即時" : realtimeQuote?.state === "CLOSE" ? "今日收盤" : "略舊"}${realtimeQuote?.lastPrice != null ? ` ${realtimeQuote.lastPrice}` : ""}`
-              : "等待即時"}
-          </b>
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">本淨比</div>
+          <div className="_co-hud-stat-val">
+            {heroPBR !== null && Number.isFinite(heroPBR) ? heroPBR.toFixed(2) : "--"}
+          </div>
+          <div className="_co-hud-stat-sub">倍</div>
         </div>
-        <div>
-          <span className="tg soft">主題</span>
-          <b className="tg gold">{detail.themes.join(" / ") || "主題待接"}</b>
+        <div className="_co-hud-stat-cell">
+          <div className="_co-hud-stat-lbl">分K狀態</div>
+          <div className={`_co-hud-stat-val ${kbarLive ? "_co-hud-dn" : ""}`} style={{ fontSize: 11 }}>
+            {kbarLive ? `${kbarRowCount.toLocaleString("zh-TW")} 根` : kbarState === "BLOCKED" ? "暫停" : "無資料"}
+          </div>
         </div>
       </div>
 
       <div className="company-detail-layout">
         <div className="company-main-column">
-          <div className="company-workbench-shell">
-            <OhlcvCandlestickChart
-              bars={bars}
-              kbarRows={kbarView?.rows ?? []}
-              kbarState={kbarState}
-              kbarReason={kbarReason}
-              kbarDate={kbarView?.date ?? kbarDate}
-              symbol={company.ticker}
-              sourceState={ohlcvState}
-              sourceReason={ohlcvReason}
-            />
+          {/* ── Round 2: Trading view — K-line 左 64% + BidAsk/Depth 右 36% ── */}
+          <div className="_co-trading-view">
+            <div className="_co-chart-pane">
+              <div className="company-workbench-shell">
+                <OhlcvCandlestickChart
+                  bars={bars}
+                  kbarRows={kbarView?.rows ?? []}
+                  kbarState={kbarState}
+                  kbarReason={kbarReason}
+                  kbarDate={kbarView?.date ?? kbarDate}
+                  symbol={company.ticker}
+                  sourceState={ohlcvState}
+                  sourceReason={ohlcvReason}
+                />
+              </div>
+            </div>
+            <div className="_co-depth-pane">
+              {/* 五檔委買委賣 — 與 K 線並排，標準交易終端佈局 */}
+              <BidAskPanel symbol={company.ticker} />
+              {/* 盤中逐筆 */}
+              <LiveTickStreamPanel symbol={company.ticker} />
+            </div>
           </div>
-          {/* ── My-TW-Coverage：知識面板 + 上下游圖譜，同區塊露出避免 K 線下方像空白 ── */}
+
+          {/* ── My-TW-Coverage：知識面板 + 上下游圖譜 ── */}
           <div id="company-knowledge" className="company-knowledge-grid">
             <CoverageKnowledgePanel ticker={company.ticker} />
             <IndustryGraphPanel
@@ -486,9 +529,7 @@ export default async function CompanyDetailPage({
         <aside className="company-side-column">
           <CompanyInfoPanel company={company} />
           <CompanySideNavPanel />
-          {/* ── 4 KGI/FinMind streaming panels ── */}
-          <BidAskPanel symbol={company.ticker} />
-          <LiveTickStreamPanel symbol={company.ticker} />
+          {/* 籌碼面板 — BidAsk/LiveTick 已移至 trading view */}
           <InstitutionalPanel companyId={company.id} />
           <MarginShortPanel companyId={company.id} />
           <div id="company-source-status">
@@ -514,19 +555,13 @@ export default async function CompanyDetailPage({
         </div>
       )}
 
-      <div id="company-data-dock" className="company-tabs-band company-data-dock-title">
-        <div>
-          <span className="tg gold">公司資料艙</span>
-          <strong>FinMind 與正式資料流</strong>
-          <small>財報、籌碼、公告與盤中資料各自揭露來源狀態；沒有資料就顯示無資料或暫停，不補假內容。</small>
+      <div id="company-data-dock" className="_co-section-banner">
+        <span className="_co-section-banner-title">公司資料艙</span>
+        <span className="_co-section-banner-sub">FinMind 與正式資料流</span>
+        <div className="_co-section-banner-tags">
+          <span>價格</span><span>財報</span><span>籌碼</span><span>公告</span><span>逐筆</span>
         </div>
-        <div className="company-data-dock-tags">
-          <span>價格</span>
-          <span>財報</span>
-          <span>籌碼</span>
-          <span>公告</span>
-          <span>逐筆</span>
-        </div>
+        <div className="_co-section-banner-desc">財報、籌碼、公告與盤中資料各自揭露來源狀態；沒有資料就顯示無資料或暫停，不補假內容。</div>
       </div>
 
       <div className="company-data-dock">
@@ -546,21 +581,14 @@ export default async function CompanyDetailPage({
         </div>
       </div>
 
-      {/* BLOCK #8 Lane C — sections [06]-[11] off /full-profile (PR #259) + DEGRADED announcements */}
-      <div id="company-full-profile" className="company-tabs-band company-data-dock-title">
-        <div>
-          <span className="tg gold">完整資料區</span>
-          <strong>FinMind 11 資料集（[06]–[11]）</strong>
-          <small>財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；任何資料源 STALE / EMPTY / BLOCKED / DEGRADED 均誠實揭露，不補假。</small>
+      {/* BLOCK #8 Lane C — sections [06]-[11] off /full-profile */}
+      <div id="company-full-profile" className="_co-section-banner">
+        <span className="_co-section-banner-title">完整資料區</span>
+        <span className="_co-section-banner-sub">FinMind 11 資料集（[06]–[11]）</span>
+        <div className="_co-section-banner-tags">
+          <span>財報</span><span>月營收</span><span>法人</span><span>融資券</span><span>股利</span><span>公告</span>
         </div>
-        <div className="company-data-dock-tags">
-          <span>財報</span>
-          <span>月營收</span>
-          <span>法人</span>
-          <span>融資券</span>
-          <span>股利</span>
-          <span>公告</span>
-        </div>
+        <div className="_co-section-banner-desc">財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；任何資料源 STALE / EMPTY / BLOCKED / DEGRADED 均誠實揭露，不補假。</div>
       </div>
 
       <FullProfilePanels companyId={company.id} />
