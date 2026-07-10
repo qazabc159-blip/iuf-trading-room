@@ -28,13 +28,21 @@ describe("homepage P0 visual product copy", () => {
   });
 
   it("surfaces real AI recommendations on the customer homepage instead of hiding them behind debug pages", () => {
-    expect(source).toContain("getRecommendationsToday");
     expect(source).toContain("function AiRecommendationActionPanel");
     expect(source).toContain("今日 AI 推薦行動板");
     expect(source).toContain("data-testid=\"homepage-ai-recommendations\"");
-    expect(source).toContain("GET /api/v1/recommendations/today");
-    expect(source).toContain("recommendationTradeHref");
+    expect(source).toContain("homeV3TradeHref");
     expect(source).toContain("進交易室");
+  });
+
+  it("P0-2 (2026-07-10): homepage AI recommendations use the same v3 canonical source as /ai-recommendations, not the retired legacy engine", () => {
+    // reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md P0-2: homepage used to
+    // call /api/v1/recommendations/today (strategySource cont_liq_v36, a retired engine)
+    // and disagreed with /ai-recommendations' v3 canonical batch. Locks the fix.
+    expect(source).toContain("getAiRecommendationsV3");
+    expect(source).not.toContain("getRecommendationsToday");
+    expect(source).not.toContain("GET /api/v1/recommendations/today");
+    expect(source).toContain("deriveHomeAiRecommendationCards");
   });
 
   it("does not let one slow market-intel source blank the whole homepage intel panel", () => {
