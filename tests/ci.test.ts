@@ -20508,6 +20508,165 @@ test("SIM-LEDGER-CATCHUP-10: priceAudit is a diagnostic-only per-symbol evidence
 });
 
 // =============================================================================
+// SIM-LEDGER-REPRICE-1..9: 2026-07-10 single-date live reprice
+// (楊董/Elva ACK — reports/ledger_stall_20260709/JASON_CATCHUP_7_8_PRICE_MATCH_INVESTIGATION_2026-07-10.md
+//  confirmed a systematic 1-day mark-to-market lag; this tool corrects an
+//  EXISTING daily sim_ledger_nav row via UPDATE, never INSERT, never touches
+//  sim_ledger_weeks.)
+// =============================================================================
+
+test("SIM-LEDGER-REPRICE-1: _computeSingleDateRepriceFinancials matches hand-calculated market value + cash residual", async () => {
+  const { _computeSingleDateRepriceFinancials } = await import("../apps/api/src/sim-ledger-backfill.ts");
+
+  const result = _computeSingleDateRepriceFinancials({
+    basket: [
+      { symbol: "1111", shares: 1000 },
+      { symbol: "2222", shares: 500 },
+    ],
+    priceOnDateBySymbol: new Map([["1111", 105], ["2222", 210]]),
+    basketCapitalTwd: 10_000_000,
+    basketTargetNotionalTwd: 3_800_000,
+  });
+
+  // marketValueTwd = 1000*105 + 500*210 = 105,000 + 105,000 = 210,000
+  assert.equal(result.marketValueTwd, 210_000);
+  // cashResidualTwd = capital - targetNotional = 10,000,000 - 3,800,000 = 6,200,000
+  assert.equal(result.cashResidualTwd, 6_200_000);
+  // repricedEquityTwd = cash + marketValue = 6,410,000
+  assert.equal(result.repricedEquityTwd, 6_410_000);
+  const expectedReturnPct = Math.round(((6_410_000 - 10_000_000) / 10_000_000) * 100 * 10000) / 10000;
+  assert.equal(result.returnPct, expectedReturnPct);
+});
+
+test("SIM-LEDGER-REPRICE-2: a missing per-symbol price contributes 0 to marketValueTwd (never silently substitutes a stale/wrong price)", async () => {
+  const { _computeSingleDateRepriceFinancials } = await import("../apps/api/src/sim-ledger-backfill.ts");
+
+  const result = _computeSingleDateRepriceFinancials({
+    basket: [{ symbol: "1111", shares: 1000 }, { symbol: "2222", shares: 500 }],
+    priceOnDateBySymbol: new Map([["1111", 105]]), // "2222" missing entirely
+    basketCapitalTwd: 10_000_000,
+    basketTargetNotionalTwd: 3_800_000,
+  });
+
+  // Only 1111 contributes: 1000*105 = 105,000. Caller (writeSingleDateLedgerReprice)
+  // is responsible for flagging "2222" in missingPriceSymbols and refusing apply.
+  assert.equal(result.marketValueTwd, 105_000);
+});
+
+test("SIM-LEDGER-REPRICE-3: writeSingleDateLedgerReprice checks guards in the documented order — future date, then week-row, then nav-row-exists, then idempotency, before any FinMind fetch", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerReprice(options: {");
+  assert.ok(fnStart !== -1, "SIM-LEDGER-REPRICE-3: writeSingleDateLedgerReprice must exist");
+  const fnSrc = src.slice(fnStart);
+
+  const futureDateIdx = fnSrc.indexOf("future_date_rejected");
+  const weekRowIdx = fnSrc.indexOf("week_row_date_rejected");
+  const navRowIdx = fnSrc.indexOf("nav_row_not_found");
+  const idempotencyIdx = fnSrc.indexOf("already_repriced");
+  const basketLoadIdx = fnSrc.indexOf("loadBasketsFromAuditLogs(workspaceId)");
+  const fetchFinMindIdx = fnSrc.indexOf("await fetchFinMindPrices(symbols");
+
+  for (const [name, idx] of [
+    ["future_date_rejected", futureDateIdx], ["week_row_date_rejected", weekRowIdx],
+    ["nav_row_not_found", navRowIdx], ["already_repriced", idempotencyIdx],
+    ["loadBasketsFromAuditLogs call", basketLoadIdx], ["fetchFinMindPrices call", fetchFinMindIdx],
+  ] as const) {
+    assert.ok(idx !== -1, `SIM-LEDGER-REPRICE-3: ${name} must be present`);
+  }
+  assert.ok(futureDateIdx < weekRowIdx, "SIM-LEDGER-REPRICE-3: future-date guard must run before the week-row guard");
+  assert.ok(weekRowIdx < navRowIdx, "SIM-LEDGER-REPRICE-3: week-row guard must run before checking the nav row exists");
+  assert.ok(navRowIdx < idempotencyIdx, "SIM-LEDGER-REPRICE-3: nav-row-exists check must run before the idempotency check");
+  assert.ok(idempotencyIdx < basketLoadIdx && idempotencyIdx < fetchFinMindIdx,
+    "SIM-LEDGER-REPRICE-3: idempotency check must run before basket loading / FinMind fetch (never redo work for an already-repriced date)"
+  );
+});
+
+test("SIM-LEDGER-REPRICE-4: dry-run (apply=false) returns before any UPDATE statement runs", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerReprice(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  const dryRunGateIdx = fnSrc.indexOf("if (!apply) return dryRunBase;");
+  const updateIdx = fnSrc.indexOf("UPDATE sim_ledger_nav");
+
+  assert.ok(dryRunGateIdx !== -1, "SIM-LEDGER-REPRICE-4: explicit dry-run gate must exist");
+  assert.ok(updateIdx !== -1, "SIM-LEDGER-REPRICE-4: an UPDATE sim_ledger_nav must exist in the apply path");
+  assert.ok(dryRunGateIdx < updateIdx, "SIM-LEDGER-REPRICE-4: dry-run gate must return before reaching the UPDATE statement");
+});
+
+test("SIM-LEDGER-REPRICE-5: apply is refused when any basket symbol has no usable FinMind price", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerReprice(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  const refusalIdx = fnSrc.indexOf('notes.push("apply_refused: missingPriceSymbols is non-empty');
+  const updateIdx = fnSrc.indexOf("UPDATE sim_ledger_nav");
+
+  assert.ok(refusalIdx !== -1, "SIM-LEDGER-REPRICE-5: apply_refused note must exist for the missing-price case");
+  assert.ok(refusalIdx < updateIdx, "SIM-LEDGER-REPRICE-5: the missing-price refusal must return before the UPDATE");
+  assert.match(
+    fnSrc,
+    /if \(missingPriceSymbols\.length > 0\) \{\s*\n\s*notes\.push\("apply_refused:/,
+    "SIM-LEDGER-REPRICE-5: refusal must be gated on missingPriceSymbols.length > 0"
+  );
+});
+
+test("SIM-LEDGER-REPRICE-6: UPDATE only sets equity_twd/return_pct/notes — never week_num, source, nav_date, or basket columns", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerReprice(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  assert.match(
+    fnSrc,
+    /UPDATE sim_ledger_nav\s*\n\s*SET equity_twd = \$\{repricedEquityTwd\}, return_pct = \$\{returnPct\}, notes = \$\{newNotes\}\s*\n\s*WHERE nav_date = \$\{date\}::date AND source = 'live_eod'/,
+    "SIM-LEDGER-REPRICE-6: UPDATE must set exactly equity_twd/return_pct/notes, scoped by nav_date+source"
+  );
+  assert.doesNotMatch(fnSrc, /week_num = /, "SIM-LEDGER-REPRICE-6: must never write week_num — this tool never touches rebalance-week semantics");
+  assert.doesNotMatch(fnSrc, /INSERT INTO sim_ledger/, "SIM-LEDGER-REPRICE-6: this tool must never INSERT — UPDATE only, on an already-existing row");
+});
+
+test("SIM-LEDGER-REPRICE-7: apply appends (never overwrites) a 'repriced:' audit marker carrying the pre-reprice value", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerReprice(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  assert.match(
+    fnSrc,
+    /const newNotes = `\$\{existingRow\.notes \? existingRow\.notes \+ " \| " : ""\}repriced: finmind_pit_close was=\$\{currentEquityTwd\}`;/,
+    "SIM-LEDGER-REPRICE-7: newNotes must append to (not replace) any existing notes, and record the pre-reprice equity value"
+  );
+  // Idempotency re-check must look for this exact marker string.
+  assert.match(
+    fnSrc,
+    /existingRow\.notes\.includes\("repriced:"\)/,
+    "SIM-LEDGER-REPRICE-7: idempotency check must detect the same 'repriced:' marker this apply writes"
+  );
+});
+
+test("SIM-LEDGER-REPRICE-8: POST /api/v1/admin/fauto-ledger/single-date-reprice exists, Owner-only, dry-run default, calls writeSingleDateLedgerReprice", () => {
+  const src = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf-8");
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/fauto-ledger/single-date-reprice"'),
+    "SIM-LEDGER-REPRICE-8: server.ts must have POST /api/v1/admin/fauto-ledger/single-date-reprice"
+  );
+  const section = src.slice(src.indexOf('"/api/v1/admin/fauto-ledger/single-date-reprice"'));
+  assert.ok(section.slice(0, 300).includes("OWNER_ONLY"), "SIM-LEDGER-REPRICE-8: reprice endpoint must check OWNER_ONLY");
+  assert.ok(section.includes("applyToDb = body.apply === true"), "SIM-LEDGER-REPRICE-8: reprice endpoint must default to dry-run (apply=false)");
+  assert.ok(section.includes("writeSingleDateLedgerReprice"), "SIM-LEDGER-REPRICE-8: reprice endpoint must call writeSingleDateLedgerReprice");
+  assert.ok(section.includes('/^\\d{4}-\\d{2}-\\d{2}$/.test(date)'), "SIM-LEDGER-REPRICE-8: reprice endpoint must validate body.date shape before calling the write function");
+});
+
+test("SIM-LEDGER-REPRICE-9: reprice tool is a distinct function from the catch-up tool — no accidental reuse/aliasing", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  assert.match(src, /export async function writeSingleDateLedgerReprice\(/);
+  assert.match(src, /export async function writeSingleDateLedgerCatchup\(/);
+  assert.notEqual(
+    src.indexOf("export async function writeSingleDateLedgerReprice("),
+    src.indexOf("export async function writeSingleDateLedgerCatchup(")
+  );
+});
+
+// =============================================================================
 // INVITE REGISTRATION — Migration 0050 + invite-store + server endpoints
 // =============================================================================
 
