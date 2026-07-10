@@ -2176,6 +2176,28 @@ export async function upsertPaperQuotes(input: {
   });
 }
 
+/**
+ * Canonical write-path entry point for the `quoteProviders.kgi` bucket
+ * (2026-07-10 quote-chain outage diagnosis: this bucket previously had zero
+ * production writers — `kgi-subscription-manager.ts`'s tick fetch was never
+ * bridged here, so `readiness="ready"` — which requires `selectedSource ===
+ * "kgi"` — was structurally unreachable even with a healthy KGI feed).
+ * Mirrors `upsertPaperQuotes`: forces `sourceOverride: "kgi"` regardless of
+ * any `source` field on individual quote items, so callers (the KGI ingest
+ * cron, or a future direct gateway push) never need to special-case it.
+ * Purely additive — does not touch the readiness formula or any other
+ * source bucket.
+ */
+export async function upsertKgiQuotes(input: {
+  session: AppSession;
+  quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
+}) {
+  return upsertProviderQuotes({
+    ...input,
+    sourceOverride: "kgi"
+  });
+}
+
 export async function ingestTradingViewQuote(input: {
   session: AppSession;
   ticker: string;

@@ -601,7 +601,14 @@ export async function getKgiMarketOverview(): Promise<{
   };
 }
 
-async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapshot> {
+/**
+ * Exported (2026-07-10 quote-chain outage diagnosis P1) so the KGI quote
+ * ingest cron in server.ts can pull ticks for the tracked equity universe
+ * and bridge them into `quoteProviders.kgi` via `upsertKgiQuotes`
+ * (market-data.ts). No logic change — was previously module-private and
+ * only called from `getKgiMarketOverview`/`getKgiCoreHeatmap` below.
+ */
+export async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapshot> {
   // Gateway runs on an EventBridge weekday 08:20-14:10 schedule. Off-hours
   // every call would burn the full 3s timeout — /heatmap/kgi-core fans out to
   // 40 symbols in parallel (~3.5s dead latency per request, measured 6/15
