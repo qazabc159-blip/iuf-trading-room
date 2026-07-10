@@ -479,6 +479,35 @@ function contentShellOverrides(screen: ScreenKey) {
     .tactions .submit {
       min-height: 44px !important;
     }
+
+    /* 觸控目標鐵律 P2（2026-07-10）: 券商列 .bbtn（桌面緊湊模式 padding:4px 12px
+       實測約 29px）與加減鈕 .stepbtn（桌面固定 31x32px，見上方非 media 區塊）
+       同樣低於 44px 觸控基準線 — 7/9 PR-4 驗證時記錄（jim_mobile_order_flow_
+       20260709.spec.ts）。只在此 max-width:767px 區塊內補高，不動桌面密度。*/
+    .brokerstrip {
+      height: auto !important;
+      min-height: 44px !important;
+      max-height: none !important;
+      overflow: visible !important;
+      flex-wrap: wrap !important;
+    }
+
+    .brokerstrip .bbtn {
+      min-height: 44px !important;
+      padding: 10px 12px !important;
+    }
+
+    .tform .field .step {
+      grid-template-columns: 44px minmax(0, 1fr) 44px !important;
+    }
+
+    .tform .field .step .stepbtn {
+      width: 44px !important;
+      height: 44px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
   }
 </style>`;
   }

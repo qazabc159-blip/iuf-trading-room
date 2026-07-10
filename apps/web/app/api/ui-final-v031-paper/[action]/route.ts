@@ -22,7 +22,13 @@ function parseInput(raw: unknown): PaperOrderInput {
   const side = body.side === "sell" ? "sell" : "buy";
   const orderType = body.orderType === "market" ? "market" : "limit";
   const qty = Number(body.qty);
-  const quantityUnit = body.quantity_unit === "SHARE" ? "SHARE" : "LOT";
+  // 統一下單流 D4（2026-07-10, PR-5）: quantity_unit REQUIRED, no default —
+  // this proxy previously silently defaulted any missing/invalid value to
+  // LOT (1000x share-count risk), the last of the four D4 default sites.
+  // Missing/invalid -> 400 QUANTITY_UNIT_REQUIRED, same convention as the
+  // SYMBOL_REQUIRED/QTY_REQUIRED/PRICE_REQUIRED checks below.
+  const quantityUnit = body.quantity_unit;
+  if (quantityUnit !== "SHARE" && quantityUnit !== "LOT") throw new Error("QUANTITY_UNIT_REQUIRED");
   let price: number | null = null;
   if (orderType !== "market") {
     const parsedPrice = Number(body.price);
