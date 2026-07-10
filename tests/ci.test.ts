@@ -21000,11 +21000,113 @@ test("KGI-CRON-1: server.ts wires a KGI quote ingest cron that pulls kgi-subscri
     "KGI-CRON-1: the cron must bridge fetched ticks into quoteProviders.kgi via upsertKgiQuotes"
   );
 
+  assert.match(
+    serverSrc,
+    /const quotes = _mapKgiTicksToUpsertQuotes\(ticks, OTC_KGI_INGEST_SYMBOLS\);/,
+    "KGI-CRON-1: the cron must map fetched ticks via the extracted, unit-tested _mapKgiTicksToUpsertQuotes helper (not an inline mapping)"
+  );
+
   const { fetchKgiLatestTick, CORE_SYMBOLS, STRATEGY_SYMBOLS } =
     await import("../apps/api/src/kgi-subscription-manager.ts");
   assert.equal(typeof fetchKgiLatestTick, "function", "KGI-CRON-1: fetchKgiLatestTick must be exported for the cron to import");
   assert.ok(CORE_SYMBOLS.length > 0);
   assert.ok(STRATEGY_SYMBOLS.length > 0);
+});
+
+// KGI-BRIDGE-3/4 (2026-07-10 Pete review of PR #1204): the cron's tick→quote
+// mapping was silently discarding tick.ts/tick.staleSec and always stamping
+// wall-clock "now". Latent while KGI auth is broken (every tick is null and
+// gets filtered out), but once auth is fixed a gateway that stays alive
+// while serving a stale cached tick (e.g. 30min old) would have been
+// re-stamped as "just happened" on every cron tick, making readiness look
+// permanently "ready" regardless of true staleness. These tests exercise
+// the cron's own extracted mapping function (_mapKgiTicksToUpsertQuotes),
+// not just the upsertKgiQuotes mirror, per Pete's review note.
+test("KGI-BRIDGE-3: a 1-hour-old tick.ts is preserved through the cron's own mapping, flagged stale, and never lets readiness reach \"ready\"", async () => {
+  const { _mapKgiTicksToUpsertQuotes } = await import("../apps/api/src/server.ts");
+
+  const oneHourAgoIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const quotes = _mapKgiTicksToUpsertQuotes(
+    [{ symbol: "KGISTALE1", value: 620, changePct: 0.1, ts: oneHourAgoIso, staleSec: null }],
+    new Set<string>()
+  );
+
+  assert.equal(quotes.length, 1);
+  assert.equal(
+    quotes[0]?.timestamp,
+    oneHourAgoIso,
+    "KGI-BRIDGE-3: the tick's own emission time must be preserved, not cron execution time"
+  );
+
+  const session = { workspace: { slug: `kgi-bridge-stale-${randomUUID()}` } };
+  await upsertKgiQuotes({ session, quotes });
+
+  const kgiQuotes = await listMarketQuotes({
+    session,
+    symbols: "KGISTALE1",
+    source: "kgi",
+    includeStale: true
+  });
+  assert.equal(kgiQuotes.length, 1);
+  assert.equal(
+    kgiQuotes[0]?.isStale,
+    true,
+    "KGI-BRIDGE-3: a 1-hour-old tick must be flagged stale (KGI stale threshold defaults to 5s)"
+  );
+
+  const effective = await getEffectiveMarketQuotes({
+    session,
+    symbols: "KGISTALE1",
+    includeStale: true,
+    limit: 10
+  });
+  const item = effective.items.find((i) => i.symbol === "KGISTALE1");
+  assert.notEqual(
+    item?.readiness,
+    "ready",
+    "KGI-BRIDGE-3: a stale tick must never let readiness reach \"ready\", even though kgi would otherwise be the selected source"
+  );
+});
+
+test("KGI-BRIDGE-4: _mapKgiTicksToUpsertQuotes prefers tick.ts, falls back to a staleSec-derived timestamp, and only then to wall-clock now", async () => {
+  const { _mapKgiTicksToUpsertQuotes } = await import("../apps/api/src/server.ts");
+  const nowMs = Date.parse("2026-07-10T10:00:00.000Z");
+
+  const [withTs] = _mapKgiTicksToUpsertQuotes(
+    [{ symbol: "A", value: 100, changePct: null, ts: "2026-07-10T09:00:00.000Z", staleSec: 999 }],
+    new Set<string>(),
+    nowMs
+  );
+  assert.equal(withTs?.timestamp, "2026-07-10T09:00:00.000Z", "explicit tick.ts always wins over staleSec");
+
+  const [withStaleSecOnly] = _mapKgiTicksToUpsertQuotes(
+    [{ symbol: "B", value: 100, changePct: null, ts: null, staleSec: 1800 }],
+    new Set<string>(),
+    nowMs
+  );
+  assert.equal(
+    withStaleSecOnly?.timestamp,
+    new Date(nowMs - 1800 * 1000).toISOString(),
+    "missing tick.ts falls back to a staleSec-derived timestamp, not wall-clock now"
+  );
+
+  const [withNeither] = _mapKgiTicksToUpsertQuotes(
+    [{ symbol: "C", value: 100, changePct: null, ts: null, staleSec: null }],
+    new Set<string>(),
+    nowMs
+  );
+  assert.equal(
+    withNeither?.timestamp,
+    new Date(nowMs).toISOString(),
+    "both ts and staleSec missing = fail-open to wall-clock now"
+  );
+
+  const filteredOut = _mapKgiTicksToUpsertQuotes(
+    [{ symbol: "D", value: null, changePct: null, ts: null, staleSec: null }],
+    new Set<string>(),
+    nowMs
+  );
+  assert.equal(filteredOut.length, 0, "null-value ticks are still filtered out regardless of timestamp fields");
 });
 
 // MIS-CALENDAR-GATE-1/2 + EOD-CALENDAR-GATE-1/2 (2026-07-10 quote-chain

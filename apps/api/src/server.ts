@@ -17274,6 +17274,73 @@ export function _isTwseEodCronTradeDateAlreadyPersisted(
 }
 
 /**
+ * Pure tick → upsertKgiQuotes-item mapping used by KGI-QUOTE-INGEST-CRON.
+ * Extracted (2026-07-10 Pete review) so its timestamp-preservation behaviour
+ * is directly unit-testable without a live gateway or DB.
+ *
+ * Preserves the tick's own emission time (`tick.ts`, falling back to a
+ * `staleSec`-derived timestamp, and only then to wall-clock `nowMs`) instead
+ * of always stamping "now". `withFreshness()` (market-data.ts) computes
+ * `ageMs` from this timestamp — if the cron always stamped "now", a
+ * gateway that stays alive but serves a stale cached tick (e.g. 30 minutes
+ * old) would get silently re-stamped as "just happened" on every tick,
+ * making readiness look permanently "ready" even though the underlying data
+ * is stale. This is currently latent (KGI SIM auth is broken, so every tick
+ * is null and gets filtered out below) but would be a silent gate hole the
+ * moment auth is fixed if left unaddressed.
+ */
+export function _mapKgiTicksToUpsertQuotes(
+  ticks: Array<{
+    symbol: string;
+    value: number | null;
+    changePct: number | null;
+    ts: string | null;
+    staleSec: number | null;
+  }>,
+  otcSymbols: Set<string>,
+  nowMs: number = Date.now()
+): Array<{
+  symbol: string;
+  market: "TWSE" | "TPEX";
+  source: "kgi";
+  last: number;
+  bid: null;
+  ask: null;
+  open: null;
+  high: null;
+  low: null;
+  prevClose: null;
+  volume: null;
+  changePct: number | null;
+  timestamp: string;
+}> {
+  return ticks
+    .filter((tick): tick is typeof tick & { value: number } => tick.value !== null && tick.value > 0)
+    .map((tick) => {
+      const timestamp =
+        tick.ts ??
+        (tick.staleSec !== null
+          ? new Date(nowMs - tick.staleSec * 1000).toISOString()
+          : new Date(nowMs).toISOString());
+      return {
+        symbol: tick.symbol,
+        market: (otcSymbols.has(tick.symbol) ? "TPEX" : "TWSE") as "TWSE" | "TPEX",
+        source: "kgi" as const,
+        last: tick.value,
+        bid: null,
+        ask: null,
+        open: null,
+        high: null,
+        low: null,
+        prevClose: null,
+        volume: null,
+        changePct: tick.changePct,
+        timestamp
+      };
+    });
+}
+
+/**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
  * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
@@ -18750,24 +18817,11 @@ function startSchedulers(workspaceSlug: string): void {
           persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
         };
 
-        const now = new Date().toISOString();
-        const quotes = ticks
-          .filter((tick): tick is typeof tick & { value: number } => tick.value !== null && tick.value > 0)
-          .map((tick) => ({
-            symbol: tick.symbol,
-            market: (OTC_KGI_INGEST_SYMBOLS.has(tick.symbol) ? "TPEX" : "TWSE") as "TWSE" | "TPEX",
-            source: "kgi" as const,
-            last: tick.value,
-            bid: null,
-            ask: null,
-            open: null,
-            high: null,
-            low: null,
-            prevClose: null,
-            volume: null,
-            changePct: tick.changePct,
-            timestamp: now
-          }));
+        // _mapKgiTicksToUpsertQuotes preserves each tick's own emission time
+        // (tick.ts / staleSec) rather than stamping cron execution time — see
+        // its doc comment (2026-07-10 Pete review) for why that distinction
+        // matters once KGI auth is fixed.
+        const quotes = _mapKgiTicksToUpsertQuotes(ticks, OTC_KGI_INGEST_SYMBOLS);
 
         if (!quotes.length) return;
 

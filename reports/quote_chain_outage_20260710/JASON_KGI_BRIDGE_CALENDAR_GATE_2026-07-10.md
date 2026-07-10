@@ -49,6 +49,19 @@ Cross-lane approval：Elva 本輪核准擴大 lane 至 `market-data.ts`/`market-
 
 **未觸碰**：readiness 判定式（`market-data.ts:2551-2560` 原封不動）、其他 quoteProviders bucket（manual/paper/tradingview 邏輯零變更）、`packages/contracts/src/marketData.ts`（`quoteSourceSchema` 已含 "kgi"，無需改 contracts）、`risk-engine.ts`、`broker/*`、真金鎖檔。
 
+## 4.5 Pete review fix（NEEDS_FIX → 修復，同 PR）
+
+**Pete 🔴**：`_runKgiQuoteIngestCron()` 把 `fetchKgiLatestTick()` 回傳的 `tick.ts`／`tick.staleSec` 全部丟棄，一律 `timestamp: now`（cron 執行當下）。`withFreshness()`（`market-data.ts:630-636`）動態算 `ageMs = Date.now() - entry.timestamp`；若 KGI auth 修好後 gateway 降級成「活著但回傳 30 分鐘前的快取 tick」，這個 cron 會把它蓋成「剛剛」，讓 readiness 永遠 "ready"，風控入口看不見真實降級。現在 auth 壞 no-op 所以無症狀，但 auth 一通就是活的靜默洞。
+
+**修法**：把 tick→quote 映射抽成獨立可單元測試的純函式 `_mapKgiTicksToUpsertQuotes(ticks, otcSymbols, nowMs?)`（`server.ts`，緊鄰 `_isTwseEodCronTradeDateAlreadyPersisted`），保留 tick 自己的時間：優先 `tick.ts`；缺 `ts` 但有 `staleSec` 時用 `now - staleSec*1000` 推回；兩者皆缺才 fail-open 用 wall-clock now。cron body 改呼叫這個函式，不再自己 inline 映射。
+
+**新增測試（Pete 點名的行為測試，走 cron 自己的映射，不繞過）**：
+- `KGI-BRIDGE-3`：模擬 `tick.ts` 為 1 小時前 → `_mapKgiTicksToUpsertQuotes` 保留該時間戳 → 經 `upsertKgiQuotes` 寫入後 `isStale===true` → `getEffectiveMarketQuotes` 的 `readiness !== "ready"`（即使 kgi 是唯一/最高優先源）
+- `KGI-BRIDGE-4`：純函式單元測試涵蓋 `ts` 優先、`staleSec` 推回、兩者皆缺 fail-open、null-value tick 仍被濾除
+- `KGI-CRON-1` 補一條 regex 斷言：cron 真的呼叫 `_mapKgiTicksToUpsertQuotes`，不是 inline 映射
+
+**回歸驗證**：`pnpm test` 1610 tests，1600 pass（新增 2 個測試 KGI-BRIDGE-3/4 全綠，既有 7 個 KGI/calendar 測試全綠不受影響）／2 fail 仍是同一個既有已知 `FINMIND_TOKEN` 環境洩漏問題（與本次改動無關）。`api typecheck` 綠。`api build` 綠。`pnpm smoke` 綠。
+
 ## 5. 已知限制 / 誠實揭露
 
 1. **P1 live 未驗**：KGI SIM 行情 auth 目前壞著，此 cron 在 prod 部署後仍會是 no-op（拉到的 tick 全是 null），直到帳號權限修復為止。這是預期中的限制，非本次實作的 bug。
