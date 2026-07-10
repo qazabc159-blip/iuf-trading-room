@@ -835,6 +835,12 @@ export type NavCurvePoint = {
   weekNum: number;
   /** "live" | "backfill" | "backfill_dry_run" */
   source: string;
+  /**
+   * "official"（TWSE/TPEX 官方收盤全數計價）| "mis_fallback_full"（官方收盤未即時，
+   * 全倉以驗證行情回退計算，#1192）。/track-record 公開白名單目前不帶此欄，
+   * 缺省視為 "official"（見 apps/api/src/track-record-handlers.ts derivePricingQuality）。
+   */
+  pricingQuality?: "official" | "mis_fallback_full";
 };
 
 export type NavWeekRow = {
