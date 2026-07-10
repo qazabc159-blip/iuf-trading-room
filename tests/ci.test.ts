@@ -19861,6 +19861,94 @@ test("SIM-LEDGER-21: writeLiveLedgerAfterEod JSDoc reflects the post-#1184 prici
     "SIM-LEDGER-21: JSDoc must describe the pricingComplete||fullyPriced gate introduced by #1184");
 });
 
+// =============================================================================
+// ROC-DATE-1/2 + S1-PERSIST-TPEX-3/4: 2026-07-10 #1192 review follow-ups
+// (reports/ledger_stall_20260709/)
+// =============================================================================
+//
+// Pete's #1192 review flagged the two parallel ROC-date parsers
+// (s1-sim-runner.ts `_parseRocEodDateIso`, server.ts `_rocDateToIso`) as the
+// exact failure pattern behind the 2026-07-09 dumb-guard bug — one copy
+// updated to handle the compact 7-digit wire format, the other left behind.
+// Extracted to a single shared `lib/roc-date.ts`. Separately, server.ts's
+// general TWSE-EOD-QUOTE-CRON was found to persist TPEX closes to
+// quote_last_close using TWSE's trade date without checking TPEX's own Date
+// field at all — fixed with `_isTpexEodCloseDateValid`.
+
+test("ROC-DATE-1: shared lib/roc-date.ts parseRocEodDateIso handles both TWSE/TPEX ROC wire formats", async () => {
+  const { parseRocEodDateIso } = await import("../apps/api/src/lib/roc-date.ts");
+  assert.equal(parseRocEodDateIso("1150709"), "2026-07-09");
+  assert.equal(parseRocEodDateIso("115/07/09"), "2026-07-09");
+  assert.equal(parseRocEodDateIso("115/7/9"), "2026-07-09", "must zero-pad single-digit month/day");
+  assert.equal(parseRocEodDateIso(undefined), null);
+  assert.equal(parseRocEodDateIso(null), null);
+  assert.equal(parseRocEodDateIso(""), null);
+  assert.equal(parseRocEodDateIso("not-a-date"), null);
+});
+
+test("ROC-DATE-2: s1-sim-runner.ts and server.ts both delegate to the shared parser, no duplicate implementation remains", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    runnerSrc,
+    /import \{ parseRocEodDateIso \} from "\.\/lib\/roc-date\.js";/,
+    "ROC-DATE-2: s1-sim-runner.ts must import the shared parser"
+  );
+  assert.match(
+    runnerSrc,
+    /export const _parseRocEodDateIso = parseRocEodDateIso;/,
+    "ROC-DATE-2: s1-sim-runner.ts must bind its exported name to the shared parser, not redefine it"
+  );
+  assert.match(
+    serverSrc,
+    /import \{ parseRocEodDateIso \} from "\.\/lib\/roc-date\.js";/,
+    "ROC-DATE-2: server.ts must import the shared parser"
+  );
+  // Regression guard: the old locally-duplicated `_rocDateToIso` function must be gone.
+  assert.doesNotMatch(
+    serverSrc,
+    /function _rocDateToIso/,
+    "ROC-DATE-2: the duplicate _rocDateToIso implementation in server.ts must be removed"
+  );
+});
+
+test("S1-PERSIST-TPEX-3: _isTpexEodCloseDateValid rejects a stale TPEX date and passes same-day/unparseable dates", async () => {
+  const { _isTpexEodCloseDateValid } = await import("../apps/api/src/server.ts");
+  // Stale: TPEX's own Date is one day behind the expected (TWSE-derived) trade date.
+  assert.equal(_isTpexEodCloseDateValid("2026-07-10", "1150709"), false);
+  // Same-day: TPEX Date matches expected trade date (compact format).
+  assert.equal(_isTpexEodCloseDateValid("2026-07-10", "1150710"), true);
+  // Same-day via legacy slash format is also accepted.
+  assert.equal(_isTpexEodCloseDateValid("2026-07-10", "115/07/10"), true);
+  // Missing/unparseable date treated as "unvalidated" — allowed through (never blocks
+  // on a malformed field), same convention as the s1-sim-runner tier-1b guard.
+  assert.equal(_isTpexEodCloseDateValid("2026-07-10", undefined), true);
+  assert.equal(_isTpexEodCloseDateValid("2026-07-10", "not-a-date"), true);
+});
+
+test("S1-PERSIST-TPEX-4: TWSE-EOD-QUOTE-CRON's TPEX persist block is gated by _isTpexEodCloseDateValid", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /_isTpexEodCloseDateValid\(tpexTradeDate, tpexRows\[0\]\?\.Date\)/,
+    "S1-PERSIST-TPEX-4: TPEX persist block must validate TPEX's own Date field before persisting"
+  );
+  assert.match(
+    serverSrc,
+    /TPEX date mismatch:.*TPEX persist skipped/,
+    "S1-PERSIST-TPEX-4: a stale TPEX date must skip persist with a traceable warning, not silently mislabel it"
+  );
+});
+
 test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts", () => {
   const src = readFileSync(
     new URL("../apps/api/src/server.ts", import.meta.url),
