@@ -24,6 +24,7 @@ import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 import { extractKgiTradeId, reconcileKgiOrder } from "./broker/kgi-order-reconciliation.js";
 import { upsertLastCloses, getLastCloses, type LastCloseEntry } from "./quote-last-close-store.js";
+import { parseRocEodDateIso } from "./lib/roc-date.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1032,32 +1033,12 @@ export interface S1PositionsSnapshot {
 }
 
 /**
- * Parses a TWSE/TPEX EOD `Date` field (ROC calendar) into an ISO `YYYY-MM-DD`
- * string, or `null` if the value doesn't match a known shape. Both official
- * EOD sources (STOCK_DAY_ALL, tpex_mainboard_daily_close_quotes) have shipped
- * two wire formats historically:
- *   - compact 7-digit ROC, no separator: "1150709" (current, live-verified 7/9)
- *   - legacy slash-separated ROC: "115/07/09"
- * Used by the tier-1b EOD stale-date guards in buildS1PositionsSnapshot — a
- * `null` return means the caller treats the source as unvalidated (same as
- * "no date to check"), never as an exception.
+ * Bound to this module's original name for existing call sites and tests
+ * (SIM-LEDGER-19/20) in this file. Canonical implementation + full
+ * format/history doc moved to `lib/roc-date.ts` 2026-07-10 (shared with
+ * server.ts's TWSE EOD cron, which previously carried its own drifting copy).
  */
-export function _parseRocEodDateIso(raw: string | undefined): string | null {
-  const trimmed = raw?.trim() ?? "";
-  const slashParts = trimmed.split("/");
-  if (slashParts.length === 3) {
-    const y = parseInt(slashParts[0], 10) + 1911;
-    if (isFinite(y) && y > 1900) {
-      return `${y}-${(slashParts[1] ?? "").padStart(2, "0")}-${(slashParts[2] ?? "").padStart(2, "0")}`;
-    }
-    return null;
-  }
-  if (/^\d{7}$/.test(trimmed)) {
-    const y = parseInt(trimmed.slice(0, 3), 10) + 1911;
-    return `${y}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
-  }
-  return null;
-}
+export const _parseRocEodDateIso = parseRocEodDateIso;
 
 /**
  * Builds the current S1 holdings view. Shared by the daily EOD report and the

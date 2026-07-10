@@ -298,6 +298,7 @@ import {
 } from "./openalice-strategy-brief.js";
 import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
 import { normalizeAndMergeTwseHeatmapTiles } from "./utils/heatmap-normalized-merge.js";
+import { parseRocEodDateIso } from "./lib/roc-date.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -9882,23 +9883,10 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     return (await _misFetchForExchange(sym, primary)) ?? (await _misFetchForExchange(sym, fallback));
   }
 
-  // Helper: parse a TWSE ROC date ("1150609" compact or "115/06/09" slash) to ISO "2026-06-09".
   // The EOD payload's trading date — TWSE OpenAPI lags: on the evening of a trading day it
   // can still serve the PREVIOUS session. The UI must label prices with this date, never "today".
-  function _rocDateToIso(raw?: string | null): string | null {
-    const trimmed = String(raw ?? "").trim();
-    const slashParts = trimmed.split("/");
-    if (slashParts.length === 3) {
-      const year = parseInt(slashParts[0]!, 10) + 1911;
-      if (!Number.isFinite(year)) return null;
-      return `${year}-${slashParts[1]!.padStart(2, "0")}-${slashParts[2]!.padStart(2, "0")}`;
-    }
-    if (/^\d{7}$/.test(trimmed)) {
-      const year = parseInt(trimmed.slice(0, 3), 10) + 1911;
-      return `${year}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
-    }
-    return null;
-  }
+  // Parsed via the shared `lib/roc-date.ts` parser (see that file's JSDoc for wire-format notes;
+  // this used to be a locally-duplicated copy `_rocDateToIso`, consolidated 2026-07-10).
 
   // MIS trade date is Gregorian compact "20260615" → ISO "2026-06-15".
   function _misCompactDateToIso(raw?: string | null): string | null {
@@ -9958,7 +9946,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         state: close !== null ? "STALE" : "NO_DATA",
         freshness: close !== null ? "stale" : "not-available",
         note: `twse_eod date=${row.Date ?? "unknown"}`,
-        dataDate: _rocDateToIso(row.Date),
+        dataDate: parseRocEodDateIso(row.Date),
         marketSession,
         referenceReason: _eodReferenceReason(blockReason),
       };
@@ -17206,6 +17194,23 @@ let _misFullSweepInjectedThisRound = 0;
 let _misFullSweepRoundsCompleted = 0;
 
 /**
+ * Returns true when the TPEX EOD close payload (identified by its own ROC
+ * `Date` field) matches the expected trade date, so it's safe to persist to
+ * quote_last_close under that date. TWSE and TPEX publish EOD closes on
+ * separate schedules — the TWSE-EOD-QUOTE-CRON's TPEX persist block
+ * previously tagged its rows with TWSE's trade date without checking TPEX's
+ * own `Date` field at all, which risks persisting a stale TPEX close
+ * mislabeled as the current trade date (same bug class as the 2026-07-09
+ * s1-sim-runner tier-1b TPEX guard fix — see reports/ledger_stall_20260709/).
+ * A missing/unparseable `tpexDateRaw` is treated as "unvalidated" and allowed
+ * through, same convention as the s1-sim-runner guard.
+ */
+export function _isTpexEodCloseDateValid(expectedTradeDate: string, tpexDateRaw: string | undefined): boolean {
+  const tpexDateIso = parseRocEodDateIso(tpexDateRaw);
+  return !tpexDateIso || tpexDateIso === expectedTradeDate;
+}
+
+/**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
  * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
@@ -18546,7 +18551,14 @@ function startSchedulers(workspaceSlug: string): void {
           const tpexTradeDate = tradingDateIso ? tradingDateIso.slice(0, 10) : "";
           if (db4 && /^\d{4}-\d{2}-\d{2}$/.test(tpexTradeDate)) {
             const tpexRows = await _getTpex();
-            if (tpexRows.length > 0) {
+            // 2026-07-10 follow-up (reports/ledger_stall_20260709/): validate TPEX's
+            // OWN Date field against the expected trade date before persisting — this
+            // block previously borrowed TWSE's trade date unconditionally, which could
+            // tag a stale TPEX close as if it were the current trade date (TWSE and
+            // TPEX publish on separate schedules).
+            if (tpexRows.length > 0 && !_isTpexEodCloseDateValid(tpexTradeDate, tpexRows[0]?.Date)) {
+              console.warn(`[twse-eod-cron] TPEX date mismatch: daily_close_quotes data_date != expected trade_date=${tpexTradeDate} — TPEX persist skipped`);
+            } else if (tpexRows.length > 0) {
               const { upsertLastCloses: _upsertTpex } = await import("./quote-last-close-store.js");
               const tpexEntries = tpexRows
                 .map((r) => {
