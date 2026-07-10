@@ -125,16 +125,39 @@ export function tickerDirection(value: number | null | undefined): TickerDirecti
   return value > 0 ? "up" : "down";
 }
 
-/** Routes where the ticker tape should not render (own minimal chrome / unauthenticated). */
-const SKIP_ROUTE_PREFIXES = ["/login", "/register", "/m"];
+/**
+ * Prefix-skip routes:
+ *  - `/login`, `/register`, `/m` — own minimal chrome / unauthenticated.
+ *  - `/final-v031` — every nested route under it (`/final-v031/portfolio`,
+ *    `/final-v031/portfolio/kline-frame`, `/final-v031/market-intel`,
+ *    `/final-v031/ideas`) renders `<FinalOnlyFrame/>` (see below); all are
+ *    legitimate distinct wrapper pages, so a prefix match is correct here
+ *    (unlike `/portfolio`, which has a real non-wrapper sibling route —
+ *    see EXACT_SKIP_ROUTES).
+ */
+const SKIP_ROUTE_PREFIXES = ["/login", "/register", "/m", "/final-v031"];
 
 /**
- * Homepage (`/`) already ships its own real-data ticker tape (`.tac-ticker`
- * in `app/page.tsx`, fed by `buildTapeQuotes()`) predating this slice.
- * Skip the site-wide banner there to avoid two stacked, redundant tickers —
- * deliberate judgment call, not an oversight; see PR body / delivery report.
+ * Exact-match-only skip routes (do NOT prefix-match — each has at least one
+ * real sibling/child route that should still show the ticker):
+ *  - `/` — homepage already ships its own real-data ticker tape (`.tac-ticker`
+ *    in `app/page.tsx`, fed by `buildTapeQuotes()`) predating this slice.
+ *    Skip here to avoid two stacked, redundant tickers.
+ *  - `/portfolio`, `/market-intel` — render `<FinalOnlyFrame/>` (the legacy
+ *    full-bleed iframe wrapper, `components/FinalOnlyFrame.tsx`). Its
+ *    `.iuf-final-content-frame` forces `height:100dvh` for every screen type,
+ *    and the `paper-trading-room` variant additionally goes `position:fixed`
+ *    at a near-max z-index — in both cases the ticker would render into the
+ *    DOM but be visually unreachable (covered or pushed off-screen), while
+ *    its poll timer kept firing requests for a banner nobody can see.
+ *    Pete review, 2026-07-10 (PR #1208 NEEDS_FIX round). Must be EXACT match:
+ *    `/portfolio/snapshots` is a real distinct route (redirects to
+ *    `/admin/portfolio/snapshots`, not a FinalOnlyFrame consumer) — a prefix
+ *    match on `/portfolio` would wrongly swallow it too. Every current
+ *    FinalOnlyFrame consumer verified via `grep -rl FinalOnlyFrame apps/web/app`:
+ *    exactly `/portfolio`, `/market-intel`, and the four `/final-v031/*` routes.
  */
-const EXACT_SKIP_ROUTES = ["/"];
+const EXACT_SKIP_ROUTES = ["/", "/portfolio", "/market-intel"];
 
 export function shouldRenderTickerTape(pathname: string | null | undefined): boolean {
   if (!pathname) return true;

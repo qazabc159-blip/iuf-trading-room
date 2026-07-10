@@ -10,8 +10,12 @@ import { saveRouteScreenshot } from "./helpers";
  * fetched client-side from a "use client" component — a new call site for
  * this endpoint; the homepage/`/m` only ever called it server-side before).
  * Rendered at the root layout level (`apps/web/app/layout.tsx`), skipped on
- * `/login`, `/register`, `/m` and the homepage (`/` already ships its own
- * real-data `.tac-ticker`, see `lib/ticker-tape.ts` `shouldRenderTickerTape`).
+ * `/login`, `/register`, `/m`, the homepage (`/` already ships its own
+ * real-data `.tac-ticker`), and every `<FinalOnlyFrame/>` full-bleed iframe
+ * wrapper page (`/portfolio`, `/market-intel`, `/final-v031/*` — Pete review
+ * 2026-07-10, PR #1208 NEEDS_FIX round: the ticker would mount into the DOM
+ * but be visually covered/off-screen there while still polling for nothing).
+ * See `lib/ticker-tape.ts` `shouldRenderTickerTape`.
  *
  * IMPORTANT — local harness limitation (documented precedent: Jim per-agent
  * memory `local_playwright_cross_site_cookie_2026_07_09.md`): this repo's API
@@ -245,3 +249,40 @@ test("/login: ticker tape does not render (skip-route contract)", async ({ page 
   await expect(loginPage.locator(TICKER_LABEL)).toHaveCount(0);
   await context.close();
 });
+
+/**
+ * Pete review, 2026-07-10 (PR #1208 NEEDS_FIX round): `/portfolio` and
+ * `/market-intel` render `<FinalOnlyFrame/>` (`components/FinalOnlyFrame.tsx`)
+ * — a full-bleed iframe wrapper whose `.iuf-final-content-frame` forces
+ * `height:100dvh` for every screen type, and the `paper-trading-room`
+ * variant additionally goes `position:fixed` at a near-max z-index. The
+ * ticker would render into the DOM but be visually unreachable there, while
+ * its poll timer kept firing requests for a banner nobody can see. Explicitly
+ * requested: assert the substantive absence (no DOM element AND no network
+ * request), not just "route doesn't crash".
+ */
+for (const route of ["/portfolio", "/market-intel"]) {
+  test(`${route}: ticker tape does not render AND never polls market-data/overview (FinalOnlyFrame skip)`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    test.setTimeout(30_000);
+
+    let overviewRequestFired = false;
+    await page.route("**/api/v1/market-data/overview**", async (r) => {
+      overviewRequestFired = true;
+      await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overviewFixture()) });
+    });
+
+    await page.goto(route, { waitUntil: "domcontentloaded" });
+    // FinalOnlyFrame's own iframe needs a moment to mount; give the ticker's
+    // effect the same window it would have had to fire its first fetch.
+    await page.waitForTimeout(3000);
+
+    await expect(page.locator(TICKER_LABEL)).toHaveCount(0);
+    expect(
+      overviewRequestFired,
+      `market-data/overview should never be requested on ${route} — the ticker must not mount/poll here at all`,
+    ).toBe(false);
+  });
+}

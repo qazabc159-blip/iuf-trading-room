@@ -160,9 +160,22 @@ describe("shouldRenderTickerTape", () => {
     expect(shouldRenderTickerTape("/")).toBe(false);
   });
 
+  it("skips FinalOnlyFrame full-bleed iframe wrapper pages (ticker would be covered/off-screen, Pete review 2026-07-10)", () => {
+    expect(shouldRenderTickerTape("/portfolio")).toBe(false);
+    expect(shouldRenderTickerTape("/market-intel")).toBe(false);
+    expect(shouldRenderTickerTape("/final-v031/portfolio")).toBe(false);
+    expect(shouldRenderTickerTape("/final-v031/portfolio/kline-frame")).toBe(false);
+    expect(shouldRenderTickerTape("/final-v031/market-intel")).toBe(false);
+    expect(shouldRenderTickerTape("/final-v031/ideas")).toBe(false);
+  });
+
+  it("does NOT prefix-swallow /portfolio's real non-wrapper sibling route", () => {
+    expect(shouldRenderTickerTape("/portfolio/snapshots")).toBe(true);
+  });
+
   it("renders on regular product pages", () => {
-    expect(shouldRenderTickerTape("/portfolio")).toBe(true);
     expect(shouldRenderTickerTape("/companies/2330")).toBe(true);
+    expect(shouldRenderTickerTape("/track-record")).toBe(true);
     expect(shouldRenderTickerTape(null)).toBe(true);
   });
 });
