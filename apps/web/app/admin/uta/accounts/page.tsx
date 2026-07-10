@@ -5,6 +5,7 @@ import {
   type BrokerAdapterEntry,
   type UnifiedOrderEntry,
 } from "@/lib/api";
+import { isKnownSimOnlyAdapter, safetyModeLabel, sideLabel } from "./uta-order-vocab";
 
 const CSS = `
   ._uta-kpi {
@@ -111,9 +112,9 @@ function adaptorBadgeStyle(isActive: boolean) {
     : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.1)" };
 }
 
-function sideBadgeStyle(side: string) {
-  if (side === "buy" || side === "BUY") return { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" };
-  if (side === "sell" || side === "SELL") return { background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" };
+function sideBadgeStyle(action: string) {
+  if (action === "Buy") return { background: "rgba(76,175,80,0.15)", color: "#4caf50", border: "1px solid rgba(76,175,80,0.3)" };
+  if (action === "Sell") return { background: "rgba(239,83,80,0.15)", color: "#ef5350", border: "1px solid rgba(239,83,80,0.3)" };
   return { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.1)" };
 }
 
@@ -128,10 +129,6 @@ function safetyModeBadgeStyle(simOnly: boolean) {
   return simOnly
     ? { background: "rgba(33,150,243,0.15)", color: "#42a5f5", border: "1px solid rgba(33,150,243,0.3)" }
     : { background: "rgba(255,184,0,0.12)", color: "#ffb800", border: "1px solid rgba(255,184,0,0.3)" };
-}
-
-function safetyModeLabel(simOnly: boolean) {
-  return simOnly ? "SIM" : "正式封鎖";
 }
 
 function fmtDT(iso: string) {
@@ -223,13 +220,13 @@ function OrdersTable({ orders }: { orders: UnifiedOrderEntry[] }) {
                 <td style={{ whiteSpace: "nowrap" }}>{fmtDT(o.createdAt)}</td>
                 <td>{o.adapterKey}</td>
                 <td style={{ color: "#ffb800" }}>{o.symbol}</td>
-                <td><span className="_uta-badge" style={sideBadgeStyle(o.side)}>{o.side}</span></td>
-                <td>{o.quantity}</td>
+                <td><span className="_uta-badge" style={sideBadgeStyle(o.action)}>{sideLabel(o.action)}</span></td>
+                <td>{o.qty}</td>
                 <td>{o.quantityUnit}</td>
                 <td>{o.limitPrice ?? "市價"}</td>
                 <td><span className="_uta-badge" style={statusBadgeStyle(o.status)}>{o.status}</span></td>
                 <td>
-                  <span className="_uta-badge" style={safetyModeBadgeStyle(o.simOnly)}>{safetyModeLabel(o.simOnly)}</span>
+                  <span className="_uta-badge" style={safetyModeBadgeStyle(isKnownSimOnlyAdapter(o.adapterKey))}>{safetyModeLabel(isKnownSimOnlyAdapter(o.adapterKey))}</span>
                 </td>
               </tr>
             ))
@@ -283,7 +280,7 @@ export default async function UtaAccountsPage() {
           <span className="_uta-kpi-lbl">近期委託</span>
         </div>
         <div className="_uta-kpi-cell">
-          <span className="_uta-kpi-val">{orders.filter((o) => o.simOnly).length}</span>
+          <span className="_uta-kpi-val">{orders.filter((o) => isKnownSimOnlyAdapter(o.adapterKey)).length}</span>
           <span className="_uta-kpi-lbl">SIM 委託</span>
         </div>
       </div>
