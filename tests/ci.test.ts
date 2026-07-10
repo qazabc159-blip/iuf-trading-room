@@ -20244,6 +20244,220 @@ test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts"
 });
 
 // =============================================================================
+// SIM-LEDGER-CATCHUP-1..8: 2026-07-10 single-date live ledger catch-up
+// (楊董 ACK — reports/ledger_stall_20260709/JASON_LEDGER_STALL_ROOTCAUSE_2026-07-09.md §5)
+// =============================================================================
+//
+// Patches the 2026-07-07 ledger gap (Tuesday rebalance whose live EOD cron
+// never fired — see the fullyPriced fix above). writeSingleDateLedgerCatchup
+// itself needs a real database (idempotency check + basket/holdings reads);
+// this repo's `pnpm test` runs in memory mode (test:db, a separate CI job,
+// is the real-Postgres gate) so its computation core is extracted into a
+// pure, DB-free function (_computeSingleDateCatchupFinancials) that these
+// tests exercise directly — same pattern as _computeHoldingsRowsForTest
+// above. Structural guarantees (idempotency-first, dry-run-never-writes,
+// apply-refused-on-missing-price) are verified via source-order assertions,
+// consistent with this file's existing SIM-LEDGER-15/17/18 style.
+
+test("SIM-LEDGER-CATCHUP-1: _computeSingleDateCatchupFinancials matches hand-calculated exit/entry PnL, costs, and NAV", async () => {
+  const { _computeSingleDateCatchupFinancials, STANDARD_COST_RATES } = await import("../apps/api/src/sim-ledger-backfill.ts");
+
+  // Prev basket: 1000 shares @ entry 100 (cost 100,000). Exit @ 110 -> exitTotal 110,000.
+  // New basket: 500 shares @ entry 200 (cost 100,000).
+  const result = _computeSingleDateCatchupFinancials({
+    prevBasket: [{ symbol: "1111", shares: 1000 }],
+    entryPriceBySymbol: new Map([["1111", 100]]),
+    exitPriceBySymbol: new Map([["1111", 110]]),
+    newBasket: [{ symbol: "2222", shares: 500 }],
+    newEntryPriceBySymbol: new Map([["2222", 200]]),
+    prevEquity: 10_000_000,
+    costRates: STANDARD_COST_RATES,
+    newBasketCapitalTwd: null,
+    newBasketTargetNotionalTwd: null,
+  });
+
+  assert.equal(result.exitTotal, 110_000);
+  assert.equal(result.prevCost, 100_000);
+  assert.equal(result.newBasketCost, 100_000);
+
+  const expectedSellCost = Math.round(110_000 * (STANDARD_COST_RATES.sellCommissionRate + STANDARD_COST_RATES.securitiesTransactionTaxRate));
+  const expectedBuyCost = Math.round(100_000 * STANDARD_COST_RATES.buyCommissionRate);
+  assert.equal(result.sellCost, expectedSellCost);
+  assert.equal(result.buyCost, expectedBuyCost);
+  assert.equal(result.transactionCostsTwd, expectedSellCost + expectedBuyCost);
+
+  const expectedRealizedPnl = Math.round(110_000 - 100_000 - expectedSellCost - expectedBuyCost);
+  assert.equal(result.realizedPnlTwd, expectedRealizedPnl);
+
+  const expectedEquityAfter = Math.round(10_000_000 - 100_000 + 110_000 - expectedSellCost - expectedBuyCost);
+  assert.equal(result.equityAfterTwd, expectedEquityAfter);
+
+  // No basket-file capital/notional supplied -> cashResidual falls back to equityAfter - newBasketCost.
+  assert.equal(result.cashResidualTwd, expectedEquityAfter - 100_000);
+  assert.equal(result.totalMarketValueTwd, 100_000);
+  assert.equal(result.navEquityTwd, (expectedEquityAfter - 100_000) + 100_000);
+});
+
+test("SIM-LEDGER-CATCHUP-2: cashResidualTwd prefers the new basket's own capital_twd/target_notional_twd over the equity fallback", async () => {
+  const { _computeSingleDateCatchupFinancials, ZERO_COST_RATES } = await import("../apps/api/src/sim-ledger-backfill.ts");
+
+  const result = _computeSingleDateCatchupFinancials({
+    prevBasket: [{ symbol: "1111", shares: 100 }],
+    entryPriceBySymbol: new Map([["1111", 50]]),
+    exitPriceBySymbol: new Map([["1111", 50]]), // flat exit -> 0 realized PnL
+    newBasket: [{ symbol: "2222", shares: 100 }],
+    newEntryPriceBySymbol: new Map([["2222", 30]]), // notional 3,000
+    prevEquity: 10_000_000,
+    costRates: ZERO_COST_RATES,
+    newBasketCapitalTwd: 10_000_000,
+    newBasketTargetNotionalTwd: 4_500_000, // basket file's actual deployed notional (differs from newBasketCost)
+  });
+
+  // Must use capital - targetNotional (10M - 4.5M), NOT equityAfter - newBasketCost (10M - 3,000).
+  assert.equal(result.cashResidualTwd, 10_000_000 - 4_500_000);
+});
+
+test("SIM-LEDGER-CATCHUP-3: a missing exit price falls back to the entry price (0 PnL contribution), never silently profitable or lossy", async () => {
+  const { _computeSingleDateCatchupFinancials, ZERO_COST_RATES } = await import("../apps/api/src/sim-ledger-backfill.ts");
+
+  const result = _computeSingleDateCatchupFinancials({
+    prevBasket: [{ symbol: "1111", shares: 1000 }],
+    entryPriceBySymbol: new Map([["1111", 88]]),
+    exitPriceBySymbol: new Map([["1111", null]]), // FinMind had no price -> caller flags as missing
+    newBasket: [],
+    newEntryPriceBySymbol: new Map(),
+    prevEquity: 10_000_000,
+    costRates: ZERO_COST_RATES,
+    newBasketCapitalTwd: null,
+    newBasketTargetNotionalTwd: null,
+  });
+
+  // exitTotal must use the entry price (88) as fallback, not 0.
+  assert.equal(result.exitTotal, 1000 * 88);
+  assert.equal(result.realizedPnlTwd, 0, "flat exit at entry price = 0 realized PnL, not a loss from a missing-price 0");
+});
+
+test("SIM-LEDGER-CATCHUP-4: writeSingleDateLedgerCatchup checks idempotency BEFORE fetching baskets or FinMind prices", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  assert.ok(fnStart !== -1, "SIM-LEDGER-CATCHUP-4: writeSingleDateLedgerCatchup must exist");
+  const fnSrc = src.slice(fnStart);
+
+  const idempotencyCheckIdx = fnSrc.indexOf("existingWeekRows.length > 0 || existingNavRows.length > 0");
+  const loadBasketsIdx = fnSrc.indexOf("loadBasketsFromAuditLogs(workspaceId)");
+  const fetchFinMindIdx = fnSrc.indexOf("await fetchFinMindPrices(allSymbols");
+
+  assert.ok(idempotencyCheckIdx !== -1, "SIM-LEDGER-CATCHUP-4: idempotency check must be present");
+  assert.ok(loadBasketsIdx !== -1 && fetchFinMindIdx !== -1, "SIM-LEDGER-CATCHUP-4: basket load + FinMind fetch must be present");
+  assert.ok(
+    idempotencyCheckIdx < loadBasketsIdx && idempotencyCheckIdx < fetchFinMindIdx,
+    "SIM-LEDGER-CATCHUP-4: idempotency check must run before basket loading / FinMind price fetch (never redo work for an already-written date)"
+  );
+});
+
+test("SIM-LEDGER-CATCHUP-5: dry-run (apply=false) returns before any INSERT statement runs", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  const dryRunGateIdx = fnSrc.indexOf("if (!apply) return dryRunBase;");
+  const firstInsertIdx = fnSrc.indexOf("INSERT INTO sim_ledger_weeks");
+
+  assert.ok(dryRunGateIdx !== -1, "SIM-LEDGER-CATCHUP-5: explicit `if (!apply) return` gate must exist");
+  assert.ok(firstInsertIdx !== -1, "SIM-LEDGER-CATCHUP-5: an INSERT INTO sim_ledger_weeks must exist in the apply path");
+  assert.ok(
+    dryRunGateIdx < firstInsertIdx,
+    "SIM-LEDGER-CATCHUP-5: dry-run gate must return before reaching any INSERT statement — dry-run must never write"
+  );
+});
+
+test("SIM-LEDGER-CATCHUP-6: apply is refused (not silently downgraded) when any required symbol has no usable FinMind price", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  const fnSrc = src.slice(fnStart);
+
+  const refusalIdx = fnSrc.indexOf('notes.push("apply_refused: missingPriceSymbols is non-empty');
+  const firstInsertIdx = fnSrc.indexOf("INSERT INTO sim_ledger_weeks");
+
+  assert.ok(refusalIdx !== -1, "SIM-LEDGER-CATCHUP-6: apply_refused note must exist for the missing-price case");
+  assert.ok(
+    refusalIdx < firstInsertIdx,
+    "SIM-LEDGER-CATCHUP-6: the missing-price refusal must return before the INSERT block"
+  );
+  assert.match(
+    fnSrc,
+    /if \(missingPriceSymbols\.length > 0\) \{\s*\n\s*notes\.push\("apply_refused:/,
+    "SIM-LEDGER-CATCHUP-6: refusal must be gated on missingPriceSymbols.length > 0"
+  );
+});
+
+test("SIM-LEDGER-CATCHUP-7: FinMind fetch failures are surfaced explicitly (non-silent), not swallowed", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  // fetchFinMindPrices must now return warnings alongside prices (previously computed but never returned).
+  assert.match(
+    src,
+    /export async function fetchFinMindPrices\([\s\S]*?\): Promise<\{ prices: Map<string, Map<string, number>>; warnings: string\[\] \}>/,
+    "SIM-LEDGER-CATCHUP-7: fetchFinMindPrices must return { prices, warnings }, not just prices"
+  );
+  assert.match(
+    src,
+    /if \(!FINMIND_TOKEN\) \{\s*\n\s*warnings\.push\("FINMIND_API_TOKEN is not set/,
+    "SIM-LEDGER-CATCHUP-7: an empty/expired FinMind token must produce an explicit warning, not a silent empty result"
+  );
+  // The catch-up function must forward those warnings into its own result.
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  const fnSrc = src.slice(fnStart);
+  assert.match(
+    fnSrc,
+    /finMindWarnings\.push\(\.\.\.fmWarnings\)/,
+    "SIM-LEDGER-CATCHUP-7: writeSingleDateLedgerCatchup must forward fetchFinMindPrices' warnings into its own finMindWarnings"
+  );
+});
+
+test("SIM-LEDGER-CATCHUP-8: holdings entry_source/exit_source use the existing CHECK-allowed 'finmind_close' value — no migration needed", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  const fnSrc = src.slice(fnStart);
+  assert.match(
+    fnSrc,
+    /'finmind_close', 'finmind_close'/,
+    "SIM-LEDGER-CATCHUP-8: prev-basket exit holdings row must use entry_source/exit_source='finmind_close' (CHECK-allowed, migration 0049)"
+  );
+  assert.match(
+    fnSrc,
+    /'finmind_close', NULL\)/,
+    "SIM-LEDGER-CATCHUP-8: new-basket entry holdings row must use entry_source='finmind_close', exit_source=NULL"
+  );
+  // The catch-up-specific provenance marker lives in notes/pricing_quality, not a new enum value.
+  assert.match(fnSrc, /pricing_quality: "finmind_catchup_backfill"/);
+});
+
+test("SIM-LEDGER-CATCHUP-9: POST /api/v1/admin/fauto-ledger/single-date-catchup exists, Owner-only, dry-run default, calls writeSingleDateLedgerCatchup", () => {
+  const src = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf-8");
+  assert.ok(
+    src.includes('app.post("/api/v1/admin/fauto-ledger/single-date-catchup"'),
+    "SIM-LEDGER-CATCHUP-9: server.ts must have POST /api/v1/admin/fauto-ledger/single-date-catchup"
+  );
+  const section = src.slice(src.indexOf('"/api/v1/admin/fauto-ledger/single-date-catchup"'));
+  assert.ok(
+    section.slice(0, 300).includes("OWNER_ONLY"),
+    "SIM-LEDGER-CATCHUP-9: catch-up endpoint must check OWNER_ONLY"
+  );
+  assert.ok(
+    section.includes("applyToDb = body.apply === true"),
+    "SIM-LEDGER-CATCHUP-9: catch-up endpoint must default to dry-run (apply=false)"
+  );
+  assert.ok(
+    section.includes("writeSingleDateLedgerCatchup"),
+    "SIM-LEDGER-CATCHUP-9: catch-up endpoint must call writeSingleDateLedgerCatchup"
+  );
+  assert.ok(
+    section.includes('/^\\d{4}-\\d{2}-\\d{2}$/.test(date)'),
+    "SIM-LEDGER-CATCHUP-9: catch-up endpoint must validate body.date shape before calling the write function"
+  );
+});
+
+// =============================================================================
 // INVITE REGISTRATION — Migration 0050 + invite-store + server endpoints
 // =============================================================================
 
