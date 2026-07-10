@@ -5,6 +5,7 @@ import { JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC, Source_Serif_4 } from "nex
 
 import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderDock } from "@/components/header-dock";
+import { PwaServiceWorkerRegistration } from "@/components/PwaServiceWorkerRegistration";
 import { Sidebar } from "@/components/Sidebar";
 import { TickerTape } from "@/components/TickerTape";
 
@@ -65,6 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         <CommandPalette />
+        <PwaServiceWorkerRegistration />
       </body>
     </html>
   );
