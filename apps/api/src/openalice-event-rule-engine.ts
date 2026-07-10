@@ -42,6 +42,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
 import { getDb, isDatabaseMode, auditLogs, execRows } from "@iuf-trading-room/db";
+import { dispatchAlertPush } from "./push/alert-push.js";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -956,6 +957,11 @@ async function writeEvent(event: Omit<IufEvent, "id" | "triggeredAt" | "acknowle
     console.info(
       `[event-engine] Event written: rule=${event.ruleId} ticker=${event.ticker ?? "system"} severity=${event.severity}`
     );
+    try {
+      await dispatchAlertPush({ ruleId: event.ruleId, ticker: event.ticker });
+    } catch (e) {
+      console.warn(`[event-engine] Push dispatch failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   } catch (e) {
     // INSERT failed — log for diagnosis (table should exist after 0025 promotion)
     console.warn(
