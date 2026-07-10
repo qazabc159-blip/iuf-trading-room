@@ -14296,15 +14296,18 @@ body:has(.tactical-dashboard) .app-sidebar {
    at natural/expanded height (720px+) because the compact-bar collapse only
    fired at <=980px — squeezing the /portfolio trading iframe to <200px tall.
    See reports/mobile_final_acceptance_20260710/BRUCE_MOBILE_FINAL_ACCEPTANCE_2026-07-10.md
-   for the CSSOM root-cause trace. Remaining selectors below (.tac-content,
-   .tac-topbar, .tac-agenda variants, .tac-hero-status, .tac-index-card,
-   .tac-source-table, .tac-heatmap variants) are homepage-only (tactical
-   dashboard body content, not sidebar), left at 980px unchanged. */
+   for the CSSOM root-cause trace. Remaining selectors below (.tac-topbar,
+   .tac-agenda variants, .tac-hero-status, .tac-index-card, .tac-source-table,
+   .tac-heatmap variants) are homepage-only (tactical dashboard body content,
+   not sidebar), left at 980px unchanged — they're internal card-grid column
+   counts, independent of the sidebar-collapse timing.
+   .tac-content moved to the 1000px block below too (2026-07-10 follow-up,
+   Pete #1198 💭): it's the homepage content area's own horizontal gutter, so
+   it has the same desync as the sidebar — .tactical-dashboard already goes
+   single-column at 1000px, but this padding rule stayed at 980px, leaving a
+   981-1000px band rendering the single-column stack with the desktop 32px
+   gutter (base rule, line ~11998) instead of the narrower mobile one. */
 @media (max-width: 980px) {
-  .tac-content {
-    padding: 0 18px 28px;
-  }
-
   .tac-topbar {
     align-items: flex-start;
     flex-direction: column;
@@ -14365,6 +14368,10 @@ body:has(.tactical-dashboard) .app-sidebar {
    .tac-sidebar`, used by /portfolio and every other route) and the
    homepage's own inline `<aside className="tac-sidebar">` in app/page.tsx. */
 @media (max-width: 1000px) {
+  .tac-content {
+    padding: 0 18px 28px;
+  }
+
   .tactical-dashboard {
     grid-template-columns: 1fr;
   }

@@ -275,6 +275,33 @@ describe("F-AUTO NAV Curve panel", () => {
     expect(navPanelSource).toContain("帳本尚未建立");
   });
 
+  it("wires pricingQuality degraded-pricing badges into both the curve annotation and weekly rows", () => {
+    // NavCurvePoint carries the optional field from the backend (#1192)
+    expect(apiSource).toContain("pricingQuality");
+    expect(apiSource).toContain("mis_fallback_full");
+    // Pure decision helpers live in a hook-free lib module (unit-tested directly there)
+    expect(navPanelSource).toContain("@/lib/fauto-nav-pricing-quality");
+    expect(navPanelSource).toContain("hasDegradedPricing");
+    expect(navPanelSource).toContain("degradedPricingCount");
+    expect(navPanelSource).toContain("weekHasDegradedPricing");
+    // Curve-level annotation only renders when at least one point is degraded
+    expect(navPanelSource).toContain("hasDegradedPricing(data.navCurve)");
+    expect(navPanelSource).toContain("_fnav-pricing-note");
+    // Weekly table row badge, per week
+    expect(navPanelSource).toContain("weekHasDegradedPricing(w.weekNum, navCurve)");
+    expect(navPanelSource).toContain("fnav-pricing-badge-week-");
+    // Reuses DataStateBadge (four-state honest vocabulary), no raw enum literal in copy
+    expect(navPanelSource).toContain("<DataStateBadge");
+    expect(navPanelSource).toContain('state="delayed"');
+    expect(navPanelSource).toContain("PRICING_QUALITY_REASON");
+    // Chinese explanatory copy (not a raw enum literal) is what the badge's reason/title carries
+    const libSource = readFileSync(
+      new URL("../../../lib/fauto-nav-pricing-quality.ts", import.meta.url),
+      "utf8",
+    );
+    expect(libSource).toContain("以驗證行情回退計算（非官方收盤）");
+  });
+
   it("allows /api/v1/portfolio/f-auto/nav through the backend proxy GET allowlist", () => {
     // route.ts lives one level up from the test; read via fs if possible
     const routeSource = readFileSync(

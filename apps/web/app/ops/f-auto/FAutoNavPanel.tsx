@@ -23,6 +23,12 @@ import {
   type NavWeekRow,
 } from "@/lib/fauto-sim-api";
 import { DataStateBadge } from "@/components/DataStateBadge";
+import {
+  PRICING_QUALITY_REASON,
+  degradedPricingCount,
+  hasDegradedPricing,
+  weekHasDegradedPricing,
+} from "@/lib/fauto-nav-pricing-quality";
 
 // ─── colour constants (CRT palette) ──────────────────────────────────────────
 
@@ -343,7 +349,7 @@ function NavSummaryRow({ data }: { data: FAutoNavResponse }) {
 
 // ─── Weekly Table ─────────────────────────────────────────────────────────────
 
-function NavWeekTable({ weeks }: { weeks: NavWeekRow[] }) {
+function NavWeekTable({ weeks, navCurve }: { weeks: NavWeekRow[]; navCurve: NavCurvePoint[] }) {
   if (weeks.length === 0) return null;
   return (
     <div className="_fnav-week-section">
@@ -363,7 +369,19 @@ function NavWeekTable({ weeks }: { weeks: NavWeekRow[] }) {
         <tbody>
           {weeks.map((w) => (
             <tr key={w.weekNum}>
-              <td className="_fnav-wk-badge">W{w.weekNum}</td>
+              <td className="_fnav-wk-badge">
+                <span className="_fnav-wk-badge-inner">
+                  {`W${w.weekNum}`}
+                  {weekHasDegradedPricing(w.weekNum, navCurve) && (
+                    <DataStateBadge
+                      state="delayed"
+                      reason={PRICING_QUALITY_REASON}
+                      compact
+                      testId={`fnav-pricing-badge-week-${w.weekNum}`}
+                    />
+                  )}
+                </span>
+              </td>
               <td className="_fnav-date">{fmtNavDate(w.basketDate)}</td>
               <td className="_fnav-r">{fmtTwd(w.basketCostTwd)}</td>
               <td className={`_fnav-r ${pnlColorClass(w.realizedPnlTwd)}`}>
@@ -461,6 +479,19 @@ export function FAutoNavPanel({ data, phase, errorMessage }: FAutoNavPanelProps)
               ) : null;
             })()}
 
+            {/* Pricing-quality annotation for degraded (mis_fallback_full) segments */}
+            {hasDegradedPricing(data.navCurve) && (
+              <div className="_fnav-pricing-note">
+                <DataStateBadge
+                  state="delayed"
+                  reason={PRICING_QUALITY_REASON}
+                  compact
+                  testId="fnav-pricing-badge-curve"
+                />
+                <span>{`近 ${degradedPricingCount(data.navCurve)} 個交易日${PRICING_QUALITY_REASON}，數值仍為實際市值，非官方收盤。`}</span>
+              </div>
+            )}
+
             {/* SVG chart */}
             <div className="_fnav-chart-wrap">
               <NavChart
@@ -475,7 +506,7 @@ export function FAutoNavPanel({ data, phase, errorMessage }: FAutoNavPanelProps)
             <NavSummaryRow data={data} />
 
             {/* Weekly table */}
-            <NavWeekTable weeks={data.weeks} />
+            <NavWeekTable weeks={data.weeks} navCurve={data.navCurve} />
           </>
         )}
       </div>
@@ -589,6 +620,19 @@ const NAV_CSS = `
   line-height: 1.55;
 }
 
+/* Pricing-quality (degraded/fallback pricing) annotation */
+._fnav-pricing-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(226,184,92,0.85);
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(200,148,63,0.45);
+  line-height: 1.55;
+}
+
 /* Chart */
 ._fnav-chart-wrap {
   width: 100%;
@@ -692,6 +736,11 @@ const NAV_CSS = `
   font-weight: 800;
   color: #e2b85c;
   letter-spacing: 0.06em;
+}
+._fnav-wk-badge-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 ._fnav-date { color: rgba(145,160,181,0.65); }
 ._fnav-muted { color: rgba(145,160,181,0.50); }
