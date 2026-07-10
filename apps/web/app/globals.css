@@ -45,6 +45,10 @@
   --tw-dn-bright: #4adb88;
   --tw-dn-faint: rgba(46, 204, 113, 0.15);
 
+  /* Ticker tape (site-wide banner, TickerTape.module.css) — single source of
+     truth for its reserved height so .header-dock can offset below it. */
+  --ticker-tape-height: 32px;
+
   --tac-bg-0: var(--night);
   --tac-bg-1: var(--night-1);
   --tac-bg-2: var(--night-2);
@@ -106,6 +110,10 @@ button { font: inherit; }
   flex: 1;
   min-width: 0;
   display: flex;
+  /* column: stacks <TickerTape/> above the page content (its only sibling
+     before this change was always a single child, so this direction change
+     is a no-op for existing pages and only matters now that there are two). */
+  flex-direction: column;
 }
 
 .table-sort-button {
@@ -14725,7 +14733,10 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .header-dock {
   position: fixed;
-  top: 16px;
+  /* Offset below the site-wide ticker tape (fixed to the viewport top-right,
+     independent of app-main-shell's own layout, so it needs its own coordinate
+     bumped rather than relying on document flow). */
+  top: calc(16px + var(--ticker-tape-height, 0px));
   right: 16px;
   z-index: 120;
   touch-action: none;
