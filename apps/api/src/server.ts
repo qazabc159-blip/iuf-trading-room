@@ -15692,6 +15692,58 @@ app.post("/api/v1/admin/fauto-ledger/single-date-catchup", async (c) => {
 });
 
 // =============================================================================
+// ADMIN: F-AUTO SIM Ledger Single-Date Reprice
+// =============================================================================
+//
+// POST /api/v1/admin/fauto-ledger/single-date-reprice
+//   Owner-only. Corrects an EXISTING daily sim_ledger_nav row's market-value
+//   component using that date's OWN FinMind PIT close — UPDATE, not INSERT.
+//   Built after the #1207/#1210 priceAudit investigation confirmed a
+//   systematic one-day mark-to-market lag on rows written by the
+//   pre-#1192/#1202 live EOD tick (2026-07-08's row priced with 2026-07-07's
+//   close, 2026-07-09's with 2026-07-08's). Never touches sim_ledger_weeks —
+//   a date with a week row (Tuesday rebalance) is rejected, different
+//   semantics, out of scope for this tool.
+//   Body: { date: "YYYY-MM-DD", apply?: boolean } — default apply=false (dry-run).
+//   Guards (checked in order): future date rejected; a date with a
+//   sim_ledger_weeks row rejected; target sim_ledger_nav row
+//   (source='live_eod') must already exist (else use single-date-catchup).
+//   Idempotent: a row whose notes already carry a "repriced:" marker returns
+//   alreadyRepriced=true and performs no write. apply=true is refused if any
+//   basket symbol has no usable FinMind PIT price for `date`.
+//   楊董/Elva ACK 2026-07-10 — apply 由 Elva 對 prod 執行。
+// =============================================================================
+
+app.post("/api/v1/admin/fauto-ledger/single-date-reprice", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { date?: string; apply?: boolean } = {};
+  try {
+    body = (await c.req.json()) as { date?: string; apply?: boolean };
+  } catch {
+    // empty body — fall through to validation below
+  }
+
+  const date = typeof body.date === "string" ? body.date.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return c.json({ error: "invalid_date", message: "body.date must be YYYY-MM-DD" }, 400);
+  }
+  const applyToDb = body.apply === true;
+
+  try {
+    const { writeSingleDateLedgerReprice } = await import("./sim-ledger-backfill.js");
+    const result = await writeSingleDateLedgerReprice({ date, apply: applyToDb });
+    return c.json({ ...result, generatedAt: new Date().toISOString() });
+  } catch (e) {
+    console.error("[admin/fauto-ledger/single-date-reprice] error:", e);
+    return c.json({ error: "REPRICE_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+// =============================================================================
 // ADMIN: News Top-10 Force Refresh
 // =============================================================================
 //

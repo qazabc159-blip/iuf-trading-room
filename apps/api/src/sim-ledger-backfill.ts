@@ -1475,3 +1475,274 @@ export async function writeSingleDateLedgerCatchup(options: {
   notes.push(`live_ledger_catchup_written: weekNum=${weekNum} date=${date}`);
   return { ...dryRunBase, applied: true, notes };
 }
+
+// ── Single-date live reprice (2026-07-10) ──────────────────────────────────
+//
+// 楊董/Elva ACK 2026-07-10, following the #1207/#1210 investigation: the
+// priceAudit evidence confirmed a SYSTEMATIC one-day mark-to-market lag on
+// existing daily sim_ledger_nav rows written by the pre-#1192/#1202 live EOD
+// tick (2026-07-08's row used 2026-07-07's close, 2026-07-09's row used
+// 2026-07-08's close — Elva's hand calc: 9,790,150 (7/8, stale) + 115,650
+// (7/7→7/8 real delta) = 9,905,800 = existing 7/9's own stale value,
+// confirming the lag pattern exactly). This tool corrects an EXISTING daily
+// NAV row's market-value component using that date's OWN FinMind PIT close
+// — UPDATE, not INSERT. Deliberately narrower than writeSingleDateLedgerCatchup
+// (which is for a MISSING date): this tool requires the target row to
+// already exist, and only ever touches equity_twd/return_pct/notes on that
+// one row — never sim_ledger_weeks (rebalance-week semantics are out of
+// scope; a Tuesday date is explicitly refused).
+
+export interface SingleDateRepricePriceAuditRow {
+  symbol: string;
+  shares: number;
+  /** FinMind PIT close for `date`. null = no usable price (see missingPriceSymbols). */
+  closeOnDate: number | null;
+  /** "finmind_close" (exact `date` match) or "finmind_close_walkback_from_YYYY-MM-DD". null if closeOnDate is null. */
+  closeOnDateSource: string | null;
+}
+
+export interface SingleDateRepriceResult {
+  ok: boolean;
+  applied: boolean;
+  /** true when the target row's notes already carry a "repriced:" marker — no write performed (idempotent). */
+  alreadyRepriced: boolean;
+  date: string;
+  /** The basket (by its own entry/generation date) open as of `date` — used for both cash residual and market value. */
+  basketDate: string | null;
+  /** The value currently stored in sim_ledger_nav.equity_twd for `date`, before any reprice. */
+  currentEquityTwd: number | null;
+  /** cashResidualTwd + marketValueTwd, using `date`'s own FinMind PIT closes. */
+  repricedEquityTwd: number | null;
+  cashResidualTwd: number | null;
+  marketValueTwd: number | null;
+  /** repricedEquityTwd - currentEquityTwd. */
+  diffTwd: number | null;
+  returnPct: number | null;
+  finMindWarnings: string[];
+  /** Symbols with no usable FinMind PIT close for `date` — apply is refused while non-empty. */
+  missingPriceSymbols: string[];
+  priceAudit: SingleDateRepricePriceAuditRow[];
+  notes: string[];
+}
+
+/**
+ * Pure computation core — no DB, no network. Mirrors
+ * _computeSingleDateCatchupFinancials's cash-residual formula (basket file's
+ * capital_twd - target_notional_twd, a static snapshot — see
+ * cash_residual_is_static_not_live memory note) but has no realized-PnL/
+ * transaction-cost component at all, since a reprice never closes or opens
+ * a position — it only re-marks an already-open basket's market value.
+ */
+export function _computeSingleDateRepriceFinancials(input: {
+  basket: LedgerBasketEntry[];
+  priceOnDateBySymbol: Map<string, number>;
+  basketCapitalTwd: number;
+  basketTargetNotionalTwd: number;
+}): {
+  marketValueTwd: number;
+  cashResidualTwd: number;
+  repricedEquityTwd: number;
+  returnPct: number;
+} {
+  let marketValueTwd = 0;
+  for (const pos of input.basket) {
+    marketValueTwd += pos.shares * (input.priceOnDateBySymbol.get(pos.symbol) ?? 0);
+  }
+  marketValueTwd = Math.round(marketValueTwd);
+  const cashResidualTwd = Math.round(input.basketCapitalTwd - input.basketTargetNotionalTwd);
+  const repricedEquityTwd = Math.round(cashResidualTwd + marketValueTwd);
+  const initialEquity = 10_000_000;
+  const returnPct = Math.round(((repricedEquityTwd - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+  return { marketValueTwd, cashResidualTwd, repricedEquityTwd, returnPct };
+}
+
+/**
+ * writeSingleDateLedgerReprice — admin-triggered correction of an EXISTING
+ * daily sim_ledger_nav row's market-value component, using that day's own
+ * FinMind PIT close instead of whatever (possibly stale) price the original
+ * live tick used.
+ *
+ * dry-run (apply=false, default): computes everything, writes nothing.
+ * apply=true: UPDATEs equity_twd/return_pct/notes on the existing row, but
+ *   ONLY if (a) not already repriced (idempotent — see alreadyRepriced) and
+ *   (b) every basket symbol has a usable FinMind PIT price (missingPriceSymbols
+ *   empty).
+ *
+ * Guards (checked in this order): future date rejected; a date with a
+ * sim_ledger_weeks row (Tuesday rebalance) rejected — different semantics,
+ * out of scope; target sim_ledger_nav row (source='live_eod') must already
+ * exist — this tool never INSERTs (use writeSingleDateLedgerCatchup for a
+ * genuinely missing date).
+ */
+export async function writeSingleDateLedgerReprice(options: {
+  /** The date whose existing daily NAV row should be repriced, YYYY-MM-DD. */
+  date: string;
+  apply?: boolean;
+  workspaceId?: string;
+}): Promise<SingleDateRepriceResult> {
+  const { date, apply = false, workspaceId } = options;
+  const notes: string[] = [];
+  const finMindWarnings: string[] = [];
+  const db = getDb();
+
+  const empty = (extra: Partial<SingleDateRepriceResult> = {}): SingleDateRepriceResult => ({
+    ok: false,
+    applied: false,
+    alreadyRepriced: false,
+    date,
+    basketDate: null,
+    currentEquityTwd: null,
+    repricedEquityTwd: null,
+    cashResidualTwd: null,
+    marketValueTwd: null,
+    diffTwd: null,
+    returnPct: null,
+    finMindWarnings,
+    missingPriceSymbols: [],
+    priceAudit: [],
+    notes,
+    ...extra,
+  });
+
+  if (!db || !isDatabaseMode()) return empty({ notes: [...notes, "no_db"] });
+
+  // 1. Future-date guard.
+  const todayTst = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  if (date > todayTst) {
+    notes.push(`future_date_rejected: ${date} is after today (${todayTst} TST)`);
+    return empty();
+  }
+
+  // 2. Reject a date that has a sim_ledger_weeks row (Tuesday rebalance —
+  //    different semantics, this tool only reprices daily mark-to-market rows).
+  const weekRows = (await db.execute(drizzleSql`
+    SELECT week_num FROM sim_ledger_weeks WHERE basket_date = ${date}::date LIMIT 1
+  `)) as unknown as Array<{ week_num: number }>;
+  if (weekRows.length > 0) {
+    notes.push(
+      `week_row_date_rejected: ${date} has a sim_ledger_weeks row (week_num=${weekRows[0]!.week_num}) — ` +
+      `this tool only reprices daily mark-to-market rows, not rebalance weeks`
+    );
+    return empty();
+  }
+
+  // 3. Target row must already exist with source='live_eod' — this tool never INSERTs.
+  const navRows = (await db.execute(drizzleSql`
+    SELECT equity_twd, notes FROM sim_ledger_nav
+    WHERE nav_date = ${date}::date AND source = 'live_eod'
+    LIMIT 1
+  `)) as unknown as Array<{ equity_twd: string; notes: string | null }>;
+  if (navRows.length === 0) {
+    notes.push(
+      `nav_row_not_found: no sim_ledger_nav row for date=${date} source='live_eod' — nothing to reprice ` +
+      `(use writeSingleDateLedgerCatchup for a genuinely MISSING date instead)`
+    );
+    return empty();
+  }
+  const existingRow = navRows[0]!;
+  const currentEquityTwd = Number(existingRow.equity_twd);
+
+  // 4. Idempotency — a repriced row's notes carries a "repriced:" marker.
+  if (existingRow.notes && existingRow.notes.includes("repriced:")) {
+    notes.push(`already_repriced: sim_ledger_nav.notes for ${date} already contains a "repriced:" marker — no write performed`);
+    return empty({ ok: true, alreadyRepriced: true, currentEquityTwd });
+  }
+
+  // 5. Determine the basket open as of `date` (most recent basket date <= date).
+  const allBaskets = await loadBasketsFromAuditLogs(workspaceId).catch(() => new Map<string, LedgerBasketEntry[]>());
+  const sortedDates = [...allBaskets.keys()].sort();
+  const basketDate = sortedDates.filter((d) => d <= date).pop() ?? null;
+  const basket = basketDate ? (allBaskets.get(basketDate) ?? []) : [];
+  if (!basketDate || basket.length === 0) {
+    notes.push(`no_basket_found: no basket on or before ${date}`);
+    return empty({ currentEquityTwd });
+  }
+
+  // 6. Basket capital/target-notional — same static cash-residual source of
+  //    truth as writeSingleDateLedgerCatchup (see cash_residual_is_static_not_live).
+  const { readS1ObservationAudit, S1_AUDIT_ACTIONS } = await import("./s1-sim-runner.js");
+  type S1BasketCapitalShape = { capital_twd: number; basket: Array<{ target_notional_twd: number }> };
+  const basketFile = await readS1ObservationAudit<S1BasketCapitalShape>(S1_AUDIT_ACTIONS.signalGenerated, basketDate).catch(() => null);
+  if (!basketFile) {
+    notes.push(`basket_file_unavailable: could not read the ${basketDate} signal_generated audit — cannot derive cashResidualTwd, refusing to guess`);
+    return empty({ currentEquityTwd, basketDate });
+  }
+  const basketCapitalTwd = basketFile.capital_twd;
+  const basketTargetNotionalTwd = basketFile.basket.reduce((s, e) => s + (e.target_notional_twd ?? 0), 0);
+
+  // 7. FinMind PIT prices for `date` — 10-day look-back for walk-back safety
+  //    (same convention as writeSingleDateLedgerCatchup).
+  const symbols = basket.map((p) => p.symbol);
+  const lookbackStart = new Date(`${date}T00:00:00Z`);
+  lookbackStart.setUTCDate(lookbackStart.getUTCDate() - 10);
+  const fetchStartDate = lookbackStart.toISOString().slice(0, 10);
+  const { prices: priceMap, warnings: fmWarnings } = await fetchFinMindPrices(symbols, fetchStartDate, date);
+  finMindWarnings.push(...fmWarnings);
+
+  const missingPriceSymbols: string[] = [];
+  const priceOnDateBySymbol = new Map<string, number>();
+  const priceAudit: SingleDateRepricePriceAuditRow[] = [];
+  for (const pos of basket) {
+    const r = getPitClose(priceMap, pos.symbol, date);
+    if (!r) {
+      missingPriceSymbols.push(pos.symbol);
+      priceAudit.push({ symbol: pos.symbol, shares: pos.shares, closeOnDate: null, closeOnDateSource: null });
+      continue;
+    }
+    priceOnDateBySymbol.set(pos.symbol, r.price);
+    priceAudit.push({ symbol: pos.symbol, shares: pos.shares, closeOnDate: r.price, closeOnDateSource: r.source });
+  }
+
+  const { marketValueTwd, cashResidualTwd, repricedEquityTwd, returnPct } = _computeSingleDateRepriceFinancials({
+    basket, priceOnDateBySymbol, basketCapitalTwd, basketTargetNotionalTwd,
+  });
+  const diffTwd = repricedEquityTwd - currentEquityTwd;
+
+  if (missingPriceSymbols.length > 0) {
+    notes.push(
+      `missing_finmind_price: ${[...new Set(missingPriceSymbols)].join(",")} — apply is refused while this list is non-empty`
+    );
+  }
+  notes.push(
+    `reprice_computed: basketDate=${basketDate} currentEquityTwd=${currentEquityTwd} ` +
+    `repricedEquityTwd=${repricedEquityTwd} diffTwd=${diffTwd}`
+  );
+
+  const dryRunBase: SingleDateRepriceResult = {
+    ok: true,
+    applied: false,
+    alreadyRepriced: false,
+    date,
+    basketDate,
+    currentEquityTwd,
+    repricedEquityTwd,
+    cashResidualTwd,
+    marketValueTwd,
+    diffTwd,
+    returnPct,
+    finMindWarnings,
+    missingPriceSymbols: [...new Set(missingPriceSymbols)],
+    priceAudit,
+    notes,
+  };
+
+  if (!apply) return dryRunBase;
+
+  if (missingPriceSymbols.length > 0) {
+    notes.push("apply_refused: missingPriceSymbols is non-empty — resolve FinMind price coverage before applying");
+    return { ...dryRunBase, ok: false, applied: false };
+  }
+
+  // 8. Apply — UPDATE only (never INSERT), and only equity_twd/return_pct/notes.
+  //    Append (not replace) the audit marker so the pre-reprice value is
+  //    never lost — future readers can always see what this row used to be.
+  const newNotes = `${existingRow.notes ? existingRow.notes + " | " : ""}repriced: finmind_pit_close was=${currentEquityTwd}`;
+  await db.execute(drizzleSql`
+    UPDATE sim_ledger_nav
+    SET equity_twd = ${repricedEquityTwd}, return_pct = ${returnPct}, notes = ${newNotes}
+    WHERE nav_date = ${date}::date AND source = 'live_eod'
+  `);
+
+  notes.push(`live_ledger_reprice_written: date=${date} was=${currentEquityTwd} now=${repricedEquityTwd}`);
+  return { ...dryRunBase, applied: true, notes };
+}
