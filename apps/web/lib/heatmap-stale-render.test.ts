@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { isKgiTradingHours } from "./kgi-trading-hours";
+import { buildBannerText, deriveFreshness, formatTradeDateWithWeekday } from "./market-state-banner";
 
 // ── Inline extracted logic from industry-heatmap.tsx ─────────────────────────
 // (Same logic as the component — tested here without React dependency)
@@ -69,21 +70,13 @@ function staleDotLabel(sourceState: SourceState): string | null {
   return null;
 }
 
-// ── Inline extracted freshness logic from MarketStateBanner.tsx ──────────────
-
-type DataFreshness = "live" | "eod" | "cache";
-
-function deriveFreshness(now: Date): DataFreshness {
-  if (isKgiTradingHours(now)) return "live";
-  return "eod";
-}
-
-function bannerText(freshness: DataFreshness, closeLabel: string): string | null {
-  if (freshness === "live") return null;
-  if (freshness === "eod") return `台股目前盤後或週末休市，顯示 ${closeLabel} 收盤資料`;
-  if (freshness === "cache") return `資料同步暫時延遲，顯示緩存 ${closeLabel}`;
-  return null;
-}
+// ── MarketStateBanner logic (P0-5 fix): imported directly from
+// lib/market-state-banner.ts, NOT re-implemented here. The original P0-5 bug
+// (banner showed "07/10 (五) 收盤" on a typhoon holiday with no 07/10 close)
+// shipped in part because this test file used to keep its own stale inline
+// copy of the banner's wall-clock date logic — the copy tested fine, but
+// diverged from the real (buggy) component. Importing the real functions
+// makes that class of drift impossible.
 
 // Helper: construct a Date in Asia/Taipei
 function tst(year: number, month: number, day: number, hour: number, minute: number): Date {
@@ -211,7 +204,7 @@ describe("F4-T4: MarketStateBanner freshness wording", () => {
     const now = tst(2026, 5, 19, 10, 0);
     const freshness = deriveFreshness(now);
     expect(freshness).toBe("live");
-    expect(bannerText(freshness, "05/17")).toBeNull();
+    expect(buildBannerText(freshness, "05/17 (日)")).toBeNull();
   });
 
   it("Weekend (Sunday) TST → freshness=eod → amber banner with 收盤 wording", () => {
@@ -221,11 +214,13 @@ describe("F4-T4: MarketStateBanner freshness wording", () => {
     expect(isKgiTradingHours(now)).toBe(false);
     const freshness = deriveFreshness(now);
     expect(freshness).toBe("eod");
-    const text = bannerText(freshness, "05/15");
+    const text = buildBannerText(freshness, "05/15 (五)");
     expect(text).not.toBeNull();
     expect(text).toContain("休市");
     expect(text).toContain("05/15");
     expect(text).toContain("收盤資料");
+    // exactly one "收盤" occurrence — no more duplicated "收盤 收盤資料" (P0-5)
+    expect(text!.match(/收盤/g)?.length).toBe(1);
   });
 
   it("weekday after-close (14:30 TST) → freshness=eod → amber banner", () => {
@@ -234,15 +229,56 @@ describe("F4-T4: MarketStateBanner freshness wording", () => {
     expect(isKgiTradingHours(now)).toBe(false);
     const freshness = deriveFreshness(now);
     expect(freshness).toBe("eod");
-    const text = bannerText(freshness, "05/19");
+    const text = buildBannerText(freshness, "05/19 (二)");
     expect(text).toContain("收盤資料");
   });
 
   it("cache freshness → red banner with 延遲 wording", () => {
-    const freshness: DataFreshness = "cache";
-    const text = bannerText(freshness, "05/17");
+    const text = buildBannerText("cache", "05/17 (日)");
     expect(text).not.toBeNull();
     expect(text).toContain("延遲");
     expect(text).toContain("05/17");
+  });
+
+  it("no closeLabel available → shows '收盤資料' with no date, never a guessed date", () => {
+    // This is the "沒有就不顯日期只顯「收盤」" fallback (P0-5 fix requirement).
+    const text = buildBannerText("eod", null);
+    expect(text).toBe("台股目前盤後或週末休市，顯示 收盤資料");
+  });
+});
+
+// ── Test 5 (P0-5 fix): the displayed date must come from the DATA's own
+// trade date, never a wall-clock/calendar guess ─────────────────────────────
+describe("F4-T5: P0-5 — trade date is derived from data, not the wall clock", () => {
+  it("holiday scenario: real last close is 2026-07-09, banner must show 07/09 (四) — not 'today' 07/10", () => {
+    // 2026-07-10 (Fri) is a typhoon holiday with NO trading; the API's real
+    // last-close date (asOf) is 2026-07-09 (Thu). The old wall-clock logic
+    // would have shown "07/10 (五)" (today's weekday) purely because 07/10
+    // is a weekday and it's after 14:10 — wrong, because there was no close
+    // that day. The fix must label the date using the DATA's own date.
+    const label = formatTradeDateWithWeekday("2026-07-09");
+    expect(label).toBe("07/09 (四)");
+    expect(label).not.toContain("07/10");
+
+    const text = buildBannerText("eod", label);
+    expect(text).toBe("台股目前盤後或週末休市，顯示 07/09 (四) 收盤資料");
+    expect(text?.match(/收盤/g)?.length).toBe(1);
+  });
+
+  it("normal weekday: last close 2026-05-19 (Tue) labeled correctly from its own date", () => {
+    const label = formatTradeDateWithWeekday("2026-05-19");
+    expect(label).toBe("05/19 (二)");
+  });
+
+  it("accepts a full ISO timestamp (not just a bare date) and still reads the date part", () => {
+    const label = formatTradeDateWithWeekday("2026-07-09T05:30:00.000Z");
+    expect(label).toBe("07/09 (四)");
+  });
+
+  it("missing/invalid asOf → returns null (caller must show 收盤資料 with no date, never guess)", () => {
+    expect(formatTradeDateWithWeekday(null)).toBeNull();
+    expect(formatTradeDateWithWeekday(undefined)).toBeNull();
+    expect(formatTradeDateWithWeekday("")).toBeNull();
+    expect(formatTradeDateWithWeekday("not-a-date")).toBeNull();
   });
 });
