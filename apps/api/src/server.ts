@@ -169,6 +169,7 @@ import {
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes,
+  upsertKgiQuotes,
   getCompaniesLiteCached
 } from "./market-data.js";
 import {
@@ -17230,6 +17231,49 @@ export function _computeTwseEodCronTradingDateIso(stockDateRaw: string | undefin
 }
 
 /**
+ * Detects whether the TWSE MIS intraday feed is still serving the prior
+ * trading session's data (2026-07-10 quote-chain outage diagnosis: on the
+ * 7/10 typhoon closure, MIS kept returning `d="20260709"` all morning even
+ * though `isTwseMisQuoteCronWindow()` — which only checks Taipei HH:MM and
+ * weekday, not the actual trading calendar — considered the market "open").
+ * Unlike TWSE OpenAPI's STOCK_DAY_ALL (only published after close, so it's
+ * *expected* to lag by one day for most of every trading day too), MIS is a
+ * live intraday feed: once the market session begins its own `d` field
+ * should already show Taipei "today". A mismatch is therefore a reliable
+ * signal of a non-trading day, not merely of missing/delayed data.
+ * A missing `observedDateYmd` is treated as "can't tell" (fail-open —
+ * `_runTwseMisQuoteCron` runs unchanged).
+ */
+export function _isMisFeedNonTradingDaySignal(
+  observedDateYmd: string | null | undefined,
+  todayYmd: string
+): boolean {
+  if (!observedDateYmd) return false;
+  return observedDateYmd !== todayYmd;
+}
+
+/**
+ * Detects whether the TWSE-EOD-QUOTE-CRON's freshly-computed trading date
+ * is identical to the date it already persisted on some earlier tick — i.e.
+ * there is no new trading-session data since then, so re-running the fetch
+ * + manual-cache + quote_last_close persist logic is pure waste (2026-07-10
+ * quote-chain outage diagnosis: on a non-trading day, STOCK_DAY_ALL's own
+ * `Date` field never advances, so this cron would otherwise re-fetch and
+ * re-persist the identical dataset every 10 minutes, all day).
+ * This is a dedup gate, not a calendar lookup: it never misfires on a real
+ * trading day because STOCK_DAY_ALL's date always advances once that day's
+ * close is published, which naturally lets a fresh tick straight through.
+ * Fail-open: an empty/unparseable `freshTradingDateIso` (`""`) never gates.
+ */
+export function _isTwseEodCronTradeDateAlreadyPersisted(
+  freshTradingDateIso: string,
+  lastPersistedTradeDate: string | null
+): boolean {
+  if (!freshTradingDateIso) return false;
+  return lastPersistedTradeDate !== null && freshTradingDateIso.slice(0, 10) === lastPersistedTradeDate;
+}
+
+/**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
  * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
@@ -17915,6 +17959,10 @@ function startSchedulers(workspaceSlug: string): void {
   // Batch: up to 20 symbols per request (using | separator). No auth required.
   {
     const TWSE_MIS_CRON_MS = 45 * 1000; // 45s — keeps manual quotes fresh (staleMs=60s)
+    // Debounce: log the non-trading-day signal at most once per Taipei calendar
+    // day (the cron fires every 45s — without this a full holiday would emit
+    // hundreds of identical log lines).
+    let _misNonTradingDayLastLoggedYmd: string | null = null;
 
     /** Returns true if current Taipei time is in 08:55–14:35 window on a weekday.
      *  08:55 = trial auction open; 14:35 = 2min buffer after 14:30 close + tail prints.
@@ -18018,6 +18066,26 @@ function startSchedulers(workspaceSlug: string): void {
             if (!resp.ok) continue;
             const data = await resp.json() as { msgArray?: Array<Record<string, string>>; rtcode?: string };
             if (data.rtcode !== "0000" || !data.msgArray) continue;
+
+            // Non-trading-day early exit (2026-07-10 quote-chain outage diagnosis):
+            // isTwseMisQuoteCronWindow() only checks Taipei HH:MM + weekday, not the
+            // actual trading calendar, so an ad-hoc closure (e.g. typhoon day) still
+            // lets this cron spin every 45s doing pointless work. Checked once, on the
+            // first batch only — a single live sample is a reliable enough signal (see
+            // _isMisFeedNonTradingDaySignal doc). Skips the remaining batches AND the
+            // trailing index-overview fetch below for this tick only (self-healing —
+            // no persistent state, so a real trading day is never blocked past one tick).
+            if (i === 0) {
+              const observedDateYmd = data.msgArray[0]?.["d"] ?? null;
+              const todayYmd = taipeiDate().replace(/-/g, "");
+              if (_isMisFeedNonTradingDaySignal(observedDateYmd, todayYmd)) {
+                if (_misNonTradingDayLastLoggedYmd !== todayYmd) {
+                  console.log(`[twse-mis-cron] MIS feed still on trade_date=${observedDateYmd} (expected ${todayYmd}) — likely non-trading day, skipping this tick`);
+                  _misNonTradingDayLastLoggedYmd = todayYmd;
+                }
+                return;
+              }
+            }
 
             const now = new Date().toISOString();
             for (const msg of data.msgArray) {
@@ -18440,6 +18508,10 @@ function startSchedulers(workspaceSlug: string): void {
     let _twseEodCronLastFiredAt: string | null = null;
     let _twseEodCronLastCount = 0;
     let _twseEodCronLastError: string | null = null;
+    // Non-trading-day dedup gate state (2026-07-10) — see
+    // _isTwseEodCronTradeDateAlreadyPersisted doc for why comparing against
+    // the last successfully-persisted date is a safe stand-in for a calendar check.
+    let _twseEodCronLastPersistedTradeDate: string | null = null;
 
     /** Returns true when we should inject EOD quotes (not already covered by MIS cron). */
     function _isTwseEodCronWindow(): boolean {
@@ -18496,6 +18568,22 @@ function startSchedulers(workspaceSlug: string): void {
         // doc comment (2026-07-10 Pete review follow-up) for why this must go
         // through the shared parser rather than a local inline one.
         const tradingDateIso = _computeTwseEodCronTradingDateIso(stockRows[0]?.Date);
+
+        // Non-trading-day early exit (2026-07-10 quote-chain outage diagnosis):
+        // STOCK_DAY_ALL's own trading date only advances once a new session's
+        // close is published — on an ad-hoc closure (e.g. typhoon day) it never
+        // changes, so this cron would otherwise re-fetch + re-persist the exact
+        // same dataset every 10 minutes, all day. Skipping when unchanged never
+        // misfires on a real trading day (a fresh date always lets that day's
+        // first tick straight through) and does not affect quote freshness —
+        // `ts` below is derived from tradingDateIso itself, not wall-clock time,
+        // so repeating the same date's injection would not have refreshed
+        // freshness anyway. See _isTwseEodCronTradeDateAlreadyPersisted doc.
+        if (_isTwseEodCronTradeDateAlreadyPersisted(tradingDateIso, _twseEodCronLastPersistedTradeDate)) {
+          console.log(`[twse-eod-cron] trade_date=${tradingDateIso.slice(0, 10)} already persisted — no new trading session (likely non-trading day), skipping tick`);
+          return;
+        }
+
         const ts = tradingDateIso || new Date().toISOString();
 
         for (const row of stockRows) {
@@ -18595,6 +18683,9 @@ function startSchedulers(workspaceSlug: string): void {
         _twseEodCronLastFiredAt = new Date().toISOString();
         _twseEodCronLastCount = quotes.length;
         _twseEodCronLastError = null;
+        if (tradingDateIso) {
+          _twseEodCronLastPersistedTradeDate = tradingDateIso.slice(0, 10);
+        }
         console.log(`[twse-eod-cron] injected ${quotes.length} EOD quotes into manual cache (outside trading hours)`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -18609,6 +18700,91 @@ function startSchedulers(workspaceSlug: string): void {
     setTimeout(() => {
       void _runTwseEodCron();
     }, 45_000);
+  }
+
+  // KGI-QUOTE-INGEST-CRON (2026-07-10 quote-chain outage diagnosis P1): During
+  // trading hours (08:55–14:35 TST weekdays), pull live ticks from the KGI
+  // gateway for the permanently-subscribed equity universe (CORE_SYMBOLS +
+  // STRATEGY_SYMBOLS — always subscribed, so ticks are the highest-signal
+  // subset; the other 21 HEATMAP_CORE_SYMBOLS aren't in the KGI subscription
+  // pool at all) and bridge them into quoteProviders.kgi via upsertKgiQuotes.
+  // This bucket previously had ZERO production writers — kgi-subscription-
+  // manager.ts's own tick fetch (getKgiMarketOverview / getKgiCoreHeatmap) was
+  // never bridged into market-data.ts's quote store, so readiness="ready"
+  // (which requires selectedSource==="kgi") was structurally unreachable even
+  // with a fully healthy KGI feed. Purely additive: does not touch the
+  // readiness formula or any other quoteProviders bucket.
+  // Fail-open: the KGI SIM account's market-data auth is currently broken
+  // (KGI_QUOTE_AUTH_UNAVAILABLE — an account/SDK-level gap, not a bug in this
+  // cron), so every fetch resolves to a null tick and this cron is a no-op in
+  // practice until that is fixed. See reports/quote_chain_outage_20260710/.
+  {
+    const KGI_QUOTE_INGEST_CRON_MS = 60 * 1000; // 60s — gentler than the 45s MIS cron since each tick is a per-symbol gateway round-trip, not one batched HTTP call
+
+    /** Same weekday/window guard as TWSE-MIS-QUOTE-CRON (deliberately duplicated,
+     *  not shared — matches this file's existing convention of per-cron window
+     *  checks rather than a shared helper). */
+    function isKgiQuoteIngestCronWindow(): boolean {
+      const hhmm = getTaipeiHHMM();
+      if (hhmm < 855 || hhmm > 1435) return false;
+      const taipeiDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      const dayOfWeek = taipeiDate.getUTCDay();
+      return dayOfWeek >= 1 && dayOfWeek <= 5;
+    }
+
+    async function _runKgiQuoteIngestCron(): Promise<void> {
+      if (!isKgiQuoteIngestCronWindow()) return;
+      try {
+        const { CORE_SYMBOLS, STRATEGY_SYMBOLS, fetchKgiLatestTick } = await import("./kgi-subscription-manager.js");
+        // Same single OTC exception as TWSE-MIS-QUOTE-CRON's OTC_HEATMAP_SYMBOLS
+        // (3707 漢磊 is TPEX-listed; every other CORE/STRATEGY symbol is TWSE).
+        const OTC_KGI_INGEST_SYMBOLS = new Set(["3707"]);
+        const symbols = Array.from(new Set<string>([...CORE_SYMBOLS, ...STRATEGY_SYMBOLS]));
+        if (!symbols.length) return;
+
+        const ticks = await Promise.all(symbols.map((symbol) => fetchKgiLatestTick(symbol)));
+
+        const cronSession = {
+          workspace: { id: "00000000-0000-0000-0000-000000000000", name: workspaceSlug, slug: workspaceSlug },
+          user: { id: "00000000-0000-0000-0000-000000000001", name: "kgi-quote-ingest-cron", email: "cron@system", role: "Owner" as const },
+          persistenceMode: (isDatabaseMode() ? "database" : "memory") as "database" | "memory"
+        };
+
+        const now = new Date().toISOString();
+        const quotes = ticks
+          .filter((tick): tick is typeof tick & { value: number } => tick.value !== null && tick.value > 0)
+          .map((tick) => ({
+            symbol: tick.symbol,
+            market: (OTC_KGI_INGEST_SYMBOLS.has(tick.symbol) ? "TPEX" : "TWSE") as "TWSE" | "TPEX",
+            source: "kgi" as const,
+            last: tick.value,
+            bid: null,
+            ask: null,
+            open: null,
+            high: null,
+            low: null,
+            prevClose: null,
+            volume: null,
+            changePct: tick.changePct,
+            timestamp: now
+          }));
+
+        if (!quotes.length) return;
+
+        await upsertKgiQuotes({ session: cronSession, quotes });
+        console.log(`[kgi-quote-ingest-cron] bridged ${quotes.length} live KGI ticks into quoteProviders.kgi`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("[kgi-quote-ingest-cron] tick failed:", msg);
+      }
+    }
+
+    ui(_runKgiQuoteIngestCron, KGI_QUOTE_INGEST_CRON_MS);
+
+    // Boot fire: 50s — after the MIS (30s) and EOD (45s) boot fires settle
+    setTimeout(() => {
+      void _runKgiQuoteIngestCron();
+    }, 50_000);
   }
 
   console.log(
@@ -18630,6 +18806,7 @@ function startSchedulers(workspaceSlug: string): void {
     "TWSE-MIS-QUOTE-CRON (45s intraday injection, fires 08:55-14:35 TST weekdays) + " +
     "MIS-FULL-UNIVERSE-SWEEP (10s/slice, 50 tickers/slice, ~400s/round for ~1978 stocks, fires 08:55-14:35 TST weekdays) + " +
     "TWSE-EOD-QUOTE-CRON (10min, outside 08:55-14:35 window, injects EOD quotes for ideas gate) + " +
+    "KGI-QUOTE-INGEST-CRON (60s, fires 08:55-14:35 TST weekdays, bridges live KGI ticks into quoteProviders.kgi) + " +
     "AI-REC-V2-CRON (5min poll, fires 09:30+13:00 TST weekdays) + " +
     "AI-REC-V3-CRON (24h, fires 08:30-09:15 TST weekdays, boot-fire 90s) + " +
     "OPENALICE-M1-DECISION-CRON (10min, consumes iuf_events+signals → iuf_decisions, boot-fire 60s) started"

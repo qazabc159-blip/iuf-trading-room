@@ -77,7 +77,8 @@ import {
   resetMarketDataWorkspaceState,
   resolveMarketQuotes,
   upsertPaperQuotes,
-  upsertManualQuotes
+  upsertManualQuotes,
+  upsertKgiQuotes
 } from "../apps/api/src/market-data.ts";
 import { resetPersistedQuoteEntries } from "../apps/api/src/market-data-store.ts";
 import { resetPersistedStrategyRuns } from "../apps/api/src/strategy-runs-store.ts";
@@ -20890,6 +20891,192 @@ test("TRK-9: FAutoNavFull owner response shape is backward compatible — pricin
   assert.deepEqual(result.navCurve, []);
   assert.deepEqual(result.weeks, []);
   assert.equal(result.summary, null);
+});
+
+// KGI-BRIDGE-1..3 + KGI-CRON-1 (2026-07-10 quote-chain outage diagnosis P1):
+// quoteProviders.kgi previously had zero production writers, so
+// readiness="ready" (which requires selectedSource==="kgi") was structurally
+// unreachable even with a healthy KGI feed. upsertKgiQuotes() is the new
+// canonical write-path bridge; KGI_QUOTE_AUTH_UNAVAILABLE means the live
+// gateway can't be exercised right now, so these tests inject a simulated
+// tick instead — see reports/quote_chain_outage_20260710/.
+test("KGI-BRIDGE-1: upsertKgiQuotes writes into the quoteProviders.kgi bucket regardless of any source field on the item", async () => {
+  const session = { workspace: { slug: `kgi-bridge-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertKgiQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "KGIBRIDGE1",
+        market: "TWSE",
+        // Deliberately NOT "kgi" — upsertKgiQuotes must force sourceOverride
+        // regardless, same convention as upsertPaperQuotes.
+        source: "manual",
+        last: 600,
+        bid: 599.5,
+        ask: 600.5,
+        open: 598,
+        high: 601,
+        low: 597.5,
+        prevClose: 598,
+        volume: 1000,
+        changePct: 0.33,
+        timestamp: now
+      }
+    ]
+  });
+
+  const kgiQuotes = await listMarketQuotes({ session, symbols: "KGIBRIDGE1", source: "kgi" });
+  assert.equal(kgiQuotes.length, 1, "KGI-BRIDGE-1: quoteProviders.kgi must contain the injected tick");
+  assert.equal(kgiQuotes[0]?.source, "kgi");
+  assert.equal(kgiQuotes[0]?.last, 600);
+
+  // The bucket really is source-scoped: querying "manual" for the same
+  // symbol must NOT see this entry (proves sourceOverride actually moved it,
+  // rather than the manual bucket also happening to contain a copy).
+  const manualQuotes = await listMarketQuotes({ session, symbols: "KGIBRIDGE1", source: "manual" });
+  assert.equal(manualQuotes.length, 0, "KGI-BRIDGE-1: the manual bucket must not receive this write");
+});
+
+test("KGI-BRIDGE-2: a simulated fresh KGI tick lets readiness reach \"ready\" via the existing formula (no gate rewiring)", async () => {
+  const session = { workspace: { slug: `kgi-bridge-${randomUUID()}` } };
+  const now = new Date().toISOString();
+
+  await upsertKgiQuotes({
+    session,
+    quotes: [
+      {
+        symbol: "KGIBRIDGE2",
+        market: "TWSE",
+        source: "manual",
+        last: 610,
+        bid: 609.5,
+        ask: 610.5,
+        open: 608,
+        high: 611,
+        low: 607.5,
+        prevClose: 608,
+        volume: 2000,
+        changePct: 0.33,
+        timestamp: now
+      }
+    ]
+  });
+
+  const effective = await getEffectiveMarketQuotes({
+    session,
+    symbols: "KGIBRIDGE2",
+    limit: 10
+  });
+
+  const item = effective.items.find((i) => i.symbol === "KGIBRIDGE2");
+  assert.equal(item?.selectedSource, "kgi", "KGI-BRIDGE-2: kgi is top priority and the only source with data, so it must be selected");
+  assert.equal(item?.freshnessStatus, "fresh");
+  assert.equal(item?.synthetic, false, "KGI-BRIDGE-2: kgi is not a synthetic source");
+  assert.equal(item?.readiness, "ready", "KGI-BRIDGE-2: readiness formula (unchanged) reaches \"ready\" once quoteProviders.kgi is populated");
+  assert.equal(item?.liveUsable, true);
+  assert.equal(effective.summary.ready, 1);
+});
+
+test("KGI-CRON-1: server.ts wires a KGI quote ingest cron that pulls kgi-subscription-manager ticks and bridges them via upsertKgiQuotes", async () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /_runKgiQuoteIngestCron/,
+    "KGI-CRON-1: a KGI quote ingest cron function must exist"
+  );
+  assert.match(
+    serverSrc,
+    /const \{ CORE_SYMBOLS, STRATEGY_SYMBOLS, fetchKgiLatestTick \} = await import\("\.\/kgi-subscription-manager\.js"\);/,
+    "KGI-CRON-1: the cron must import fetchKgiLatestTick from kgi-subscription-manager.js"
+  );
+  assert.match(
+    serverSrc,
+    /await upsertKgiQuotes\(\{ session: cronSession, quotes \}\);/,
+    "KGI-CRON-1: the cron must bridge fetched ticks into quoteProviders.kgi via upsertKgiQuotes"
+  );
+
+  const { fetchKgiLatestTick, CORE_SYMBOLS, STRATEGY_SYMBOLS } =
+    await import("../apps/api/src/kgi-subscription-manager.ts");
+  assert.equal(typeof fetchKgiLatestTick, "function", "KGI-CRON-1: fetchKgiLatestTick must be exported for the cron to import");
+  assert.ok(CORE_SYMBOLS.length > 0);
+  assert.ok(STRATEGY_SYMBOLS.length > 0);
+});
+
+// MIS-CALENDAR-GATE-1/2 + EOD-CALENDAR-GATE-1/2 (2026-07-10 quote-chain
+// outage diagnosis P2): _runTwseMisQuoteCron / _runTwseEodCron previously
+// only checked Taipei HH:MM + weekday, never the actual trading calendar —
+// confirmed 2026-07-10 (typhoon closure) all three official TWSE endpoints
+// stayed pinned to the prior trading day's date while the HH:MM window
+// still considered the market "open", so both crons spun all day doing
+// pointless work. Both gates below are fail-open pure functions: an
+// ambiguous/missing signal never blocks the cron's normal behaviour.
+test("MIS-CALENDAR-GATE-1: _isMisFeedNonTradingDaySignal is fail-open and only fires on a genuine date mismatch", async () => {
+  const { _isMisFeedNonTradingDaySignal } = await import("../apps/api/src/server.ts");
+
+  assert.equal(_isMisFeedNonTradingDaySignal("20260710", "20260710"), false, "same date = normal trading day");
+  assert.equal(_isMisFeedNonTradingDaySignal("20260709", "20260710"), true, "MIS still on prior day = non-trading-day signal");
+  assert.equal(_isMisFeedNonTradingDaySignal(null, "20260710"), false, "missing observed date = fail-open, never gates");
+  assert.equal(_isMisFeedNonTradingDaySignal(undefined, "20260710"), false, "undefined observed date = fail-open, never gates");
+  assert.equal(_isMisFeedNonTradingDaySignal("", "20260710"), false, "empty observed date = fail-open, never gates");
+});
+
+test("MIS-CALENDAR-GATE-2: _runTwseMisQuoteCron checks the non-trading-day signal on the first batch and exits early", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /if \(_isMisFeedNonTradingDaySignal\(observedDateYmd, todayYmd\)\) \{/,
+    "MIS-CALENDAR-GATE-2: the MIS cron must call _isMisFeedNonTradingDaySignal and gate on it"
+  );
+});
+
+test("EOD-CALENDAR-GATE-1: _isTwseEodCronTradeDateAlreadyPersisted is fail-open and only fires when the trading date is unchanged", async () => {
+  const { _isTwseEodCronTradeDateAlreadyPersisted } = await import("../apps/api/src/server.ts");
+
+  assert.equal(
+    _isTwseEodCronTradeDateAlreadyPersisted("2026-07-09T13:30:00+08:00", "2026-07-09"),
+    true,
+    "same trading date already persisted = skip (no new session)"
+  );
+  assert.equal(
+    _isTwseEodCronTradeDateAlreadyPersisted("2026-07-10T13:30:00+08:00", "2026-07-09"),
+    false,
+    "a new trading date must always let the tick through"
+  );
+  assert.equal(
+    _isTwseEodCronTradeDateAlreadyPersisted("2026-07-09T13:30:00+08:00", null),
+    false,
+    "no prior persisted date = fail-open, never gates"
+  );
+  assert.equal(
+    _isTwseEodCronTradeDateAlreadyPersisted("", "2026-07-09"),
+    false,
+    "unparseable/empty tradingDateIso = fail-open, never gates"
+  );
+});
+
+test("EOD-CALENDAR-GATE-2: _runTwseEodCron checks the dedup gate before injecting quotes and records the persisted trade date on success", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /if \(_isTwseEodCronTradeDateAlreadyPersisted\(tradingDateIso, _twseEodCronLastPersistedTradeDate\)\) \{/,
+    "EOD-CALENDAR-GATE-2: the EOD cron must call _isTwseEodCronTradeDateAlreadyPersisted and gate on it"
+  );
+  assert.match(
+    serverSrc,
+    /_twseEodCronLastPersistedTradeDate = tradingDateIso\.slice\(0, 10\);/,
+    "EOD-CALENDAR-GATE-2: a successful run must record the persisted trade date so the next tick's dedup check works"
+  );
 });
 
 // Teardown pollers that may be started by imported API modules.
