@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const ticketHtml = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/index.html", import.meta.url), "utf8");
+const tradingCss = readFileSync(new URL("../public/ui-final-v031/paper_trading_room/trading.css", import.meta.url), "utf8");
 const liveHydration = readFileSync(new URL("./final-v031-live.ts", import.meta.url), "utf8");
 const backendProxy = readFileSync(new URL("../app/api/ui-final-v031/backend/route.ts", import.meta.url), "utf8");
 const fautoSimApi = readFileSync(new URL("./fauto-sim-api.ts", import.meta.url), "utf8");
@@ -709,5 +710,62 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("overflow-x: auto !important;");
     expect(routeSource).toContain('.ltab[data-lt="uta-orders"] table {');
     expect(routeSource).toContain("min-width: 560px !important;");
+  });
+
+  it("collapses the duplicated 五檔 depth renderers into one shared renderDepthPanel() (盤口密度 PR-B, 2026-07-10)", () => {
+    // Both the 3s quote-pulse path (applyPaperQuotePulse) and the 15s full
+    // refresh path (hydratePaper) used to each carry their own near-identical
+    // 5-ask/5-bid render block — one of them (hydratePaper's) had a dead
+    // "非交易時段" branch immediately overwritten by the very next statement,
+    // never actually shown. Collapsed to one definition + two call sites,
+    // both routed through the same tick-flash state map.
+    const renderFnCount = (liveHydration.match(/function renderDepthPanel\(/g) || []).length;
+    expect(renderFnCount).toBe(1);
+    expect(liveHydration).toContain("if (bidAsk) renderDepthPanel(bidAsk, selected.price);");
+    expect(liveHydration).toContain("renderDepthPanel(live.bidAsk, selected.price);");
+    expect(liveHydration).not.toContain("目前為非交易時段，盤口暫不更新");
+  });
+
+  it("adds 內外盤比 (buy/sell imbalance) + restrained tick-flash to the depth ladder, reusing existing CRT tokens (盤口密度 PR-B, 2026-07-10)", () => {
+    expect(liveHydration).toContain("const totalBidQty = bidsRaw.reduce((sum, [, q]) => sum + Number(q || 0), 0);");
+    expect(liveHydration).toContain('const bidSharePct = totalQty > 0 ? Math.round((totalBidQty / totalQty) * 100) : 50;');
+    expect(liveHydration).toContain("imb-bid");
+    expect(liveHydration).toContain("imb-ask");
+    // Tick flash only fires when a level's price actually changed since the
+    // last render (restraint) — never an unconditional flash every refresh.
+    expect(liveHydration).toContain("const changed = prevPrice != null && Number(prevPrice) !== Number(p);");
+    expect(liveHydration).toContain("tick-flash");
+    // CSS: reuses existing --ok / --bad / --brand-glow tokens — no new colors.
+    expect(tradingCss).toContain(".imb-bar .imb-bid{background:var(--ok)}");
+    expect(tradingCss).toContain(".imb-bar .imb-ask{background:var(--bad)}");
+    expect(tradingCss).toContain("@keyframes iufDepthTickFlash{0%{background:var(--brand-glow)}100%{background:transparent}}");
+    // Respects prefers-reduced-motion — the flash animation is disabled, not
+    // just visually toned down.
+    expect(tradingCss).toContain("@media (prefers-reduced-motion: reduce){");
+    expect(tradingCss).toContain(".tape .row.tick-flash{animation:none}");
+  });
+
+  it("tightens 五檔 row density and bounds the ladder in a real scroll container instead of unconstrained overflow (盤口密度 PR-B, 2026-07-10)", () => {
+    // Row font/line-height tightened from the pre-PR-B 11.5px/1.3 to 10.5px/1.05.
+    expect(tradingCss).toContain("font:500 10.5px/1.05 var(--mono)");
+    expect(tradingCss).not.toContain("font:500 11.5px/1.3 var(--mono)");
+    // #depth/#tape (.stk) must be a real bounded+scrollable box on desktop —
+    // pre-PR-B it had no overflow rule at all, so its content (measured
+    // intrinsic height ~234px against a 70-86px slot) silently overflowed
+    // past its own box with zero scroll affordance; anything beyond the
+    // first ~2.5 rows was hard-clipped mid-row by the ancestor
+    // .cpane{overflow:hidden} with no way to reach it.
+    expect(tradingCss).toContain("overflow-y:auto;scrollbar-width:none");
+    expect(tradingCss).toContain(".tape .stk::-webkit-scrollbar{width:0;height:0}");
+    // Mobile fix: .troom becomes flex column on <=767px, breaking the fixed
+    // grid-row height chain that .tape .stk's flex:1 1 auto/min-height:0
+    // depends on — without a floor this collapsed #depth to 0 height
+    // (hidden), a real mobile regression caught by real-browser testing, not
+    // just a desktop-only tightening. Fixed with a mobile-scoped min-height
+    // floor that doesn't touch the desktop-tight behavior.
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
+    expect(routeSource).toContain(".tape .stk {");
+    expect(routeSource).toContain("min-height: 70px !important;");
+    expect(routeSource).toContain("max-height: 200px !important;");
   });
 });

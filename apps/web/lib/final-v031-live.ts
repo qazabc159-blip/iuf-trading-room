@@ -2305,13 +2305,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (typeof window.updPreview === "function") {
       try { window.updPreview(); } catch {}
     }
-    const depth = $("#depth");
-    if (depth && bidAsk) {
-      const asks = (bidAsk.ask_prices || []).map((p, i) => [p, bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5).reverse();
-      const bids = (bidAsk.bid_prices || []).map((p, i) => [p, bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
-      const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
-      depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">LIVE</span><span class="qty">--</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
-    }
+    if (bidAsk) renderDepthPanel(bidAsk, selected.price);
     const tape = $("#tape");
     if (tape && Array.isArray(ticks) && ticks.length) {
       const previous = selected.previous;
@@ -2433,6 +2427,44 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (auth && auth.available === false) return "KGI 唯讀行情目前不可用（" + esc(code || auth.state || "blocked") + "）；" + label + "暫停，不補假資料。";
     return "KGI 唯讀行情暫無回傳；" + label + "暫停，不補假資料。";
   };
+
+  // 盤口密度（PR-B, 2026-07-10）: 單一共用渲染函式，同時餵給 refreshPaperQuotePulse()
+  // 的 3s tick 更新與 hydratePaper() 的 15s 完整刷新 — 兩處原本各自維護一份幾乎
+  // 一樣的 5+5 檔渲染邏輯（已收斂）。新增：內外盤比（買賣力道視覺化，沿用既有
+  // --ok/--bad 色 token）與逐檔 tick 閃爍（只在該檔位價格真的變動時觸發一次，
+  // 節制、且 CSS 端已用 prefers-reduced-motion 關閉動畫，這裡不用重複判斷）。
+  const lastDepthLevelPrice = {};
+  function renderDepthPanel(bidAsk, selectedPrice) {
+    const depthEl = $("#depth");
+    if (!depthEl) return;
+    if (!bidAsk) {
+      depthEl.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("五檔"))+'</div>';
+      return;
+    }
+    const asksRaw = (bidAsk.ask_prices || []).map((p, i) => [p, bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5);
+    const bidsRaw = (bidAsk.bid_prices || []).map((p, i) => [p, bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
+    const maxQty = Math.max(1, ...asksRaw.map((x) => x[1]), ...bidsRaw.map((x) => x[1]));
+    const totalAskQty = asksRaw.reduce((sum, [, q]) => sum + Number(q || 0), 0);
+    const totalBidQty = bidsRaw.reduce((sum, [, q]) => sum + Number(q || 0), 0);
+    const totalQty = totalAskQty + totalBidQty;
+    const bidSharePct = totalQty > 0 ? Math.round((totalBidQty / totalQty) * 100) : 50;
+    const askSharePct = 100 - bidSharePct;
+    const depthRow = (side, rank, p, q) => {
+      // rank 0 = 最靠近成交價（最佳買/賣），與畫面顯示順序（賣方由遠到近、
+      // 買方由近到遠）脫鉤，這樣同一檔位的 key 不會因為 reverse() 而錯位。
+      const key = side + "-" + rank;
+      const prevPrice = lastDepthLevelPrice[key];
+      const changed = prevPrice != null && Number(prevPrice) !== Number(p);
+      lastDepthLevelPrice[key] = p;
+      const tone = side === "ask" ? "up" : "dn";
+      return '<div class="row'+(changed ? " tick-flash" : "")+'"><span class="px '+tone+'">'+price(p)+'</span><div class="bar"><i class="'+side+'" style="width:'+Math.round((q/maxQty)*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>';
+    };
+    const askRowsHtml = asksRaw.map(([p, q], rank) => depthRow("ask", rank, p, q)).reverse().join("");
+    const bidRowsHtml = bidsRaw.map(([p, q], rank) => depthRow("bid", rank, p, q)).join("");
+    const imbalanceHtml = '<div class="row imbalance" title="內外盤比：五檔委買量占委買委賣總量比重"><div class="imb-bar"><i class="imb-bid" style="width:'+bidSharePct+'%"></i><i class="imb-ask" style="width:'+askSharePct+'%"></i></div><div class="imb-label"><span class="dn">買方 '+bidSharePct+'%</span><span class="up">賣方 '+askSharePct+'%</span></div></div>';
+    const lastRowHtml = '<div class="row last"><span class="px">'+price(selectedPrice)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>';
+    depthEl.innerHTML = imbalanceHtml + askRowsHtml + lastRowHtml + bidRowsHtml;
+  }
 
   function hydrateKgiReadinessNote() {
     const note = $('.ltab[data-lt="kgi"] .kginote');
@@ -2887,21 +2919,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     })();
     hydrateKgiReadinessNote();
     hydrateBrokerStrip();
-    const depth = $("#depth");
-    if (depth) {
-      if (live.bidAsk) {
-        const asks = (live.bidAsk.ask_prices || []).map((p, i) => [p, live.bidAsk.ask_volumes?.[i] ?? 0]).slice(0, 5).reverse();
-        const bids = (live.bidAsk.bid_prices || []).map((p, i) => [p, live.bidAsk.bid_volumes?.[i] ?? 0]).slice(0, 5);
-        const max = Math.max(1, ...asks.map((x) => x[1]), ...bids.map((x) => x[1]));
-        depth.innerHTML = asks.map(([p,q]) => '<div class="row"><span class="px up">'+price(p)+'</span><div class="bar"><i class="ask" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("") + '<div class="row last"><span class="px">'+price(selected.price)+'</span><span class="qty" style="text-align:center;color:var(--fg-3)">成交</span><span class="qty">—</span></div>' + bids.map(([p,q]) => '<div class="row"><span class="px dn">'+price(p)+'</span><div class="bar"><i class="bid" style="width:'+Math.round(q/max*90)+'%"></i></div><span class="qty">'+esc(q)+'</span></div>').join("");
-      } else {
-        depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">目前為非交易時段，盤口暫不更新（次日 09:00 重新連線）</div>';
-      }
-    }
-    // BUG_006 — tape: 最近成交 ticks
-    if (depth && !live.bidAsk) {
-      depth.innerHTML = '<div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">'+esc(kgiQuoteBlockedReason("五檔"))+'</div>';
-    }
+    // 盤口密度（PR-B, 2026-07-10）: 統一走 renderDepthPanel()（原本這裡跟
+    // refreshPaperQuotePulse() 各自維護一份幾乎相同的 5+5 檔渲染邏輯，且
+    // 「非交易時段」分支下一行馬上被 kgiQuoteBlockedReason() 蓋掉、從未真正
+    // 顯示過 — 收斂成一份，行為以實際會顯示的 kgiQuoteBlockedReason 訊息為準）。
+    renderDepthPanel(live.bidAsk, selected.price);
     const tape = $("#tape");
     if (tape) {
       const ticks = live.ticks || [];
