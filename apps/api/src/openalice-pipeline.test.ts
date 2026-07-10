@@ -15,6 +15,7 @@ import {
   aggregateInstitutionalFlowRows,
   buildDailyBriefContractInstructions,
   buildMarketOverviewSourceEntryFromSnapshot,
+  formatInstitutionalNetLotsZh,
   formatLiveMarketSnapshotForPrompt,
   buildSourceOnlyBriefPayload,
   classifyDraftTier,
@@ -291,6 +292,40 @@ test("daily brief prompt labels FinMind margin balance totals as shares, not lot
   assert.match(prompt, /-4395439 股/);
   assert.match(prompt, /-80724 股/);
   assert.doesNotMatch(prompt, /-4395439 張/);
+});
+
+// P0-6 fix (2026-07-10 product critique): FinMind institutional buy/sell net
+// (股/shares) was previously labeled "張" unconverted, producing brief claims
+// like "外資賣超 -178651175 張" — a 1000x unit error plus an unformatted digit
+// dump. formatInstitutionalNetLotsZh() converts 股->張 (÷1000) and formats
+// with 萬/億 Chinese magnitude convention.
+test("formatInstitutionalNetLotsZh converts raw shares to 張 with 萬/億 formatting", () => {
+  // Exact reproduction of the critique evidence figure (net foreign sell, in 股).
+  assert.equal(formatInstitutionalNetLotsZh(-178_651_175), "-17.87萬張");
+  // Small magnitude stays as plain 張 count (no 萬/億 suffix).
+  assert.equal(formatInstitutionalNetLotsZh(1_500_000), "+1500張");
+  // 億-scale magnitude.
+  assert.equal(formatInstitutionalNetLotsZh(-150_000_000_000), "-1.50億張");
+  // Zero net.
+  assert.equal(formatInstitutionalNetLotsZh(0), "+0張");
+});
+
+test("daily brief prompt renders institutional net as formatted 張, not raw unconverted shares", () => {
+  const prompt = formatLiveMarketSnapshotForPrompt({
+    taiex: { value: null, change: null, changePct: null, sourceState: null, asOf: null },
+    heatmapTop3: [],
+    topGainers: [],
+    topLosers: [],
+    institutional: { foreign: -178_651_175, trust: 16_008_274, dealer: -18_095_373, date: "2026-07-10" },
+    margin: { balanceChange: null, shortChange: null, date: null },
+  });
+
+  assert.match(prompt, /外資: -17\.87萬張/);
+  assert.match(prompt, /投信: \+1\.60萬張/);
+  assert.match(prompt, /自營: -1\.81萬張/);
+  // The exact buggy string from the critique evidence must never reappear.
+  assert.doesNotMatch(prompt, /-178651175 張/);
+  assert.doesNotMatch(prompt, /-178651175/);
 });
 
 test("daily brief source pack rejects a contradictory TAIEX tuple", () => {

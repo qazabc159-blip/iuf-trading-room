@@ -10592,6 +10592,73 @@ test("V47-1: mapSnapshotToV47 contract — no compoundReturn in output; returns 
   assert.ok(Math.abs((r3["excessVs0050Pp"] as number) - 0.12) < 0.0001, "V47-C3: excess = 0.50 - 0.38 = 0.12");
 });
 
+// =============================================================================
+// V47-2: P0-3 fix (2026-07-10 product critique) — track record disclosure
+// =============================================================================
+// Every lab strategy snapshot today carries a research/backtest status only
+// (no strategyId has a verified live track record). mapSnapshotToV47() must
+// attach isLiveVerifiedTrackRecord/trackRecordType/headlineDisclosureZh so a
+// headline number (e.g. "累積報酬 +400.89%") can never be rendered without an
+// explicit "backtest, unverified" qualifier. Mirrors production
+// deriveTrackRecordDisclosure() in server.ts (same duplicated-logic pattern
+// as V47-1 above, since server.ts internals are not exported for unit test).
+
+test("V47-2: mapSnapshotToV47 attaches track record disclosure — unverified by default, live status opts in", () => {
+  const LIVE_VERIFIED_STATUSES = new Set<string>([]); // none sanctioned yet (2026-07-10)
+
+  function deriveDisclosure(raw: Record<string, unknown>): {
+    isLiveVerifiedTrackRecord: boolean;
+    trackRecordType: "live_verified" | "research_backtest_unverified";
+    headlineDisclosureZh: string;
+  } {
+    const status = typeof raw["status"] === "string" ? raw["status"] : "UNKNOWN";
+    const isLiveVerifiedTrackRecord = LIVE_VERIFIED_STATUSES.has(status);
+    if (isLiveVerifiedTrackRecord) {
+      return { isLiveVerifiedTrackRecord: true, trackRecordType: "live_verified", headlineDisclosureZh: "" };
+    }
+    const windowStart = typeof raw["commonWindowStart"] === "string" ? raw["commonWindowStart"] : null;
+    const windowEnd = typeof raw["commonWindowEnd"] === "string" ? raw["commonWindowEnd"] : null;
+    const windowLabel = windowStart && windowEnd ? `研究窗 ${windowStart} ~ ${windowEnd}` : null;
+    const caveat = typeof raw["caveatTextZh"] === "string" ? raw["caveatTextZh"] : null;
+    const headlineDisclosureZh =
+      `歷史回測（未經驗證），非策略現況${windowLabel ? "，" + windowLabel : ""}${caveat ? "。" + caveat : ""}`;
+    return { isLiveVerifiedTrackRecord: false, trackRecordType: "research_backtest_unverified", headlineDisclosureZh };
+  }
+
+  // Exact reproduction of the cont_liq_v36 snapshot flagged in the critique (P0-3):
+  // status=RESEARCH_FORWARD_OBSERVATION, +400.89% common-window backtest headline.
+  const contLiq = deriveDisclosure({
+    status: "RESEARCH_FORWARD_OBSERVATION",
+    commonWindowStart: "2025-04-10",
+    commonWindowEnd: "2026-03-06",
+    caveatTextZh: "歷史研究數字 — 不可外推為未來表現預期。"
+  });
+  assert.equal(contLiq.isLiveVerifiedTrackRecord, false, "V47-D1: research status is not live-verified");
+  assert.equal(contLiq.trackRecordType, "research_backtest_unverified", "V47-D1: trackRecordType");
+  assert.match(contLiq.headlineDisclosureZh, /歷史回測（未經驗證）/, "V47-D1: disclosure must say backtest-unverified");
+  assert.match(contLiq.headlineDisclosureZh, /2025-04-10 ~ 2026-03-06/, "V47-D1: disclosure carries the research window");
+
+  // BACKTESTED_RAW status (strategy_002/003) — still unverified, and must not
+  // crash when commonWindowStart/End are null (real data for those strategies).
+  const backtested = deriveDisclosure({
+    status: "BACKTESTED_RAW",
+    commonWindowStart: null,
+    commonWindowEnd: null,
+    caveatTextZh: "本策略 BT 視窗不在三策略共同窗。"
+  });
+  assert.equal(backtested.isLiveVerifiedTrackRecord, false, "V47-D2: BACKTESTED_RAW is not live-verified");
+  assert.match(backtested.headlineDisclosureZh, /歷史回測（未經驗證）/, "V47-D2: disclosure present without window dates");
+  assert.ok(!backtested.headlineDisclosureZh.includes("null"), "V47-D2: no literal null leaks into disclosure text");
+
+  // Unknown/missing status defaults to unverified (safe default — 寧可少顯示不可假顯示).
+  const unknown = deriveDisclosure({});
+  assert.equal(unknown.isLiveVerifiedTrackRecord, false, "V47-D3: missing status defaults to unverified");
+  assert.match(unknown.headlineDisclosureZh, /歷史回測（未經驗證）/, "V47-D3: disclosure present for unknown status");
+
+  // Escape hatch exists but is empty today (no strategyId sanctioned as live-verified yet).
+  assert.equal(LIVE_VERIFIED_STATUSES.size, 0, "V47-D4: no live-verified status sanctioned as of 2026-07-10");
+});
+
 // -- KGI SIM Daily Smoke Tests (DS1-DS4) -------------------------------------
 //
 // Tests for runKgiSimDailySmokeSchedulerTick, getDailySmokeHistory,
