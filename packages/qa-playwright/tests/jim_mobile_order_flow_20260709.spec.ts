@@ -63,24 +63,49 @@ test.describe("mobile 390px order flow", () => {
     const submitBox = await frame.locator("#submit-btn").evaluate((el) => el.getBoundingClientRect());
     expect(submitBox.height, `#submit-btn height ${submitBox.height}px < ${MIN_TOUCH_PX}px`).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
 
+    // 觸控目標鐵律 P2（2026-07-10 收口）：這兩組原本只 console.log 記錄的缺口
+    // 已在 index.html 的 @media (max-width:767px) 區塊修好（.brokerstrip .bbtn
+    // + .stepbtn），這裡改回真斷言，不再只是留紀錄。
     const qtyStepBtns = frame.locator('#t-qty').locator("xpath=../..").locator(".stepbtn");
     const stepCount = await qtyStepBtns.count();
+    expect(stepCount, "expected qty +/- stepbtn pair to be present").toBeGreaterThan(0);
     for (let i = 0; i < stepCount; i++) {
       const box = await qtyStepBtns.nth(i).evaluate((el) => el.getBoundingClientRect());
-      // Recorded, not hard-failed per-button — the composite report below
-      // lists any gaps rather than failing the whole run on a single chip.
-      if (box.width < MIN_TOUCH_PX || box.height < MIN_TOUCH_PX) {
-        console.log(`MOBILE_GAP step-btn[${i}] ${Math.round(box.width)}x${Math.round(box.height)}px`);
-      }
+      expect(box.width, `step-btn[${i}] width ${box.width}px < ${MIN_TOUCH_PX}px at 390px`).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
+      expect(box.height, `step-btn[${i}] height ${box.height}px < ${MIN_TOUCH_PX}px at 390px`).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
     }
 
     const brokerBtns = frame.locator("#broker-strip .bbtn:not([disabled])");
     const brokerCount = await brokerBtns.count();
+    expect(brokerCount, "expected broker-strip buttons to be present").toBeGreaterThan(0);
     for (let i = 0; i < brokerCount; i++) {
       const box = await brokerBtns.nth(i).evaluate((el) => el.getBoundingClientRect());
-      if (box.height < MIN_TOUCH_PX) {
-        console.log(`MOBILE_GAP broker-btn[${i}] height=${Math.round(box.height)}px`);
-      }
+      expect(box.height, `broker-btn[${i}] height ${box.height}px < ${MIN_TOUCH_PX}px at 390px`).toBeGreaterThanOrEqual(MIN_TOUCH_PX);
     }
+  });
+
+  test("desktop 1440px density unchanged — broker-strip/stepbtn stay compact, not bumped to 44px", async ({ page }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-chromium",
+      'desktop density-regression check is dedicated to the "desktop-chromium" project.',
+    );
+    test.setTimeout(45_000);
+
+    await page.goto("/portfolio");
+    const frame = extractFrame(page);
+    await frame.locator("#submit-btn").waitFor({ state: "visible", timeout: 20000 });
+    await waitForCapitalReady(frame);
+
+    // Proves the mobile-only @media (max-width:767px) touch-target bump did
+    // not leak into desktop density — these must stay well below the 44px
+    // mobile floor (original: bbtn ~27-29px, stepbtn 31x32px).
+    const brokerBtn = frame.locator("#broker-strip .bbtn").first();
+    const brokerBox = await brokerBtn.evaluate((el) => el.getBoundingClientRect());
+    expect(brokerBox.height, `desktop broker-btn height ${brokerBox.height}px should stay compact (<40px)`).toBeLessThan(40);
+
+    const stepBtn = frame.locator('#t-qty').locator("xpath=../..").locator(".stepbtn").first();
+    const stepBox = await stepBtn.evaluate((el) => el.getBoundingClientRect());
+    expect(stepBox.width, `desktop step-btn width ${stepBox.width}px should stay compact (<40px)`).toBeLessThan(40);
+    expect(stepBox.height, `desktop step-btn height ${stepBox.height}px should stay compact (<40px)`).toBeLessThan(40);
   });
 });
