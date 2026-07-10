@@ -1071,6 +1071,32 @@ export interface SingleDateCatchupSubsequentNavRow {
   notes: string | null;
 }
 
+/**
+ * Per-symbol price audit row (2026-07-10, added after coordinator's prod
+ * dry-run flagged that the computed 7/7 navEquityTwd matched an EXISTING
+ * 7/8 sim_ledger_nav row to the exact TWD — this is the "可回查的證據（兩天
+ * 各 8 檔收盤價表）" the coordinator asked for, built into the tool itself
+ * rather than requiring a separate script or prod DB access to reconstruct).
+ * `closeOnDate` is the exact price used in this catch-up's own computation.
+ * `closeOnNextDay` is a SEPARATE diagnostic-only fetch (never used in the
+ * computation itself) for the immediately-following calendar date, to make
+ * a same-price coincidence vs. a stale-data replay directly checkable.
+ */
+export interface SingleDateCatchupPriceAuditRow {
+  symbol: string;
+  /** "exit" = closing out the previous basket's position; "entry" = opening this basket's position. */
+  role: "exit" | "entry";
+  shares: number;
+  /** FinMind PIT close used by this catch-up's own computation for `date`. null = no usable price (see missingPriceSymbols). */
+  closeOnDate: number | null;
+  /** "finmind_close" = exact `date` match (genuinely `date`'s own close); "finmind_close_walkback_from_YYYY-MM-DD" = no trade/data on `date` itself, fell back to the most recent earlier date. null if closeOnDate is null. */
+  closeOnDateSource: string | null;
+  /** Diagnostic-only: FinMind's close for the calendar day immediately after `date` (exact match on that date, no walk-back). null = no trade that day (weekend/holiday/halt) or fetch failure. */
+  closeOnNextDay: number | null;
+  /** true when closeOnDate and closeOnNextDay are both non-null and numerically equal — a same-price flag worth investigating (see report for interpretation). */
+  identicalToNextDay: boolean;
+}
+
 export interface SingleDateCatchupResult {
   ok: boolean;
   applied: boolean;
@@ -1096,6 +1122,8 @@ export interface SingleDateCatchupResult {
    * rows itself.
    */
   subsequentNavRows: SingleDateCatchupSubsequentNavRow[];
+  /** Per-symbol price evidence table — see SingleDateCatchupPriceAuditRow doc. Empty until basket/price resolution succeeds. */
+  priceAudit: SingleDateCatchupPriceAuditRow[];
   notes: string[];
 }
 
@@ -1139,6 +1167,7 @@ export async function writeSingleDateLedgerCatchup(options: {
     finMindWarnings,
     missingPriceSymbols: [],
     subsequentNavRows: [],
+    priceAudit: [],
     notes,
     ...extra,
   });
@@ -1224,12 +1253,19 @@ export async function writeSingleDateLedgerCatchup(options: {
   finMindWarnings.push(...fmWarnings);
 
   const missingPriceSymbols: string[] = [];
+  // Tracks whether each symbol's price came from an EXACT `date` match
+  // ("finmind_close") or getPitClose's walk-back to an earlier date
+  // ("finmind_close_walkback_from_YYYY-MM-DD") — surfaced in priceAudit so
+  // a "was this genuinely 7/7's own close, or a replay of an earlier day"
+  // question is directly answerable without re-deriving it from raw data.
+  const priceSourceBySymbol = new Map<string, string>();
   const priceOnDate = (symbol: string): number | null => {
     const r = getPitClose(priceMap, symbol, date);
     if (!r) {
       missingPriceSymbols.push(symbol);
       return null;
     }
+    priceSourceBySymbol.set(symbol, r.source);
     return r.price;
   };
 
@@ -1253,6 +1289,50 @@ export async function writeSingleDateLedgerCatchup(options: {
   const newEntryPriceBySymbol = new Map<string, number>();
   for (const pos of newBasket) {
     newEntryPriceBySymbol.set(pos.symbol, priceOnDate(pos.symbol) ?? 0);
+  }
+
+  // Diagnostic-only price audit (2026-07-10): a SEPARATE fetch for the
+  // calendar day immediately after `date`, used ONLY to build a per-symbol
+  // evidence table (never mixed into the actual entry/exit price resolution
+  // above, never affects missingPriceSymbols/apply-refusal). Exists so a
+  // "does this catch-up's computed value match an adjacent existing NAV row"
+  // question is directly checkable from the dry-run response itself, without
+  // a separate script or prod DB query. Uses an EXACT date lookup (no
+  // walk-back) so "no trade that day" correctly shows as null rather than
+  // silently borrowing an older price and creating a false "identical" signal.
+  const priceAudit: SingleDateCatchupPriceAuditRow[] = [];
+  try {
+    const nextDayUtc = new Date(`${date}T00:00:00Z`);
+    nextDayUtc.setUTCDate(nextDayUtc.getUTCDate() + 1);
+    const nextDayDate = nextDayUtc.toISOString().slice(0, 10);
+    const { prices: nextDayPriceMap, warnings: nextDayWarnings } = await fetchFinMindPrices(allSymbols, nextDayDate, nextDayDate);
+    if (nextDayWarnings.length > 0) {
+      notes.push(`price_audit_next_day_fetch_warnings (diagnostic-only, does not affect apply gate): ${nextDayWarnings.join(" | ")}`);
+    }
+    const closeOnNextDay = (symbol: string): number | null => nextDayPriceMap.get(symbol)?.get(nextDayDate) ?? null;
+
+    for (const pos of prevBasket) {
+      const closeOnDate = exitPriceBySymbol.get(pos.symbol) ?? null;
+      const nextClose = closeOnNextDay(pos.symbol);
+      priceAudit.push({
+        symbol: pos.symbol, role: "exit", shares: pos.shares,
+        closeOnDate, closeOnDateSource: priceSourceBySymbol.get(pos.symbol) ?? null,
+        closeOnNextDay: nextClose,
+        identicalToNextDay: closeOnDate !== null && nextClose !== null && closeOnDate === nextClose,
+      });
+    }
+    for (const pos of newBasket) {
+      const closeOnDate = newEntryPriceBySymbol.get(pos.symbol) ?? null;
+      const nextClose = closeOnNextDay(pos.symbol);
+      priceAudit.push({
+        symbol: pos.symbol, role: "entry", shares: pos.shares,
+        closeOnDate, closeOnDateSource: priceSourceBySymbol.get(pos.symbol) ?? null,
+        closeOnNextDay: nextClose,
+        identicalToNextDay: closeOnDate !== null && nextClose !== null && closeOnDate === nextClose,
+      });
+    }
+  } catch (e) {
+    notes.push(`price_audit_failed (diagnostic-only, does not affect apply gate): ${e instanceof Error ? e.message : String(e)}`);
   }
 
   // Cash residual for the new basket — same formula buildS1PositionsSnapshot
@@ -1290,6 +1370,23 @@ export async function writeSingleDateLedgerCatchup(options: {
     `catchup_computed: weekNum=${weekNum} prevBasketDate=${prevBasketDate} realizedPnl=${realizedPnlTwd} ` +
     `equityAfter=${equityAfterTwd} navEquity=${navEquityTwd} costs=${transactionCostsTwd}`
   );
+  const identicalCount = priceAudit.filter((r) => r.identicalToNextDay).length;
+  if (identicalCount > 0) {
+    notes.push(
+      `price_audit_identical_to_next_day: ${identicalCount}/${priceAudit.length} symbols have the exact same ` +
+      `FinMind close on ${date} and the following calendar day — see priceAudit[] for the per-symbol table. ` +
+      `A high count here for illiquid/halted names can be normal; if it covers most/all symbols, treat as a ` +
+      `data-quality flag worth checking against the adjacent day's own pricing source (see report).`
+    );
+  }
+  const walkbackCount = priceAudit.filter((r) => r.closeOnDateSource?.startsWith("finmind_close_walkback_from_")).length;
+  if (walkbackCount > 0) {
+    notes.push(
+      `price_audit_walkback_used: ${walkbackCount}/${priceAudit.length} symbols had NO FinMind trade recorded ` +
+      `exactly on ${date} itself and used a walked-back earlier close (see priceAudit[].closeOnDateSource) — ` +
+      `this catch-up's ${date} entry/exit prices for those symbols are NOT ${date}'s own close.`
+    );
+  }
 
   const dryRunBase: SingleDateCatchupResult = {
     ok: true,
@@ -1306,6 +1403,7 @@ export async function writeSingleDateLedgerCatchup(options: {
     finMindWarnings,
     missingPriceSymbols: [...new Set(missingPriceSymbols)],
     subsequentNavRows,
+    priceAudit,
     notes,
   };
 
