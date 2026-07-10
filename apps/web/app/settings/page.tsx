@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { KeyRound, Radio, ShieldCheck, WalletCards } from "lucide-react";
 
+import { PushNotificationSettings } from "./PushNotificationSettings";
+
 const settingCards = [
   {
     href: "/settings/account",
@@ -108,6 +110,8 @@ export default function SettingsIndexPage() {
             );
           })}
         </section>
+
+        <PushNotificationSettings />
 
         <section
           style={{
