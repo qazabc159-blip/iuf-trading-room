@@ -45,7 +45,7 @@ export function getConfiguredWebPushService(
   }
 
   const publicKey = env.VAPID_PUBLIC_KEY!.trim();
-  const privateKey = env.VAPID_PRIVATE_KEY!.trim();
+  const signingCredential = env.VAPID_PRIVATE_KEY!.trim();
   const subject = env.VAPID_SUBJECT!.trim();
   if (!subject.startsWith("mailto:") && !subject.startsWith("https://")) {
     return {
@@ -56,7 +56,7 @@ export function getConfiguredWebPushService(
   }
 
   try {
-    transport.setVapidDetails(subject, publicKey, privateKey);
+    transport.setVapidDetails(subject, publicKey, signingCredential);
   } catch {
     return {
       ok: false,
