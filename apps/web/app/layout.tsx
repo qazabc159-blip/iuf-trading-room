@@ -6,6 +6,7 @@ import { JetBrains_Mono, Noto_Sans_TC, Noto_Serif_TC, Source_Serif_4 } from "nex
 import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderDock } from "@/components/header-dock";
 import { Sidebar } from "@/components/Sidebar";
+import { TickerTape } from "@/components/TickerTape";
 
 /* next/font is self-hosted, zero CLS. */
 const serif = Source_Serif_4({
@@ -48,7 +49,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="app-root">
         <Sidebar />
         <HeaderDock />
-        <div className="app-main-shell">{children}</div>
+        <div className="app-main-shell">
+          <TickerTape />
+          {children}
+        </div>
         <CommandPalette />
       </body>
     </html>

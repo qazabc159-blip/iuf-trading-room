@@ -1,0 +1,150 @@
+/*
+ * TickerTape.module.css — scoped styles only (CSS Module), deliberately kept
+ * OUT of globals.css per lane instructions (do not touch the M5 breakpoint
+ * structure there). Colors reuse existing CRT/phosphor tokens defined on
+ * :root in globals.css — no new palette invented.
+ */
+
+.tape {
+  height: var(--ticker-tape-height, 32px);
+  min-height: var(--ticker-tape-height, 32px);
+  display: flex;
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, rgba(200, 148, 63, 0.07), transparent),
+    rgba(6, 9, 13, 0.94);
+  border-bottom: 1px solid rgba(200, 148, 63, 0.22);
+  overflow: hidden;
+  font-family: var(--mono, monospace);
+}
+
+.badgeWrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  white-space: nowrap;
+  border-right: 1px solid rgba(200, 148, 63, 0.18);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+.track {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  position: relative;
+}
+
+.trackInner {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  will-change: transform;
+  animation-name: tickerScroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes tickerScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 16px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "lnum";
+  white-space: nowrap;
+}
+
+.item b {
+  font-weight: 800;
+  color: var(--gold-bright);
+}
+
+.name {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+}
+
+.num {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pct {
+  font-weight: 800;
+}
+
+/* Taiwan convention: up = red, down = green — reuses --tw-up-bright / --tw-dn-bright
+   (site-wide direction color tokens, see globals.css .num.up / .num.down). */
+.up .pct,
+.up .num {
+  color: var(--tw-up-bright);
+}
+
+.down .pct,
+.down .num {
+  color: var(--tw-dn-bright);
+}
+
+.flat .pct,
+.flat .num {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trackInner {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .track {
+    overflow-x: auto;
+  }
+
+  /* Two copies exist only to make the scrolling loop seamless; when motion
+     is disabled there is no loop, so drop the duplicate to avoid showing
+     the same list twice. */
+  .track > .trackInner:nth-child(2) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .tape {
+    height: 30px;
+    min-height: 30px;
+  }
+
+  .badgeWrap {
+    padding: 0 6px;
+  }
+
+  .item {
+    padding: 0 10px;
+    font-size: 10px;
+  }
+
+  .name {
+    display: none;
+  }
+}
