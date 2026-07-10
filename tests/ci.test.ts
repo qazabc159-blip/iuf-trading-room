@@ -20457,6 +20457,56 @@ test("SIM-LEDGER-CATCHUP-9: POST /api/v1/admin/fauto-ledger/single-date-catchup 
   );
 });
 
+test("SIM-LEDGER-CATCHUP-10: priceAudit is a diagnostic-only per-symbol evidence table, isolated from the apply gate", () => {
+  const src = readFileSync(new URL("../apps/api/src/sim-ledger-backfill.ts", import.meta.url), "utf-8");
+  const fnStart = src.indexOf("export async function writeSingleDateLedgerCatchup(options: {");
+  assert.ok(fnStart !== -1);
+  const fnSrc = src.slice(fnStart);
+
+  // The diagnostic fetch is for the day AFTER `date`, distinct from the
+  // fetch used for the actual entry/exit price resolution.
+  assert.match(
+    fnSrc,
+    /nextDayUtc\.setUTCDate\(nextDayUtc\.getUTCDate\(\) \+ 1\)/,
+    "SIM-LEDGER-CATCHUP-10: price audit must fetch the calendar day immediately AFTER the catch-up date"
+  );
+  // identicalToNextDay uses an exact (non-walk-back) lookup — must not
+  // borrow an older price and manufacture a false "identical" signal.
+  assert.match(
+    fnSrc,
+    /const closeOnNextDay = \(symbol: string\): number \| null => nextDayPriceMap\.get\(symbol\)\?\.get\(nextDayDate\) \?\? null;/,
+    "SIM-LEDGER-CATCHUP-10: next-day price lookup must be an exact date match, not getPitClose's walk-back"
+  );
+  // Isolation: this diagnostic fetch's own warnings must be pushed to a
+  // clearly-labeled note, and must NOT be merged into finMindWarnings or
+  // missingPriceSymbols — it must never affect the apply-refusal gate.
+  assert.match(
+    fnSrc,
+    /price_audit_next_day_fetch_warnings \(diagnostic-only, does not affect apply gate\)/,
+    "SIM-LEDGER-CATCHUP-10: diagnostic fetch failures must be clearly labeled as non-gating"
+  );
+  assert.doesNotMatch(
+    fnSrc.slice(fnSrc.indexOf("priceAudit: SingleDateCatchupPriceAuditRow[] = []"), fnSrc.indexOf("Cash residual for the new basket")),
+    /missingPriceSymbols\.push/,
+    "SIM-LEDGER-CATCHUP-10: the diagnostic price-audit block must never push into missingPriceSymbols"
+  );
+  assert.match(fnSrc, /priceAudit,\s*\n\s*notes,\s*\n\s*\};/, "SIM-LEDGER-CATCHUP-10: priceAudit must be included in the dry-run response");
+  // closeOnDateSource distinguishes an EXACT date match ("finmind_close")
+  // from a walk-back to an earlier date ("finmind_close_walkback_from_...")
+  // — this is what makes "was this genuinely `date`'s own close, or a
+  // replay of an earlier day" directly checkable per-symbol.
+  assert.match(
+    fnSrc,
+    /priceSourceBySymbol\.set\(symbol, r\.source\);/,
+    "SIM-LEDGER-CATCHUP-10: the price-source tag (exact vs walk-back) must be tracked per symbol"
+  );
+  assert.match(
+    fnSrc,
+    /closeOnDateSource: priceSourceBySymbol\.get\(pos\.symbol\) \?\? null,/,
+    "SIM-LEDGER-CATCHUP-10: priceAudit rows must carry closeOnDateSource"
+  );
+});
+
 // =============================================================================
 // INVITE REGISTRATION — Migration 0050 + invite-store + server endpoints
 // =============================================================================
