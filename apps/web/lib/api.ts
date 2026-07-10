@@ -3407,21 +3407,24 @@ export type BrokerAdapterEntry = {
   isActive: boolean;
 };
 
+// UnifiedOrderEntry mirrors the real apps/api/src/broker/unified-order-store.ts
+// UnifiedOrderRecord shape (action/qty/priceType — not side/quantity/orderType,
+// and no simOnly field on the backend record). GET /api/v1/uta/orders responds
+// `{ data: { orders } }` with no `total` (server.ts, confirmed via prod curl
+// 2026-07-10) — a prior version of this type invented fields that never
+// existed on the wire, which left the OrdersTable 方向/數量/安全模式 columns
+// blank on /admin/uta/accounts (Pete #1206 review finding). Fields below are
+// the subset this page's OrdersTable actually renders.
 export type UnifiedOrderEntry = {
   id: string;
-  workspaceId: string;
   adapterKey: string;
   symbol: string;
-  side: string;
-  quantity: number;
+  action: "Buy" | "Sell";
+  qty: number;
   quantityUnit: string;
-  orderType: string;
   limitPrice: number | null;
   status: string;
-  simOnly: boolean;
-  externalOrderId: string | null;
   createdAt: string;
-  updatedAt: string;
 };
 
 export async function getUtaAdapters() {
@@ -3433,5 +3436,5 @@ export async function getUtaOrders(params?: { accountId?: string; limit?: number
   if (params?.accountId) query.set("accountId", params.accountId);
   if (params?.limit) query.set("limit", String(params.limit));
   const qs = query.toString();
-  return request<{ orders: UnifiedOrderEntry[]; total: number }>(`/api/v1/uta/orders${qs ? `?${qs}` : ""}`);
+  return request<{ orders: UnifiedOrderEntry[] }>(`/api/v1/uta/orders${qs ? `?${qs}` : ""}`);
 }
