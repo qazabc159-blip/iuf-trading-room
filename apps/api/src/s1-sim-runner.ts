@@ -197,7 +197,14 @@ async function writeS1ObservationAudit(input: {
   }
 }
 
-async function readS1ObservationAudit<T>(
+/**
+ * Exported (2026-07-10) so sim-ledger-backfill.ts's single-date catch-up tool
+ * can read a historical basket's full S1Basket shape (capital_twd +
+ * target_notional_twd) — needed to replicate buildS1PositionsSnapshot's own
+ * cashResidualTwd formula for a date that never went through the live path.
+ * Pure read, no side effects — safe to reuse outside this module.
+ */
+export async function readS1ObservationAudit<T>(
   action: typeof S1_AUDIT_ACTIONS[keyof typeof S1_AUDIT_ACTIONS],
   tradingDate: string,
 ): Promise<T | null> {

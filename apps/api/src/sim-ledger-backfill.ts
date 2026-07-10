@@ -117,14 +117,30 @@ export interface BackfillResult {
 
 const FINMIND_TOKEN = process.env["FINMIND_API_TOKEN"] ?? "";
 
-async function fetchFinMindPrices(
+/**
+ * Returns both the price map AND the fetch-failure warnings. (2026-07-10:
+ * warnings used to be computed here but never returned to any caller — a
+ * FinMind token expiry/Sponsor-tier failure would silently produce empty
+ * price maps with no visible trace. `runBackfill()` below now surfaces
+ * `.warnings` into its own `priceDataWarnings`; the single-date ledger
+ * catch-up tool (`writeSingleDateLedgerCatchup`) relies on these warnings
+ * being explicit — a catch-up must never silently write a ledger row derived
+ * from a failed price fetch.)
+ */
+export async function fetchFinMindPrices(
   symbols: string[],
   startDate: string,
   endDate: string,
-): Promise<Map<string, Map<string, number>>> {
-  // Returns: symbol -> date (YYYY-MM-DD) -> close price
-  const result = new Map<string, Map<string, number>>();
+): Promise<{ prices: Map<string, Map<string, number>>; warnings: string[] }> {
+  // prices: symbol -> date (YYYY-MM-DD) -> close price
+  const prices = new Map<string, Map<string, number>>();
   const warnings: string[] = [];
+
+  if (!FINMIND_TOKEN) {
+    warnings.push("FINMIND_API_TOKEN is not set — cannot fetch any PIT prices (all symbols will be empty)");
+    for (const symbol of symbols) prices.set(symbol, new Map());
+    return { prices, warnings };
+  }
 
   for (const symbol of symbols) {
     const url = new URL("https://api.finmindtrade.com/api/v4/data");
@@ -140,21 +156,24 @@ async function fetchFinMindPrices(
         headers: { "User-Agent": "IUF-LedgerBackfill/1.0" },
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const raw = (await resp.json()) as { data?: Array<{ date: string; close: number }> };
+      const raw = (await resp.json()) as { data?: Array<{ date: string; close: number }>; msg?: string };
       const dateMap = new Map<string, number>();
       for (const row of raw.data ?? []) {
         if (row.close > 0) dateMap.set(row.date, row.close);
       }
-      result.set(symbol, dateMap);
+      if (dateMap.size === 0) {
+        warnings.push(`FinMind returned no priced rows for ${symbol} (${startDate}..${endDate})${raw.msg ? `: ${raw.msg}` : ""}`);
+      }
+      prices.set(symbol, dateMap);
     } catch (e) {
       warnings.push(`FinMind fetch failed for ${symbol}: ${e instanceof Error ? e.message : String(e)}`);
-      result.set(symbol, new Map());
+      prices.set(symbol, new Map());
     }
 
     await new Promise((r) => setTimeout(r, 150)); // rate-limit friendly
   }
 
-  return result;
+  return { prices, warnings };
 }
 
 /** Walk back through available dates to find last known close > 0 (PIT-safe) */
@@ -283,7 +302,8 @@ export async function runBackfill(options: {
 
   // Step 3: Fetch PIT close prices from FinMind
   const endDate = rebalanceDates[rebalanceDates.length - 1] ?? "2026-06-30";
-  const priceMap = await fetchFinMindPrices([...allSymbols], startDate, endDate);
+  const { prices: priceMap, warnings: fetchWarnings } = await fetchFinMindPrices([...allSymbols], startDate, endDate);
+  priceWarnings.push(...fetchWarnings);
 
   // Step 4: Roll through each rebalance cycle
   let equity = initialEquity;
@@ -938,4 +958,422 @@ export async function writeDailyNavRow(options: {
   } catch (e) {
     console.warn("[sim-ledger] writeDailyNavRow error:", e instanceof Error ? e.message : String(e));
   }
+}
+
+// ── Single-date live catch-up (2026-07-10) ─────────────────────────────────
+//
+// 楊董 ACK 2026-07-10: backfill the 2026-07-07 ledger gap (see
+// reports/ledger_stall_20260709/JASON_LEDGER_STALL_ROOTCAUSE_2026-07-09.md §5).
+// 2026-07-07 was a Tuesday rebalance day where the live EOD cron's date guard
+// never saw a fresh TWSE/TPEX close in its 14:45-15:30 window, so
+// writeLiveLedgerAfterEod() was never called that day — week 6 + that day's
+// NAV row are permanently missing (the EOD window cannot reopen). Unlike
+// runBackfill() (which recomputes the WHOLE ledger from initialEquity on a
+// fixed rebalanceDates[] list and would produce a confusing
+// source='backfill_dry_run' row alongside the existing live data), this is a
+// single-day patch: it reads the CURRENT ledger tip (week 5, 6/30) and the
+// audit-log-recorded 7/7 basket, prices everything via FinMind PIT (the same
+// engine runBackfill() uses — NOT live TWSE/TPEX/MIS, which cannot see a
+// historical date), and writes exactly one week_num + one NAV row, tagged
+// source='live'/'live_eod' (so it displays identically to a live-written row)
+// with a `pricing_quality: finmind_catchup_backfill` marker in `notes` so the
+// origin is traceable later.
+
+/**
+ * Pure computation core of writeSingleDateLedgerCatchup — no DB, no network.
+ * Exported so tests can exercise the exit/entry PnL, transaction cost, and
+ * cash-residual/NAV arithmetic directly with synthetic price maps, without
+ * needing a live database (this repo's `pnpm test` runs in memory mode; the
+ * real-Postgres `test:db` job is a separate CI gate this function does not
+ * depend on). Mirrors writeLiveLedgerAfterEod's cost/PnL formula exactly —
+ * see that function's steps 3-7 — the only difference is where the prices
+ * come from (FinMind PIT vs. live TWSE/TPEX/MIS), which is resolved by the
+ * caller before this function is invoked.
+ */
+export function _computeSingleDateCatchupFinancials(input: {
+  prevBasket: LedgerBasketEntry[];
+  entryPriceBySymbol: Map<string, number>;
+  exitPriceBySymbol: Map<string, number | null>;
+  newBasket: LedgerBasketEntry[];
+  newEntryPriceBySymbol: Map<string, number>;
+  prevEquity: number;
+  costRates: CostRates;
+  /** From the new basket's own signal-generation audit (capital_twd), if found. */
+  newBasketCapitalTwd: number | null;
+  /** Sum of the new basket's target_notional_twd from the same audit, if found. */
+  newBasketTargetNotionalTwd: number | null;
+}): {
+  exitTotal: number;
+  prevCost: number;
+  newBasketCost: number;
+  sellCost: number;
+  buyCost: number;
+  transactionCostsTwd: number;
+  realizedPnlTwd: number;
+  equityAfterTwd: number;
+  cashResidualTwd: number;
+  totalMarketValueTwd: number;
+  navEquityTwd: number;
+  returnPct: number;
+} {
+  const {
+    prevBasket, entryPriceBySymbol, exitPriceBySymbol,
+    newBasket, newEntryPriceBySymbol, prevEquity, costRates,
+    newBasketCapitalTwd, newBasketTargetNotionalTwd,
+  } = input;
+
+  let exitTotal = 0;
+  let prevCost = 0;
+  for (const pos of prevBasket) {
+    const entryPrice = entryPriceBySymbol.get(pos.symbol) ?? 0;
+    const exitPrice = exitPriceBySymbol.get(pos.symbol) ?? null;
+    // Missing exit price falls back to entry price (0 PnL for that symbol) —
+    // never silently profitable/lossy. Caller must separately flag the
+    // symbol as missing (see missingPriceSymbols in writeSingleDateLedgerCatchup).
+    exitTotal += pos.shares * (exitPrice ?? entryPrice);
+    prevCost += pos.shares * entryPrice;
+  }
+
+  let newBasketCost = 0;
+  for (const pos of newBasket) {
+    newBasketCost += pos.shares * (newEntryPriceBySymbol.get(pos.symbol) ?? 0);
+  }
+
+  const sellCost = Math.round(exitTotal * (costRates.sellCommissionRate + costRates.securitiesTransactionTaxRate));
+  const buyCost = Math.round(newBasketCost * costRates.buyCommissionRate);
+  const transactionCostsTwd = sellCost + buyCost;
+  const realizedPnlTwd = Math.round(exitTotal - prevCost - sellCost - buyCost);
+  const equityAfterTwd = Math.round(prevEquity - prevCost + exitTotal - sellCost - buyCost);
+
+  // Cash residual: prefer the new basket's OWN capital_twd/target_notional_twd
+  // (same formula buildS1PositionsSnapshot uses live), fall back to
+  // (equityAfterTwd - newBasketCost) if the basket audit lacks those fields.
+  const cashResidualTwd = newBasketCapitalTwd !== null && newBasketTargetNotionalTwd !== null
+    ? Math.round(newBasketCapitalTwd - newBasketTargetNotionalTwd)
+    : Math.round(equityAfterTwd - newBasketCost);
+
+  const totalMarketValueTwd = Math.round(newBasketCost); // entry-day mark = entry price itself
+  const navEquityTwd = Math.round(cashResidualTwd + totalMarketValueTwd);
+  const initialEquity = 10_000_000;
+  const returnPct = Math.round(((navEquityTwd - initialEquity) / initialEquity) * 100 * 10000) / 10000;
+
+  return {
+    exitTotal, prevCost, newBasketCost, sellCost, buyCost, transactionCostsTwd,
+    realizedPnlTwd, equityAfterTwd, cashResidualTwd, totalMarketValueTwd, navEquityTwd, returnPct,
+  };
+}
+
+export interface SingleDateCatchupSubsequentNavRow {
+  navDate: string;
+  weekNumRecorded: number;
+  equityTwd: number;
+  source: string;
+  notes: string | null;
+}
+
+export interface SingleDateCatchupResult {
+  ok: boolean;
+  applied: boolean;
+  /** true when sim_ledger_weeks/sim_ledger_nav already has a 'live'/'live_eod' row for this date — no write performed (idempotent). */
+  alreadyWritten: boolean;
+  date: string;
+  weekNum: number;
+  prevBasketDate: string | null;
+  realizedPnlTwd: number | null;
+  equityAfterTwd: number | null;
+  cashResidualTwd: number | null;
+  navEquityTwd: number | null;
+  transactionCostsTwd: number;
+  /** Non-silent FinMind failures — a non-empty array means price data is incomplete/untrustworthy. */
+  finMindWarnings: string[];
+  /** Symbols (old or new basket) with no usable FinMind PIT close for this date — apply is refused while non-empty. */
+  missingPriceSymbols: string[];
+  /**
+   * Existing sim_ledger_nav rows AFTER this catch-up date (up to 14), for the
+   * coordinator/owner to visually confirm whether those rows' equity already
+   * reflects the new (post-catch-up) basket — see the single-date-catchup
+   * report for the week_num-mislabel finding. This tool never modifies these
+   * rows itself.
+   */
+  subsequentNavRows: SingleDateCatchupSubsequentNavRow[];
+  notes: string[];
+}
+
+/**
+ * writeSingleDateLedgerCatchup — admin-triggered, one-time historical patch
+ * for a Tuesday rebalance date whose live EOD cron never fired (so
+ * writeLiveLedgerAfterEod() never ran for that date).
+ *
+ * dry-run (apply=false, default): computes everything, writes nothing.
+ * apply=true: writes sim_ledger_weeks + sim_ledger_holdings + sim_ledger_nav,
+ *   but ONLY if (a) not already written (idempotent — see alreadyWritten) and
+ *   (b) every required symbol has a usable FinMind PIT price (missingPriceSymbols
+ *   empty) — a catch-up must never silently persist a ledger row derived from
+ *   an incomplete/failed price fetch (FinMind token issues, e.g. Sponsor-tier
+ *   expiry, must surface here, not be swallowed).
+ */
+export async function writeSingleDateLedgerCatchup(options: {
+  /** The missed Tuesday rebalance date, YYYY-MM-DD. */
+  date: string;
+  apply?: boolean;
+  workspaceId?: string;
+  costRates?: CostRates;
+}): Promise<SingleDateCatchupResult> {
+  const { date, apply = false, workspaceId, costRates = STANDARD_COST_RATES } = options;
+  const notes: string[] = [];
+  const finMindWarnings: string[] = [];
+  const db = getDb();
+
+  const empty = (extra: Partial<SingleDateCatchupResult> = {}): SingleDateCatchupResult => ({
+    ok: false,
+    applied: false,
+    alreadyWritten: false,
+    date,
+    weekNum: 0,
+    prevBasketDate: null,
+    realizedPnlTwd: null,
+    equityAfterTwd: null,
+    cashResidualTwd: null,
+    navEquityTwd: null,
+    transactionCostsTwd: 0,
+    finMindWarnings,
+    missingPriceSymbols: [],
+    subsequentNavRows: [],
+    notes,
+    ...extra,
+  });
+
+  if (!db || !isDatabaseMode()) return empty({ notes: [...notes, "no_db"] });
+
+  // 1. Idempotency check FIRST — read-only, runs whether dry-run or apply.
+  const existingWeekRows = (await db.execute(drizzleSql`
+    SELECT week_num FROM sim_ledger_weeks WHERE basket_date = ${date}::date AND source = 'live' LIMIT 1
+  `)) as unknown as Array<{ week_num: number }>;
+  const existingNavRows = (await db.execute(drizzleSql`
+    SELECT week_num FROM sim_ledger_nav WHERE nav_date = ${date}::date AND source = 'live_eod' LIMIT 1
+  `)) as unknown as Array<{ week_num: number }>;
+
+  // Read-only visibility into what happened AFTER this date — the ledger stall
+  // report flagged that 7/8+/7/9 NAV rows may carry a stale week_num label
+  // (they were mark-to-market'd against the correct new basket via
+  // buildS1PositionsSnapshot's audit-log rebuild, but week_num comes from
+  // sim_ledger_weeks, which never advanced past week 5). This tool reports
+  // that data for owner judgment; it never rewrites these rows itself.
+  const subsequentRows = (await db.execute(drizzleSql`
+    SELECT nav_date, week_num, equity_twd, source, notes
+    FROM sim_ledger_nav
+    WHERE nav_date > ${date}::date AND source IN ('live_eod', 'backfill_dry_run')
+    ORDER BY nav_date ASC
+    LIMIT 14
+  `)) as unknown as Array<{ nav_date: string; week_num: number; equity_twd: string; source: string; notes: string | null }>;
+  const subsequentNavRows: SingleDateCatchupSubsequentNavRow[] = subsequentRows.map((r) => ({
+    navDate: String(r.nav_date).slice(0, 10),
+    weekNumRecorded: Number(r.week_num),
+    equityTwd: Number(r.equity_twd),
+    source: r.source,
+    notes: r.notes,
+  }));
+
+  if (existingWeekRows.length > 0 || existingNavRows.length > 0) {
+    notes.push(
+      `already_written: sim_ledger_weeks has ${existingWeekRows.length} row(s), sim_ledger_nav has ${existingNavRows.length} row(s) ` +
+      `for date=${date} (source='live'/'live_eod') — catch-up is idempotent, no write performed`
+    );
+    return empty({
+      ok: true,
+      alreadyWritten: true,
+      weekNum: existingWeekRows[0]?.week_num ?? existingNavRows[0]?.week_num ?? 0,
+      subsequentNavRows,
+    });
+  }
+
+  // 2. Current ledger tip (must exist — week 5 from Phase 1/2 backfill).
+  const latestState = await getLatestLedgerState(db);
+  if (!latestState) {
+    notes.push("no_ledger_state: sim_ledger_weeks is empty — run /admin/fauto-ledger/backfill first");
+    return empty({ subsequentNavRows });
+  }
+  const weekNum = latestState.weekNum + 1;
+  const prevEquity = latestState.equityAfterTwd;
+
+  // 3. Load baskets from audit_logs — need both the missed date's new basket
+  //    and the immediately-preceding basket (to compute realized PnL on exit).
+  const allBaskets = await loadBasketsFromAuditLogs(workspaceId).catch(() => new Map<string, LedgerBasketEntry[]>());
+  const newBasket = allBaskets.get(date) ?? [];
+  if (newBasket.length === 0) {
+    notes.push(`no_basket_found: no s1_sim.signal_generated basket audit log found for ${date}`);
+    return empty({ weekNum, subsequentNavRows });
+  }
+  const sortedDates = [...allBaskets.keys()].sort();
+  const prevBasketDate = sortedDates.filter((d) => d < date).pop() ?? null;
+  const prevBasket = prevBasketDate ? (allBaskets.get(prevBasketDate) ?? []) : [];
+  if (!prevBasketDate || prevBasket.length === 0) {
+    notes.push(`no_previous_basket: no basket found before ${date}`);
+    return empty({ weekNum, subsequentNavRows });
+  }
+
+  // 4. FinMind PIT prices. Widen the fetch window backward (10 calendar days)
+  //    so getPitClose's walk-back can resolve a trading-halt symbol on the
+  //    exact catch-up date (same convention as runBackfill()) — fetching only
+  //    the single target date would leave halted symbols with zero fallback.
+  const allSymbols = [...new Set([...newBasket.map((p) => p.symbol), ...prevBasket.map((p) => p.symbol)])];
+  const lookbackStart = new Date(`${date}T00:00:00Z`);
+  lookbackStart.setUTCDate(lookbackStart.getUTCDate() - 10);
+  const fetchStartDate = lookbackStart.toISOString().slice(0, 10);
+  const { prices: priceMap, warnings: fmWarnings } = await fetchFinMindPrices(allSymbols, fetchStartDate, date);
+  finMindWarnings.push(...fmWarnings);
+
+  const missingPriceSymbols: string[] = [];
+  const priceOnDate = (symbol: string): number | null => {
+    const r = getPitClose(priceMap, symbol, date);
+    if (!r) {
+      missingPriceSymbols.push(symbol);
+      return null;
+    }
+    return r.price;
+  };
+
+  // 5. Previous basket's entry prices — from the open sim_ledger_holdings rows
+  //    written when that basket was entered (same source writeLiveLedgerAfterEod
+  //    uses for its equivalent step).
+  const holdingRows = (await db.execute(drizzleSql`
+    SELECT symbol, shares, entry_price_twd FROM sim_ledger_holdings
+    WHERE basket_date = ${prevBasketDate}::date AND exit_date IS NULL
+  `)) as unknown as Array<{ symbol: string; shares: number; entry_price_twd: string }>;
+  const entryPriceBySymbol = new Map(holdingRows.map((r): [string, number] => [r.symbol, Number(r.entry_price_twd)]));
+
+  // 6. Compute exit (prev basket, FinMind PIT close on `date`) + entry (new
+  //    basket, same date) — same formula as writeLiveLedgerAfterEod steps 3-4,
+  //    with FinMind PIT substituted for the live-only quote_last_close/last_price
+  //    sources (which cannot answer for a historical date).
+  const exitPriceBySymbol = new Map<string, number | null>();
+  for (const pos of prevBasket) {
+    exitPriceBySymbol.set(pos.symbol, priceOnDate(pos.symbol));
+  }
+  const newEntryPriceBySymbol = new Map<string, number>();
+  for (const pos of newBasket) {
+    newEntryPriceBySymbol.set(pos.symbol, priceOnDate(pos.symbol) ?? 0);
+  }
+
+  // Cash residual for the new basket — same formula buildS1PositionsSnapshot
+  // uses live (capital_twd - sum(target_notional_twd) from the basket file
+  // generated at signal time), so this catch-up's week 6 row is consistent
+  // with how every OTHER week's cashResidualTwd was derived. Falls back
+  // (handled inside _computeSingleDateCatchupFinancials) if the basket audit
+  // doesn't have the capital/notional fields for some reason (defensive only).
+  const { readS1ObservationAudit, S1_AUDIT_ACTIONS } = await import("./s1-sim-runner.js");
+  type S1BasketCapitalShape = { capital_twd: number; basket: Array<{ target_notional_twd: number }> };
+  const basketFile = await readS1ObservationAudit<S1BasketCapitalShape>(S1_AUDIT_ACTIONS.signalGenerated, date).catch(() => null);
+  const newBasketCapitalTwd = basketFile?.capital_twd ?? null;
+  const newBasketTargetNotionalTwd = basketFile
+    ? basketFile.basket.reduce((s, e) => s + (e.target_notional_twd ?? 0), 0)
+    : null;
+
+  const {
+    sellCost, buyCost, transactionCostsTwd, realizedPnlTwd, equityAfterTwd,
+    newBasketCost, cashResidualTwd, navEquityTwd, returnPct,
+  } = _computeSingleDateCatchupFinancials({
+    prevBasket, entryPriceBySymbol, exitPriceBySymbol,
+    newBasket, newEntryPriceBySymbol,
+    prevEquity, costRates, newBasketCapitalTwd, newBasketTargetNotionalTwd,
+  });
+
+  if (missingPriceSymbols.length > 0) {
+    notes.push(
+      `missing_finmind_price: ${[...new Set(missingPriceSymbols)].join(",")} — FinMind had no usable PIT close ` +
+      `(even with 10-day walk-back) for this date; realized PnL / entry cost figures above are NOT reliable for ` +
+      `these symbols. apply is refused while this list is non-empty.`
+    );
+  }
+  notes.push("pricing_quality: finmind_catchup_backfill");
+  notes.push(
+    `catchup_computed: weekNum=${weekNum} prevBasketDate=${prevBasketDate} realizedPnl=${realizedPnlTwd} ` +
+    `equityAfter=${equityAfterTwd} navEquity=${navEquityTwd} costs=${transactionCostsTwd}`
+  );
+
+  const dryRunBase: SingleDateCatchupResult = {
+    ok: true,
+    applied: false,
+    alreadyWritten: false,
+    date,
+    weekNum,
+    prevBasketDate,
+    realizedPnlTwd,
+    equityAfterTwd,
+    cashResidualTwd,
+    navEquityTwd,
+    transactionCostsTwd,
+    finMindWarnings,
+    missingPriceSymbols: [...new Set(missingPriceSymbols)],
+    subsequentNavRows,
+    notes,
+  };
+
+  if (!apply) return dryRunBase;
+
+  if (missingPriceSymbols.length > 0) {
+    notes.push("apply_refused: missingPriceSymbols is non-empty — resolve FinMind price coverage before applying");
+    return { ...dryRunBase, ok: false, applied: false };
+  }
+
+  // 7. Apply — write sim_ledger_weeks / sim_ledger_holdings / sim_ledger_nav.
+  //    entry_source/exit_source use the existing 'finmind_close' CHECK-allowed
+  //    value (migration 0049) — the "this was a catch-up, not a live-day
+  //    write" distinction lives in `notes`/`pricing_quality`, not a new enum
+  //    value (no migration needed).
+  await db.execute(drizzleSql`
+    INSERT INTO sim_ledger_weeks
+      (week_num, basket_date, initial_equity, basket_cost_twd, cash_residual_twd,
+       realized_pnl_twd, equity_after_twd, source, notes)
+    VALUES
+      (${weekNum}, ${date}::date, 10000000, ${Math.round(newBasketCost)}, ${cashResidualTwd},
+       ${realizedPnlTwd}, ${equityAfterTwd}, 'live',
+       ${JSON.stringify([{ pricing_quality: "finmind_catchup_backfill" }])}::jsonb)
+    ON CONFLICT (basket_date, source) DO NOTHING
+  `);
+
+  for (const pos of prevBasket) {
+    const exitPrice = exitPriceBySymbol.get(pos.symbol) ?? null;
+    const entryPriceTwd = entryPriceBySymbol.get(pos.symbol) ?? 0;
+    const posRealizedPnl = exitPrice !== null ? Math.round((exitPrice - entryPriceTwd) * pos.shares) : null;
+    await db.execute(drizzleSql`
+      INSERT INTO sim_ledger_holdings
+        (week_num, basket_date, symbol, shares, entry_price_twd,
+         exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
+      VALUES
+        (${weekNum - 1}, ${prevBasketDate}::date, ${pos.symbol}, ${pos.shares},
+         ${entryPriceTwd}, ${exitPrice}, ${date}::date,
+         ${posRealizedPnl}, 'finmind_close', 'finmind_close')
+      ON CONFLICT (basket_date, symbol) DO UPDATE SET
+        exit_price_twd = EXCLUDED.exit_price_twd,
+        exit_date = EXCLUDED.exit_date,
+        realized_pnl_twd = EXCLUDED.realized_pnl_twd,
+        exit_source = EXCLUDED.exit_source
+    `);
+  }
+
+  for (const pos of newBasket) {
+    const entryPrice = newEntryPriceBySymbol.get(pos.symbol) ?? 0;
+    await db.execute(drizzleSql`
+      INSERT INTO sim_ledger_holdings
+        (week_num, basket_date, symbol, shares, entry_price_twd,
+         exit_price_twd, exit_date, realized_pnl_twd, entry_source, exit_source)
+      VALUES
+        (${weekNum}, ${date}::date, ${pos.symbol}, ${pos.shares},
+         ${entryPrice}, NULL, NULL, NULL, 'finmind_close', NULL)
+      ON CONFLICT (basket_date, symbol) DO NOTHING
+    `);
+  }
+
+  await db.execute(drizzleSql`
+    INSERT INTO sim_ledger_nav
+      (nav_date, equity_twd, initial_equity, return_pct, week_num, source, notes)
+    VALUES
+      (${date}::date, ${navEquityTwd}, 10000000, ${returnPct}, ${weekNum}, 'live_eod',
+       'catchup (pricing_quality: finmind_catchup_backfill)')
+    ON CONFLICT (nav_date, source) DO NOTHING
+  `);
+
+  notes.push(`live_ledger_catchup_written: weekNum=${weekNum} date=${date}`);
+  return { ...dryRunBase, applied: true, notes };
 }

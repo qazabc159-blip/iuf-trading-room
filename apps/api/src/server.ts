@@ -15642,6 +15642,56 @@ app.post("/api/v1/admin/fauto-ledger/backfill", async (c) => {
 });
 
 // =============================================================================
+// ADMIN: F-AUTO SIM Ledger Single-Date Catch-up
+// =============================================================================
+//
+// POST /api/v1/admin/fauto-ledger/single-date-catchup
+//   Owner-only. Patches a single missed Tuesday rebalance date whose live EOD
+//   cron never fired (writeLiveLedgerAfterEod() never ran that day) — the EOD
+//   window cannot reopen, so this is a one-time historical patch, not a
+//   re-run of the live pipeline. Prices via FinMind PIT (same engine
+//   runBackfill() uses), NOT live TWSE/TPEX/MIS (which cannot answer for a
+//   past date). See reports/ledger_stall_20260709/ for the 2026-07-07 case
+//   this was built for.
+//   Body: { date: "YYYY-MM-DD", apply?: boolean } — default apply=false (dry-run).
+//   Idempotent: if sim_ledger_weeks/sim_ledger_nav already has a 'live'/'live_eod'
+//   row for `date`, returns alreadyWritten=true and performs no write.
+//   apply=true is refused if any required symbol has no usable FinMind PIT
+//   price (missingPriceSymbols non-empty) — never silently persists a ledger
+//   row derived from a failed/incomplete price fetch.
+//   楊董 ACK 2026-07-10: 7/7 帳本缺口回補 — apply 由 Elva 對 prod 執行。
+// =============================================================================
+
+app.post("/api/v1/admin/fauto-ledger/single-date-catchup", async (c) => {
+  const session = c.var.session;
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  let body: { date?: string; apply?: boolean } = {};
+  try {
+    body = (await c.req.json()) as { date?: string; apply?: boolean };
+  } catch {
+    // empty body — fall through to validation below
+  }
+
+  const date = typeof body.date === "string" ? body.date.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return c.json({ error: "invalid_date", message: "body.date must be YYYY-MM-DD" }, 400);
+  }
+  const applyToDb = body.apply === true;
+
+  try {
+    const { writeSingleDateLedgerCatchup } = await import("./sim-ledger-backfill.js");
+    const result = await writeSingleDateLedgerCatchup({ date, apply: applyToDb });
+    return c.json({ ...result, generatedAt: new Date().toISOString() });
+  } catch (e) {
+    console.error("[admin/fauto-ledger/single-date-catchup] error:", e);
+    return c.json({ error: "CATCHUP_FAILED", detail: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+// =============================================================================
 // ADMIN: News Top-10 Force Refresh
 // =============================================================================
 //
