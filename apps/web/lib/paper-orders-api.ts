@@ -544,3 +544,79 @@ export function formatPaperOrderError(error: unknown) {
   if (/fetch failed|failed to fetch|ECONNREFUSED|network/i.test(message)) return "模擬交易服務連線失敗，請稍後再試。";
   return message.trim() ? `模擬委託發生錯誤：${message}` : "模擬委託發生未知錯誤。";
 }
+
+// ---------------------------------------------------------------------------
+// Unified order report (統一下單流 D3 — 委託回報面板, 2026-07-10)
+// GET /api/v1/uta/orders — cross-channel order ledger (paper + KGI SIM +
+// fubon placeholder). Recorded ledger-first via unified-order-store.ts
+// regardless of which adapter actually submits (see
+// apps/api/src/broker/trading-service.ts recordUnifiedOrder()), so this
+// covers both channels — unlike listPaperOrders() above, which only ever
+// tracked the paper channel's own ticket table and pre-dates the unified
+// submit path (submitUnifiedOrder() in final-v031-live.ts posts to
+// /api/v1/trading/orders, which now writes into unified_orders too).
+// ---------------------------------------------------------------------------
+
+export type UnifiedOrderReportStatus =
+  | "pending"
+  | "submitted"
+  | "partial_fill"
+  | "filled"
+  | "cancelled"
+  | "rejected";
+
+export type UnifiedOrderReportRow = {
+  id: string;
+  adapterKey: string;
+  symbol: string;
+  action: "Buy" | "Sell";
+  qty: number;
+  quantityUnit: "SHARE" | "LOT";
+  priceType: "Market" | "Limit" | "LimitUp" | "LimitDown";
+  limitPrice: number | null;
+  status: UnifiedOrderReportStatus;
+  filledQty: number;
+  filledPrice: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Four honest states per product vocab (pending/accepted/filled/rejected) —
+// plus partial_fill/cancelled, which are equally real states the backend can
+// report. Never render the raw enum value verbatim (product-grade UI rule,
+// CLAUDE.md 產品鐵律). The trading-room hydration script (final-v031-live.ts)
+// mirrors this exact mapping inline — that whole block ships as a raw
+// <script> string with no bundler import access, same reason as
+// gatewayStatusBadge()'s inline mirror a few lines up in this codebase.
+export function unifiedOrderStatusLabel(status: string): string {
+  switch (status) {
+    case "pending": return "待送出";
+    case "submitted": return "已受理";
+    case "partial_fill": return "部分成交";
+    case "filled": return "已成交";
+    case "cancelled": return "已撤單";
+    case "rejected": return "已拒絕";
+    default: return "狀態同步中";
+  }
+}
+
+export function unifiedOrderChannelLabel(adapterKey: string): string {
+  if (adapterKey === "kgi") return "凱基 SIM";
+  if (adapterKey === "paper") return "紙上";
+  if (adapterKey === "fubon") return "富邦";
+  return adapterKey || "—";
+}
+
+// Asia/Taipei has no DST, so a fixed +8h shift before taking the UTC calendar
+// date is a safe stand-in for a full TZ library here (CLAUDE.md 時間陷阱: local
+// `TZ=Asia/Taipei` env doesn't apply in this environment either way).
+export function isUnifiedOrderFromTaipeiToday(createdAt: string, nowMs: number = Date.now()): boolean {
+  const taipeiDateKey = (epochMs: number) => new Date(epochMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const orderMs = Date.parse(createdAt);
+  if (!Number.isFinite(orderMs)) return false;
+  return taipeiDateKey(orderMs) === taipeiDateKey(nowMs);
+}
+
+export async function listUnifiedOrders(limit = 20) {
+  return request<{ orders: UnifiedOrderReportRow[] }>(`/api/v1/uta/orders?limit=${limit}`);
+}

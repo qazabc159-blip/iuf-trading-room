@@ -683,6 +683,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
     <div class="ledger">
       <div class="lhead">
         <button class="tb on" data-lt="orders">委託 <span class="c" id="badge-orders">0</span></button>
+        <button class="tb" data-lt="uta-orders">委託回報 <span class="c" id="badge-uta-orders">0</span></button>
         <button class="tb" data-lt="fills">成交紀錄 <span class="c" id="badge-fills">0</span></button>
         <button class="tb" data-lt="positions">模擬庫存 <span class="c">0</span></button>
         <button class="tb" data-lt="kgi">KGI 讀取 <span class="c">0</span></button>
@@ -698,6 +699,16 @@ body[data-screen-label="Trading Room v1"] .tnote{
           <thead><tr><th>時間</th><th>代碼</th><th>方向</th><th>類型</th><th class="r">委託價</th><th class="r">數量</th><th class="r">已成交</th><th>狀態</th><th>單號</th></tr></thead>
           <tbody id="orders-body">
             <tr><td colspan="9" style="color:var(--fg-3)">尚無委託</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 委託回報（跨券商統一下單流：紙上 + 凱基 SIM 同一張帳，先記帳後送單） -->
+      <div class="ltab" data-lt="uta-orders">
+        <table>
+          <thead><tr><th>時間</th><th>標的</th><th>通道</th><th>方向</th><th class="r">數量</th><th class="r">委託價</th><th>狀態</th></tr></thead>
+          <tbody id="uta-orders-body">
+            <tr><td colspan="7" style="color:var(--fg-3)">委託回報載入中…</td></tr>
           </tbody>
         </table>
       </div>

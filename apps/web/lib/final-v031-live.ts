@@ -26,14 +26,17 @@ import {
   getKgiPositions,
   getPaperHealth,
   getPaperPortfolioRaw,
+  isUnifiedOrderFromTaipeiToday,
   listPaperFills,
   listPaperOrders,
+  listUnifiedOrders,
   type KgiPositionsResponse,
   type KgiStatusResponse,
   type PaperFillLedgerRow,
   type PaperHealthState,
   type PaperOrderState,
   type PaperPortfolioPosition,
+  type UnifiedOrderReportRow,
 } from "@/lib/paper-orders-api";
 import { getFAutoPortfolio, type FAutoPortfolio } from "@/lib/fauto-sim-api";
 
@@ -638,6 +641,7 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
     portfolio: [],
     orders: [],
     fills: [],
+    utaOrders: [] as UnifiedOrderReportRow[],
     kgi: null,
     kgiStatus: null,
     dataStates: {
@@ -645,6 +649,7 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
       portfolio: "loading",
       fills: "loading",
       orders: "loading",
+      utaOrders: "loading",
       kgi: "loading",
       kgiStatus: "loading",
       ideas: "loading",
@@ -659,11 +664,12 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
 }
 
 async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
-  const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult] = await Promise.allSettled([
+  const [healthResult, portfolioRawResult, fillsResult, ordersResult, utaOrdersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult] = await Promise.allSettled([
     getPaperHealth(),
     getPaperPortfolioRaw(),
     listPaperFills(),
     listPaperOrders(),
+    listUnifiedOrders(20),
     getKgiPositions(),
     getKgiStatus(),
     getStrategyIdeas({ decisionMode: "paper", includeBlocked: true, limit: 200, sort: "score" }),
@@ -677,6 +683,9 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const baseCapitalTWD = portfolioRawOk ? portfolioRaw.summary.baseCapitalTWD : null;
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
+  // D3 委託回報面板 (2026-07-10): 跨券商 unified_orders 帳，只顯示台北時間今日的委託。
+  const utaOrdersAll = okValue(utaOrdersResult, { orders: [] as UnifiedOrderReportRow[] }).orders ?? [];
+  const utaOrders = utaOrdersAll.filter((row) => isUnifiedOrderFromTaipeiToday(row.createdAt));
   const kgi = okValue<KgiPositionsResponse | null>(kgiResult, null);
   const kgiStatus = okValue<KgiStatusResponse | null>(kgiStatusResult, null);
   // F-AUTO holdings (B3): cross-day S1 positions via gateway → audit rebuild chain
@@ -780,6 +789,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     portfolio,
     orders,
     fills,
+    utaOrders,
     kgi,
     kgiStatus,
     dataStates: {
@@ -787,6 +797,7 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
       portfolio: settledState(portfolioRawResult),
       fills: settledState(fillsResult),
       orders: settledState(ordersResult),
+      utaOrders: settledState(utaOrdersResult),
       kgi: settledState(kgiResult),
       kgiStatus: settledState(kgiStatusResult),
       ideas: settledState(ideasResult),
@@ -906,6 +917,24 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     unknown_error: "凱基模擬單送出失敗，原因不明，請稍後再試"
   };
   const kgiChannelReasonLabel = (reason) => KGI_CHANNEL_REASON_LABELS[String(reason || "")] || "凱基模擬單無法送出，請稍後再試";
+  // 委託回報面板 (D3, 2026-07-10): mirrors unifiedOrderStatusLabel()/
+  // unifiedOrderChannelLabel() in lib/paper-orders-api.ts — inlined here for
+  // the same no-bundler-import-access reason as KGI_CHANNEL_REASON_LABELS
+  // above. Four visual states map onto the existing .st.{filled|pending|
+  // cancelled|rejected} CSS already shipped in trading.css: pending/submitted/
+  // partial_fill are all "still in flight" (amber "pending" look), each with
+  // its own honest Chinese label — never the raw enum.
+  const UTA_ORDER_STATUS_LABELS = {
+    pending: "待送出",
+    submitted: "已受理",
+    partial_fill: "部分成交",
+    filled: "已成交",
+    cancelled: "已撤單",
+    rejected: "已拒絕"
+  };
+  const utaOrderStatusLabel = (status) => UTA_ORDER_STATUS_LABELS[String(status || "")] || "狀態同步中";
+  const utaOrderStatusClass = (status) => status === "filled" ? "filled" : status === "cancelled" ? "cancelled" : status === "rejected" ? "rejected" : "pending";
+  const utaOrderChannelLabel = (adapterKey) => adapterKey === "kgi" ? "凱基 SIM" : adapterKey === "paper" ? "紙上" : adapterKey === "fubon" ? "富邦" : (adapterKey || "—");
   const RISK_GUARD_LABELS = {
     max_per_trade: "單筆風控上限",
     max_daily_loss: "單日損失上限",
@@ -1360,11 +1389,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   }
 
   async function clientPaperPayload() {
-    const [healthResult, portfolioRawResult, fillsResult, ordersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, watchlistResult] = await Promise.all([
+    const [healthResult, portfolioRawResult, fillsResult, ordersResult, utaOrdersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, watchlistResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
       soft(apiGetRaw("/api/v1/paper/portfolio")),
       soft(apiGet("/api/v1/paper/fills")),
       soft(apiGet("/api/v1/paper/orders")),
+      soft(apiGet("/api/v1/uta/orders?limit=20")),
       soft(apiGet("/api/v1/portfolio/kgi/positions")),
       soft(apiGet("/api/v1/kgi/status")),
       soft(apiGet("/api/v1/strategy/ideas?decisionMode=paper&includeBlocked=true&limit=8&sort=score")),
@@ -1406,6 +1436,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
+    // D3 委託回報面板 (2026-07-10): mirrors isUnifiedOrderFromTaipeiToday() in
+    // lib/paper-orders-api.ts — inlined here because this whole block ships as
+    // a raw <script> string with no bundler import access.
+    const utaOrdersAllRaw = (utaOrdersResult.ok && utaOrdersResult.data && Array.isArray(utaOrdersResult.data.orders)) ? utaOrdersResult.data.orders : [];
+    const utaTaipeiDateKey = (epochMs) => new Date(epochMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const utaTodayKey = utaTaipeiDateKey(Date.now());
+    const utaOrders = utaOrdersAllRaw.filter((row) => { const t = Date.parse(row.createdAt); return Number.isFinite(t) && utaTaipeiDateKey(t) === utaTodayKey; });
     const ideas = ideasResult.ok ? (ideasResult.data?.items || []).map(clientMapIdea) : [];
     const prefill = paperPrefill();
     const selectedSymbol = currentPaperSymbol || prefill?.symbol || portfolio[0]?.symbol || ideas[0]?.symbol || "2330";
@@ -1458,6 +1495,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       portfolio,
       orders,
       fills,
+      utaOrders,
       kgi:kgiResult.ok ? kgiResult.data : null,
       kgiStatus:kgiStatusResult.ok ? kgiStatusResult.data : null,
       dataStates:{
@@ -1465,6 +1503,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         portfolio:softState(portfolioRawResult),
         fills:softState(fillsResult),
         orders:softState(ordersResult),
+        utaOrders:softState(utaOrdersResult),
         kgi:softState(kgiResult),
         kgiStatus:softState(kgiStatusResult),
         ideas:softState(ideasResult)
@@ -2791,6 +2830,19 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       return '<tr><td class="ts">'+esc((intent.createdAt || "").slice(11,19) || "—")+'</td><td class="sym">'+esc(intent.symbol)+'</td><td><span class="side '+(intent.side === "sell" ? "sell" : "buy")+'">'+(intent.side === "sell" ? "賣出" : "買進")+'</span></td><td>'+esc(intent.orderType || "—")+'</td><td class="r px">'+price(intent.price)+'</td><td class="r">'+esc(intent.qty ?? "—")+' '+esc(intent.quantity_unit === "LOT" ? "張" : "股")+'</td><td class="r">'+esc(fill.fillQty ?? 0)+'</td><td><span class="st '+(intent.status === "FILLED" ? "filled" : "pending")+'"><i></i>'+esc(intent.status || "—")+'</span></td><td class="ts">'+esc(intent.id || "—")+'</td></tr>';
     }).join("") || '<tr><td colspan="9" style="color:var(--fg-3)">尚無委託</td></tr>';
     const badgeOrders = $("#badge-orders"); if (badgeOrders) badgeOrders.textContent = String(ordersArr.length);
+    // 委託回報（D3, 2026-07-10）: 跨券商 unified_orders 帳（紙上 + 凱基 SIM），
+    // 與上面的 #orders-body（只有紙上單通道）分開顯示，避免多券商活動被誤看成單一來源。
+    const utaOrdersArr = (live.utaOrders || []).slice(0, 20);
+    const utaOrdersBody = $('#uta-orders-body');
+    if (utaOrdersBody) utaOrdersBody.innerHTML = utaOrdersArr.map((row) => {
+      const isBuy = row.action === "Buy";
+      const qtyUnit = row.quantityUnit === "LOT" ? "張" : "股";
+      const priceText = row.priceType === "Market" ? "市價" : price(row.limitPrice);
+      const statusLabel = utaOrderStatusLabel(row.status);
+      const statusClass = utaOrderStatusClass(row.status);
+      return '<tr><td class="ts">'+esc((row.createdAt || "").slice(11,19) || "—")+'</td><td class="sym">'+esc(row.symbol)+'</td><td>'+esc(utaOrderChannelLabel(row.adapterKey))+'</td><td><span class="side '+(isBuy ? "buy" : "sell")+'">'+(isBuy ? "買進" : "賣出")+'</span></td><td class="r">'+esc(row.qty ?? "—")+' '+qtyUnit+'</td><td class="r px">'+priceText+'</td><td><span class="st '+statusClass+'"><i></i>'+esc(statusLabel)+'</span></td></tr>';
+    }).join("") || '<tr><td colspan="7" style="color:var(--fg-3)">今日無委託</td></tr>';
+    const badgeUtaOrders = $("#badge-uta-orders"); if (badgeUtaOrders) badgeUtaOrders.textContent = String(utaOrdersArr.length);
     const fillsArr = (live.fills || []).slice(0, 12);
     const fillsBody = $('#fills-body') || $('.ltab[data-lt="fills"] tbody');
     if (fillsBody) fillsBody.innerHTML = fillsArr.map((fill) => '<tr><td class="ts">'+esc((fill.fillTime || "").slice(5,16) || "—")+'</td><td class="sym">'+esc(fill.symbol)+'</td><td><span class="side '+(fill.side === "sell" ? "sell" : "buy")+'">'+(fill.side === "sell" ? "賣出" : "買進")+'</span></td><td class="r px">'+price(fill.fillPrice)+'</td><td class="r">'+esc(fill.fillQty)+'</td><td class="r">'+n(Number(fill.fillQty || 0) * Number(fill.fillPrice || 0))+'</td><td class="ts">'+esc(fill.orderId)+'</td></tr>').join("") || '<tr><td colspan="7" style="color:var(--fg-3)">尚無成交紀錄</td></tr>';
