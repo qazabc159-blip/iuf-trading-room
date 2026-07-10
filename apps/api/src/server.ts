@@ -17211,6 +17211,25 @@ export function _isTpexEodCloseDateValid(expectedTradeDate: string, tpexDateRaw:
 }
 
 /**
+ * Computes the TWSE-EOD-QUOTE-CRON's `tradingDateIso` timestamp from a
+ * STOCK_DAY_ALL row's raw ROC `Date` field, or `""` if unparseable. This
+ * value gates BOTH the TWSE quote_last_close persist block (`if (db3 &&
+ * tradingDateIso)`) and, via its derived `tpexTradeDate`, the
+ * `_isTpexEodCloseDateValid` TPEX guard above.
+ *
+ * 2026-07-10 Pete review follow-up (reports/ledger_stall_20260709/): this
+ * used to be a THIRD inline slash-only ROC date parser (a copy of the same
+ * logic #1199 collapsed into lib/roc-date.ts for the other two call sites).
+ * Against the live compact 7-digit wire format (verified 2026-07-09) that
+ * inline parser silently produced `""`, making both gates above unreachable
+ * dead code. Now delegates to the shared parser.
+ */
+export function _computeTwseEodCronTradingDateIso(stockDateRaw: string | undefined): string {
+  const stockDateIso = parseRocEodDateIso(stockDateRaw);
+  return stockDateIso ? `${stockDateIso}T13:30:00+08:00` : "";
+}
+
+/**
  * Start all schedulers. Called once after server is ready.
  * OHLCV: every 6 hours. Daily brief: fixed 09:00 TST daily (cycle13 fix).
  * PR A: Monthly revenue: every 24h. Financials: every 24h (cadence guard inside tick).
@@ -18473,15 +18492,10 @@ function startSchedulers(workspaceSlug: string): void {
           timestamp: string;
         }> = [];
 
-        // STOCK_DAY_ALL date is "114/05/12" (ROC), parse to ISO
-        let tradingDateIso = "";
-        if (stockRows[0]?.Date) {
-          const parts = stockRows[0].Date.trim().split("/");
-          if (parts.length === 3) {
-            const year = parseInt(parts[0], 10) + 1911;
-            tradingDateIso = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}T13:30:00+08:00`;
-          }
-        }
+        // STOCK_DAY_ALL date is ROC calendar — see _computeTwseEodCronTradingDateIso
+        // doc comment (2026-07-10 Pete review follow-up) for why this must go
+        // through the shared parser rather than a local inline one.
+        const tradingDateIso = _computeTwseEodCronTradingDateIso(stockRows[0]?.Date);
         const ts = tradingDateIso || new Date().toISOString();
 
         for (const row of stockRows) {

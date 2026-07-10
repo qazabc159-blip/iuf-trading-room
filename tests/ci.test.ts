@@ -19949,6 +19949,70 @@ test("S1-PERSIST-TPEX-4: TWSE-EOD-QUOTE-CRON's TPEX persist block is gated by _i
   );
 });
 
+// =============================================================================
+// EOD-CRON-DATE-1..3: 2026-07-10 Pete review follow-up
+// (reports/ledger_stall_20260709/)
+// =============================================================================
+//
+// _runTwseEodCron's OWN `tradingDateIso` derivation (server.ts) was a THIRD
+// duplicate of the same slash-only ROC date parsing bug already collapsed by
+// #1199 for the other two call sites (s1-sim-runner.ts / /quote/realtime).
+// Against the live compact 7-digit wire format, the old inline `split("/")`
+// silently produced `tradingDateIso=""`, which made BOTH the TWSE
+// quote_last_close persist gate (`if (db3 && tradingDateIso)`) AND, via its
+// derived `tpexTradeDate`, #1199's own `_isTpexEodCloseDateValid` guard
+// unreachable dead code — same failure pattern (parser drift silently
+// no-op'ing a guard) that produced the original 2026-07-09 ledger stall.
+
+test("EOD-CRON-DATE-1: _computeTwseEodCronTradingDateIso handles the live compact wire format (previously silently produced empty string)", async () => {
+  const { _computeTwseEodCronTradingDateIso } = await import("../apps/api/src/server.ts");
+  // Compact 7-digit ROC (live wire format, verified 2026-07-09) — this is the
+  // input that silently broke the old inline `split("/")` parser.
+  assert.equal(_computeTwseEodCronTradingDateIso("1150709"), "2026-07-09T13:30:00+08:00");
+  // Legacy slash format still accepted too.
+  assert.equal(_computeTwseEodCronTradingDateIso("115/07/09"), "2026-07-09T13:30:00+08:00");
+  // Missing/unparseable → empty string (caller falls back to wall-clock time,
+  // same as before — this fix only widens which wire formats are accepted).
+  assert.equal(_computeTwseEodCronTradingDateIso(undefined), "");
+  assert.equal(_computeTwseEodCronTradingDateIso("not-a-date"), "");
+});
+
+test("EOD-CRON-DATE-2: compact-format tradingDateIso makes both the TWSE persist gate and the TPEX date guard reachable", async () => {
+  const { _computeTwseEodCronTradingDateIso, _isTpexEodCloseDateValid } = await import("../apps/api/src/server.ts");
+  const tradingDateIso = _computeTwseEodCronTradingDateIso("1150710");
+  // TWSE persist gate: `if (db3 && tradingDateIso)` — must be truthy under the
+  // live compact wire format (previously always false — dead code).
+  assert.ok(tradingDateIso, "TWSE persist gate must be reachable under the live compact wire format");
+  const eodTradeDate = tradingDateIso.slice(0, 10);
+  assert.match(eodTradeDate, /^\d{4}-\d{2}-\d{2}$/, "sliced trade date must pass the persist block's date-shape check");
+  // TPEX guard (#1199): same-day TPEX close must validate against the trade
+  // date derived from tradingDateIso (previously unreachable — tpexTradeDate
+  // was always "" so the persist block's date-shape gate short-circuited
+  // before _isTpexEodCloseDateValid was ever called).
+  assert.equal(_isTpexEodCloseDateValid(eodTradeDate, "1150710"), true);
+  // ...and a stale TPEX close must still be rejected — confirms this fix did
+  // not silently bypass the #1199 guard while making it reachable.
+  assert.equal(_isTpexEodCloseDateValid(eodTradeDate, "1150709"), false);
+});
+
+test("EOD-CRON-DATE-3: _runTwseEodCron derives tradingDateIso via the shared helper, not a local inline parser", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /const tradingDateIso = _computeTwseEodCronTradingDateIso\(stockRows\[0\]\?\.Date\);/,
+    "EOD-CRON-DATE-3: _runTwseEodCron must call the shared _computeTwseEodCronTradingDateIso helper"
+  );
+  // Regression guard: the old dead inline slash-only parser must be gone.
+  assert.doesNotMatch(
+    serverSrc,
+    /const parts = stockRows\[0\]\.Date\.trim\(\)\.split\("\/"\)/,
+    "EOD-CRON-DATE-3: the old inline slash-only ROC date parser in _runTwseEodCron must be removed"
+  );
+});
+
 test("SIM-LEDGER-15: admin backfill endpoint and NAV read endpoint in server.ts", () => {
   const src = readFileSync(
     new URL("../apps/api/src/server.ts", import.meta.url),
