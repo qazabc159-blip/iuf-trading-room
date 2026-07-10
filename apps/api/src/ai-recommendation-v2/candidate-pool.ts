@@ -23,6 +23,7 @@
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import type { StockDayAllRow } from "../data-sources/twse-openapi-client.js";
+import { parseRocEodDateIso } from "../lib/roc-date.js";
 
 export interface QuantCandidate {
   ticker: string;
@@ -51,18 +52,10 @@ function parseNum(raw: string | undefined | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function rocDateToIso(raw: string | undefined | null): string | null {
-  const trimmed = String(raw ?? "").trim();
-  if (/^\d{7}$/.test(trimmed)) {
-    return `${parseInt(trimmed.slice(0, 3), 10) + 1911}-${trimmed.slice(3, 5)}-${trimmed.slice(5, 7)}`;
-  }
-  const parts = trimmed.split("/");
-  if (parts.length === 3) {
-    const year = parseInt(parts[0]!, 10) + 1911;
-    if (Number.isFinite(year)) return `${year}-${parts[1]!.padStart(2, "0")}-${parts[2]!.padStart(2, "0")}`;
-  }
-  return null;
-}
+// ROC date parsing delegated to the shared lib/roc-date.ts parser
+// (2026-07-10 sweep, dedup of a functionally-equivalent inline copy —
+// reports/ledger_stall_20260709/).
+const rocDateToIso = parseRocEodDateIso;
 
 /** Screen B — momentum + liquidity from the latest published EOD rows. Pure, testable. */
 export function screenMomentumCandidates(rows: StockDayAllRow[], topN = MOMENTUM_TOP_N): {

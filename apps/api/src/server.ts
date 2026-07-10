@@ -2861,14 +2861,15 @@ app.get("/api/v1/realtime/snapshot", async (c) => {
       ? Math.round((chg! / prevClose) * 10000) / 100
       : null;
 
-    // Derive ISO source_time from TWSE ROC date "114/05/18" → "2026-05-18T13:30:00+08:00"
-    const dateParts = (row.Date ?? "").trim().split("/");
-    let sourceTime = nowIso;
-    if (dateParts.length === 3) {
-      const rocYear = parseInt(dateParts[0]!, 10);
-      const dateStr = `${rocYear + 1911}-${dateParts[1]!.padStart(2, "0")}-${dateParts[2]!.padStart(2, "0")}`;
-      sourceTime = `${dateStr}T13:30:00+08:00`;
-    }
+    // Derive ISO source_time from TWSE ROC date "114/05/18" or "1140518" →
+    // "2026-05-18T13:30:00+08:00". 2026-07-10 sweep fix (Pete review,
+    // reports/ledger_stall_20260709/): this was a slash-only inline parser —
+    // against the live compact STOCK_DAY_ALL wire format it silently fell
+    // through to `sourceTime = nowIso`, mislabeling a possibly-stale EOD
+    // close as "right now" on this public-ish /realtime/snapshot endpoint.
+    // Now delegates to the shared lib/roc-date.ts parser (handles both).
+    const dateIso = parseRocEodDateIso(row.Date);
+    const sourceTime = dateIso ? `${dateIso}T13:30:00+08:00` : nowIso;
 
     eodMap.set(code, {
       last_price: close,

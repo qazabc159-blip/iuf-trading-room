@@ -15,6 +15,7 @@
 
 import type { KgiHeatmapTile } from "./kgi-subscription-manager.js";
 import type { StockDayAllRow } from "./data-sources/twse-openapi-client.js";
+import { parseRocEodDateIso } from "./lib/roc-date.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -116,23 +117,20 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
   }
 }
 
-/** Parse TWSE date formats: "114/05/18" or "1140518" → "2026-05-18" */
+/**
+ * Parse TWSE date formats: "114/05/18" or "1140518" → "2026-05-18". Delegates
+ * to the shared lib/roc-date.ts parser (2026-07-10 sweep, dedup of a
+ * functionally-equivalent inline copy — reports/ledger_stall_20260709/).
+ * Preserves the pre-existing "" (not null) return convention on unparseable
+ * input, since callers compare `dateTag` as a plain string.
+ *
+ * NOTE: this is unrelated to the differently-scoped `parseTwseDate` in
+ * jobs/twse-announcement-ingest.ts (that one converts an already-Gregorian
+ * "YYYY/MM/DD" string — no ROC calendar math — a same-name/different-module
+ * coincidence, not a duplicate of this ROC parser).
+ */
 function parseTwseDate(raw: string): string {
-  const s = raw.trim();
-  // Slash format: "114/05/18"
-  if (s.includes("/")) {
-    const parts = s.split("/");
-    if (parts.length === 3) {
-      const rocYear = parseInt(parts[0]!, 10);
-      return `${rocYear + 1911}-${parts[1]!.padStart(2, "0")}-${parts[2]!.padStart(2, "0")}`;
-    }
-  }
-  // Compact format: "1140518"
-  if (s.length === 7) {
-    const rocYear = parseInt(s.slice(0, 3), 10);
-    return `${rocYear + 1911}-${s.slice(3, 5)}-${s.slice(5, 7)}`;
-  }
-  return "";
+  return parseRocEodDateIso(raw) ?? "";
 }
 
 /** Build a human-readable sourceLabel for a tile. */
