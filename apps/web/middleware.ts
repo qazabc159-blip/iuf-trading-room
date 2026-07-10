@@ -35,6 +35,13 @@ function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith("/api/")) return true;
   if (pathname === "/favicon.ico") return true;
   if (pathname === "/robots.txt") return true;
+  // PWA installability (app/manifest.ts serves at /manifest.webmanifest).
+  // Icons under /icons/* and app/apple-icon.png etc. are *.png/*.ico and
+  // already bypass this middleware entirely via the matcher's extension
+  // exclusion below — only the manifest route needs an explicit allow.
+  // /sw.js is reserved for a future service worker (not implemented yet).
+  if (pathname === "/manifest.webmanifest") return true;
+  if (pathname === "/sw.js") return true;
   return false;
 }
 
