@@ -473,6 +473,19 @@ function contentShellOverrides(screen: ScreenKey) {
       grid-template-columns: 1fr !important;
     }
 
+    /* 盤口密度（PR-B, 2026-07-10）行動裝置修正: 桌面版 .tape .stk 用
+       flex:1 1 auto + min-height:0 吃父層剩餘高度，但手機把 .troom 換成
+       flex column 後 .tape>div 的父層高度鏈斷了（.cpane 內部仍是桌面那組
+       grid-template-rows 固定列高，.tape>div 實測只分到 ~22px），
+       flex-grow 沒東西可分、min-height:0 又准許縮到 0 → #depth 整個
+       塌成 0 高度、Playwright toBeVisible 判 hidden（真的手機倒退，非本來
+       就這樣）。手機改用固定 min-height 頂住，不依賴 flex-grow。*/
+    .tape .stk {
+      flex: 0 0 auto !important;
+      min-height: 70px !important;
+      max-height: 200px !important;
+    }
+
     /* 手機下單流觸控目標（動員令附加，2026-07-09）: 送出鈕在桌面緊湊嵌入模式
        固定 min-height:40px（非本 media query），390px 下低於 44px 觸控基準
        線，Playwright 390px 真機驗測到；只在行動裝置寬度加高，不動桌面值。 */
