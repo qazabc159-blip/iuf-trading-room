@@ -27,6 +27,7 @@
 import { and, eq, sql as drizzleSql } from "drizzle-orm";
 import { companies, companyThemeLinks, getDb, isDatabaseMode, themes, workspaces } from "@iuf-trading-room/db";
 import { callLlm } from "./llm/llm-gateway.js";
+import { parseRocEodDateIso } from "./lib/roc-date.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -176,15 +177,24 @@ async function loadThemeMembers(themeId: string): Promise<ThemeMemberRow[]> {
   }));
 }
 
+/**
+ * Pure: derive the EOD date label from a STOCK_DAY_ALL row's raw ROC `Date`
+ * field, or "未知" if unparseable. Exported for direct testing. Delegates to
+ * the shared lib/roc-date.ts parser (2026-07-10 sweep — see
+ * reports/ledger_stall_20260709/); the original inline parser here only
+ * handled the compact 7-digit shape with no slash fallback — the opposite
+ * asymmetry from the bugs found elsewhere in this sweep, but still a
+ * duplicate implementation of the same concern.
+ */
+export function _deriveEodDateLabel(rawDate: string | undefined): string {
+  return parseRocEodDateIso(rawDate) ?? "未知";
+}
+
 async function latestEodDateLabel(): Promise<string> {
   try {
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const rows = await getStockDayAllRows();
-    const raw = rows[0]?.Date?.trim() ?? "";
-    if (/^\d{7}$/.test(raw)) {
-      return `${parseInt(raw.slice(0, 3), 10) + 1911}-${raw.slice(3, 5)}-${raw.slice(5, 7)}`;
-    }
-    return "未知";
+    return _deriveEodDateLabel(rows[0]?.Date);
   } catch {
     return "未知";
   }

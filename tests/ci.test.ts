@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -16655,12 +16656,17 @@ test("TWSE-MIS-7: cron z='-' fallback — server.ts uses bid as proxy when z is 
 });
 
 test("TWSE-MIS-8: breadth asOf handles compact 7-digit ROC date format", () => {
+  // 2026-07-10 ROC parser sweep (reports/ledger_stall_20260709/): the inline
+  // dual-format regex this test used to grep for was collapsed into a call to
+  // the shared lib/roc-date.ts parser (dedup, zero behavior change — the
+  // parser itself still handles the compact 7-digit shape, see ROC-DATE-1).
+  // Updated to check the new call site instead of the removed inline literal.
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/data-sources/twse-openapi-client.ts"), "utf8");
-  // Handles "1150602" compact format: first 3 chars = ROC year, next 2 = month, next 2 = day
-  assert.ok(source.includes("/^\\d{7}$/.test(raw)"));
-  assert.ok(source.includes("const rocYear = parseInt(raw.slice(0, 3), 10)"));
-  assert.ok(source.includes("const mm = raw.slice(3, 5)"));
-  assert.ok(source.includes("const dd = raw.slice(5, 7)"));
+  assert.match(
+    source,
+    /const dateIso = parseRocEodDateIso\(row\.Date\);\s*\n\s*if \(dateIso\) asOf = `\$\{dateIso\}T13:30:00\+08:00`;/,
+    "TWSE-MIS-8: breadth asOf must derive from the shared parseRocEodDateIso (handles compact 7-digit format)"
+  );
 });
 
 test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB companies LIMIT 200", () => {
@@ -20010,6 +20016,191 @@ test("EOD-CRON-DATE-3: _runTwseEodCron derives tradingDateIso via the shared hel
     serverSrc,
     /const parts = stockRows\[0\]\.Date\.trim\(\)\.split\("\/"\)/,
     "EOD-CRON-DATE-3: the old inline slash-only ROC date parser in _runTwseEodCron must be removed"
+  );
+});
+
+// =============================================================================
+// ROC-SWEEP-1..9: 2026-07-10 full apps/api/src sweep for ROC date parsers
+// (reports/ledger_stall_20260709/JASON_ROC_PARSER_SWEEP_2026-07-10.md)
+// =============================================================================
+//
+// Pete re-review after #1202 independently grep'd two MORE duplicate ROC date
+// parsers elsewhere in apps/api/src (feature: "+ 1911" next to a split("/") or
+// compact-7-digit check) that the prior two rounds' file-scoped fixes had not
+// caught. This is the final, whole-tree sweep: every remaining duplicate
+// implementation of "TWSE/TPEX ROC date -> ISO" is collapsed into
+// lib/roc-date.ts, except one deliberately-NOT-delegated exception (verified
+// safe by live curl — see ROC-SWEEP-8/9).
+
+test("ROC-SWEEP-1: /api/v1/realtime/snapshot EOD source_time derives via the shared parser, not an inline slash-only fallback to nowIso", () => {
+  const src = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf-8");
+  assert.match(
+    src,
+    /const dateIso = parseRocEodDateIso\(row\.Date\);\s*\n\s*const sourceTime = dateIso \? `\$\{dateIso\}T13:30:00\+08:00` : nowIso;/,
+    "ROC-SWEEP-1: /realtime/snapshot must derive source_time via the shared parser"
+  );
+  assert.doesNotMatch(
+    src,
+    /const dateParts = \(row\.Date \?\? ""\)\.trim\(\)\.split\("\/"\)/,
+    "ROC-SWEEP-1: the old slash-only inline parser (silently mislabelled stale EOD as 'now' against the live compact wire format) must be removed"
+  );
+});
+
+test("ROC-SWEEP-2: twse-openapi-client.ts rocDateToTaipeiTs handles both wire formats via the shared parser", async () => {
+  const { rocDateToTaipeiTs } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  assert.equal(rocDateToTaipeiTs("1150710"), "2026-07-10T13:30:00+08:00");
+  assert.equal(rocDateToTaipeiTs("115/07/10"), "2026-07-10T13:30:00+08:00");
+  // Unparseable input falls back to the pre-existing "return input as-is" convention.
+  assert.equal(rocDateToTaipeiTs("garbage"), "garbageT13:30:00+08:00");
+});
+
+test("ROC-SWEEP-3: getTwseMarketBreadth asOf handles the compact wire format via the shared parser (dedup, behavior preserved)", async () => {
+  const {
+    getTwseMarketBreadth,
+    _resetTwseBreadthCache,
+    _resetStockDayAllCache
+  } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetTwseBreadthCache();
+  _resetStockDayAllCache();
+
+  const mockFetch = (async (): Promise<Response> => {
+    const body = [
+      { Date: "1150710", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+    ];
+    return {
+      ok: true, status: 200,
+      headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers,
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const result = await getTwseMarketBreadth({ fetchOverride: mockFetch });
+  assert.equal(
+    result.asOf,
+    "2026-07-10T13:30:00+08:00",
+    "ROC-SWEEP-3: asOf must be derived from the compact-format Date field, not left null"
+  );
+});
+
+test("ROC-SWEEP-4: getTwseLeaders asOf handles the compact wire format (previously silently null — 2026-07-10 sweep fix)", async () => {
+  const {
+    getTwseLeaders,
+    _resetTwseLeadersCache,
+    _resetStockDayAllCache
+  } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetTwseLeadersCache();
+  _resetStockDayAllCache();
+
+  const mockFetch = (async (): Promise<Response> => {
+    const body = [
+      { Date: "1150710", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+    ];
+    return {
+      ok: true, status: 200,
+      headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers,
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const result = await getTwseLeaders({ fetchOverride: mockFetch });
+  assert.equal(
+    result.asOf,
+    "2026-07-10",
+    "ROC-SWEEP-4: asOf must be derived from the compact-format Date field — was permanently null before this fix (old inline parser was slash-only against a compact live wire format) on the GET /api/v1/market/leaders/twse TWSE-fallback branch"
+  );
+});
+
+test("ROC-SWEEP-5: ai-recommendation-v2/candidate-pool.ts rocDateToIso delegates to the shared parser", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/ai-recommendation-v2/candidate-pool.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(src, /import \{ parseRocEodDateIso \} from "\.\.\/lib\/roc-date\.js";/);
+  assert.match(src, /const rocDateToIso = parseRocEodDateIso;/);
+});
+
+test("ROC-SWEEP-6: kgi-heatmap-enricher.ts parseTwseDate delegates to the shared parser (enrichHeatmapTiles Tier 2 ts correct under the compact wire format)", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.ts");
+  _resetLastCloseCache();
+
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const twseRows = [
+    { Date: "1150710", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+  ];
+  const result = enrichHeatmapTiles(kgiTiles as never, twseRows as never, undefined);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_eod");
+  assert.equal(
+    tile.ts,
+    "2026-07-10T13:30:00+08:00",
+    "ROC-SWEEP-6: Tier 2 ts must derive from the compact-format Date field via the shared parser"
+  );
+});
+
+test("ROC-SWEEP-7: theme-refresh.ts _deriveEodDateLabel handles both wire formats via the shared parser (old inline version was compact-only)", async () => {
+  const { _deriveEodDateLabel } = await import("../apps/api/src/theme-refresh.ts");
+  assert.equal(_deriveEodDateLabel("1150710"), "2026-07-10");
+  assert.equal(
+    _deriveEodDateLabel("115/07/10"),
+    "2026-07-10",
+    "ROC-SWEEP-7: must now also accept slash format — the old inline parser here was compact-only"
+  );
+  assert.equal(_deriveEodDateLabel(undefined), "未知");
+  assert.equal(_deriveEodDateLabel("garbage"), "未知");
+});
+
+test("ROC-SWEEP-8: server.ts company-announcements rocDateToIso is a documented NOT-delegated exception (live-curl-verified safe)", () => {
+  const src = readFileSync(new URL("../apps/api/src/server.ts", import.meta.url), "utf-8");
+  // Regression guard for the documented decision (see sweep report): this
+  // function must still exist with its OWN narrower regex (2-3 digit year
+  // only — rejects a genuine 4-digit-year slash date that the shared lib's
+  // slash branch would otherwise misparse as ROC) and its own Gregorian
+  // dash/slash fallback branch that lib/roc-date.ts does not have.
+  assert.ok(
+    src.includes("function rocDateToIso(value: unknown): string | null {"),
+    "ROC-SWEEP-8: the company-announcements rocDateToIso function must still exist, unchanged"
+  );
+  assert.ok(
+    src.includes('const rocMatch = text.match(/^(\\d{2,3})\\/(\\d{1,2})\\/(\\d{1,2})$/);'),
+    "ROC-SWEEP-8: must keep its own 2-3-digit-year-only regex (narrower than the shared lib's unconstrained slash branch)"
+  );
+  assert.ok(
+    src.includes('const iso = text.replace(/\\//g, "-");'),
+    "ROC-SWEEP-8: must keep its Gregorian dash/slash fallback branch (shared lib has no equivalent)"
+  );
+});
+
+test("ROC-SWEEP-9: whole-tree audit — no ROC-calendar (+1911) date parser remains outside lib/roc-date.ts except the ROC-SWEEP-8 documented exception", () => {
+  const rootDir = fileURLToPath(new URL("../apps/api/src/", import.meta.url));
+
+  function walk(dir: string): string[] {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    let files: string[] = [];
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        files = files.concat(walk(full));
+      } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  const hits: string[] = [];
+  for (const file of walk(rootDir)) {
+    const stat = statSync(file);
+    if (!stat.isFile()) continue;
+    const content = readFileSync(file, "utf-8");
+    if (content.includes("1911")) {
+      hits.push(path.relative(rootDir, file).split(path.sep).join("/"));
+    }
+  }
+
+  assert.deepEqual(
+    hits.sort(),
+    ["lib/roc-date.ts", "server.ts"],
+    "ROC-SWEEP-9: exactly lib/roc-date.ts (canonical) and server.ts (ROC-SWEEP-8 documented exception) may contain ROC-calendar '1911' math — any other hit is an un-swept duplicate parser"
   );
 });
 

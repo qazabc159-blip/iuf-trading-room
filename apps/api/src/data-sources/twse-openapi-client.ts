@@ -30,6 +30,7 @@
  */
 
 import { createClient } from "redis";
+import { parseRocEodDateIso } from "../lib/roc-date.js";
 
 // ── Base URLs ─────────────────────────────────────────────────────────────────
 
@@ -513,28 +514,19 @@ export interface TwseHeatmapTile {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Parse ROC date "1150512" → ISO "2026-05-12"
- * ROC year + 1911 = Gregorian year
- */
-function parseRocDate(rocDate: string): string {
-  // Format: YYYMMDD where YYY is ROC year
-  const s = rocDate.trim();
-  if (s.length === 7) {
-    const rocYear = parseInt(s.slice(0, 3), 10);
-    const month = s.slice(3, 5);
-    const day = s.slice(5, 7);
-    const year = rocYear + 1911;
-    return `${year}-${month}-${day}`;
-  }
-  return s; // fallback: return as-is
-}
-
-/**
- * Parse "1150512" → Taipei market-close ISO timestamp (T13:30:00+08:00)
+ * Parse "1150512" or "115/05/12" → Taipei market-close ISO timestamp
+ * (T13:30:00+08:00). Delegates to the shared lib/roc-date.ts parser
+ * (2026-07-10 sweep — reports/ledger_stall_20260709/). The original inline
+ * parser here only handled the compact 7-digit shape (MI_INDEX's current live
+ * wire format, live-verified 2026-07-10) with no slash fallback and no digit
+ * validation — kept working today only because MI_INDEX happens to be
+ * compact right now, not because it was actually dual-format-safe.
+ * Preserves the pre-existing "return input as-is on unparseable date"
+ * fallback convention so malformed-input callers see the same shape as before.
  */
 export function rocDateToTaipeiTs(rocDate: string): string {
-  const iso = parseRocDate(rocDate);
-  return `${iso}T13:30:00+08:00`;
+  const iso = parseRocEodDateIso(rocDate);
+  return `${iso ?? rocDate.trim()}T13:30:00+08:00`;
 }
 
 /**
@@ -886,14 +878,17 @@ async function fetchTaiexMonthDailyCloses(
 
     const rows: TaiexDailyClose[] = [];
     for (const row of body.data) {
-      // row[0] = ROC date "115/06/11", row[4] = 收盤指數 "43,149.46"
+      // row[0] = ROC date "115/06/11" (slash-separated — live-verified 2026-07-10,
+      // this main-site MI_5MINS_HIST endpoint's own wire format), row[4] = 收盤指數
+      // "43,149.46". Parsed via the shared lib/roc-date.ts parser (2026-07-10
+      // sweep — reports/ledger_stall_20260709/) for consistency with the other
+      // TWSE date fields, though this endpoint has only ever been observed
+      // slash-format.
       if (!Array.isArray(row) || row.length < 5) continue;
-      const parts = String(row[0]).trim().split("/");
-      if (parts.length !== 3) continue;
-      const year = parseInt(parts[0], 10) + 1911;
+      const date = parseRocEodDateIso(String(row[0]));
       const close = parseFloat(String(row[4]).replace(/,/g, ""));
-      if (!isFinite(year) || !isFinite(close) || close <= 0) continue;
-      rows.push({ date: `${year}-${parts[1]}-${parts[2]}`, close });
+      if (!date || !isFinite(close) || close <= 0) continue;
+      rows.push({ date, close });
     }
     rows.sort((a, b) => a.date.localeCompare(b.date));
     _taiexHistMonthCache.set(monthYYYYMM, { rows, expiresAt: Date.now() + TAIEX_HIST_CACHE_TTL_MS });
@@ -1456,21 +1451,12 @@ export async function getTwseMarketBreadth(
     enriched.push({ code: row.Code, name: row.Name, close, change, changePct, tradeValue });
 
     if (!asOf && row.Date) {
-      // TWSE STOCK_DAY_ALL date field may be:
-      //   "1150602"  — compact ROC format (7 chars: YYY + MM + DD, no separator)
-      //   "114/05/12" — slash-separated ROC format (legacy, still present in some endpoints)
-      const raw = row.Date.trim();
-      const slashParts = raw.split("/");
-      if (slashParts.length === 3) {
-        const year = parseInt(slashParts[0], 10) + 1911;
-        asOf = `${year}-${slashParts[1].padStart(2, "0")}-${slashParts[2].padStart(2, "0")}T13:30:00+08:00`;
-      } else if (/^\d{7}$/.test(raw)) {
-        // e.g. "1150602" → ROC 115 = 2026, month 06, day 02
-        const rocYear = parseInt(raw.slice(0, 3), 10);
-        const mm = raw.slice(3, 5);
-        const dd = raw.slice(5, 7);
-        asOf = `${rocYear + 1911}-${mm}-${dd}T13:30:00+08:00`;
-      }
+      // TWSE STOCK_DAY_ALL date field may be compact "1150602" (current live
+      // format) or legacy slash "114/05/12" — parsed via the shared
+      // lib/roc-date.ts parser (2026-07-10 sweep, dedup of a functionally
+      // identical inline copy — reports/ledger_stall_20260709/).
+      const dateIso = parseRocEodDateIso(row.Date);
+      if (dateIso) asOf = `${dateIso}T13:30:00+08:00`;
     }
   }
 
@@ -1575,11 +1561,12 @@ export async function getTwseLeaders(
     });
 
     if (!asOf && row.Date) {
-      const parts = row.Date.trim().split("/");
-      if (parts.length === 3) {
-        const year = parseInt(parts[0], 10) + 1911;
-        asOf = `${year}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
-      }
+      // 2026-07-10 sweep fix (reports/ledger_stall_20260709/): this inline
+      // parser was slash-only, so against the live compact STOCK_DAY_ALL wire
+      // format it silently left `asOf` permanently null on the
+      // GET /api/v1/market/leaders/twse TWSE-fallback branch. Now delegates
+      // to the shared lib/roc-date.ts parser (handles both formats).
+      asOf = parseRocEodDateIso(row.Date);
     }
   }
 
