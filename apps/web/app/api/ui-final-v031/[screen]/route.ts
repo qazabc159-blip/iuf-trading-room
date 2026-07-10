@@ -508,6 +508,17 @@ function contentShellOverrides(screen: ScreenKey) {
       align-items: center !important;
       justify-content: center !important;
     }
+
+    /* 委託回報面板（PR-A, 2026-07-10）: 7 欄表格在 390px 下用橫捲，不做卡片化 —
+       scoped 到這個新 tab 本身的 data-lt selector，不動既有 .ltab.on 的桌面
+       overflow:hidden 規則（那條規則管全部既有分頁，改了會牽動委託/成交等頁）。*/
+    .ltab[data-lt="uta-orders"] {
+      overflow-x: auto !important;
+    }
+
+    .ltab[data-lt="uta-orders"] table {
+      min-width: 560px !important;
+    }
   }
 </style>`;
   }

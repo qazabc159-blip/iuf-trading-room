@@ -669,4 +669,45 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("本頁不顯示假法人買賣超");
     expect(liveHydration).not.toContain("法人買賣超資料同步中</div>");
   });
+
+  it("adds a 委託回報 panel consuming GET /api/v1/uta/orders (統一下單流 D3, 2026-07-10)", () => {
+    // New ledger tab + tbody, distinct from the legacy paper-only 委託 tab.
+    expect(ticketHtml).toContain('<button class="tb" data-lt="uta-orders">委託回報 <span class="c" id="badge-uta-orders">0</span></button>');
+    expect(ticketHtml).toContain('<div class="ltab" data-lt="uta-orders">');
+    expect(ticketHtml).toContain('id="uta-orders-body"');
+    // Honest empty state, not a blank table — both the SSR placeholder and
+    // the client-hydrated no-orders-today fallback.
+    expect(ticketHtml).toContain("委託回報載入中…");
+    expect(liveHydration).toContain("今日無委託");
+    // Server-side initial build fetches the unified order ledger.
+    expect(liveHydration).toContain("listUnifiedOrders(20)");
+    expect(liveHydration).toContain("isUnifiedOrderFromTaipeiToday");
+    // Client-side 15s refresh also fetches it, through the same proxy path
+    // already allow-listed for GET /uta/orders.
+    expect(liveHydration).toContain('soft(apiGet("/api/v1/uta/orders?limit=20"))');
+    expect(backendProxy).toContain("orders)(?:\\?|$)");
+    // Four-state honest vocabulary — never render the raw status enum.
+    expect(liveHydration).toContain("const UTA_ORDER_STATUS_LABELS = {");
+    expect(liveHydration).toContain('pending: "待送出"');
+    expect(liveHydration).toContain('submitted: "已受理"');
+    expect(liveHydration).toContain('partial_fill: "部分成交"');
+    expect(liveHydration).toContain('filled: "已成交"');
+    expect(liveHydration).toContain('cancelled: "已撤單"');
+    expect(liveHydration).toContain('rejected: "已拒絕"');
+    expect(liveHydration).not.toContain("esc(row.status)");
+    // Reuses the desk's existing four .st CSS states (pending/filled/
+    // cancelled/rejected) instead of inventing new visual states.
+    expect(liveHydration).toContain('const utaOrderStatusClass = (status) => status === "filled" ? "filled" : status === "cancelled" ? "cancelled" : status === "rejected" ? "rejected" : "pending";');
+    // Channel label distinguishes paper vs KGI SIM rows in the same table.
+    expect(liveHydration).toContain('const utaOrderChannelLabel = (adapterKey) =>');
+    expect(liveHydration).toContain('"凱基 SIM"');
+  });
+
+  it("keeps the 委託回報 table usable at 390px via scoped horizontal scroll, not the general .ltab.on rule", () => {
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8");
+    expect(routeSource).toContain('.ltab[data-lt="uta-orders"] {');
+    expect(routeSource).toContain("overflow-x: auto !important;");
+    expect(routeSource).toContain('.ltab[data-lt="uta-orders"] table {');
+    expect(routeSource).toContain("min-width: 560px !important;");
+  });
 });
