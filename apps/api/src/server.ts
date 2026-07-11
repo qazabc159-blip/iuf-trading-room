@@ -11438,6 +11438,38 @@ app.get("/api/v1/lab/three-strategy/snapshot", async (c) => {
 
 const _SNAPSHOT_SCHEMA_VERSION_V47 = "tr_strategy_snapshot_api_contract_v47";
 
+// P0-3 fix (2026-07-10 product critique): every lab strategy snapshot currently
+// carries a research/backtest status only (RESEARCH_FORWARD_OBSERVATION /
+// PAPER_LIVE_OBSERVING / BACKTESTED_RAW) — none has a verified live track
+// record. Home page / quant-strategies previously rendered headline numbers
+// (e.g. "累積報酬 +400.89%", common-window research backtest) with no
+// "backtest, unverified" qualifier, next to the site's real F-AUTO SIM
+// performance — a data-honesty violation (禁字牆: no unqualified performance
+// claims). Safe default: unknown/unrecognized status => NOT live-verified.
+const _LIVE_VERIFIED_SNAPSHOT_STATUSES = new Set<string>([]); // none sanctioned yet (2026-07-10)
+
+function deriveTrackRecordDisclosure(raw: Record<string, unknown>): {
+  isLiveVerifiedTrackRecord: boolean;
+  trackRecordType: "live_verified" | "research_backtest_unverified";
+  headlineDisclosureZh: string;
+} {
+  const status = typeof raw["status"] === "string" ? raw["status"] : "UNKNOWN";
+  const isLiveVerifiedTrackRecord = _LIVE_VERIFIED_SNAPSHOT_STATUSES.has(status);
+  if (isLiveVerifiedTrackRecord) {
+    return { isLiveVerifiedTrackRecord: true, trackRecordType: "live_verified", headlineDisclosureZh: "" };
+  }
+
+  const windowStart = typeof raw["commonWindowStart"] === "string" ? raw["commonWindowStart"] : null;
+  const windowEnd = typeof raw["commonWindowEnd"] === "string" ? raw["commonWindowEnd"] : null;
+  const windowLabel = windowStart && windowEnd ? `研究窗 ${windowStart} ~ ${windowEnd}` : null;
+  const caveat = typeof raw["caveatTextZh"] === "string" ? raw["caveatTextZh"] : null;
+
+  const headlineDisclosureZh =
+    `歷史回測（未經驗證），非策略現況${windowLabel ? "，" + windowLabel : ""}${caveat ? "。" + caveat : ""}`;
+
+  return { isLiveVerifiedTrackRecord: false, trackRecordType: "research_backtest_unverified", headlineDisclosureZh };
+}
+
 function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown> {
   const m = (typeof raw["headlineMetrics"] === "object" && raw["headlineMetrics"] !== null
     ? raw["headlineMetrics"] : {}) as Record<string, unknown>;
@@ -11511,6 +11543,8 @@ function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown>
     Object.entries(raw).filter(([key]) => !legacyReturnKeys.has(key))
   );
 
+  const trackRecordDisclosure = deriveTrackRecordDisclosure(raw);
+
   return {
     ...rawWithoutLegacyReturns,
     schemaVersion: _SNAPSHOT_SCHEMA_VERSION_V47,
@@ -11521,6 +11555,12 @@ function mapSnapshotToV47(raw: Record<string, unknown>): Record<string, unknown>
     realOrderAllowed,
     registryChangeAllowed,
     headlineMetrics: mappedMetrics,
+    // P0-3 fix (2026-07-10): explicit, top-level honesty flags — consumers
+    // must not render headline return/hit-rate numbers without checking
+    // isLiveVerifiedTrackRecord and surfacing headlineDisclosureZh.
+    isLiveVerifiedTrackRecord: trackRecordDisclosure.isLiveVerifiedTrackRecord,
+    trackRecordType: trackRecordDisclosure.trackRecordType,
+    headlineDisclosureZh: trackRecordDisclosure.headlineDisclosureZh,
     _v47Mapped: true
   };
 }

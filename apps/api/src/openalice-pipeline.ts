@@ -659,6 +659,32 @@ async function collectLiveMarketSnapshot(
 }
 
 /**
+ * Format a raw FinMind institutional buy/sell net figure (unit: 股/shares —
+ * TaiwanStockInstitutionalInvestorsBuySell buy/sell columns are share counts,
+ * same convention as TaiwanStockPrice.Trading_Volume) into 張 (1 張 = 1,000 股)
+ * with 萬/億 Chinese magnitude formatting.
+ *
+ * P0-6 fix (2026-07-10 product critique): raw share net was previously
+ * labeled "張" unconverted and injected unformatted into the LLM prompt,
+ * producing brief claims like "外資賣超 -178651175 張" (unit off by 1000x
+ * plus an unformatted digit dump). aggregateInstitutionalFlowRows() still
+ * returns raw net shares (unchanged) — conversion happens only here, at the
+ * prompt-formatting boundary.
+ */
+export function formatInstitutionalNetLotsZh(netShares: number): string {
+  const netLots = netShares / 1000;
+  const sign = netLots >= 0 ? "+" : "-";
+  const absLots = Math.abs(netLots);
+  if (absLots >= 1_0000_0000) {
+    return `${sign}${(absLots / 1_0000_0000).toFixed(2)}億張`;
+  }
+  if (absLots >= 10_000) {
+    return `${sign}${(absLots / 10_000).toFixed(2)}萬張`;
+  }
+  return `${sign}${Math.round(absLots)}張`;
+}
+
+/**
  * Render a LiveMarketSnapshot as a structured JSON block for LLM prompt injection.
  * Only emits fields that have real values — never outputs nulls as "data".
  */
@@ -694,9 +720,9 @@ export function formatLiveMarketSnapshotForPrompt(snap: LiveMarketSnapshot): str
 
   if (snap.institutional.date && (snap.institutional.foreign !== null || snap.institutional.trust !== null || snap.institutional.dealer !== null)) {
     lines.push(`法人籌碼 (${snap.institutional.date}):`);
-    if (snap.institutional.foreign !== null) lines.push(`  - 外資: ${snap.institutional.foreign >= 0 ? "+" : ""}${snap.institutional.foreign} 張`);
-    if (snap.institutional.trust !== null) lines.push(`  - 投信: ${snap.institutional.trust >= 0 ? "+" : ""}${snap.institutional.trust} 張`);
-    if (snap.institutional.dealer !== null) lines.push(`  - 自營: ${snap.institutional.dealer >= 0 ? "+" : ""}${snap.institutional.dealer} 張`);
+    if (snap.institutional.foreign !== null) lines.push(`  - 外資: ${formatInstitutionalNetLotsZh(snap.institutional.foreign)}`);
+    if (snap.institutional.trust !== null) lines.push(`  - 投信: ${formatInstitutionalNetLotsZh(snap.institutional.trust)}`);
+    if (snap.institutional.dealer !== null) lines.push(`  - 自營: ${formatInstitutionalNetLotsZh(snap.institutional.dealer)}`);
   }
 
   if (snap.margin.date && (snap.margin.balanceChange !== null || snap.margin.shortChange !== null)) {
