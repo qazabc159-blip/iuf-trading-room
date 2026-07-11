@@ -14,6 +14,7 @@ import {
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
 import {
+  getAiRecommendationsV3,
   getBriefs,
   getContentDrafts,
   getDashboardSnapshot,
@@ -27,10 +28,9 @@ import {
   getNewsTop10,
   getOpsSnapshot,
   getKgiQuoteStatus,
-  getRecommendationsToday,
   getTwseMarketHeatmap,
   getTwseMarketOverview,
-  type RecommendationListResponse,
+  type AiRecommendationV3Response,
   type CompanyAnnouncement,
   type DashboardSnapshot,
   type FinMindDatasetStatus,
@@ -53,9 +53,13 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
+import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-rows";
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
+import { buildV3PanelState } from "./ai-recommendations/v3-view";
+import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
+import type { StockRecCardData } from "./ai-recommendations/StockRecCard";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 export const dynamic = "force-dynamic";
@@ -218,15 +222,11 @@ const HEATMAP_SECTOR_LABELS: Record<string, string> = {
   "airlines": "航空運輸",
 };
 
+// 首頁 IA 審計 A 案（2026-07-10）DEMOTE #2：Ticker 只留指數，移除排行/熱力圖/公司池/
+// 重大訊息/紙上等純標籤格（無報價、裝飾性質，且與 #6 HeroPanel 指數卡重複）。
 const EMPTY_TAPE_QUOTES: TapeQuote[] = [
   { sym: "TAIEX", name: "加權指數", price: null, chg: null, pct: null, placeholder: true },
   { sym: "TPEX", name: "櫃買指數", price: null, chg: null, pct: null, placeholder: true },
-  { sym: "上漲", name: "上漲家數", price: null, chg: null, pct: null, unit: "家", flow: true, placeholder: true },
-  { sym: "下跌", name: "下跌家數", price: null, chg: null, pct: null, unit: "家", flow: true, placeholder: true },
-  { sym: "排行", name: "盤中排行", price: null, chg: null, pct: null, placeholder: true },
-  { sym: "熱力圖", name: "台股公司池", price: null, chg: null, pct: null, placeholder: true },
-  { sym: "重大訊息", name: "官方資訊流", price: null, chg: null, pct: null, placeholder: true },
-  { sym: "紙上", name: "紙上交易", price: null, chg: null, pct: null, placeholder: true },
 ];
 
 const EMPTY_HEATMAP: HeatTile[] = Array.from({ length: 12 }, (_, index) => ({
@@ -1492,13 +1492,11 @@ function marketCoverageText(market: LoadState<MarketDataOverview | null>) {
   return dailyTotal > 0 ? `${formatNumber(dailyTotal)} 檔` : "0 檔";
 }
 
-function buildTapeQuotes(heatmap: HeatTile[], realtimeMarket: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): TapeQuote[] {
+function buildTapeQuotes(realtimeMarket: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): TapeQuote[] {
   const realtimeData = loadStateData(realtimeMarket);
   const kgi = realtimeData?.kgiOverview?.taiex ?? null;
   const twse = realtimeData?.twseOverview?.taiex ?? null;
   const legacyIndex = market.data?.marketContext?.index;
-  const legacyBreadth = market.data?.marketContext?.breadth;
-  const breadth = legacyBreadth;
   const realQuotes: TapeQuote[] = [];
 
   // BUG_001 fix: 優先 KGI tick → TWSE EOD → legacy fallback
@@ -1528,25 +1526,9 @@ function buildTapeQuotes(heatmap: HeatTile[], realtimeMarket: LoadState<Realtime
     });
   }
 
-  if (breadth && breadth.total > 0) {
-    realQuotes.push(
-      { sym: "上漲", name: "上漲家數", price: breadth.up, chg: breadth.up, pct: 0, unit: "家", flow: true },
-      { sym: "下跌", name: "下跌家數", price: -breadth.down, chg: -breadth.down, pct: 0, unit: "家", flow: true },
-    );
-  }
-
-  const marketQuotes = heatmap.slice(0, 12).map((item) => {
-    const pct = item.pct ?? 0;
-    const price = item.price ?? 0;
-    return {
-      sym: item.symbol,
-      name: item.name,
-      price,
-      chg: price * (pct / 100),
-      pct,
-    };
-  });
-  realQuotes.push(...marketQuotes);
+  // 首頁 IA 審計 A 案 DEMOTE #2：不再把漲跌家數與前 12 檔熱力圖股票塞進跑馬燈——
+  // 漲跌家數已在 HeroPanel BREADTH 卡顯示，熱力圖股票在頁尾熱力圖區塊看得到；
+  // Ticker 只保留指數本身，避免與 #6 重複、也不再用個股當「標籤」裝飾。
 
   return realQuotes.length > 0 ? realQuotes : EMPTY_TAPE_QUOTES;
 }
@@ -1670,7 +1652,7 @@ function QuoteTapeItem({ quote }: { quote: TapeQuote }) {
   );
 }
 
-function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCount: number }) {
+function TacticalSidebar() {
   const nav: Array<{
     href: string;
     title: string;
@@ -1716,13 +1698,6 @@ function TacticalSidebar({ liveCount, alertCount }: { liveCount: number; alertCo
           );
         })}
       </nav>
-      <div className="tac-sidebar-radar">
-        <span className="tac-mini-radar" />
-        <div>
-          <small>MARKET · INTEL</small>
-          <b>{liveCount} 項資料健康 / {alertCount} 件提醒</b>
-        </div>
-      </div>
       <div className="tac-sidebar-clock">
         <small>本機時鐘 · 台北</small>
         <b suppressHydrationWarning>{formatClock(nowIso())}</b>
@@ -1762,7 +1737,6 @@ function TopCommandBar({ now, market }: { now: string; market: LoadState<MarketD
       <div>
         <PulseBars state={market.state === "LIVE" ? "LIVE" : "EMPTY"} />
         <span suppressHydrationWarning>{formatDateTime(now)} 台北</span>
-        <button type="button">搜尋 <kbd>⌘ K</kbd></button>
         <StatusChip state={market.state === "LIVE" ? "LIVE" : "EMPTY"} label="正式資料" />
       </div>
     </header>
@@ -1814,8 +1788,6 @@ function HeroPanel({
   heatmap,
   market,
   realtimeMarket,
-  paper,
-  broker,
   brief,
   intel,
   now,
@@ -1823,8 +1795,6 @@ function HeroPanel({
   heatmap: HeatTile[];
   market: LoadState<MarketDataOverview | null>;
   realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
-  paper: LoadState<PaperHealthState | null>;
-  broker: LoadState<BrokerAccessDashboard | null>;
   brief: LoadState<DailyBriefDashboard>;
   intel: LoadState<MarketIntelDashboard>;
   now: string;
@@ -1858,9 +1828,6 @@ function HeroPanel({
   const flatCount = breadth && breadth.total > 0 ? breadth.flat : fallbackFlat;
   const breadthTotal = breadth && breadth.total > 0 ? breadth.total : actualHeatmap.length;
   const downPct = breadthTotal ? Math.round((downCount / breadthTotal) * 1000) / 10 : 0;
-  const briefState = brief.data.state === "PUBLISHED" ? "已發布" : brief.data.latest ? "有最新" : "待產生";
-  const tradeState = broker.data?.formalReadOnlyConnected ? "正式可登入" : paper.data?.previewReady ? "紙上可預覽" : "待檢查";
-  const tradeTone: TacticalStatus = broker.data?.formalReadOnlyConnected || paper.data?.previewReady ? "live" : paper.state === "BLOCKED" ? "blocked" : "empty";
   const focusText = brief.data.state === "PUBLISHED"
     ? "閱讀今日 AI 簡報"
     : intel.data.items.length > 0
@@ -1906,11 +1873,10 @@ function HeroPanel({
         </div>
       </div>
 
+      {/* 首頁 IA 審計 A 案 TRIM #6：4 KPI 中「重大訊息/AI簡報/交易環境」分別與 #8 AI 推薦板／
+          #13 簡報摘要／#14 券商連線列重複，只留「市場覆蓋」——其餘資訊在各自區塊看得到。 */}
       <div className="tac-hero-kpis">
         <Metric label="市場覆蓋" value={marketCoverageText(market)} sub={(market.data?.quotes.total ?? 0) > 0 ? "可用報價 / 監看股票" : "FinMind 官方日資料 / 公司池"} tone={market.state === "LIVE" ? "live" : "empty"} />
-        <Metric label="重大訊息" value={formatNumber(intel.data.items.length)} sub={`${formatNumber(intel.data.selected.length)} 檔公司 · ${ANNOUNCEMENT_DAYS} 天`} tone={intel.state === "LIVE" ? "live" : intel.state === "EMPTY" ? "empty" : "blocked"} />
-        <Metric label="AI 簡報" value={briefState} sub={brief.data.latestDate ? `最新 ${brief.data.latestDate}` : "等待今日整理"} tone={brief.data.state === "PUBLISHED" ? "live" : brief.data.latest ? "review" : "empty"} />
-        <Metric label="交易環境" value={tradeState} sub={broker.data?.formalReadOnlyConnected ? "正式只讀 / 下單入口關閉" : "紙上預覽 / 風控檢查"} tone={tradeTone} />
       </div>
     </section>
   );
@@ -2432,98 +2398,84 @@ function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboar
   );
 }
 
-function recommendationActionState(action: string | null | undefined): DashboardState {
-  if (action === "今日首選" || action === "可觀察布局（研究參考）") return "LIVE";
-  if (action === "等回檔") return "REVIEW";
-  if (action === "高風險排除" || action === "資料不足暫不推薦") return "BLOCKED";
-  return "EMPTY";
+// 首頁 IA 審計 A 案追加 P0-2（2026-07-10）：「今日 AI 推薦行動板」改吃跟
+// /ai-recommendations 正式頁同一個 canonical 來源（v3 批次，見
+// lib/home-ai-recommendation-rows.ts 的說明）。以下四個 helper 對應
+// /ai-recommendations/StockRecCard.tsx 的 buildV3PrefillHref／LinkageCtaRow
+// 寫法，只是輸出改成首頁行動板既有的緊湊表格列，不重畫整張大卡。
+function homeV3BucketState(bucket: StockRecCardData["bucket"]): DashboardState {
+  if (bucket === "A+" || bucket === "A") return "LIVE";
+  if (bucket === "B") return "REVIEW";
+  return "BLOCKED";
 }
 
-function recommendationPrimaryReason(item: RecommendationListResponse["items"][number]) {
-  const candidates = [
-    item.reasons?.technical?.[0],
-    item.reasons?.news?.[0],
-    item.reasons?.theme?.[0],
-    item.reasons?.quant?.[0],
-    item.reasons?.chip?.[0],
-    item.reasons?.macro?.[0],
-  ];
-  const reason = candidates.find((value) => value && value.trim().length > 0);
-  return reason ? cleanNarrativeText(reason) : "推薦理由待回補；前端不補示意內容。";
+function homeV3PrimaryReason(card: StockRecCardData) {
+  const firstLine = card.why_buy?.split("\n").find((line) => line.trim().length > 0);
+  return firstLine ? cleanNarrativeText(firstLine) : "推薦理由待回補；前端不補示意內容。";
 }
 
-function recommendationPlanSummary(item: RecommendationListResponse["items"][number]) {
-  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
-  const tp2 = item.targets?.find((target) => target.label === "TP2")?.price ?? null;
-  const stop = item.invalidation?.price ?? null;
+function homeV3PlanSummary(card: StockRecCardData) {
   return [
-    item.entryZone?.primary ? `進場 ${item.entryZone.primary}` : null,
-    stop ? `停損 ${formatPrice(stop)}` : item.invalidation?.rule ? `停損 ${cleanNarrativeText(item.invalidation.rule).slice(0, 18)}` : null,
-    tp1 ? `TP1 ${formatPrice(tp1)}` : null,
-    tp2 ? `TP2 ${formatPrice(tp2)}` : null,
+    card.entry?.ote_low != null ? `進場 ${formatPrice(card.entry.ote_low)}` : null,
+    card.targets?.sl != null ? `停損 ${formatPrice(card.targets.sl)}` : null,
+    card.targets?.tp1 != null ? `TP1 ${formatPrice(card.targets.tp1)}` : null,
+    card.targets?.tp2 != null ? `TP2 ${formatPrice(card.targets.tp2)}` : null,
   ].filter(Boolean).join(" · ") || "交易計畫待回補";
 }
 
-function recommendationTradeHref(item: RecommendationListResponse["items"][number]) {
-  const params = new URLSearchParams();
-  params.set("symbol", item.ticker);
-  params.set("prefill", "true");
-  params.set("from_rec", item.recommendationId);
-  params.set("side", item.direction === "偏空" ? "sell" : "buy");
-  if (item.entryZone?.primary) params.set("entry", item.entryZone.primary);
-  if (item.invalidation?.price) params.set("stop", String(item.invalidation.price));
-  const tp1 = item.targets?.find((target) => target.label === "TP1")?.price ?? null;
-  if (tp1) params.set("tp", String(tp1));
+function homeV3TradeHref(card: StockRecCardData) {
+  const ticker = card.ticker.trim().toUpperCase();
+  if (!/^[A-Z0-9._-]{1,16}$/.test(ticker)) return null;
+  const params = new URLSearchParams({ ticker, prefill: "true" });
+  if (card.entry?.ote_low != null) params.set("entry", String(card.entry.ote_low));
+  if (card.targets?.sl != null) params.set("stop", String(card.targets.sl));
+  if (card.targets?.tp1 != null) params.set("tp", String(card.targets.tp1));
   return `/portfolio?${params.toString()}`;
 }
 
-function AiRecommendationActionPanel({ recommendations }: { recommendations: LoadState<RecommendationListResponse> }) {
-  const rows = recommendations.state === "LIVE" && !recommendations.data._mock
-    ? recommendations.data.items.slice(0, 5)
-    : [];
-  const panelState: DashboardState = rows.length > 0
-    ? "LIVE"
-    : recommendations.state === "BLOCKED"
-      ? "BLOCKED"
-      : "EMPTY";
-  const sourceLine = recommendations.state === "LIVE"
-    ? `生成 ${formatDateTime(recommendations.data.generatedAt)} · ${formatNumber(recommendations.data.count)} 檔`
-    : recommendations.reason;
-  const emptyReason = recommendations.state === "LIVE"
-    ? recommendations.data._mock
-      ? "API 標記為 mock，首頁已拒絕顯示。"
-      : "正式推薦清單目前為空；等待下一次 AI 推薦生成。"
-    : recommendations.reason;
+function AiRecommendationActionPanel({ recommendations }: { recommendations: LoadState<AiRecommendationV3Response> }) {
+  const cards = deriveHomeAiRecommendationCards(recommendations.data, 5);
+  const v3PanelState = buildV3PanelState({
+    data: recommendations.data,
+    error: recommendations.state === "BLOCKED" ? recommendations.reason : null,
+    visibleCount: cards.length,
+  });
+  const panelState: DashboardState = v3PanelState.tone === "live" ? "LIVE" : v3PanelState.tone === "blocked" ? "BLOCKED" : v3PanelState.tone === "degraded" ? "REVIEW" : "EMPTY";
+  const generatedAtLabel = formatRecommendationTimestamp(recommendations.data.generatedAt);
 
   return (
     <Panel
       eyebrow="AI RECOMMENDATIONS"
       title="今日 AI 推薦行動板"
-      sub="只顯示正式推薦 API 回傳；不以策略候選或假資料冒充推薦"
-      right={<StatusChip state={panelState} label={rows.length > 0 ? `${rows.length} 檔` : "待回補"} />}
+      sub="與 /ai-recommendations 正式頁同一份 v3 批次；不吃研究參考或舊版引擎資料"
+      right={<StatusChip state={panelState} label={cards.length > 0 ? `${cards.length} 檔` : "待回補"} />}
     >
-      {rows.length > 0 ? (
+      {cards.length > 0 ? (
         <>
           <div className="tac-strategy-table tac-ai-recs-table" data-testid="homepage-ai-recommendations">
             <div><span>代號</span><span>公司 / 主要理由</span><span>分類</span><span>計畫</span><span>動作</span></div>
-            {rows.map((item) => (
-              <Link href={recommendationTradeHref(item)} key={item.recommendationId}>
-                <b>{item.ticker}</b>
-                <span><strong>{item.companyName}</strong><small>{recommendationPrimaryReason(item)}</small></span>
-                <small>{item.action}<br />信心 {Math.round(item.confidence * 100)}%</small>
-                <small>{recommendationPlanSummary(item)}</small>
-                <StatusChip state={recommendationActionState(item.action)} label="進交易室" compact />
-              </Link>
-            ))}
+            {cards.map((card) => {
+              const href = homeV3TradeHref(card);
+              const row = (
+                <>
+                  <b>{card.ticker}</b>
+                  <span><strong>{card.company_name ?? "公司名稱未回傳"}</strong><small>{homeV3PrimaryReason(card)}</small></span>
+                  <small>{card.bucket} 推薦級<br />信心 {card.confidence != null ? `${Math.round(card.confidence * 100)}%` : "-"}</small>
+                  <small>{homeV3PlanSummary(card)}</small>
+                  <StatusChip state={homeV3BucketState(card.bucket)} label="進交易室" compact />
+                </>
+              );
+              return href
+                ? <Link href={href} key={card.ticker}>{row}</Link>
+                : <div key={card.ticker} className="tac-empty-line">{row}</div>;
+            })}
           </div>
           <div className="tac-brief-quality">
-            來源：GET /api/v1/recommendations/today · {sourceLine} · 點任一檔會帶入交易室紙上預覽。
+            {v3PanelState.label} · 生成 {generatedAtLabel} · {cards.length} 檔 · 點任一檔會帶入交易室紙上預覽。
           </div>
         </>
       ) : (
-        <div className="tac-empty-line">
-          今日 AI 推薦尚未形成正式清單。來源：GET /api/v1/recommendations/today。{emptyReason}
-        </div>
+        <div className="tac-empty-line">{v3PanelState.detail}</div>
       )}
     </Panel>
   );
@@ -2531,7 +2483,9 @@ function AiRecommendationActionPanel({ recommendations }: { recommendations: Loa
 
 function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   const featured = intel.data.items[0] ?? null;
-  const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 7 : 6);
+  // 首頁 IA 審計 A 案 KEEP(merge) #12：與 /market-intel 整頁重複，首頁只留 top-3 teaser
+  // （featured 算 1 則，rows 再補 2 則）；看更多請點進 /market-intel。
+  const rows = intel.data.items.slice(featured ? 1 : 0, featured ? 3 : 3);
   // url=null on official_announcement means no source link exists — fall back to internal company page
   // url=null on ai_selected means no external link — same internal fallback
   const itemHref = (item: IntelItem): string =>
@@ -2597,24 +2551,13 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
 }
 
 function DailyBriefPanel({
-  market,
-  intel,
   brief,
 }: {
-  market: LoadState<MarketDataOverview | null>;
-  intel: LoadState<MarketIntelDashboard>;
   brief: LoadState<DailyBriefDashboard>;
 }) {
   const panelState = brief.data.state === "PUBLISHED" ? "LIVE" : brief.data.state === "AWAITING_REVIEW" ? "REVIEW" : stateFromLoad(brief);
   const displayBrief = brief.data.todayBrief ?? brief.data.latest;
   const previewSections = displayBrief?.sections.slice(0, 3) ?? [];
-  const steps = [
-    { id: "01", name: "市場資料", state: stateFromLoad(market), note: market.state === "LIVE" ? "盤勢與公司資料" : "等待行情回補" },
-    { id: "02", name: "重大訊息", state: stateFromLoad(intel), note: intel.state === "LIVE" ? `${intel.data.items.length} 筆官方訊息` : "公告與新聞缺口分開標示" },
-    { id: "03", name: "草稿", state: brief.data.draftCount > 0 || displayBrief ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: `${brief.data.draftCount} 份待確認` },
-    { id: "04", name: "確認", state: brief.data.state === "AWAITING_REVIEW" ? "REVIEW" as DashboardState : brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: brief.data.state === "PUBLISHED" ? "已通過" : "等待確認" },
-    { id: "05", name: "發布", state: brief.data.state === "PUBLISHED" ? "LIVE" as DashboardState : "EMPTY" as DashboardState, note: brief.data.latestDate ?? "今日未發布" },
-  ];
   return (
     <Panel eyebrow="AI BRIEF" title="AI 每日簡報" sub="只展示已發布或待確認狀態；不把摘要偽裝成買賣建議" right={<StatusChip state={panelState} />}>
       <div className="tac-openalice-top">
@@ -2623,15 +2566,8 @@ function DailyBriefPanel({
         <Metric label="最新日期" value={brief.data.latestDate ?? "--"} sub="已發布簡報日期" tone={brief.data.latestDate ? "live" : "empty"} />
         <Metric label="摘要段落" value={formatNumber(displayBrief?.sections.length)} sub="遮蔽交易建議字詞" tone={displayBrief ? "live" : "empty"} />
       </div>
-      <div className="tac-pipeline">
-        {steps.map((step) => (
-          <div className={tacticalStatus(step.state)} key={step.id}>
-            <span>{step.id}</span>
-            <b>{step.name}</b>
-            <small>{step.note}</small>
-          </div>
-        ))}
-      </div>
+      {/* 首頁 IA 審計 A 案 TRIM #13：移除「5 步生成管線」內部流程視覺化——那是機器處理
+          過程，不是操盤者要看的決策資訊，KPI 列已經誠實標示今日狀態/草稿/日期。 */}
       {previewSections.length > 0 ? (
         <div className="tac-brief-preview">
           {previewSections.map((section: DailyBrief["sections"][number], index: number) => (
@@ -2802,6 +2738,66 @@ function DataGapPanel({ sources }: { sources: SourceTile[] }) {
   );
 }
 
+// ── 首頁 IA 審計 A 案（2026-07-10）新增區塊 ──────────────────────────────
+// MERGE #11+#16+#17：FreshnessPanel／DataReadinessPanel／DataGapPanel 三個舊
+// 區塊全部吃同一個 `sources` 陣列，把「資料源健康度」在同一頁畫了三次。收斂
+// 成單一「資料健康」入口：沿用 DataReadinessPanel 的表格骨架（最完整），疊上
+// Freshness 的新鮮度計數 legend，並把非 LIVE 來源的原因（原 DataGapPanel 的
+// why）併進同一列，不再另開一區。標準「真實券商下單關閉」提醒已在
+// TacticalSidebar／BrokerConnectionLine 出現過，這裡不再重複第三次。舊三個
+// 函式（FreshnessPanel/DataReadinessPanel/DataGapPanel）保留在檔案中未刪，
+// 只是不再掛載——等 B 案定案再決定去留。
+function DataHealthPanel({ sources }: { sources: SourceTile[] }) {
+  const live = sources.filter((source) => source.state === "LIVE").length;
+  const review = sources.filter((source) => source.state === "STALE" || source.state === "REVIEW" || source.state === "DEGRADED").length;
+  const blocked = sources.length - live - review;
+  return (
+    <Panel
+      eyebrow="DATA HEALTH"
+      title="資料健康"
+      sub="放在頁尾作為缺口說明，不是操盤者的首頁主角"
+      right={<span>{live} 新鮮 / {review} 待確認 / {blocked} 無資料</span>}
+      className="tac-source-panel"
+    >
+      <div className="tac-source-table">
+        {sources.map((source) => (
+          <Link href={source.href} key={source.key}>
+            <b>{source.name}</b>
+            <span>{source.desc}{source.state !== "LIVE" ? ` — ${source.detail}` : ""}</span>
+            <Sparkline points={makeSpark(source.key, source.state)} state={source.state} />
+            <small>{formatDateTime(source.updatedAt)}</small>
+            <StatusChip state={source.state} compact />
+          </Link>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// CUT/replace #14：PaperPanel 的 6 步內部 SIM 處理管線＋4 張底卡，跟 #1 側欄
+// 「Real Order 停用」、#17 資料缺口的「真實券商下單」三度重複同一件事。改版
+// A 案排序把它收成新排序表最後一項「券商連線狀態（1 行）」，只留使用者真的
+// 要問的一句話：正式券商現在能不能只讀登入。
+function BrokerConnectionLine({
+  paper,
+  broker,
+}: {
+  paper: LoadState<PaperHealthState | null>;
+  broker: LoadState<BrokerAccessDashboard | null>;
+}) {
+  const brokerReady = Boolean(broker.data?.formalReadOnlyConnected);
+  const tone: TacticalStatus = brokerReady ? "live" : paper.state === "BLOCKED" ? "blocked" : "empty";
+  const label = brokerReady ? "正式只讀已連線" : paper.data?.previewReady ? "紙上可預覽" : "等待連線";
+  const note = broker.data?.note ?? (broker.state === "LIVE" ? "等待只讀狀態回報" : broker.reason) ?? "下單入口關閉 · 只提供只讀與紙上預覽";
+  return (
+    <div className="tac-broker-line">
+      <StatusChip state={tone} label="券商連線" compact />
+      <span>{label}</span>
+      <small>{note}</small>
+    </div>
+  );
+}
+
 // ── Dashboard skeleton shown immediately while DashboardContent streams ─────
 // Inline <style> avoids touching globals.css (Codex own).
 function DashboardSkeleton() {
@@ -2907,12 +2903,16 @@ async function DashboardContent({
     timedFetch("brief", FETCH_PRODUCT_MS, loadDailyBriefDashboard()),
     timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
     timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
+    // P0-2 修復（2026-07-10）：首頁改吃跟 /ai-recommendations 正式頁同一個 v3
+    // canonical 端點；不再吃 legacy /recommendations/today（strategySource
+    // cont_liq_v36，已被取代的引擎，見 reports/product_critique_20260710/
+    // PRODUCT_CRITIQUE_v1.md P0-2）。
     timedFetch("recommendations", FETCH_PRODUCT_MS, load(
-      "AI recommendations",
-      { date: todayTaipeiDate(), generatedAt: now, count: 0, items: [] } as RecommendationListResponse,
-      async () => await getRecommendationsToday(),
-      (value) => value._mock === true || value.items.length === 0,
-      "今日 AI 推薦尚未回傳正式清單。",
+      "AI recommendations v3 (canonical, shared with /ai-recommendations)",
+      { runId: null, status: "empty", generatedAt: now, itemCount: 0, items: [] } as AiRecommendationV3Response,
+      async () => await getAiRecommendationsV3(),
+      (value) => (value.items?.length ?? 0) === 0,
+      "今日 AI 推薦 v3 批次尚未回傳正式清單。",
     )),
     timedFetch("s1_strategy", FETCH_PRODUCT_MS, load(
       "S1 strategy snapshot",
@@ -3004,10 +3004,10 @@ async function DashboardContent({
     return v;
   })();
   const recommendations = (() => {
-    const emptyRecommendations: RecommendationListResponse = { date: todayTaipeiDate(), generatedAt: updatedAt, count: 0, items: [] };
-    if (recommendationsResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: "載入失敗" };
+    const emptyRecommendations: AiRecommendationV3Response = { runId: null, status: "empty", generatedAt: updatedAt, itemCount: 0, items: [] };
+    if (recommendationsResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations v3", reason: "載入失敗" };
     const v = recommendationsResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations", reason: `資料延遲（${v._timeout}）` };
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations v3", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
   const s1Strategy = (() => {
@@ -3046,43 +3046,43 @@ async function DashboardContent({
     ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap)
     : marketHeatmap;
   const heatmap = realHeatmap;
-  const quotes = buildTapeQuotes(realHeatmap, realtimeMarket, market);
-  const liveCount = sources.filter((source) => source.state === "LIVE").length;
-  const alertCount = sources.length - liveCount;
+  const quotes = buildTapeQuotes(realtimeMarket, market);
 
+  // 首頁 IA 審計 A 案（reports/homepage_ia_audit_20260710/HOMEPAGE_IA_AUDIT_v1.md §四）
+  // 新排序：大盤狀態(Hero) → 今日 AI 推薦行動板 → 重大訊息 top3 → 簡報摘要 →
+  // 熱力圖/排行(頁尾) → 券商連線狀態(1 行)。CUT：AgendaStrip（狀態寫死的裝飾
+  // 時間軸）、WorkflowPanel（純連結表，資訊已在 sidebar 導航＋各卡 CTA）。
+  // MERGE：FreshnessPanel/DataReadinessPanel/DataGapPanel → DataHealthPanel
+  // 單一入口，放在最底（工程遙測，不是操盤者的首頁主角）。
   return (
     <div className="tactical-dashboard">
       <div className="tac-scanline" />
-      <TacticalSidebar liveCount={liveCount} alertCount={alertCount} />
+      <TacticalSidebar />
       <main className="tac-main">
         <Ticker quotes={quotes} market={market} />
         <MarketStateBanner />
         <div className="tac-content">
           <TopCommandBar now={now} market={market} />
-          <AgendaStrip market={market} intel={intel} brief={brief} now={now} />
-          <section className="tac-hero-grid">
-            <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} paper={paper} broker={broker} brief={brief} intel={intel} now={now} />
-            <MarketMoversPanel market={market} />
+          <section className="tac-single-panel">
+            <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} now={now} />
           </section>
           <section className="tac-two-grid tac-action-grid">
             <AiRecommendationActionPanel recommendations={recommendations} />
             <StrategyPanel strategy={s1Strategy} />
           </section>
-          <section className="tac-two-grid tac-fresh-heat">
-            <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-            <FreshnessPanel sources={sources} />
+          <section className="tac-single-panel">
+            <MarketIntelPanel intel={intel} />
+          </section>
+          <section className="tac-single-panel">
+            <DailyBriefPanel brief={brief} />
           </section>
           <section className="tac-two-grid">
-            <MarketIntelPanel intel={intel} />
-            <DailyBriefPanel market={market} intel={intel} brief={brief} />
+            <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+            <MarketMoversPanel market={market} />
           </section>
-          <section className="tac-two-grid tac-paper-grid">
-            <PaperPanel paper={paper} broker={broker} />
-            <WorkflowPanel market={market} intel={intel} brief={brief} paper={paper} />
-          </section>
-          <section className="tac-two-grid tac-bottom-grid">
-            <DataReadinessPanel sources={sources} />
-            <DataGapPanel sources={sources} />
+          <BrokerConnectionLine paper={paper} broker={broker} />
+          <section className="tac-single-panel">
+            <DataHealthPanel sources={sources} />
           </section>
         </div>
       </main>
