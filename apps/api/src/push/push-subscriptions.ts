@@ -156,8 +156,6 @@ export function createPushSubscriptionRoutes(dependencies: Partial<PushRouteDepe
   routes.post("/api/v1/push/unsubscribe", async (c) => {
     const userId = getSessionUserId(c);
     if (!userId) return c.json({ error: "unauthenticated" }, 401);
-    const pushService = deps.getPushService();
-    if (!pushService.ok) return unavailableResponse(c, pushService);
 
     const parsed = unsubscribeSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {

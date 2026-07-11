@@ -103,7 +103,7 @@ test("push subscription chain stores the authenticated row then removes it", asy
   assert.equal(unsubscribeResponse.status, 200);
   assert.deepEqual(await unsubscribeResponse.json(), { data: { unsubscribed: true, removed: true } });
   assert.equal(rows.size, 0);
-  assert.equal(pushServiceChecks, 3);
+  assert.equal(pushServiceChecks, 2);
 });
 
 test("missing VAPID environment returns an honest Chinese 503 without touching storage", async () => {
@@ -114,6 +114,29 @@ test("missing VAPID environment returns an honest Chinese 503 without touching s
   const body = await response.json() as { message: string; missing: string[] };
   assert.match(body.message, /推播服務尚未完成設定/);
   assert.deepEqual(body.missing, ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"]);
+  assert.equal(rows.size, 0);
+});
+
+test("unsubscribe clears the authenticated row without requiring VAPID configuration", async () => {
+  const { rows, store } = createMemoryStore();
+  const endpoint = "https://push.example.invalid/subscription/revoke-without-vapid";
+  await store.upsert(session.user.id, {
+    endpoint,
+    expirationTime: null,
+    keys: { p256dh: "browser-public-key", auth: "browser-auth-secret" },
+  });
+  const app = createAuthenticatedApp(store, () => {
+    throw new Error("unsubscribe must not read VAPID configuration");
+  });
+
+  const response = await app.request("/api/v1/push/unsubscribe", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ endpoint }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { data: { unsubscribed: true, removed: true } });
   assert.equal(rows.size, 0);
 });
 
