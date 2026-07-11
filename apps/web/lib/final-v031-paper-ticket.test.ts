@@ -768,4 +768,68 @@ describe("final-v031 paper ticket price gate", () => {
     expect(routeSource).toContain("min-height: 70px !important;");
     expect(routeSource).toContain("max-height: 200px !important;");
   });
+
+  it("P0-1 (product critique 2026-07-10): unlocks the capital/ticket section on a fast standalone fetch instead of waiting on the whole desk payload", () => {
+    // The slow, symbol-specific waterfall (company → quote → OHLCV → optional
+    // KGI bidask/ticks) used to gate the capital section's DOM update even
+    // though GET /paper/portfolio itself resolves independently and much
+    // faster — verified against prod (~1.3s vs ~7-10s for the full payload).
+    expect(liveHydration).toContain("async function fetchCapitalFast()");
+    expect(liveHydration).toContain('if (live.screen === "paper-trading-room") fetchCapitalFast();');
+    expect(liveHydration).toContain('apiGetRaw("/api/v1/paper/portfolio")');
+    // fetchCapitalFast never overwrites data the full refresh already landed.
+    const fastFnIndex = liveHydration.indexOf("async function fetchCapitalFast()");
+    const fastFnSlice = liveHydration.slice(fastFnIndex, fastFnIndex + 1200);
+    expect(fastFnSlice).toContain("if (live.baseCapitalTWD !== null && live.baseCapitalTWD !== undefined) return;");
+  });
+
+  it("P0-1: distinguishes a genuine 401/403 on the capital fetch from the ordinary in-flight loading state, instead of always claiming the Owner needs to log in", () => {
+    // SSR fastShell payload never claims unauthorized — only a real rejected
+    // fetch can set this.
+    expect(liveHydration).toContain("baseCapitalUnauthorized: false,");
+    expect(liveHydration).toContain("const baseCapitalUnauthorized = !portfolioRawResult.ok");
+    expect(liveHydration).toContain('/^api_(?:401|403)$/.test(String(portfolioRawResult.error?.message || ""))');
+    // Honest loading copy for the common (not-yet-fetched) case...
+    expect(liveHydration).toContain('capitalReady ? n(capitalTWD) : (capitalUnauthorized ? "待授權" : "載入中")');
+    expect(liveHydration).toContain("本金資料載入中，請稍候");
+    expect(liveHydration).toContain("資料載入中");
+    // ...while the genuine-401/403 copy from before this fix is still intact.
+    expect(liveHydration).toContain("需要 Owner 登入才能預覽 / 送出紙上單");
+    expect(liveHydration).toContain("需要 Owner 登入");
+  });
+
+  it("P0-4 (product critique 2026-07-10): only counts netQtyShares>0 rows as a held position, so a fully closed round-trip can't show 持倉市值 0 next to 持有 1 檔", () => {
+    // GET /paper/portfolio keeps a row for every symbol ever traded,
+    // including ones that net back to 0 shares (avgCostPerShare:null,
+    // note:"net_flat_or_short") — those are not a currently-held position.
+    expect(liveHydration).toContain("const openPositions = portfolio.filter((pos) => Number(pos.netQtyShares || 0) > 0);");
+    expect(liveHydration).toContain('mktValEl.innerHTML = openPositions.length');
+    expect(liveHydration).toContain('const posCountEl = $("#summary-poscount"); if (posCountEl) posCountEl.textContent = String(openPositions.length);');
+    expect(liveHydration).toContain('const badgePositions = $(\'.lhead .tb[data-lt="positions"] .c\'); if (badgePositions) badgePositions.textContent = String(openPositions.length);');
+  });
+
+  it("P0-4: subtracts invested cost from available cash instead of always repeating the static base-capital number", () => {
+    // GET /paper/portfolio's summary.baseCapitalTWD is a fixed constant
+    // (PAPER_BROKER_INITIAL_CASH) never adjusted for trades — 可用資金 used
+    // to render the exact same number as 模擬本金 regardless of how much was
+    // tied up in open positions. summary.investedCostTWD (backend-computed,
+    // netQtyShares>0 rows only) is threaded through and subtracted.
+    expect(liveHydration).toContain("investedCostTWD: null as number | null,");
+    expect(liveHydration).toContain("const investedCostTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.investedCostTWD) ?? null) : null;");
+    expect(liveHydration).toContain("const availableCashTWD = capitalReady ? Number(capitalTWD) - investedCostTWD : null;");
+    expect(liveHydration).toContain('summaryAvailEl.textContent = capitalReady ? n(availableCashTWD) : "--";');
+    expect(liveHydration).toContain("window.__IUF_AVAIL_CASH__ = capitalReady ? availableCashTWD : 0;");
+    expect(liveHydration).toContain('pAvail.textContent = capitalReady ? n(availableCashTWD) : "--";');
+    // fetchCapitalFast's fast path also carries investedCostTWD, not just
+    // baseCapitalTWD, so the fast-unlocked ticket shows correct available
+    // cash too, not a stale full-base-capital number.
+    expect(liveHydration).toContain("const investedCost = raw?.summary?.investedCostTWD;");
+  });
+
+  it("P0-4: tags cost-basis-substituted prices and closed rows in the 模擬庫存 ledger instead of silently presenting them as live/held (mirrors #1149's 未計價/以成本估 pattern)", () => {
+    expect(liveHydration).toContain("const priceIsEstimated = isOpen && !isSelected && rowPrice != null;");
+    expect(liveHydration).toContain("以成本估");
+    expect(liveHydration).toContain("已平倉");
+    expect(liveHydration).toContain("部分以成本估");
+  });
 });

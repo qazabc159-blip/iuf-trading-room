@@ -611,6 +611,18 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
     fastShell: true,
     health: null,
     baseCapitalTWD: null,
+    // P0-1 (product critique 2026-07-10): distinguishes "not fetched yet"
+    // (the common case on every first paint, by design — see fastPaperShell
+    // in route.ts) from a genuine 401/403 on the capital fetch itself. Never
+    // true at SSR time; only client-side fetchCapitalFast()/clientPaperPayload()
+    // can set it once a real request has actually been rejected.
+    baseCapitalUnauthorized: false,
+    // P0-4 (product critique 2026-07-10): cost basis tied up in open
+    // positions — GET /paper/portfolio's summary.investedCostTWD, subtracted
+    // from baseCapitalTWD to render 可用資金. Never fake it as 0 before the
+    // real fetch lands (see hydratePaper's capitalReady gate — available
+    // cash only renders once baseCapitalTWD itself is ready).
+    investedCostTWD: null as number | null,
     fauto: null as FAutoPortfolio | null,
     selected: {
       symbol: selectedSymbol,
@@ -1434,6 +1446,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const portfolioEnvelope = portfolioRawResult.ok ? portfolioRawResult.data : null;
     const portfolio = (portfolioEnvelope && Array.isArray(portfolioEnvelope.data) ? portfolioEnvelope.data : (portfolioRawResult.ok && Array.isArray(portfolioRawResult.data) ? portfolioRawResult.data : []));
     const baseCapitalTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.baseCapitalTWD) ?? null) : null;
+    // P0-1 (product critique 2026-07-10): apiGetRaw() throws "api_<status>" —
+    // only a real 401/403 on THIS request counts as "not authorized"; any
+    // other failure (still in flight, 5xx, network hiccup) must not claim
+    // the Owner needs to log in.
+    const baseCapitalUnauthorized = !portfolioRawResult.ok
+      && /^api_(?:401|403)$/.test(String(portfolioRawResult.error?.message || ""));
+    // P0-4 (product critique 2026-07-10): cost basis already tied up in open
+    // positions (backend-computed, netQtyShares>0 rows only) — used to
+    // render 可用資金 as baseCapitalTWD minus this, instead of always
+    // repeating the same static base-capital number regardless of trading
+    // activity.
+    const investedCostTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.investedCostTWD) ?? null) : null;
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     // D3 委託回報面板 (2026-07-10): mirrors isUnifiedOrderFromTaipeiToday() in
@@ -1486,6 +1510,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       generatedAt:new Date().toISOString(),
       health: healthResult.ok ? healthResult.data : null,
       baseCapitalTWD,
+      baseCapitalUnauthorized,
+      investedCostTWD,
       fauto,
       selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
@@ -1760,6 +1786,46 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       if (live.screen === "paper-trading-room") hydratePaper();
     } catch (error) {
       window.__IUF_FINAL_V031_CLIENT_ERROR__ = error instanceof Error ? error.message : "client_refresh_failed";
+    }
+  }
+
+  // P0-1 (product critique 2026-07-10): the trading room's capital / cash /
+  // risk-gate readiness has nothing to do with which symbol is selected, but
+  // it used to be gated behind the ENTIRE clientPaperPayload() promise —
+  // including the slow, symbol-specific waterfall (company lookup → quote →
+  // OHLCV → optional KGI bidask/ticks) that can legitimately take several
+  // extra seconds. GET /api/v1/paper/portfolio itself is fast; this fetches
+  // it standalone and hydrates just the capital state as soon as it lands,
+  // instead of making the operator wait for the whole desk to finish loading
+  // before the ticket unlocks. Purely additive — refreshClientLive() below
+  // still runs the full payload fetch and will overwrite this with the same
+  // (or newer) data once it completes.
+  async function fetchCapitalFast() {
+    if (live.screen !== "paper-trading-room") return;
+    if (live.baseCapitalTWD !== null && live.baseCapitalTWD !== undefined) return;
+    try {
+      const raw = await apiGetRaw("/api/v1/paper/portfolio");
+      if (live.baseCapitalTWD !== null && live.baseCapitalTWD !== undefined) return; // full refresh already landed
+      const capital = raw?.summary?.baseCapitalTWD;
+      if (capital === null || capital === undefined || Number.isNaN(Number(capital))) return;
+      // P0-4: same response also carries investedCostTWD (cost basis tied up
+      // in open positions) — grab it here too so 可用資金 is correct on this
+      // fast path, not just once the slower full refresh lands.
+      const investedCost = raw?.summary?.investedCostTWD;
+      live = Object.assign({}, live, {
+        baseCapitalTWD: capital,
+        baseCapitalUnauthorized: false,
+        investedCostTWD: investedCost === null || investedCost === undefined || Number.isNaN(Number(investedCost)) ? null : investedCost,
+      });
+      window.__IUF_FINAL_V031_LIVE__ = live;
+      hydratePaper();
+    } catch (error) {
+      if (live.baseCapitalTWD !== null && live.baseCapitalTWD !== undefined) return;
+      const unauthorized = error instanceof Error && /^api_(?:401|403)$/.test(error.message);
+      if (!unauthorized) return; // still loading / transient — leave the honest "loading" copy as-is
+      live = Object.assign({}, live, { baseCapitalUnauthorized: true });
+      window.__IUF_FINAL_V031_LIVE__ = live;
+      hydratePaper();
     }
   }
 
@@ -2880,7 +2946,25 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (fillsBody) fillsBody.innerHTML = fillsArr.map((fill) => '<tr><td class="ts">'+esc((fill.fillTime || "").slice(5,16) || "—")+'</td><td class="sym">'+esc(fill.symbol)+'</td><td><span class="side '+(fill.side === "sell" ? "sell" : "buy")+'">'+(fill.side === "sell" ? "賣出" : "買進")+'</span></td><td class="r px">'+price(fill.fillPrice)+'</td><td class="r">'+esc(fill.fillQty)+'</td><td class="r">'+n(Number(fill.fillQty || 0) * Number(fill.fillPrice || 0))+'</td><td class="ts">'+esc(fill.orderId)+'</td></tr>').join("") || '<tr><td colspan="7" style="color:var(--fg-3)">尚無成交紀錄</td></tr>';
     const badgeFills = $("#badge-fills"); if (badgeFills) badgeFills.textContent = String(fillsArr.length);
     const posBody = $('.ltab[data-lt="positions"] tbody');
-    if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+price(pos.symbol === selected.symbol ? selected.price : pos.avgCostPerShare)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.symbol === selected.symbol ? selected.price || 0 : pos.avgCostPerShare || 0))+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+esc(pos.fillCount)+' 筆</td></tr>').join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
+    // P0-4 (product critique 2026-07-10): this row used to silently pass off
+    // avgCostPerShare as "現價" for any position that isn't the currently
+    // selected symbol (no live quote fetched for it), and rendered a bare
+    // "0" market value for closed (netQtyShares<=0) rows with no way to
+    // tell that apart from a real 0-value open position. Mirrors the F-AUTO
+    // 未計價/以成本估 pattern (#1149): tag cost-basis-substituted prices
+    // instead of presenting them as live, and label closed rows honestly.
+    if (posBody) posBody.innerHTML = (live.portfolio || []).map((pos) => {
+      const isOpen = Number(pos.netQtyShares || 0) > 0;
+      const isSelected = pos.symbol === selected.symbol;
+      const rowPrice = isSelected ? selected.price : pos.avgCostPerShare;
+      const priceIsEstimated = isOpen && !isSelected && rowPrice != null;
+      const estimateTag = ' <small style="color:var(--fg-3);font-size:9.5px">以成本估</small>';
+      const priceCell = rowPrice == null ? "—" : price(rowPrice) + (priceIsEstimated ? estimateTag : "");
+      const mv = Number(rowPrice || 0) * Number(pos.netQtyShares || 0);
+      const mvCell = isOpen ? (n(mv) + (priceIsEstimated ? estimateTag : "")) : n(mv);
+      const holdingCell = esc(pos.fillCount) + " 筆" + (isOpen ? "" : ' <small style="color:var(--fg-3);font-size:9.5px">已平倉</small>');
+      return '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">'+price(pos.avgCostPerShare)+'</td><td class="r px">'+priceCell+'</td><td class="r">'+mvCell+'</td><td class="r">需即時價換算</td><td class="r">—</td><td class="ts">'+holdingCell+'</td></tr>';
+    }).join("") || '<tr><td colspan="9">目前沒有模擬庫存。</td></tr>';
     const kgiBody = $('.ltab[data-lt="kgi"] tbody');
     if (kgiBody) {
       const liveKgiRows = (live.kgi?.positions || []).map((pos) => '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.netQtyShares)+' 股</td><td class="r">—</td><td class="r px">'+price(pos.lastPrice)+'</td><td class="r">'+n(Number(pos.netQtyShares || 0) * Number(pos.lastPrice || 0))+'</td><td class="r pnl '+(Number(pos.unrealizedPnl || 0) >= 0 ? "up" : "dn")+'">'+n(pos.unrealizedPnl)+'</td><td><span class="src kgi">即時讀取</span></td></tr>').join("");
@@ -2947,18 +3031,38 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const ohlcL = $("#ohlc-l"); if (ohlcL) ohlcL.textContent = ohlcvLast ? price(ohlcvLast.low) : (selected.low ? price(selected.low) : "—");
     const ohlcC = $("#ohlc-c"); if (ohlcC) ohlcC.textContent = ohlcvLast ? price(ohlcvLast.close ?? selected.price) : (selected.price ? price(selected.price) : "—");
     // BUG_005 — capital: 模擬本金 / 可用資金 DOM update
+    // P0-1 (product critique 2026-07-10): "not ready yet" used to always
+    // render as "待授權 / 需要 Owner 登入" — but the SSR fastShell payload
+    // starts with baseCapitalTWD:null on every single load by design (first
+    // paint must not block on slow backend calls), so an already-logged-in
+    // Owner briefly saw "you need to log in" on every trading-room open, not
+    // just handoffs. capitalUnauthorized is only set when the portfolio
+    // fetch itself came back 401/403 (see clientPaperPayload/fetchCapitalFast);
+    // the ordinary in-flight case now shows honest loading copy instead.
     const capitalTWD = live.baseCapitalTWD;
     const capitalReady = capitalTWD !== null && capitalTWD !== undefined && !Number.isNaN(Number(capitalTWD));
-    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : "待授權";
-    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(capitalTWD) : "--";
+    const capitalUnauthorized = !capitalReady && Boolean(live.baseCapitalUnauthorized);
+    // P0-4 (product critique 2026-07-10): 可用資金 used to just repeat
+    // 模擬本金 verbatim — GET /paper/portfolio's summary.baseCapitalTWD is a
+    // fixed constant (PAPER_BROKER_INITIAL_CASH), never adjusted for trades,
+    // so "available cash" looked unchanged no matter how much was tied up in
+    // open positions. summary.investedCostTWD (cost basis of netQtyShares>0
+    // rows, backend-computed) is now subtracted. Known remaining gap: this
+    // endpoint does not track realized P&L from closed round-trips, so a
+    // fully closed position's proceeds still are not reflected in cash —
+    // that needs a backend ledger change, out of this fix's frontend scope.
+    const investedCostTWD = Number(live.investedCostTWD || 0);
+    const availableCashTWD = capitalReady ? Number(capitalTWD) - investedCostTWD : null;
+    const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : (capitalUnauthorized ? "待授權" : "載入中");
+    const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(availableCashTWD) : "--";
     // expose to updPreview() in vendor HTML
-    window.__IUF_AVAIL_CASH__ = capitalReady ? Number(capitalTWD) : 0;
+    window.__IUF_AVAIL_CASH__ = capitalReady ? availableCashTWD : 0;
     if (capitalReady) {
       delete window.__IUF_TICKET_LOCK_REASON__;
     } else {
-      window.__IUF_TICKET_LOCK_REASON__ = "需要 Owner 登入才能預覽 / 送出紙上單";
+      window.__IUF_TICKET_LOCK_REASON__ = capitalUnauthorized ? "需要 Owner 登入才能預覽 / 送出紙上單" : "本金資料載入中，請稍候";
     }
-    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(capitalTWD) : "--";
+    const pAvail = $("#p-avail"); if (pAvail) pAvail.textContent = capitalReady ? n(availableCashTWD) : "--";
     try {
       if (typeof window.updPreview === "function") window.updPreview();
     } catch {
@@ -2974,16 +3078,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     if (submit && !capitalReady) {
       submit.disabled = true;
       const blockedLabel = $("#submit-btn-label") || submit.querySelector("b");
-      if (blockedLabel) blockedLabel.textContent = "需要 Owner 登入才能預覽 / 送出紙上單";
-      const gate = $(".gate .h .v"); if (gate) gate.textContent = "\u8cc7\u6599\u672a\u6388\u6b0a";
+      if (blockedLabel) blockedLabel.textContent = capitalUnauthorized ? "需要 Owner 登入才能預覽 / 送出紙上單" : "本金資料載入中，請稍候";
+      const gate = $(".gate .h .v"); if (gate) gate.textContent = capitalUnauthorized ? "\u8cc7\u6599\u672a\u6388\u6b0a" : "\u8cc7\u6599\u8f09\u5165\u4e2d";
     }
     if (kgiSubmit && !capitalReady) {
       kgiSubmit.disabled = true;
       kgiSubmit.classList.add("is-blocked");
       kgiSubmit.setAttribute("aria-disabled", "true");
-      kgiSubmit.dataset.blocked = "owner_session_required";
+      kgiSubmit.dataset.blocked = capitalUnauthorized ? "owner_session_required" : "capital_loading";
       const kgiBlockedLabel = getKgiSubmitLabel();
-      if (kgiBlockedLabel) kgiBlockedLabel.textContent = "需要 Owner 登入";
+      if (kgiBlockedLabel) kgiBlockedLabel.textContent = capitalUnauthorized ? "需要 Owner 登入" : "資料載入中";
     }
     // ── Unified submit (統一下單流 D1, 2026-07-09) ────────────────────────────
     // Both tickets share one core: build the ticket fields, run the existing
@@ -3237,21 +3341,43 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
 
     // ── Portfolio summary (invested mktval + pnl) ─────────────────────────────
+    // P0-4 (product critique 2026-07-10): GET /paper/portfolio's positions
+    // array keeps a row for every symbol ever traded, including ones that
+    // net back to 0 shares (a closed round-trip — backend marks these
+    // note:"net_flat_or_short", avgCostPerShare:null). Counting those as
+    // "held" produced the self-contradiction the critique caught: "持有 1
+    // 檔模擬部位" next to "持倉市值 0" — 0 was actually the CORRECT market
+    // value for a flat position, but the "1 held" label was not. Only
+    // netQtyShares>0 rows are a real open position; use that subset for
+    // every reconciled summary stat. The raw ledger table below (模擬庫存
+    // tab) still shows the full history including closed rows — that is a
+    // legitimate record, not a summary claim.
     const portfolio = live.portfolio || [];
+    const openPositions = portfolio.filter((pos) => Number(pos.netQtyShares || 0) > 0);
     const fills = live.fills || [];
     let totalMktVal = 0;
     let totalCost = 0;
-    portfolio.forEach((pos) => {
+    openPositions.forEach((pos) => {
       const posPrice = String(pos.symbol) === String(selected.symbol) ? (selected.price ?? pos.avgCostPerShare) : pos.avgCostPerShare;
       const mv = Number(posPrice || 0) * Number(pos.netQtyShares || 0);
       totalMktVal += mv;
       totalCost += Number(pos.avgCostPerShare || 0) * Number(pos.netQtyShares || 0);
     });
     const totalPnl = totalMktVal - totalCost;
-    const mktValEl = $("#summary-mktval"); if (mktValEl) mktValEl.textContent = portfolio.length ? n(Math.round(totalMktVal)) : "—";
+    // Any open position other than the one currently on screen has no live
+    // quote fetched for it, so its contribution to totalMktVal/totalPnl
+    // above used avgCostPerShare as a price stand-in — flag that plainly
+    // instead of presenting the aggregate as fully live-priced.
+    const hasEstimatedOpenPosition = openPositions.some((pos) => pos.symbol !== selected.symbol);
+    const mktValEl = $("#summary-mktval");
+    if (mktValEl) {
+      mktValEl.innerHTML = openPositions.length
+        ? n(Math.round(totalMktVal)) + (hasEstimatedOpenPosition ? ' <small style="color:var(--fg-3);font-size:9.5px;font-weight:400">部分以成本估</small>' : "")
+        : "—";
+    }
     const pnlEl = $("#summary-pnl");
     if (pnlEl) {
-      if (portfolio.length) {
+      if (openPositions.length) {
         const pnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
         pnlEl.className = ""; // reset
         pnlEl.style.color = totalPnl >= 0 ? "var(--ok)" : "var(--bad)";
@@ -3260,12 +3386,12 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         pnlEl.textContent = "—";
       }
     }
-    const posCountEl = $("#summary-poscount"); if (posCountEl) posCountEl.textContent = String(portfolio.length);
+    const posCountEl = $("#summary-poscount"); if (posCountEl) posCountEl.textContent = String(openPositions.length);
     // today fills count
     const todayStr = new Date().toISOString().slice(0, 10);
     const todayFillCount = fills.filter((f) => String(f.fillTime || "").startsWith(todayStr)).length;
     const fillCountEl = $("#summary-fillcount"); if (fillCountEl) fillCountEl.textContent = String(todayFillCount);
-    const badgePositions = $('.lhead .tb[data-lt="positions"] .c'); if (badgePositions) badgePositions.textContent = String(portfolio.length);
+    const badgePositions = $('.lhead .tb[data-lt="positions"] .c'); if (badgePositions) badgePositions.textContent = String(openPositions.length);
     const badgeKgi = $('.lhead .tb[data-lt="kgi"] .c'); if (badgeKgi) badgeKgi.textContent = String(live.kgi?.positions?.length || 0);
 
     // ── Events table (synthesised from fills + orders) ────────────────────────
@@ -3359,6 +3485,10 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   if (live.screen === "market-intel") hydrateMarket();
   if (live.screen === "strategy-ideas") hydrateIdeas();
   if (live.screen === "paper-trading-room") hydratePaper();
+  // P0-1: fires alongside (not instead of) the full refresh below so the
+  // capital/ticket section can unlock as soon as the fast portfolio call
+  // lands, without waiting on the slower company/quote/OHLCV chain.
+  if (live.screen === "paper-trading-room") fetchCapitalFast();
   refreshClientLive();
   if (live.screen === "paper-trading-room") {
     updatePaperQuoteQualityBadge("stream", { degraded: true });
