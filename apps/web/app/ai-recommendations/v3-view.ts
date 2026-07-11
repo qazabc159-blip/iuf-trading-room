@@ -1,4 +1,5 @@
 import type { AiRecommendationV3Item, AiRecommendationV3Response, AiRecommendationV3SourceState } from "@/lib/api";
+import { translateNarrativeJargon } from "@/lib/ui-vocab";
 import type { MarketStateScores } from "./MarketStateBadge";
 import type { ReActStep } from "./ReactTracePanel";
 import type { BucketLabel, SourceStateSummary, StockRecCardData, SubScores } from "./StockRecCard";
@@ -79,7 +80,14 @@ function localizeV3Narrative(value: string): string {
     .replace(/This is a deterministic fallback because the LLM did not return enough structured picks\./i, "完整 AI 敘事仍在補強，先以量價驗證訊號保守觀察。")
     .replace(/Treat as research candidates until the full AI narrative is healthy\./i, "僅作研究候選，需搭配交易室風控與部位上限。");
 
-  const productText = localized
+  // P1-1 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): the v3
+  // engine's Chinese narrative sentences sometimes embed raw backend field
+  // names (company_graph_db / dataAvailable=false / volumeRatio20d /
+  // revenueYoyTrend為accelerating …) — translate those before the generic
+  // English-diagnostic stripping below.
+  const jargonTranslated = translateNarrativeJargon(localized);
+
+  const productText = jargonTranslated
     .replace(/\btrace\s*=\s*[^。；;\n]+[。；;]?\s*/gi, "")
     .replace(/\b(?:RSI|institutional|margin|technical|news|revenue|source)?\s*parsing error\b[^。；;\n]*[。；;]?\s*/gi, "")
     .replace(/\b(?:parser|diagnostic|rawSynthesisPreview|json_schema|usedFallback|synthesisFallbackUsed)\b[^。；;\n]*[。；;]?\s*/gi, "")
@@ -99,6 +107,21 @@ function joinLines(...values: Array<string[] | string | null | undefined>): stri
     .map((line) => localizeV3Narrative(line))
     .filter(Boolean);
   return lines.length > 0 ? lines.join("\n") : null;
+}
+
+// P1-4 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): the v3
+// backend sends the SAME risk content in up to three shapes at once —
+// `risk` (a single "; "-joined merged sentence), `risks` / `riskFactors`
+// (the identical points as an array). Passing all of them into joinLines()
+// rendered the merged sentence followed by every point again individually —
+// the same text twice on every card. Pick the first non-empty representation
+// instead of concatenating every alias.
+function firstNonEmptyRiskSource(...values: Array<string[] | string | null | undefined>): string[] | string | null {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value;
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return null;
 }
 
 function sumScores(scores: SubScores): number | null {
@@ -314,7 +337,7 @@ export function mapV3ItemToStockRecCard(
     },
     why_buy: joinLines(item.why_buy, item.rationale),
     why_not_buy: joinLines(item.why_not_buy),
-    risk: joinLines(item.risk, item.risks, item.riskFactors, item.why_not_buy),
+    risk: joinLines(firstNonEmptyRiskSource(item.risks, item.riskFactors, item.risk, item.why_not_buy)),
     source: item.source ?? null,
     sourceTrail: deriveSourceTrail(item, data),
     sourceState: deriveItemSourceState(item, data),

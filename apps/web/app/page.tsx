@@ -58,6 +58,7 @@ import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNe
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
 import { getTrackRecordNav, type TrackRecordNavSummary } from "@/lib/fauto-sim-api";
+import { humanizeEndpointLabel, MISSING_COMPANY_NAME_LABEL } from "@/lib/ui-vocab";
 import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
 import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
@@ -1235,11 +1236,17 @@ function buildMarketWideRowsFromHeatmap(heatmap: HeatTile[]): TwseIndustryHeatma
     .sort((left, right) => right.stockCount - left.stockCount || Math.abs(right.avgChangePct) - Math.abs(left.avgChangePct));
 }
 
-function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): MarketIndexDisplay {
+function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>, nowDate: Date = new Date()): MarketIndexDisplay {
   const data = loadStateData(feed);
   const kgi = data?.kgiOverview?.taiex ?? null;
   if (kgi && finite(kgi.value) !== null) {
     const stale = isStaleTimestamp(kgi.ts, data?.kgiOverview?.staleAfterSec ?? 60);
+    // P1-11 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): outside
+    // KGI's gateway window, this tick is ALWAYS stale by design (no live feed
+    // is running) — "資料更新中" reads as "something is broken/refreshing right
+    // now", which is misleading at 22:33 at night. Off-hours it's an honest
+    // snapshot, not a stuck refresh.
+    const offHours = isKgiGatewayScheduledOff(nowDate);
     return {
       sym: "TAIEX",
       name: "加權指數",
@@ -1247,7 +1254,7 @@ function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market
       chg: finite(kgi.change),
       pct: finite(kgi.changePct),
       updatedAt: kgi.ts,
-      label: stale ? "資料更新中" : "即時",
+      label: stale ? (offHours ? "休市快照" : "資料更新中") : "即時",
       source: stale ? "fallback" : "realtime",
     };
   }
@@ -1485,13 +1492,36 @@ function hasMarketOverviewData(value: MarketDataOverview | null): boolean {
   );
 }
 
-function marketCoverageText(market: LoadState<MarketDataOverview | null>) {
+type MarketCoverageDisplay = { value: string; sub: string; muted: boolean };
+
+// P1-11 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): "0 / 1,000"
+// during closed-market hours reads as broken ("0 可用報價"), but 0 fresh ticks
+// is the CORRECT, expected state when KGI isn't streaming — the pool of 1,000
+// monitored tickers is still real. Off-hours, relabel as an honest "休市快照"
+// instead of implying a live feed that should have data but doesn't.
+function marketCoverageText(market: LoadState<MarketDataOverview | null>, isOffHours: boolean): MarketCoverageDisplay {
   const quoteTotal = market.data?.quotes.total ?? 0;
+  const freshTotal = market.data?.quotes.fresh ?? 0;
   if (quoteTotal > 0) {
-    return `${formatNumber(market.data?.quotes.fresh)} / ${formatNumber(quoteTotal)}`;
+    if (freshTotal === 0 && isOffHours) {
+      return {
+        value: `休市快照 · ${formatNumber(quoteTotal)} 檔`,
+        sub: "休市中無即時報價；下一交易日開盤自動恢復",
+        muted: true,
+      };
+    }
+    return {
+      value: `${formatNumber(freshTotal)} / ${formatNumber(quoteTotal)}`,
+      sub: "可用報價 / 監看股票",
+      muted: false,
+    };
   }
   const dailyTotal = market.data?.marketContext.heatmap.length ?? 0;
-  return dailyTotal > 0 ? `${formatNumber(dailyTotal)} 檔` : "0 檔";
+  return {
+    value: dailyTotal > 0 ? `${formatNumber(dailyTotal)} 檔` : "0 檔",
+    sub: "FinMind 官方日資料 / 公司池",
+    muted: dailyTotal === 0,
+  };
 }
 
 function buildTapeQuotes(realtimeMarket: LoadState<RealtimeMarketDashboard | null>, market: LoadState<MarketDataOverview | null>): TapeQuote[] {
@@ -1818,8 +1848,10 @@ function HeroPanel({
     chg: null,
     pct: null,
   };
-  const twii = readMarketIndex(realtimeMarket, market);
+  const nowDate = new Date(now);
+  const twii = readMarketIndex(realtimeMarket, market, nowDate);
   const breadth = readMarketBreadth(realtimeMarket, market, actualHeatmap);
+  const coverage = marketCoverageText(market, isKgiGatewayScheduledOff(nowDate));
   const indexReady = twii.price !== null || legacyTwii.price !== null;
   const marketReady = indexReady && (actualHeatmap.length > 0 || breadth.total > 0);
   const fallbackUp = actualHeatmap.filter((item) => (item.pct ?? 0) > 0).length;
@@ -1878,7 +1910,7 @@ function HeroPanel({
       {/* 首頁 IA 審計 A 案 TRIM #6：4 KPI 中「重大訊息/AI簡報/交易環境」分別與 #8 AI 推薦板／
           #13 簡報摘要／#14 券商連線列重複，只留「市場覆蓋」——其餘資訊在各自區塊看得到。 */}
       <div className="tac-hero-kpis">
-        <Metric label="市場覆蓋" value={marketCoverageText(market)} sub={(market.data?.quotes.total ?? 0) > 0 ? "可用報價 / 監看股票" : "FinMind 官方日資料 / 公司池"} tone={market.state === "LIVE" ? "live" : "empty"} />
+        <Metric label="市場覆蓋" value={coverage.value} sub={coverage.sub} tone={coverage.muted ? "empty" : (market.state === "LIVE" ? "live" : "empty")} />
       </div>
     </section>
   );
@@ -1996,14 +2028,20 @@ type MoverRow = {
   volume: number | null;
 };
 
-function marketNameFromSymbol(symbol: string) {
-  return symbol;
-}
-
 function leaderToMover(row: MarketDataOverviewLeader): MoverRow {
+  // P1-12 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): a
+  // missing company name used to render as a repeated ticker symbol (e.g.
+  // "9110 9110"), which reads as duplicated/broken data. Verified against
+  // live prod (2026-07-11): the backend doesn't send `name: null` here, it
+  // sends `name` populated with the ticker symbol itself as its own
+  // fallback — so this has to be caught by comparing against the symbol,
+  // not just a null check. Show an honest "name pending" label instead of
+  // masquerading the code as a name either way.
+  const trimmedName = row.name?.trim();
+  const hasRealName = Boolean(trimmedName) && trimmedName !== row.symbol.trim();
   return {
     symbol: row.symbol,
-    name: row.name ?? marketNameFromSymbol(row.symbol),
+    name: hasRealName ? trimmedName! : MISSING_COMPANY_NAME_LABEL,
     last: row.last,
     changePct: row.changePct ?? null,
     volume: row.volume ?? null,
@@ -2373,13 +2411,13 @@ function MarketIntelEmptyState({ intel }: { intel: LoadState<MarketIntelDashboar
       title: "AI 精選新聞",
       state: staleLabel ? "待更新" : "待資料",
       body: staleLabel
-        ? `已查 ${source.newsEndpoint}，${staleLabel}。`
-        : `已查 ${source.newsEndpoint}，目前沒有可呈現項目。`,
+        ? `已查${humanizeEndpointLabel(source.newsEndpoint)}，${staleLabel}。`
+        : `已查${humanizeEndpointLabel(source.newsEndpoint)}，目前沒有可呈現項目。`,
     },
     {
       title: "官方重大訊息",
       state: announcementSourceLabel(source.announcementsSource),
-      body: `${source.announcementsEndpoint} 目前沒有市場級官方公告；不以一般新聞補假公告。`,
+      body: `${humanizeEndpointLabel(source.announcementsEndpoint)}目前沒有市場級官方公告；不以一般新聞補假公告。`,
     },
     {
       title: "下一步",
@@ -2545,7 +2583,7 @@ function MarketIntelPanel({ intel }: { intel: LoadState<MarketIntelDashboard> })
         ))}
       </div>
       <div className="tac-intel-foot">
-        <span>{source.newsAiCallSuccess === false ? "AI call 未成功；顯示正式回傳狀態" : `${source.newsEndpoint} · input ${formatNumber(source.newsInputRows)} 筆`}</span>
+        <span>{source.newsAiCallSuccess === false ? "AI 精選未成功；顯示正式回傳狀態" : `${humanizeEndpointLabel(source.newsEndpoint)} · 讀取 ${formatNumber(source.newsInputRows)} 筆`}</span>
         <span>{staleLabel ? `待更新：${staleLabel}` : intel.data.failures > 0 ? `${intel.data.failures} 路徑查詢失敗` : "來源路徑可讀"}</span>
       </div>
     </Panel>

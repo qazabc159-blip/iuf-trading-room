@@ -461,7 +461,7 @@ export default async function SignalsPage() {
       code="08"
       title="訊號證據"
       sub="訊號流"
-      note="訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。"
+      note="訊號證據 / 正式訊號資料；連結主題與公司，不顯示假訊號。本頁為 AI 推薦頁「訊號中心」子頁，主要入口在 AI 推薦。"
     >
       <style>{SIGNALS_CSS}</style>
 
@@ -549,6 +549,9 @@ export default async function SignalsPage() {
               <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
                 正式訊號需通過來源審核才會進入此流；等待背景服務掃描後產出。
               </div>
+              <div style={{ marginTop: 14 }}>
+                <Link href="/ai-recommendations" className="mini-button">前往 AI 推薦</Link>
+              </div>
             </div>
           </div>
         )}
@@ -563,6 +566,9 @@ export default async function SignalsPage() {
               <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
                 訊號資料目前無法讀取。系統持續嘗試重連；請稍候重新整理。
               </div>
+              <div style={{ marginTop: 14 }}>
+                <Link href="/ai-recommendations" className="mini-button">前往 AI 推薦</Link>
+              </div>
             </div>
           </div>
         )}
@@ -576,6 +582,9 @@ export default async function SignalsPage() {
               <div style={{ fontSize: 15, fontWeight: 600, color: "#c6d0de", marginBottom: 6 }}>無可判讀訊號</div>
               <div style={{ fontSize: 13, color: "#566276", lineHeight: 1.6 }}>
                 驗證資料已收納，不放進交易戰情；等待下一批訊號更新。
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <Link href="/ai-recommendations" className="mini-button">前往 AI 推薦</Link>
               </div>
             </div>
           </div>

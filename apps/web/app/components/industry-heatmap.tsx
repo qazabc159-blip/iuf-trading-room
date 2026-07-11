@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { formatSectorChipCount } from "./industry-heatmap-chip";
+
 export type IndustryHeatmapTile = {
   symbol: string;
   name: string;
@@ -59,6 +61,13 @@ type PreparedTile = IndustryHeatmapTile & {
 type SectorOption = SectorDefinition & {
   count: number;
   availableCount: number;
+  /** Size of this tab's own fixed representative candidate pool (e.g. 15 per
+   * sector, 40 for "全部"/核心觀察池). Each tab's pool is an independently
+   * curated list — NOT a partition of the other tabs — so per-tab counts do
+   * not sum to the "全部" total. Showing count/target makes that explicit
+   * instead of a bare number that looks like a fake/inconsistent count
+   * (P1-3, reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md). */
+  target: number;
   avgPct: number | null;
   hasData: boolean;
 };
@@ -667,6 +676,7 @@ function buildOptions(prepared: PreparedTile[]): SectorOption[] {
       ...sector,
       count: primaryRows.length,
       availableCount: rowsWithData.length,
+      target: representativeSymbolsForSector(sector.key).length,
       avgPct,
       hasData: primaryRows.length > 0,
     };
@@ -975,7 +985,7 @@ export function IndustryHeatmap({
             key={option.key}
           >
             <b>{option.label}</b>
-            <span>{option.count} 檔</span>
+            <span>{formatSectorChipCount(option.availableCount, option.target)}</span>
           </button>
         ))}
       </div>

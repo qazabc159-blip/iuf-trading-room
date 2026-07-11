@@ -89,7 +89,7 @@ export default async function RunsPage() {
 
   return (
     <PageFrame code="05" title="策略批次" sub="候選批次、資料品質與紙上交易入口"
-      note="這裡只顯示研究狀態與候選理由；未驗證績效不展示，也不提供買賣建議。">
+      note="這裡只顯示研究狀態與候選理由；未驗證績效不展示，也不提供買賣建議。本頁為 AI 推薦頁子頁，主要入口在 AI 推薦。">
       <div className="parity-kpi-bar">
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">研究狀態</span>

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { formatSectorChipCount } from "./industry-heatmap-chip";
+
 const sourcePath = fileURLToPath(new URL("./industry-heatmap.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
@@ -61,5 +63,24 @@ describe("industry heatmap representative pool source gate", () => {
     expect(source).toContain('|| tile.labelMode === "small"');
     expect(source).not.toContain('tile.labelMode === "small" ? null');
     expect(source).toContain('<small className="tile-name">{tile.name}</small>');
+  });
+
+  // P1-3 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): each sector
+  // tab's chip used to show a bare count (e.g. "半導體業 13 檔") drawn from that
+  // tab's own independent 15-symbol representative pool, while "全部" showed a
+  // count from a completely different 40-symbol pool. Summing the per-sector
+  // numbers never equals the "全部" total by design, which read as a fake/
+  // inconsistent count. Fix: show "available/pool-size" so the denominator is
+  // explicit and the numbers are honest without claiming to be a partition.
+  it("formats sector chip counts as available/pool-size, not a bare number", () => {
+    expect(formatSectorChipCount(13, 15)).toBe("13/15 檔");
+    expect(formatSectorChipCount(38, 40)).toBe("38/40 檔");
+    expect(formatSectorChipCount(0, 15)).toBe("0/15 檔");
+    expect(formatSectorChipCount(5, 0)).toBe("5 檔");
+  });
+
+  it("wires the sector tab chip label through formatSectorChipCount, not a bare option.count", () => {
+    expect(source).toContain("formatSectorChipCount(option.availableCount, option.target)");
+    expect(source).not.toContain("<span>{option.count} 檔</span>");
   });
 });
