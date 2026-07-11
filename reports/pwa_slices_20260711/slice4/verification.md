@@ -21,10 +21,10 @@ The response proves that `R08_AI_BRIEF_PUBLISHED` from the selected OpenAlice ev
 
 ```text
 pnpm test
-tests 1645 | pass 1644 | fail 0 | skipped 1
+tests 1649 | pass 1648 | fail 0 | skipped 1
 
 pnpm --filter @iuf-trading-room/web test
-Test Files 69 passed | Tests 564 passed
+Test Files 69 passed | Tests 573 passed
 
 pnpm typecheck
 Tasks 15 successful, 15 total
