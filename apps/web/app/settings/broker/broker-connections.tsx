@@ -127,6 +127,18 @@ function gatewayBadge(status: GatewayStatus, connection: Connection, deadline: s
   };
 }
 
+// P1-13 (product critique 2026-07-10): a "gateway-lifecycle-test" test
+// account was found sitting alongside real broker connections on this
+// customer-facing page. Display-layer filter only — the underlying prod row
+// is a separate cleanup (flagged as a follow-up, not deleted here). Kept
+// conservative on purpose: only hides names that are unambiguously test
+// fixtures, so a real account can never be accidentally hidden.
+const TEST_ACCOUNT_NAME_MARKERS = ["lifecycle-test", "smoke-test", "e2e-test", "qa-test"];
+function isTestBrokerAccount(c: Connection): boolean {
+  const haystack = `${c.accountRef} ${c.accountLabel} ${c.displayName}`.toLowerCase();
+  return TEST_ACCOUNT_NAME_MARKERS.some((marker) => haystack.includes(marker));
+}
+
 function removeEntry<T>(prev: Record<string, T>, id: string) {
   const next = { ...prev };
   delete next[id];
@@ -236,6 +248,7 @@ export function BrokerConnections() {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const busy = busyAction !== null;
+  const visibleConns = conns?.filter((c) => !isTestBrokerAccount(c)) ?? null;
 
   const load = useCallback(async () => {
     try {
@@ -383,12 +396,12 @@ export function BrokerConnections() {
       </div>
 
       <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
-        {conns === null ? (
+        {visibleConns === null ? (
           <DataStateBadge state="empty" label="讀取中..." testId="broker-connections-loading-badge" />
-        ) : conns.length === 0 ? (
+        ) : visibleConns.length === 0 ? (
           <div style={{ color: "var(--fg-3, #8a93a3)", fontSize: 13 }}>尚未連線任何券商。在下方加入一個連線。</div>
         ) : (
-          conns.map((c) => {
+          visibleConns.map((c) => {
             const status = normalizeGatewayStatus(c.gatewayStatus);
             const token = pairingTokens[c.id];
             const badge = gatewayBadge(status, c, pairingDeadlines[c.id], nowMs);

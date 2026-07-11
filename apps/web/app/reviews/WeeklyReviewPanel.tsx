@@ -13,6 +13,7 @@ import {
   formatSignedFractionPct,
   signTone,
   fAutoDataSourceLabel,
+  fAutoBrokerConfirmed,
   briefDeliverySummary,
 } from "@/lib/weekly-review-format";
 
@@ -122,6 +123,21 @@ const WEEKLY_REVIEW_CSS = `
   font: 500 11px/1.6 var(--sans-tc);
   color: var(--tac-fg-3, rgba(145,160,181,0.7));
 }
+._wrv-note-warn {
+  color: #ff6b77;
+}
+._wrv-unconfirmed-badge {
+  display: inline-block;
+  font: 800 9px/1 var(--mono);
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  margin-left: 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(230,57,70,0.35);
+  color: #ff6b77;
+  background: rgba(230,57,70,0.08);
+  vertical-align: middle;
+}
 ._wrv-rec-sub {
   font: 700 10px/1.3 var(--sans-tc);
   letter-spacing: 0.04em;
@@ -203,6 +219,11 @@ function TaiexCard({ taiex }: { taiex: WeeklyReview["taiex"] }) {
 }
 
 function FAutoCard({ fAuto }: { fAuto: WeeklyReview["f_auto"] }) {
+  // P1-7 (product critique 2026-07-10): only data_source === "kgi_gateway"
+  // means the broker gateway itself confirmed these holdings. Any other
+  // source reconstructs positions from our own order records — the P&L
+  // below has never been reconciled against a broker report.
+  const brokerConfirmed = fAuto.available ? fAutoBrokerConfirmed(fAuto.data_source) : true;
   return (
     <div className="_wrv-card">
       <div className="_wrv-card-title">
@@ -221,7 +242,10 @@ function FAutoCard({ fAuto }: { fAuto: WeeklyReview["f_auto"] }) {
               <span className="_wrv-kv-value">{fAuto.positions_count}</span>
             </div>
             <div>
-              <span className="_wrv-kv-label">未實現損益</span>
+              <span className="_wrv-kv-label">
+                未實現損益
+                {!brokerConfirmed && <span className="_wrv-unconfirmed-badge">未經券商回報對帳</span>}
+              </span>
               <span className={`_wrv-kv-value ${toneClass(fAuto.total_unrealized_pnl_twd)}`}>
                 {formatTwdSigned(fAuto.total_unrealized_pnl_twd)}
               </span>
@@ -237,10 +261,11 @@ function FAutoCard({ fAuto }: { fAuto: WeeklyReview["f_auto"] }) {
               <span className="_wrv-kv-value">NT${formatTwdPlain(fAuto.capital_twd)}</span>
             </div>
           </div>
-          <div className="_wrv-note">
+          <div className={`_wrv-note${brokerConfirmed ? "" : " _wrv-note-warn"}`}>
             資料來源：{fAutoDataSourceLabel(fAuto.data_source)}
             {fAuto.positions_date ? `（${formatMonthDay(fAuto.positions_date)} 部位）` : ""}
             。此為模擬倉位績效，不代表實際下單結果。
+            {!brokerConfirmed && "上述損益依內部委託紀錄重建，尚未經券商回報對帳，數字可能與實際成交有落差。"}
           </div>
         </>
       )}

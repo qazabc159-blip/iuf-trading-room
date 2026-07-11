@@ -65,7 +65,7 @@ export function KgiConnectionLight({ refreshTick = 0 }: { refreshTick?: number }
       {state.phase === "live" && state.data.last_sim_order_status && (
         <div className="_fauto-conn-last-order">
           <span className="_fauto-conn-smoke-label">最近委託狀態</span>
-          <span className="_fauto-conn-last-order-val">{state.data.last_sim_order_status}</span>
+          <span className="_fauto-conn-last-order-val">{simOrderStatusLabel(state.data.last_sim_order_status)}</span>
         </div>
       )}
     </div>
@@ -160,6 +160,17 @@ function getConnectionSummary(data: KgiStatus): {
     badgeClass: "_fauto-conn-badge-red",
     detail: "交易時段內沒有可用的 KGI SIM gateway 狀態 — 非排程關機，需檢查 EC2 與 gateway 服務。Paper 模式不受影響。",
   };
+}
+
+// P1-1 (product critique 2026-07-10): backend last_sim_order_status is a raw
+// pending|pass|fail enum (see GET /api/v1/kgi/status) — was rendered
+// verbatim. Never leak an unrecognized value either; fall back to honest
+// "狀態同步中" rather than showing raw text.
+function simOrderStatusLabel(status: string): string {
+  if (status === "pending") return "等待中";
+  if (status === "pass") return "成功";
+  if (status === "fail") return "失敗";
+  return "狀態同步中";
 }
 
 /** True when Taipei time is outside the gateway's weekday 08:20–14:10 run window. */

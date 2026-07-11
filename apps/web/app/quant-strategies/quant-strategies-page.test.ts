@@ -16,13 +16,22 @@ describe("quant strategies S1-only product surface", () => {
   });
 
   it("keeps the page honest about SIM-only execution", () => {
-    expect(pageSource).toContain("SIM-only guard");
+    // P1-1 (product critique 2026-07-10): "SIM-only guard" was a raw
+    // engineering label leaked straight into the UI — translated to Chinese.
+    expect(pageSource).toContain("僅模擬資金防呆");
+    expect(pageSource).not.toContain("SIM-only guard");
+    expect(pageSource).not.toContain("SIM-only / real order disabled");
     expect(pageSource).toContain("不會開啟真實委託");
     expect(pageSource).toContain("開啟 F-AUTO 持倉與損益");
     expect(pageSource).toContain('href="/ops/f-auto"');
     expect(pageSource).not.toContain("LAB SANCTIONED SNAPSHOT");
     expect(pageSource).not.toContain("MAIN execution rank buffer");
     expect(pageSource).not.toContain("Continuous liquidity RS");
+  });
+
+  it("translates the dataState readiness enum instead of rendering it raw (P1-1)", () => {
+    expect(pageSource).toContain("dataStateLabel(strategy.current.dataState)");
+    expect(pageSource).not.toContain("{strategy.current.dataState}");
   });
 
   it("does not ship hardcoded performance or placeholder holdings", () => {

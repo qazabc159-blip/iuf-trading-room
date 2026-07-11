@@ -77,6 +77,20 @@ export function fAutoDataSourceLabel(dataSource: string | null): string {
   return "資料來源待確認";
 }
 
+/**
+ * P1-7 (product critique 2026-07-10): "kgi_gateway" is the only data_source
+ * value that means the broker gateway itself confirmed these holdings — every
+ * other value (audit_log_rebuild / audit_log_fallback / order_file_fallback /
+ * orders_submitted_audit_rebuilt) reconstructs positions from our own order
+ * records, not a broker trade/deal report. Any P&L shown against a
+ * non-kgi_gateway source has never been reconciled against a broker report
+ * and must carry an explicit "未經券商回報對帳" disclaimer wherever it's
+ * displayed, not just a quiet source footnote.
+ */
+export function fAutoBrokerConfirmed(dataSource: string | null): boolean {
+  return dataSource === "kgi_gateway";
+}
+
 /** "N/M 個交易日" delivery summary for the brief section. */
 export function briefDeliverySummary(publishedCount: number, tradingDaysCount: number): string {
   return `${publishedCount}/${tradingDaysCount} 個交易日`;

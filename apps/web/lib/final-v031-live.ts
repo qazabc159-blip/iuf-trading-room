@@ -1400,6 +1400,45 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     };
   }
 
+  // P1-9 (product critique 2026-07-10): 自選 rows other than the currently
+  // selected symbol were hard-coded price:null/name:item.name||item.symbol —
+  // by construction, never even attempted a fetch, which is why user-added
+  // symbols like 2454/4971 showed no price (and no name, when the add-box
+  // saved them without one — POST /watchlist only sends {symbol}). Every
+  // 自選 symbol goes through the SAME fallback-rich per-symbol endpoint
+  // already used for the selected symbol (KGI → TWSE MIS intraday → TWSE
+  // EOD close, see GET /companies/:id/quote/realtime), not a second data
+  // source — reusing the existing endpoint rather than inventing a new one.
+  // Capped and best-effort: a symbol that still can't resolve gets an
+  // explicit "查無報價" / "查無名稱" reason instead of a silent blank dash.
+  const WATCHLIST_QUOTE_FETCH_CAP = 20;
+  async function resolveWatchlistExtras(symbols, selectedSymbol) {
+    const out = {};
+    const targets = symbols
+      .filter((sym) => !sameSym(sym, selectedSymbol))
+      .filter((sym, index, arr) => arr.findIndex((other) => sameSym(other, sym)) === index)
+      .slice(0, WATCHLIST_QUOTE_FETCH_CAP);
+    await Promise.all(targets.map(async (sym) => {
+      try {
+        const companies = await apiGet("/api/v1/companies?ticker=" + encodeURIComponent(sym));
+        const co = Array.isArray(companies) ? companies[0] : null;
+        if (!co) { out[sym] = { name: null, price: null, changePct: null }; return; }
+        let quotePrice = null;
+        let quoteChangePct = null;
+        try {
+          const q = await apiGet("/api/v1/companies/" + encodeURIComponent(co.id) + "/quote/realtime");
+          quotePrice = firstNum(q?.lastPrice);
+          const prev = firstNum(q?.prevClose, q?.previousClose);
+          quoteChangePct = quotePrice !== null && prev ? Number((((quotePrice - prev) / prev) * 100).toFixed(2)) : firstNum(q?.changePct);
+        } catch (_quoteErr) { /* name still resolved below even if quote fails */ }
+        out[sym] = { name: co.name || null, price: quotePrice, changePct: quoteChangePct };
+      } catch (_err) {
+        out[sym] = { name: null, price: null, changePct: null };
+      }
+    }));
+    return out;
+  }
+
   async function clientPaperPayload() {
     const [healthResult, portfolioRawResult, fillsResult, ordersResult, utaOrdersResult, kgiResult, kgiStatusResult, ideasResult, fautoResult, watchlistResult] = await Promise.all([
       soft(apiGet("/api/v1/paper/health")),
@@ -1499,7 +1538,22 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // User-managed watchlist drives the desk's symbol universe (was a hardcoded 8).
     // A brand-new user with an empty list gets 2330 as a starting seed.
     const myWatchlistSeed = myWatchlist.length ? myWatchlist : [{ symbol: "2330", name: "台積電" }];
-    const defaultWatchlist = myWatchlistSeed.map((item) => ({ symbol:item.symbol, name:item.name || item.symbol, meta:"自選", price:sameSym(item.symbol, selectedSymbol) ? lastPrice : null, changePct:sameSym(item.symbol, selectedSymbol) ? changePct : null }));
+    const watchlistExtras = await resolveWatchlistExtras(myWatchlistSeed.map((item) => item.symbol), selectedSymbol);
+    const defaultWatchlist = myWatchlistSeed.map((item) => {
+      if (sameSym(item.symbol, selectedSymbol)) {
+        return { symbol:item.symbol, name:item.name || company?.name || item.symbol, meta:"自選", price:lastPrice, changePct };
+      }
+      const extra = watchlistExtras[item.symbol] || {};
+      const resolvedName = item.name || extra.name || null;
+      const hasPrice = extra.price !== null && extra.price !== undefined;
+      return {
+        symbol:item.symbol,
+        name: resolvedName || item.symbol,
+        meta: !resolvedName ? "自選 · 查無名稱" : (hasPrice ? "自選" : "自選 · 查無報價"),
+        price: hasPrice ? extra.price : null,
+        changePct: hasPrice ? extra.changePct : null
+      };
+    });
     const prefillWatch = prefillMatchesSelected ? [{ symbol:selectedSymbol, name:company?.name || selectedSymbol, meta:prefill.recommendationId ? paperPrefillSourceLabel(prefill.source) + " · " + prefill.recommendationId : paperPrefillSourceLabel(prefill.source), price:lastPrice, changePct }] : [];
     const watchlist = prefillWatch.concat(portfolio.map((pos) => ({ symbol:pos.symbol, name:pos.symbol, meta:String(pos.netQtyShares || 0) + " 股 · " + String(pos.fillCount || 0) + " 筆成交", price:pos.symbol === selectedSymbol ? lastPrice : pos.avgCostPerShare, changePct:pos.symbol === selectedSymbol ? changePct : null })))
       .concat(ideas.map((idea) => ({ symbol:idea.symbol, name:idea.companyName, meta:idea.status + " · " + idea.signalCount + " 訊號", price:null, changePct:null })))
@@ -1826,6 +1880,38 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       live = Object.assign({}, live, { baseCapitalUnauthorized: true });
       window.__IUF_FINAL_V031_LIVE__ = live;
       hydratePaper();
+    }
+  }
+
+  // P1-9 (product critique 2026-07-10 — root cause of "handoff 進來 自選 歸 0"):
+  // fastPaperShell (route.ts) is ALWAYS on for this screen, and its SSR
+  // placeholder has no myWatchlist at all — it's undefined until
+  // clientPaperPayload() lands. That full payload runs the same slow
+  // ~9-call chain (plus the selected-symbol company/quote/OHLCV waterfall)
+  // that gated capital before P0-1. A handoff click lands the operator on
+  // this exact placeholder, so "自選清單是空的" is not handoff-specific
+  // behavior — it is the general first-paint state, just most visible right
+  // after a CTA that promised an instant desk. GET /api/v1/watchlist itself
+  // is one fast query; fetch it standalone (same pattern as
+  // fetchCapitalFast()) so the operator's real list (symbols/names) never
+  // reads as empty while the rest of the desk is still loading. Purely
+  // additive — refreshClientLive() still lands full per-row prices via
+  // resolveWatchlistExtras() and overwrites this with richer data.
+  async function fetchWatchlistFast() {
+    if (live.screen !== "paper-trading-room") return;
+    if (Array.isArray(live.myWatchlist) && live.myWatchlist.length) return; // full refresh already landed
+    try {
+      const rows = await apiGet("/api/v1/watchlist");
+      if (Array.isArray(live.myWatchlist) && live.myWatchlist.length) return; // full refresh landed meanwhile
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) return; // genuinely empty watchlist — let the real empty-state render
+      const fast = list.map((item) => ({ symbol: item.symbol, name: item.name || item.symbol, meta: "自選 · 報價載入中", price: null, changePct: null }));
+      live = Object.assign({}, live, { myWatchlist: fast });
+      window.__IUF_FINAL_V031_LIVE__ = live;
+      hydratePaper();
+    } catch (_err) {
+      // still loading / transient — leave the SSR placeholder; the full
+      // refresh (clientPaperPayload) retries /watchlist on its own.
     }
   }
 
@@ -2346,7 +2432,11 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     setText(".symhead .nm", selected.name || selected.symbol || "--");
     const pv = $(".symhead .price .v"); if (pv) { pv.textContent = price(selected.price); pv.className = "v " + tone; }
     const pd = $(".symhead .price .d"); if (pd) {
-      const state = selected.quoteState && selected.quoteState !== "LIVE" ? String(selected.quoteState) + " " : "";
+      // P1-1 (product critique 2026-07-10): was rendering the raw
+      // quoteState enum ("STALE"/"NO_DATA"/"CLOSE"...) verbatim as a text
+      // prefix in the trading-room price header.
+      const quoteStateLabel = { STALE: "延遲", NO_DATA: "無報價", CLOSE: "收盤", LOADING: "載入中" };
+      const state = selected.quoteState && selected.quoteState !== "LIVE" ? (quoteStateLabel[selected.quoteState] || "") + " " : "";
       pd.textContent = chg == null ? state + "等待即時價" : state + (Number(chg) >= 0 ? "▲ +" : "▼ -") + Math.abs(Number(chg)).toFixed(2) + "  " + (Number(pct) >= 0 ? "+" : "-") + Math.abs(Number(pct || 0)).toFixed(2) + "%";
       pd.className = "d " + tone;
     }
@@ -2481,12 +2571,32 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     }
   }
 
+  // P1-1 (product critique 2026-07-10): mirrors isGatewayScheduledOff() in
+  // app/ops/f-auto/KgiConnectionLight.tsx — inlined here for the same
+  // no-bundler-import-access reason as the other vocab tables in this file.
+  // The trading room used to unconditionally call every "can't reach KGI
+  // gateway" moment a connection fault ("連線中斷"/"連不到"), even during the
+  // EC2 gateway's normal weekday 08:20-14:10 TST run window — the exact
+  // scheduled-shutdown-looks-like-an-incident bug F-AUTO already fixed
+  // (6/10 audit). Unify to F-AUTO's wording: outside the window is honestly
+  // "排程關機中，屬正常", not a fault.
+  function isKgiGatewayScheduledOff() {
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const day = now.getUTCDay();
+    if (day === 0 || day === 6) return true;
+    const hhmm = now.getUTCHours() * 100 + now.getUTCMinutes();
+    return hhmm < 820 || hhmm >= 1410;
+  }
+  const KGI_GATEWAY_SCHEDULED_OFF_DETAIL = "EC2 gateway 依排程平日 08:20 開機、14:10 關機；目前在關機時段，屬正常狀態，下個交易日早上自動恢復。";
   const kgiQuoteAuth = () => live.kgiStatus?.gateway_quote_auth || null;
   const kgiQuoteBlockedReason = (label) => {
     const auth = kgiQuoteAuth();
     const code = String(auth?.errorCode || "");
     const state = String(auth?.state || "");
-    if (code === "KGI_GATEWAY_UNREACHABLE" || state === "gateway_unreachable") return "KGI gateway 目前連不到；" + label + "暫停，不補假資料。";
+    if (code === "KGI_GATEWAY_UNREACHABLE" || state === "gateway_unreachable") {
+      if (isKgiGatewayScheduledOff()) return KGI_GATEWAY_SCHEDULED_OFF_DETAIL + " " + label + "暫停，不補假資料。";
+      return "KGI gateway 目前連不到；" + label + "暫停，不補假資料。";
+    }
     if (code === "KGI_QUOTE_AUTH_UNAVAILABLE") return "KGI SIM 已登入，但凱基沒有提供 SIM 行情權限/token；" + label + "暫停，不補假資料。";
     if (code === "QUOTE_DISABLED") return "KGI 唯讀行情目前停用；" + label + "暫停，不補假資料。";
     if (code === "KGI_NOT_LOGGED_IN") return "KGI gateway 尚未登入；" + label + "暫停，不補假資料。";
@@ -2539,15 +2649,23 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const status = live.kgiStatus || {};
     const positions = live.kgi?.positions || [];
     const isGatewayUnreachable = String(auth?.errorCode || "") === "KGI_GATEWAY_UNREACHABLE" || String(auth?.state || "") === "gateway_unreachable";
+    // P1-1: same isKgiGatewayScheduledOff() unification as kgiQuoteBlockedReason()
+    // above — outside the EC2 gateway's 08:20-14:10 TST window this is the
+    // expected state, not "連線中斷".
+    const isGatewayScheduledOffNow = isGatewayUnreachable && isKgiGatewayScheduledOff();
     const isAuthUnavailable = String(auth?.errorCode || "") === "KGI_QUOTE_AUTH_UNAVAILABLE";
-    const title = isGatewayUnreachable
+    const title = isGatewayScheduledOffNow
+      ? "排程關機中"
+      : isGatewayUnreachable
       ? "KGI gateway 連線中斷"
       : isAuthUnavailable
       ? "KGI SIM 已登入，行情權限未開"
       : auth?.available
         ? "KGI 唯讀行情可用"
         : "KGI 唯讀狀態已同步";
-    const detail = isGatewayUnreachable
+    const detail = isGatewayScheduledOffNow
+      ? KGI_GATEWAY_SCHEDULED_OFF_DETAIL + " Paper 交易仍可用，KGI 五檔、逐筆與券商庫存讀取暫停。"
+      : isGatewayUnreachable
       ? "API 已確認目前連不到 KGI gateway 主機或 tunnel；Paper 交易仍可用，KGI 五檔、逐筆與券商庫存讀取暫停。"
       : isAuthUnavailable
       ? "目前可讀 gateway / 帳號狀態；即時五檔與逐筆因凱基未提供 SIM 行情 token 暫停，不會補假資料。"
@@ -2766,7 +2884,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         prefill.entry ? "進場 " + prefill.entry : null,
         prefill.stop ? "停損 " + prefill.stop : null,
         prefill.target ? "目標 " + prefill.target : null,
-        prefill.recommendationId ? "rec " + prefill.recommendationId : null
+        // P1-1 (product critique 2026-07-10): was "rec " + recommendationId,
+        // which doubled up on the ID's own "rec_" prefix ("rec rec_3707_...").
+        prefill.recommendationId ? "推薦編號 " + prefill.recommendationId : null
       ].filter(Boolean);
       box.innerHTML = '<div class="k">AI 推薦紙上單預覽</div><div class="v">'+esc(selected.symbol || prefill.symbol || "推薦標的")+' 已帶入交易室紙上單預覽；此區只建立平台模擬紀錄，不會建立券商委託。</div><div class="m">'+meta.map((item) => '<span>'+esc(item)+'</span>').join("")+'</div>';
     }
@@ -2971,11 +3091,18 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       // B3: gateway session is ephemeral (EC2 stops 14:10) — when it has nothing,
       // show the S1/F-AUTO holdings rebuilt from the durable audit chain instead
       // of an empty table, with the data source labeled honestly.
+      // P1-7 (product critique 2026-07-10): data_source === "kgi_gateway" is
+      // the only value that means the broker gateway confirmed these
+      // holdings — anything else is reconstructed from our own order
+      // records and has never been reconciled against a broker report. The
+      // 未實現損益 column right next to it must carry that disclaimer
+      // explicitly, not a quiet "重建(...)" tag alone.
       const fautoRows = !liveKgiRows && live.fauto && (live.fauto.positions || []).length
         ? (live.fauto.positions || []).map((pos) => {
             const mv = pos.last_price !== null ? Number(pos.shares || 0) * Number(pos.last_price || 0) : null;
-            const srcLabel = live.fauto.data_source === "kgi_gateway" ? "即時讀取" : "重建(" + esc(String(live.fauto.positions_date || "").slice(5)) + " 委託)";
-            return '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.shares)+' 股</td><td class="r">'+(pos.avg_cost > 0 ? price(pos.avg_cost) : "—")+'</td><td class="r px">'+(pos.last_price !== null ? price(pos.last_price) : "—")+'</td><td class="r">'+(mv !== null ? n(mv) : "—")+'</td><td class="r pnl '+(Number(pos.unrealized_pnl_twd || 0) >= 0 ? "up" : "dn")+'">'+(pos.unrealized_pnl_twd !== null ? n(pos.unrealized_pnl_twd) : "—")+'</td><td><span class="src kgi">'+srcLabel+'</span></td></tr>';
+            const brokerConfirmed = live.fauto.data_source === "kgi_gateway";
+            const srcLabel = brokerConfirmed ? "即時讀取" : "重建(" + esc(String(live.fauto.positions_date || "").slice(5)) + " 委託) · 未經券商回報對帳";
+            return '<tr><td class="sym">'+esc(pos.symbol)+'</td><td>'+esc(pos.symbol)+'</td><td class="r">'+n(pos.shares)+' 股</td><td class="r">'+(pos.avg_cost > 0 ? price(pos.avg_cost) : "—")+'</td><td class="r px">'+(pos.last_price !== null ? price(pos.last_price) : "—")+'</td><td class="r">'+(mv !== null ? n(mv) : "—")+'</td><td class="r pnl '+(Number(pos.unrealized_pnl_twd || 0) >= 0 ? "up" : "dn")+'">'+(pos.unrealized_pnl_twd !== null ? n(pos.unrealized_pnl_twd) : "—")+'</td><td><span class="src kgi'+(brokerConfirmed ? "" : " warn")+'">'+srcLabel+'</span></td></tr>';
           }).join("")
         : "";
       kgiBody.innerHTML = liveKgiRows || fautoRows || '<tr><td colspan="8">目前沒有可顯示的券商庫存讀取資料。</td></tr>';
@@ -2995,11 +3122,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         line.style.cssText = "grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)";
         summaryGrid.appendChild(line);
       }
+      // P1-7 (product critique 2026-07-10): same broker-confirmed check as
+      // fautoRows above — this strip is the 資金卡/F-AUTO 條 the critique
+      // flagged for silently showing reconstructed P&L as if it were dealt.
       const mv = f.total_market_value_twd;
-      const srcText = f.data_source === "kgi_gateway" ? "KGI 即時" : "audit 重建（" + esc(String(f.positions_date || "")) + " 進場）";
+      const brokerConfirmedSummary = f.data_source === "kgi_gateway";
+      const srcText = brokerConfirmedSummary ? "KGI 即時" : "audit 重建（" + esc(String(f.positions_date || "")) + " 進場）";
       line.innerHTML = 'F-AUTO 10M SIM　本金 <b style="color:var(--fg-1);font-weight:500">' + n(f.capital_twd) + '</b>　·　持倉 <b style="color:var(--fg-1);font-weight:500">' + String((f.positions || []).length) + '</b> 檔'
         + (mv !== null ? '　·　市值 <b style="color:var(--fg-1);font-weight:500">' + n(mv) + '</b>' : '')
-        + '　·　現金 <b style="color:var(--fg-1);font-weight:500">' + n(f.cash_residual_estimated_twd) + '</b>　·　來源 ' + srcText;
+        + '　·　現金 <b style="color:var(--fg-1);font-weight:500">' + n(f.cash_residual_estimated_twd) + '</b>　·　來源 ' + srcText
+        + (brokerConfirmedSummary ? '' : '　·　<b style="color:var(--bad);font-weight:700">未經券商回報對帳</b>');
     })();
     hydrateKgiReadinessNote();
     hydrateBrokerStrip();
@@ -3489,6 +3621,8 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   // capital/ticket section can unlock as soon as the fast portfolio call
   // lands, without waiting on the slower company/quote/OHLCV chain.
   if (live.screen === "paper-trading-room") fetchCapitalFast();
+  // P1-9: same decoupling for 自選 — see fetchWatchlistFast() above.
+  if (live.screen === "paper-trading-room") fetchWatchlistFast();
   refreshClientLive();
   if (live.screen === "paper-trading-room") {
     updatePaperQuoteQualityBadge("stream", { degraded: true });

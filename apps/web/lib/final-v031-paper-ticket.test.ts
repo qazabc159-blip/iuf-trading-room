@@ -832,4 +832,32 @@ describe("final-v031 paper ticket price gate", () => {
     expect(liveHydration).toContain("已平倉");
     expect(liveHydration).toContain("部分以成本估");
   });
+
+  it("P1-9 (product critique 2026-07-10): resolves a real name/price for every 自選 row through the same fallback-rich quote endpoint used for the selected symbol, not just the selected one", () => {
+    // 2454/4971-style dead rows: price:null/name:item.name||item.symbol was
+    // hard-coded for every non-selected watchlist symbol, by construction —
+    // never even attempted a fetch.
+    expect(liveHydration).toContain("async function resolveWatchlistExtras(symbols, selectedSymbol)");
+    expect(liveHydration).toContain('apiGet("/api/v1/companies?ticker=" + encodeURIComponent(sym))');
+    expect(liveHydration).toContain('apiGet("/api/v1/companies/" + encodeURIComponent(co.id) + "/quote/realtime")');
+    expect(liveHydration).toContain("const watchlistExtras = await resolveWatchlistExtras(myWatchlistSeed.map((item) => item.symbol), selectedSymbol);");
+    // Load failures are tagged with an explicit reason, not a silent dash.
+    expect(liveHydration).toContain('"自選 · 查無報價"');
+    expect(liveHydration).toContain('"自選 · 查無名稱"');
+  });
+
+  it("P1-9: decouples 自選 from the slow full clientPaperPayload chain (same fetchCapitalFast pattern) so handoff never shows an empty watchlist context", () => {
+    expect(liveHydration).toContain("async function fetchWatchlistFast()");
+    expect(liveHydration).toContain('const rows = await apiGet("/api/v1/watchlist");');
+    expect(liveHydration).toContain("if (live.screen === \"paper-trading-room\") fetchWatchlistFast();");
+    // Fired alongside (right after), not instead of, the full refresh.
+    expect(liveHydration).toContain('if (live.screen === "paper-trading-room") fetchCapitalFast();');
+    expect(liveHydration).toContain("// P1-9: same decoupling for 自選 — see fetchWatchlistFast() above.");
+  });
+
+  it("P1-7 (product critique 2026-07-10): tags F-AUTO holdings/summary strip with an explicit 未經券商回報對帳 disclaimer whenever data_source isn't a live broker gateway read", () => {
+    expect(liveHydration).toContain('const brokerConfirmed = live.fauto.data_source === "kgi_gateway";');
+    expect(liveHydration).toContain("未經券商回報對帳");
+    expect(liveHydration).toContain("const brokerConfirmedSummary = f.data_source === \"kgi_gateway\";");
+  });
 });

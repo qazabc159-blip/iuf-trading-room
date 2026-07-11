@@ -178,7 +178,13 @@ describe("hydrateQuantStrategy", () => {
     expect(strategy.current.asOf).toBe("2026-06-09");
     expect(strategy.current.status).toContain("50% 曝險");
     expect(strategy.current.primaryReadout).toContain("10,000,000 TWD");
-    expect(strategy.current.sourceLabel).toContain("audit_log");
+    // P1-1 (product critique 2026-07-10): sourceLabel must translate the raw
+    // basket.source enum instead of leaking it ("audit_log" -> "稽核紀錄").
+    expect(strategy.current.sourceLabel).toContain("稽核紀錄");
+    expect(strategy.current.sourceLabel).not.toContain("audit_log");
+    // primaryReadout must translate status.capitalSource too.
+    expect(strategy.current.primaryReadout).toContain("最新訂閱設定");
+    expect(strategy.current.primaryReadout).not.toContain("latest_subscription");
     expect(strategy.metrics.netReturnPct).toBe(400.89);
     expect(strategy.metrics.hitRatePct).toBeCloseTo(92.31);
     expect(strategy.metrics.maxDrawdownPct).toBeCloseTo(-10.51);

@@ -67,4 +67,17 @@ describe("broker settings boundary page", () => {
     expect(brokerSurfaceSource).toContain("本機連線程式");
     expect(brokerSurfaceSource).not.toMatch(/[�]|嚙|踐|蝣|銝|摰|瘝|甇|閮/);
   });
+
+  // P1-13 (product critique 2026-07-10): a "gateway-lifecycle-test" test
+  // account was found sitting alongside real broker connections on this
+  // customer-facing page. Display-layer filter only; prod row cleanup is a
+  // separate follow-up flagged for Elva, not done here.
+  it("filters obviously-test-named accounts out of the display layer", () => {
+    expect(brokerConnectionsSource).toContain("isTestBrokerAccount");
+    expect(brokerConnectionsSource).toContain("lifecycle-test");
+    expect(brokerConnectionsSource).toContain("visibleConns");
+    expect(brokerConnectionsSource).toContain("conns?.filter((c) => !isTestBrokerAccount(c))");
+    // Conservative: real accounts (no test marker) must still render.
+    expect(brokerConnectionsSource).not.toContain("conns.map((c) =>");
+  });
 });

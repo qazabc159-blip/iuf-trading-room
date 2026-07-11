@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isKgiTradingHours } from "@/lib/kgi-trading-hours";
 import { DataStateBadge } from "@/components/DataStateBadge";
+import { fAutoDataSourceLabel } from "@/lib/weekly-review-format";
 import {
   getFAutoPortfolio,
   getFAutoNav,
@@ -566,14 +567,14 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
             {([
               ["今日", state.data.todayTst ?? "--"],
               ["自動排程", state.data.automaticScheduler.enabled ? "啟用" : "未啟用"],
-              ["排程模式", state.data.automaticScheduler.mode ?? "--"],
+              ["排程模式", schedulerModeLabel(state.data.automaticScheduler.mode)],
               ["訊號排程", state.data.automaticScheduler.signalWindowTst ?? "--"],
               ["委託排程", state.data.automaticScheduler.orderSubmitWindowTst ?? "--"],
               ["缺訊號自動補籃", state.data.automaticScheduler.signalCatchupBeforeOrder ? "啟用" : "未啟用"],
               ["手動觸發角色", state.data.automaticScheduler.manualTriggerRole === "owner_backup_only" ? "Owner 備援" : state.data.automaticScheduler.manualTriggerRole ?? "--"],
               ["S1 配置資金", state.data.configuredCapitalTwd != null ? fmtTwd(state.data.configuredCapitalTwd) : "--"],
-              ["資金來源", state.data.capitalSource ?? "--"],
-              ["市場態勢", state.data.regime ?? "--"],
+              ["資金來源", capitalSourceLabel(state.data.capitalSource)],
+              ["市場態勢", regimeLabel(state.data.regime)],
               ["曝險比重", state.data.exposureWeight != null ? `${(state.data.exposureWeight * 100).toFixed(0)}%` : "--"],
               ["訊號視窗", state.data.signalWindowOpen ? "開啟" : "關閉"],
               ["下單視窗", state.data.orderSubmitWindowOpen ? "開啟" : "關閉"],
@@ -589,7 +590,7 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
               ["EOD 未實現", fmtTwd(state.data.eodUnrealizedPnlTwd)],
               ["成功委託", state.data.ordersAccepted != null ? String(state.data.ordersAccepted) : "--"],
               ["失敗委託", state.data.ordersRejected != null ? String(state.data.ordersRejected) : "--"],
-              ["資料來源", state.data.eodDataSource ?? "--"],
+              ["資料來源", state.data.eodDataSource ? fAutoDataSourceLabel(state.data.eodDataSource) : "--"],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="_fauto-kv-row">
                 <span className="_fauto-kv-label">{label}</span>
@@ -638,7 +639,7 @@ function BasketPanel({
           <>
             <div className="_fauto-kv-list" style={{ marginBottom: 12 }}>
               {([
-                ["態勢", state.data.regime ?? "--"],
+                ["態勢", regimeLabel(state.data.regime)],
                 ["曝險比重", state.data.exposureWeight != null ? `${(state.data.exposureWeight * 100).toFixed(0)}%` : "--"],
                 ["產生時間", state.data.generatedAtTst ? fmtDatetime(state.data.generatedAtTst) : "--"],
                 ["母體數", state.data.universeCount != null ? String(state.data.universeCount) : "--"],
@@ -701,35 +702,51 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimOrdersResult> }) {
         {state.phase === "pending_backend" && <PanelPending label="委託記錄" />}
         {state.phase === "live" && (
           <>
-            {state.data.reconciliation && (
-              <div className="_fauto-recon-card">
-                <div className="_fauto-recon-head">
-                  <span className={`_fauto-recon-pill _fauto-recon-${state.data.reconciliation.closureState}`}>
-                    {closureStateLabel(state.data.reconciliation.closureState)}
-                  </span>
-                  <span className="_fauto-ts">
-                    對帳時間 {fmtDatetime(state.data.reconciliation.fetchedAt ?? state.data.fetchedAt)}
-                  </span>
-                </div>
-                <div className="_fauto-recon-grid">
-                  <div><span>策略帳本</span><strong>{state.data.reconciliation.auditOrderCount}</strong><small>筆委託</small></div>
-                  <div><span>券商回報</span><strong>{state.data.reconciliation.brokerReportConfirmedCount}</strong><small>筆已對上</small></div>
-                  <div><span>成交確認</span><strong>{state.data.reconciliation.filledCount}</strong><small>筆成交/部分成交</small></div>
-                  <div><span>待確認</span><strong>{state.data.reconciliation.unconfirmedCount}</strong><small>筆等待回報</small></div>
-                </div>
-                <div className="_fauto-recon-sources">
-                  <span>券商事件 {state.data.reconciliation.evidence.orderEventRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.orderEvents)}</span>
-                  <span>委託回報 {state.data.reconciliation.evidence.tradeReportRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.tradeReports)}</span>
-                  <span>成交明細 {state.data.reconciliation.evidence.dealRows} 筆 / {fetchStateLabel(state.data.reconciliation.fetch.deals)}</span>
-                </div>
-                {state.data.reconciliation.fetch.errors.length > 0 && (
-                  <div className="_fauto-note">
-                    券商資料源錯誤：{state.data.reconciliation.fetch.errors.map((err) => `${err.source}: ${err.message}`).join(" / ")}
+            {state.data.reconciliation && (() => {
+              // P1-7 (product critique 2026-07-10): "0/8 已對上" used to sit
+              // quietly in a neutral-colored grid cell — the only signal was
+              // a small 10px pill. Escalate to a visible alert state
+              // whenever any strategy-book order still lacks a broker
+              // confirmation, since every P&L figure derived from these
+              // holdings (here and everywhere else F-AUTO is shown) is
+              // unreconciled until this reaches 0.
+              const recon = state.data.reconciliation;
+              const hasUnconfirmed = recon.unconfirmedCount > 0;
+              return (
+                <div className={`_fauto-recon-card${hasUnconfirmed ? " _fauto-recon-card-alert" : ""}`}>
+                  <div className="_fauto-recon-head">
+                    <span className={`_fauto-recon-pill _fauto-recon-${recon.closureState}`}>
+                      {closureStateLabel(recon.closureState)}
+                    </span>
+                    <span className="_fauto-ts">
+                      對帳時間 {fmtDatetime(recon.fetchedAt ?? state.data.fetchedAt)}
+                    </span>
                   </div>
-                )}
-                {state.data.note && <div className="_fauto-note">{state.data.note}</div>}
-              </div>
-            )}
+                  <div className="_fauto-recon-grid">
+                    <div><span>策略帳本</span><strong>{recon.auditOrderCount}</strong><small>筆委託</small></div>
+                    <div><span>券商回報</span><strong className={hasUnconfirmed ? "_fauto-red" : undefined}>{recon.brokerReportConfirmedCount}</strong><small>筆已對上</small></div>
+                    <div><span>成交確認</span><strong>{recon.filledCount}</strong><small>筆成交/部分成交</small></div>
+                    <div><span>待確認</span><strong className={hasUnconfirmed ? "_fauto-red" : undefined}>{recon.unconfirmedCount}</strong><small>筆等待回報</small></div>
+                  </div>
+                  {hasUnconfirmed && (
+                    <div className="_fauto-recon-alert-note">
+                      {recon.brokerReportConfirmedCount} / {recon.auditOrderCount} 筆委託已與券商回報對上 — 尚有 {recon.unconfirmedCount} 筆未經券商回報對帳，本頁及全站顯示的 F-AUTO 損益皆依內部委託紀錄重建，可能與實際成交有落差。
+                    </div>
+                  )}
+                  <div className="_fauto-recon-sources">
+                    <span>券商事件 {recon.evidence.orderEventRows} 筆 / {fetchStateLabel(recon.fetch.orderEvents)}</span>
+                    <span>委託回報 {recon.evidence.tradeReportRows} 筆 / {fetchStateLabel(recon.fetch.tradeReports)}</span>
+                    <span>成交明細 {recon.evidence.dealRows} 筆 / {fetchStateLabel(recon.fetch.deals)}</span>
+                  </div>
+                  {recon.fetch.errors.length > 0 && (
+                    <div className="_fauto-note">
+                      券商資料源錯誤：{recon.fetch.errors.map((err) => `${err.source}: ${err.message}`).join(" / ")}
+                    </div>
+                  )}
+                  {state.data.note && <div className="_fauto-note">{state.data.note}</div>}
+                </div>
+              );
+            })()}
             {state.data.orders.length > 0 ? (
               <table className="_fauto-tbl">
                 <thead>
@@ -807,12 +824,12 @@ function EodReportPanel({
           <>
             <div className="_fauto-kv-list" style={{ marginBottom: 12 }}>
               {([
-                ["態勢", state.data.regime ?? "--"],
+                ["態勢", regimeLabel(state.data.regime)],
                 ["產生時間", state.data.generatedAtTst ? fmtDatetime(state.data.generatedAtTst) : "--"],
                 ["總未實現損益", fmtTwd(state.data.totalUnrealizedPnlTwd)],
                 ["總市值", fmtTwd(state.data.totalMarketValueTwd)],
                 ["現金剩餘", fmtTwd(state.data.cashResidual)],
-                ["資料來源", state.data.dataSource ?? "--"],
+                ["資料來源", state.data.dataSource ? fAutoDataSourceLabel(state.data.dataSource) : "--"],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label} className="_fauto-kv-row">
                   <span className="_fauto-kv-label">{label}</span>
@@ -1009,6 +1026,29 @@ function fetchStateLabel(state: string): string {
   if (state === "ok") return "可讀";
   if (state === "error") return "讀取錯誤";
   return state;
+}
+
+// P1-1 (product critique 2026-07-10): this page's kv-list tables were
+// rendering several raw backend enum values verbatim (regime, scheduler
+// mode, capital source, EOD data source) — the exact "audit_log_fallback /
+// weekly_tuesday_kgi_sim / sideways" leaks the critique named.
+function regimeLabel(regime: string | null | undefined): string {
+  if (regime === "risk_on") return "偏多（滿倉）";
+  if (regime === "sideways") return "盤整（半倉）";
+  if (regime === "risk_off") return "避險（降至 20%）";
+  if (regime === "crisis") return "危機（不下單）";
+  return "--";
+}
+
+function schedulerModeLabel(mode: string | null | undefined): string {
+  if (mode === "weekly_tuesday_kgi_sim") return "每週二 KGI SIM";
+  return mode ?? "--";
+}
+
+function capitalSourceLabel(source: string | null | undefined): string {
+  if (source === "latest_subscription") return "最新訂閱設定";
+  if (source === "default_capital") return "預設資金";
+  return source ? "資金來源未標示" : "--";
 }
 
 // ─── Date selector ────────────────────────────────────────────────────────────
@@ -1448,6 +1488,23 @@ const FAUTO_CSS = `
 ._fauto-recon-gateway_unavailable {
   border-color: rgba(255,107,119,0.35);
   color: #ff6b77;
+}
+/* P1-7 (product critique 2026-07-10): escalate the whole card, not just the
+   small pill, whenever any strategy-book order still lacks a broker
+   confirmation — this is the "0/8 已對上" state the critique flagged as
+   too low-key. */
+._fauto-recon-card-alert {
+  border-color: rgba(255,107,119,0.4);
+  background: linear-gradient(135deg, rgba(255,107,119,0.1), rgba(8,11,16,0.45));
+}
+._fauto-recon-alert-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,107,119,0.35);
+  background: rgba(255,107,119,0.08);
+  color: #ff6b77;
+  font-size: 11px;
+  line-height: 1.5;
 }
 ._fauto-recon-grid {
   display: grid;
