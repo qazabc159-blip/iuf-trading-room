@@ -24,7 +24,7 @@ pnpm test
 tests 1649 | pass 1648 | fail 0 | skipped 1
 
 pnpm --filter @iuf-trading-room/web test
-Test Files 69 passed | Tests 573 passed
+Test Files 70 passed | Tests 582 passed
 
 pnpm typecheck
 Tasks 15 successful, 15 total
