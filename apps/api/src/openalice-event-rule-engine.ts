@@ -42,7 +42,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
 import { getDb, isDatabaseMode, auditLogs, execRows } from "@iuf-trading-room/db";
-import { dispatchAlertPush } from "./push/alert-push.js";
+import { dispatchAlertPush, buildAlertPushPayload } from "./push/alert-push.js";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -58,6 +58,24 @@ export type IufEvent = {
   payload: Record<string, unknown>;
   triggeredAt: string;    // ISO 8601
   acknowledged: boolean;
+};
+
+/**
+ * P1-2 (2026-07-11 product critique) — the /alerts page and the header
+ * notification badge must not double as a pipeline ops log. `actionable_market`
+ * = something a trader can act on (a market condition, or "go read the new
+ * brief"); `ops_internal` = pipeline/system self-monitoring noise (hallucination
+ * rejects, KGI gateway connect/disconnect churn, LLM budget/quota, daily smoke,
+ * S1 EOD diagnostics) that belongs in an Owner-only surface, not the trader feed.
+ */
+export type EventAudience = "actionable_market" | "ops_internal";
+
+/** Additive view of a stored event with derived, non-persisted display fields. */
+export type IufEventView = IufEvent & {
+  /** actionable_market | ops_internal — see EventAudience doc. */
+  audience: EventAudience;
+  /** 繁中 human-readable title — never the raw English rule name / UUID. */
+  label: string;
 };
 
 /**
@@ -797,6 +815,54 @@ const RULES: EventRule[] = [
   }
 ];
 
+// ── Audience classification (P1-2, 2026-07-11) ─────────────────────────────────
+// Reuses push/alert-push.ts's PAYLOAD_COPY allowlist as the single source of
+// truth for "actionable enough to interrupt the trader" vs. ops noise — the
+// push channel already drew this line (dispatch task: "推播的 allowlist 已經做
+// 了同樣分類...複用那個分類基準，兩邊一致"). Rather than duplicating the rule-id
+// list here (drift risk), membership is tested via the real exported function:
+// a rule id that produces a push payload is actionable_market; everything else
+// (hallucination reject, KGI gateway churn, LLM budget/quota, daily smoke, S1
+// EOD diagnostics) is ops_internal. The whitelist is built positively (not by
+// negation) so an unrecognised rule id fails safe as ops_internal rather than
+// silently leaking into the trader-facing feed.
+const ACTIONABLE_MARKET_RULE_IDS: ReadonlySet<string> = new Set(
+  RULES.filter((r) => buildAlertPushPayload({ ruleId: r.id, ticker: null })).map((r) => r.id)
+);
+const OPS_INTERNAL_RULE_IDS: ReadonlySet<string> = new Set(
+  RULES.filter((r) => !ACTIONABLE_MARKET_RULE_IDS.has(r.id)).map((r) => r.id)
+);
+
+export function ruleAudience(ruleId: string): EventAudience {
+  return ACTIONABLE_MARKET_RULE_IDS.has(ruleId) ? "actionable_market" : "ops_internal";
+}
+
+/**
+ * 繁中 human-readable titles for iuf_events rule ids (P1-2 — the /alerts page
+ * used to render the raw English `ruleName` from the rule definition, e.g.
+ * "AI brief published" / "KGI gateway state change", which is exactly the
+ * "英文系統句外洩" the product critique flagged). Single source of truth for
+ * `listEvents()`'s derived `label` field — keep in sync with RULES above.
+ */
+const RULE_DISPLAY_TITLE: Readonly<Record<string, string>> = {
+  R01_REVENUE_SURGE_YOY50: "月營收大幅成長",
+  R02_INSTITUTIONAL_CONSECUTIVE_BUY_5D: "三大法人連續買進",
+  R03_INSTITUTIONAL_CONSECUTIVE_SELL_5D: "三大法人連續賣出",
+  R04_SHAREHOLDING_HHI_BREAKOUT: "籌碼集中度創高",
+  R05_REVENUE_DECLINE_YOY30: "月營收大幅下滑",
+  R06_MAJOR_SHAREHOLDER_THRESHOLD: "大股東持股突破門檻",
+  R07_MAJOR_ANNOUNCEMENT: "重大公告",
+  R08_AI_BRIEF_PUBLISHED: "今日簡報已發布",
+  R09_HALLUCINATION_REJECTED: "簡報內容檢核未通過",
+  R10_KGI_GATEWAY_STATE_CHANGE: "交易連線狀態變化",
+  R11_V3_REC_CRON_EXHAUSTED: "今日 AI 推薦尚未產出",
+  R12_LLM_BUDGET_NEAR_LIMIT: "AI 用量接近今日上限",
+  R13_DAILY_SMOKE_FAILED: "每日健康檢查失敗",
+  R14_THEME_REFRESH_STALE: "題材內容今日未更新",
+  R15_S1_EOD_NO_POSITIONS: "策略部位資料異常",
+  R16_LLM_PROVIDER_QUOTA_EXHAUSTED: "LLM 供應商額度耗盡",
+};
+
 // ── Table existence helpers ────────────────────────────────────────────────────
 
 async function tableExists(tableName: string): Promise<boolean> {
@@ -1160,29 +1226,39 @@ export async function runEventEngineTickForce(): Promise<{
 export async function listEvents(opts: {
   limit?: number;
   unreadOnly?: boolean;
-}): Promise<IufEvent[]> {
+  /**
+   * Filter by audience classification (P1-2). Omitted = all events, unchanged
+   * behaviour for existing callers (SSE stream, /api/v1/iuf-events raw diag
+   * route, /api/v1/notifications' internal merge).
+   */
+  audience?: EventAudience;
+}): Promise<IufEventView[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
 
   const limit = Math.min(opts.limit ?? 50, 200);
+  const opsIds = [...OPS_INTERNAL_RULE_IDS];
+  const opsIdList = opsIds.length > 0
+    ? drizzleSql.join(opsIds.map((id) => drizzleSql`${id}`), drizzleSql`, `)
+    : null;
+  const audienceCondition =
+    opts.audience === "ops_internal" && opsIdList
+      ? drizzleSql`rule_id IN (${opsIdList})`
+      : opts.audience === "actionable_market" && opsIdList
+      ? drizzleSql`rule_id NOT IN (${opsIdList})`
+      : drizzleSql`TRUE`;
 
   try {
     const rows = await db.execute(
-      opts.unreadOnly
-        ? drizzleSql`
-            SELECT id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged
-            FROM iuf_events
-            WHERE acknowledged = false
-            ORDER BY triggered_at DESC
-            LIMIT ${limit}
-          `
-        : drizzleSql`
-            SELECT id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged
-            FROM iuf_events
-            ORDER BY triggered_at DESC
-            LIMIT ${limit}
-          `
+      drizzleSql`
+        SELECT id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged
+        FROM iuf_events
+        WHERE ${opts.unreadOnly ? drizzleSql`acknowledged = false` : drizzleSql`TRUE`}
+          AND ${audienceCondition}
+        ORDER BY triggered_at DESC
+        LIMIT ${limit}
+      `
     );
 
     return execRows<{
@@ -1206,7 +1282,9 @@ export async function listEvents(opts: {
           ? (r.payload as Record<string, unknown>)
           : {},
         triggeredAt: r.triggered_at ?? new Date().toISOString(),
-        acknowledged: r.acknowledged ?? false
+        acknowledged: r.acknowledged ?? false,
+        audience: ruleAudience(r.rule_id!),
+        label: RULE_DISPLAY_TITLE[r.rule_id!] ?? r.rule_name ?? r.rule_id!,
       }));
   } catch {
     return [];

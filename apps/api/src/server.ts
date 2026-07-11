@@ -15350,7 +15350,15 @@ app.post("/api/v1/internal/openalice/ai-reviewer/run-on/:draftId", async (c) => 
 /**
  * GET /api/v1/alerts
  * List triggered events. Auth required.
- * Query params: limit (default 50, max 200), unread (default false)
+ * Query params: limit (default 50, max 200), unread (default false),
+ *   audience (default actionable_market — see P1-2 below)
+ *
+ * P1-2 (2026-07-11 product critique): the alerts page must not double as a
+ * pipeline ops log. Default response is trader-facing "actionable_market"
+ * events only; a session may request `?audience=ops_internal` or `?audience=all`
+ * to see pipeline/system self-monitoring events too, but that's an Owner-only
+ * surface — any other role silently gets the actionable-only default regardless
+ * of what it asks for.
  */
 app.get("/api/v1/alerts", async (c) => {
   const session = c.var.session;
@@ -15358,13 +15366,24 @@ app.get("/api/v1/alerts", async (c) => {
 
   const limitParam = c.req.query("limit");
   const unreadParam = c.req.query("unread");
+  const audienceParam = c.req.query("audience");
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
   const unreadOnly = unreadParam === "true";
 
-  const events = await listEvents({ limit, unreadOnly });
+  const requestedAudience: "actionable_market" | "ops_internal" | "all" =
+    audienceParam === "ops_internal" || audienceParam === "all" ? audienceParam : "actionable_market";
+  const audience = requestedAudience !== "actionable_market" && session.user.role !== "Owner"
+    ? "actionable_market"
+    : requestedAudience;
+
+  const events = await listEvents({
+    limit,
+    unreadOnly,
+    ...(audience === "all" ? {} : { audience })
+  });
   return c.json({
     data: events,
-    meta: { count: events.length, unreadOnly, engineState: getEventEngineState() }
+    meta: { count: events.length, unreadOnly, audience, engineState: getEventEngineState() }
   });
 });
 
@@ -20872,6 +20891,13 @@ type NotificationItem = {
   severity: "info" | "warn" | "critical";
   actionUrl?: string;
   dedupeKey?: string;
+  /**
+   * Internal-only (P1-2, stripped before the JSON response) — audit_logs/brief
+   * items have no ruleId concept and are always actionable; iuf_events items
+   * carry the same audience classification GET /api/v1/alerts uses, so the
+   * unread badge never inflates on pipeline/system self-monitoring noise.
+   */
+  audience?: "actionable_market" | "ops_internal";
 };
 
 // Product-language (繁中, no engineering jargon) copy for iuf_events rule ids.
@@ -21088,6 +21114,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
         read: ev.acknowledged,
         severity: iufEventSeverityToNotification(ev.severity),
         actionUrl: "/alerts",
+        audience: ev.audience,
         ...(eventTiming.dedupeKey
           ? { dedupeKey: eventTiming.dedupeKey }
           : ev.ruleId === "R08_AI_BRIEF_PUBLISHED" && taipeiDateFromIso(ev.triggeredAt)
@@ -21100,9 +21127,11 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
   }
 
   // ── 4. merge, sort newest-first, limit 50 ───────────────────────────────
+  // dedupeKey/audience are internal-only — the route handler consumes
+  // `audience` for the unread badge (P1-2) then strips both before responding.
   const deduped = dedupeNotificationItems(notifications);
   deduped.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  return deduped.slice(0, 50).map(({ dedupeKey: _dedupeKey, ...item }) => item);
+  return deduped.slice(0, 50);
 }
 
 // GET /api/v1/notifications?limit=50
@@ -21114,9 +21143,13 @@ app.get("/api/v1/notifications", async (c) => {
 
   try {
     const items = await fetchNotifications(session, session.workspace.id);
+    // P1-2: the unread badge is a "go act on this" counter, not a pipeline ops
+    // log tail — ops_internal-classified iuf_events still show in the drawer
+    // (this endpoint is already Owner-only) but never inflate the count.
+    const unreadCount = items.filter((n) => !n.read && n.audience !== "ops_internal").length;
     return c.json({
-      notifications: items,
-      unread_count: items.filter((n) => !n.read).length
+      notifications: items.map(({ dedupeKey: _dedupeKey, audience: _audience, ...item }) => item),
+      unread_count: unreadCount
     });
   } catch (err) {
     console.error("[notifications] fetch failed:", err instanceof Error ? err.message : String(err));

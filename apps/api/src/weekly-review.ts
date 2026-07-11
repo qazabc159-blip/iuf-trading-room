@@ -61,8 +61,9 @@ export interface WeeklyReview {
   };
   briefs: {
     trading_days: string[];      // TAIEX trading days in the week
-    published_dates: string[];   // days with a published brief
+    published_dates: string[];   // days with a published brief AND a real trading day
     missing_dates: string[];
+    off_calendar_published: string[]; // briefs published on a day TAIEX has no close for (P1-8)
   };
   notes: string[];
 }
@@ -98,21 +99,34 @@ export function resolveReviewWeek(anchor?: string): { weekStart: string; weekEnd
   return { weekStart, weekEnd: addDays(weekStart, 4) };
 }
 
+/**
+ * P1-8 (2026-07-11 product critique): `tradingDays` must come ONLY from the
+ * official TAIEX daily-close calendar (`taiexDates` — TWSE only publishes an
+ * OHLC row for a date the market actually opened), never from
+ * `publishedBriefDates`. The previous implementation unioned the two, which
+ * meant a brief mistakenly published on a non-trading day (07/10 typhoon
+ * closure — the pipeline's `isTwTradingDay` gate only checks a pre-seeded
+ * calendar table, which isn't seeded for ad-hoc closures) silently counted
+ * as proof of a trading day. Because that same date was also in
+ * `publishedBriefDates`, the denominator and numerator inflated together —
+ * "本週發布 5/5 個交易日" looked like a perfect record while hiding the
+ * exact bug it should have caught. A brief published outside the real
+ * calendar is now surfaced separately in `offCalendarPublished` instead of
+ * silently padding the ratio.
+ */
 export function deriveBriefDeliveryDays(
   taiexDates: string[],
   publishedBriefDates: string[],
   weekStart: string,
   weekEnd: string,
-): { tradingDays: string[]; published: string[]; missing: string[] } {
+): { tradingDays: string[]; published: string[]; missing: string[]; offCalendarPublished: string[] } {
   const inWeek = (date: string) => date >= weekStart && date <= weekEnd;
+  const tradingDays = [...new Set(taiexDates.filter(inWeek))].sort();
   const publishedInWeek = publishedBriefDates.filter(inWeek);
-  const tradingDays = [...new Set([
-    ...taiexDates.filter(inWeek),
-    ...publishedInWeek,
-  ])].sort();
   const published = [...new Set(publishedInWeek.filter((date) => tradingDays.includes(date)))].sort();
   const missing = tradingDays.filter((date) => !published.includes(date));
-  return { tradingDays, published, missing };
+  const offCalendarPublished = [...new Set(publishedInWeek.filter((date) => !tradingDays.includes(date)))].sort();
+  return { tradingDays, published, missing, offCalendarPublished };
 }
 
 export async function buildWeeklyReview(opts: {
@@ -194,12 +208,15 @@ export async function buildWeeklyReview(opts: {
   ]);
 
   // 4. Brief delivery vs trading days
-  const { tradingDays, published, missing } = deriveBriefDeliveryDays(
+  const { tradingDays, published, missing, offCalendarPublished } = deriveBriefDeliveryDays(
     days.map((d) => d.date),
     opts.publishedBriefDates,
     weekStart,
     weekEnd,
   );
+  if (offCalendarPublished.length > 0) {
+    notes.push(`brief_published_off_calendar: ${offCalendarPublished.join(", ")} 有簡報發布紀錄，但 TAIEX 官方收盤資料顯示當日並非交易日（不計入交易日分母）`);
+  }
 
   return {
     schema: "weekly_review_v1",
@@ -210,7 +227,12 @@ export async function buildWeeklyReview(opts: {
     taiex: { days, week_change_pct: weekChangePct },
     f_auto: fAuto,
     recommendations: { week, cumulative },
-    briefs: { trading_days: tradingDays, published_dates: published, missing_dates: missing },
+    briefs: {
+      trading_days: tradingDays,
+      published_dates: published,
+      missing_dates: missing,
+      off_calendar_published: offCalendarPublished,
+    },
     notes,
   };
 }
