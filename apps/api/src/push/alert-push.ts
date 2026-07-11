@@ -29,6 +29,15 @@ type PayloadCopy = Omit<AlertPushPayload, "url"> & {
   companySpecific?: boolean;
 };
 
+// P1-2 granularity fix (2026-07-11, after prod verify of #1224): R11 (推薦
+// cron 耗盡) and R14 (題材未更新) were removed from this allowlist. Both are
+// service/content-freshness status notices ("資料尚未產出，請稍後查看") —
+// not a market signal a trader can act on, and not urgent enough to justify
+// interrupting a phone with a push notification either. This allowlist also
+// doubles as the alerts-feed audience classification (openalice-event-rule-
+// engine.ts's `ruleAudience()`), so removing them here demotes them to
+// ops_internal on BOTH surfaces at once — see that file's comment for the
+// full reasoning and the PR body for the per-rule attribution table.
 const PAYLOAD_COPY: Readonly<Record<string, PayloadCopy>> = {
   R01_REVENUE_SURGE_YOY50: {
     title: "營收變化提醒",
@@ -76,16 +85,6 @@ const PAYLOAD_COPY: Readonly<Record<string, PayloadCopy>> = {
     title: "市場簡報已更新",
     body: "新的市場簡報已發布，請開啟戰情室查看。",
     path: "/briefs",
-  },
-  R11_V3_REC_CRON_EXHAUSTED: {
-    title: "推薦資料提醒",
-    body: "今日推薦資料尚未完整產出，請稍後查看。",
-    path: "/ai-recommendations",
-  },
-  R14_THEME_REFRESH_STALE: {
-    title: "市場題材提醒",
-    body: "今日題材資料尚未完成更新，請稍後查看。",
-    path: "/themes",
   },
 };
 

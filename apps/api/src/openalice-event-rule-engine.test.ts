@@ -7,6 +7,8 @@ import {
   isProviderQuotaExhausted,
   PROVIDER_QUOTA_429_STREAK_THRESHOLD,
   ruleAudience,
+  dedupeSameDayEvents,
+  type IufEventView,
 } from "./openalice-event-rule-engine.js";
 
 test("daily smoke alerts only fire for a same-day weekday failure after the smoke window opens", () => {
@@ -78,12 +80,12 @@ test("R16 threshold is null-safe against non-finite counts (COUNT(*) is always a
   assert.equal(isProviderQuotaExhausted(Number.POSITIVE_INFINITY), false);
 });
 
-// ── P1-2 audience classification (2026-07-11) ─────────────────────────────────
+// ── P1-2 audience classification (2026-07-11; refined same day after prod
+// verify — see PR body per-rule attribution table) ─────────────────────────
 // Reuses push/alert-push.ts's PAYLOAD_COPY allowlist as the single source of
-// truth (dispatch: "推播的 allowlist 已經做了同樣分類...複用那個分類基準"). The
-// eligible-rule-id list asserted here mirrors push/alert-push.test.ts's
-// `eligibleRuleIds` fixture exactly — if these two ever diverge, the alerts
-// page and the push channel would disagree about what's "actionable".
+// truth for actionable_market. R11/R14 were demoted to ops_internal on BOTH
+// surfaces (removed from PAYLOAD_COPY too) after prod showed they're service/
+// content-freshness status notices, not trader-actionable market signals.
 test("ruleAudience: rules with a push payload are actionable_market", () => {
   const actionableRuleIds = [
     "R01_REVENUE_SURGE_YOY50",
@@ -94,8 +96,6 @@ test("ruleAudience: rules with a push payload are actionable_market", () => {
     "R06_MAJOR_SHAREHOLDER_THRESHOLD",
     "R07_MAJOR_ANNOUNCEMENT",
     "R08_AI_BRIEF_PUBLISHED",
-    "R11_V3_REC_CRON_EXHAUSTED",
-    "R14_THEME_REFRESH_STALE",
   ];
   for (const ruleId of actionableRuleIds) {
     assert.equal(ruleAudience(ruleId), "actionable_market", `${ruleId} should be actionable_market`);
@@ -106,8 +106,10 @@ test("ruleAudience: pipeline/system self-monitoring rules are ops_internal", () 
   const opsRuleIds = [
     "R09_HALLUCINATION_REJECTED",
     "R10_KGI_GATEWAY_STATE_CHANGE",
+    "R11_V3_REC_CRON_EXHAUSTED", // demoted 2026-07-11: service status, not a market signal
     "R12_LLM_BUDGET_NEAR_LIMIT",
     "R13_DAILY_SMOKE_FAILED",
+    "R14_THEME_REFRESH_STALE", // demoted 2026-07-11: content-freshness status, not a market signal
     "R15_S1_EOD_NO_POSITIONS",
     "R16_LLM_PROVIDER_QUOTA_EXHAUSTED",
   ];
@@ -118,4 +120,73 @@ test("ruleAudience: pipeline/system self-monitoring rules are ops_internal", () 
 
 test("ruleAudience: unknown rule ids fail safe as ops_internal (never surfaces unclassified noise as actionable)", () => {
   assert.equal(ruleAudience("R99_SOME_FUTURE_RULE"), "ops_internal");
+});
+
+// R_OPENALICE_DECISION is written by a DIFFERENT producer
+// (openalice-action-executor.ts) and is not in the RULES array at all — its
+// own generating prompt defines it as an operator/system catch-all
+// ("Surface a critical alert to the operator, e.g. system health failure,
+// budget exceeded"), not a structured per-ticker market signal. This is also
+// the regression test for the actual prod bug (36/50 rows in the default
+// GET /api/v1/alerts response): the SQL filter used to be built as
+// `rule_id NOT IN (known_ops_ids)`, so any rule id absent from the RULES
+// array — like this one — silently passed the actionable_market filter.
+test("ruleAudience: R_OPENALICE_DECISION (a different producer, not in RULES) fails safe as ops_internal", () => {
+  assert.equal(ruleAudience("R_OPENALICE_DECISION"), "ops_internal");
+});
+
+// ── P1-2 granularity: same-day dedup (2026-07-11) ──────────────────────────
+function fakeEvent(overrides: Partial<IufEventView>): IufEventView {
+  return {
+    id: "id",
+    ruleId: "R08_AI_BRIEF_PUBLISHED",
+    ruleName: "AI brief published",
+    severity: "info",
+    ticker: null,
+    payload: {},
+    triggeredAt: "2026-07-10T01:00:00.000Z",
+    acknowledged: false,
+    audience: "actionable_market",
+    label: "今日簡報已發布",
+    ...overrides,
+  };
+}
+
+test("dedupeSameDayEvents: collapses same ruleId+ticker+Taipei-day duplicates to the newest", () => {
+  const events = [
+    fakeEvent({ id: "3", triggeredAt: "2026-07-10T09:00:00.000Z" }), // newest
+    fakeEvent({ id: "2", triggeredAt: "2026-07-10T05:00:00.000Z" }),
+    fakeEvent({ id: "1", triggeredAt: "2026-07-10T01:00:00.000Z" }), // oldest
+  ];
+  const result = dedupeSameDayEvents(events);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.id, "3");
+});
+
+test("dedupeSameDayEvents: different tickers under the same ruleId+day are distinct alerts, never collapsed", () => {
+  const events = [
+    fakeEvent({ id: "a", ruleId: "R01_REVENUE_SURGE_YOY50", ticker: "2330", triggeredAt: "2026-07-10T02:00:00.000Z" }),
+    fakeEvent({ id: "b", ruleId: "R01_REVENUE_SURGE_YOY50", ticker: "2454", triggeredAt: "2026-07-10T01:00:00.000Z" }),
+  ];
+  const result = dedupeSameDayEvents(events);
+  assert.equal(result.length, 2);
+});
+
+test("dedupeSameDayEvents: same ruleId+ticker on different Taipei days are distinct alerts", () => {
+  const events = [
+    fakeEvent({ id: "today", triggeredAt: "2026-07-10T09:00:00.000Z" }), // 17:00 Taipei 07/10
+    fakeEvent({ id: "yesterday", triggeredAt: "2026-07-09T09:00:00.000Z" }), // 17:00 Taipei 07/09
+  ];
+  const result = dedupeSameDayEvents(events);
+  assert.equal(result.length, 2);
+});
+
+test("dedupeSameDayEvents: uses Taipei calendar day, not UTC day, at the UTC midnight boundary", () => {
+  // 2026-07-10T17:00:00Z is already 2026-07-11 01:00 in Taipei (+8).
+  const events = [
+    fakeEvent({ id: "late-utc", triggeredAt: "2026-07-10T17:00:00.000Z" }), // Taipei 07/11 01:00
+    fakeEvent({ id: "next-utc-day", triggeredAt: "2026-07-10T18:00:00.000Z" }), // Taipei 07/11 02:00 — same Taipei day as above
+  ];
+  const result = dedupeSameDayEvents(events);
+  assert.equal(result.length, 1, "both fall on Taipei 07/11 — should collapse to one");
 });

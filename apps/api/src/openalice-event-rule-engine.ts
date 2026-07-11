@@ -43,6 +43,7 @@ import { randomUUID } from "node:crypto";
 import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
 import { getDb, isDatabaseMode, auditLogs, execRows } from "@iuf-trading-room/db";
 import { dispatchAlertPush, buildAlertPushPayload } from "./push/alert-push.js";
+import { taipeiDateFromIso } from "./notification-feed.js";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -815,22 +816,44 @@ const RULES: EventRule[] = [
   }
 ];
 
-// ── Audience classification (P1-2, 2026-07-11) ─────────────────────────────────
+// ── Audience classification (P1-2, 2026-07-11; refined 2026-07-11 granularity
+// pass after prod verify) ───────────────────────────────────────────────────
 // Reuses push/alert-push.ts's PAYLOAD_COPY allowlist as the single source of
-// truth for "actionable enough to interrupt the trader" vs. ops noise — the
-// push channel already drew this line (dispatch task: "推播的 allowlist 已經做
-// 了同樣分類...複用那個分類基準，兩邊一致"). Rather than duplicating the rule-id
-// list here (drift risk), membership is tested via the real exported function:
-// a rule id that produces a push payload is actionable_market; everything else
-// (hallucination reject, KGI gateway churn, LLM budget/quota, daily smoke, S1
-// EOD diagnostics) is ops_internal. The whitelist is built positively (not by
-// negation) so an unrecognised rule id fails safe as ops_internal rather than
-// silently leaking into the trader-facing feed.
+// truth for "actionable_market" — kept as ONE derivation instead of two
+// independently-maintained lists (drift risk). Membership is tested via the
+// real exported function: a rule id that produces a push payload is
+// actionable_market; everything else is ops_internal.
+//
+// IMPORTANT: "can be pushed" and "belongs in the trader-facing alerts feed"
+// are the SAME bar here — not by accident, but because the first pass of
+// this feature (#1224) coupled them and then found prod evidence that two
+// PAYLOAD_COPY entries (R11, R14) didn't actually deserve either bar: they
+// are service/content-freshness status notices ("推薦/題材資料尚未產出"),
+// not a market signal a trader can act on, and not urgent enough to buzz a
+// phone either. Rather than bolting on a second, alerts-only override list
+// (which is how audience/push classifications silently drift apart over
+// time), R11 and R14 were removed from push/alert-push.ts's PAYLOAD_COPY
+// directly — so this single derivation now correctly excludes them from
+// BOTH surfaces. See PR body for the full per-rule attribution table.
+//
+// R_OPENALICE_DECISION (written by openalice-action-executor.ts, a DIFFERENT
+// producer — not in the RULES array below at all) is intentionally NOT an
+// actionable_market id: its own generating prompt
+// (openalice-orchestrator.ts SYSTEM_PROMPT) defines priority_alert as
+// "Surface a critical alert to the operator (e.g. system health failure,
+// budget exceeded)" — an operator/ops catch-all by design, not a structured
+// per-ticker market signal (those already exist as R01-R08). A 2026-06-26
+// incident (LLM outage → every decision fell back to priority_alert →
+// 322 near-identical "LLM unavailable" alerts in ~1h) confirms it's also the
+// generic error-fallback bucket. The allowlist below is built POSITIVELY
+// (actionable ids, not "everything except known ops ids") specifically so
+// any rule id outside RULES — like R_OPENALICE_DECISION — fails safe to
+// ops_internal automatically, instead of silently passing an earlier
+// implementation's `NOT IN (ops_ids)` SQL filter (that inversion was the
+// actual root cause of R_OPENALICE_DECISION leaking into the prod default
+// GET /api/v1/alerts response as 36/50 rows — fixed in listEvents() below).
 const ACTIONABLE_MARKET_RULE_IDS: ReadonlySet<string> = new Set(
   RULES.filter((r) => buildAlertPushPayload({ ruleId: r.id, ticker: null })).map((r) => r.id)
-);
-const OPS_INTERNAL_RULE_IDS: ReadonlySet<string> = new Set(
-  RULES.filter((r) => !ACTIONABLE_MARKET_RULE_IDS.has(r.id)).map((r) => r.id)
 );
 
 export function ruleAudience(ruleId: string): EventAudience {
@@ -1221,6 +1244,30 @@ export async function runEventEngineTickForce(): Promise<{
   return result;
 }
 
+/**
+ * P1-2 granularity fix (2026-07-11 prod verify): the same ruleId can fire
+ * many times for the SAME ticker (or system-wide, ticker=null) within one
+ * Taipei calendar day — e.g. R08_AI_BRIEF_PUBLISHED showed up 11x in prod's
+ * default 50-row window. Collapses same ruleId+ticker+day duplicates to the
+ * most recent occurrence ("同 ruleId 同日只留最新"). Different tickers under
+ * the same ruleId on the same day are DISTINCT alerts and are never
+ * collapsed (two different companies both tripping R01 the same day must
+ * both show). Input MUST already be sorted newest-first — the first
+ * occurrence of a key wins.
+ */
+export function dedupeSameDayEvents(events: IufEventView[]): IufEventView[] {
+  const seen = new Set<string>();
+  const output: IufEventView[] = [];
+  for (const ev of events) {
+    const day = taipeiDateFromIso(ev.triggeredAt) ?? ev.triggeredAt.slice(0, 10);
+    const key = `${ev.ruleId}::${ev.ticker ?? "system"}::${day}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(ev);
+  }
+  return output;
+}
+
 // ── List/ack helpers (used by notification endpoints) ─────────────────────────
 
 export async function listEvents(opts: {
@@ -1229,24 +1276,36 @@ export async function listEvents(opts: {
   /**
    * Filter by audience classification (P1-2). Omitted = all events, unchanged
    * behaviour for existing callers (SSE stream, /api/v1/iuf-events raw diag
-   * route, /api/v1/notifications' internal merge).
+   * route, which intentionally stay raw/undeduped for diagnostic fidelity).
    */
   audience?: EventAudience;
+  /**
+   * Collapse same ruleId+ticker+Taipei-day duplicates to the latest (P1-2
+   * granularity fix). Opt-in — only the curated trader/owner-facing
+   * consumers (GET /api/v1/alerts, the notifications merge) request this;
+   * raw diagnostic routes leave the true row count visible.
+   */
+  dedupeSameDay?: boolean;
 }): Promise<IufEventView[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
 
   const limit = Math.min(opts.limit ?? 50, 200);
-  const opsIds = [...OPS_INTERNAL_RULE_IDS];
-  const opsIdList = opsIds.length > 0
-    ? drizzleSql.join(opsIds.map((id) => drizzleSql`${id}`), drizzleSql`, `)
+  const actionableIds = [...ACTIONABLE_MARKET_RULE_IDS];
+  const actionableIdList = actionableIds.length > 0
+    ? drizzleSql.join(actionableIds.map((id) => drizzleSql`${id}`), drizzleSql`, `)
     : null;
+  // Positive allowlist both directions — a rule id absent from
+  // ACTIONABLE_MARKET_RULE_IDS (including ids from a different producer
+  // entirely, like R_OPENALICE_DECISION, which isn't in RULES at all) fails
+  // safe to ops_internal rather than silently passing an actionable_market
+  // filter it was never allowlisted for.
   const audienceCondition =
-    opts.audience === "ops_internal" && opsIdList
-      ? drizzleSql`rule_id IN (${opsIdList})`
-      : opts.audience === "actionable_market" && opsIdList
-      ? drizzleSql`rule_id NOT IN (${opsIdList})`
+    opts.audience === "actionable_market" && actionableIdList
+      ? drizzleSql`rule_id IN (${actionableIdList})`
+      : opts.audience === "ops_internal"
+      ? (actionableIdList ? drizzleSql`rule_id NOT IN (${actionableIdList})` : drizzleSql`TRUE`)
       : drizzleSql`TRUE`;
 
   try {
@@ -1261,7 +1320,7 @@ export async function listEvents(opts: {
       `
     );
 
-    return execRows<{
+    const mapped = execRows<{
       id?: string;
       rule_id?: string;
       rule_name?: string;
@@ -1286,6 +1345,8 @@ export async function listEvents(opts: {
         audience: ruleAudience(r.rule_id!),
         label: RULE_DISPLAY_TITLE[r.rule_id!] ?? r.rule_name ?? r.rule_id!,
       }));
+
+    return opts.dedupeSameDay ? dedupeSameDayEvents(mapped) : mapped;
   } catch {
     return [];
   }
