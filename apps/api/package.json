@@ -21,9 +21,11 @@
     "hono": "^4.12.8",
     "iconv-lite": "^0.7.2",
     "redis": "^5.9.0",
+    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/web-push": "^3.6.4",
     "tsx": "^4.21.0"
   }
 }

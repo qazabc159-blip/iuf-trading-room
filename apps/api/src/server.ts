@@ -75,6 +75,7 @@ import {
 } from "./openalice-orchestrator.js";
 import { runOpenAliceActionTick } from "./openalice-action-executor.js";
 import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
+import { pushSubscriptionRoutes } from "./push/push-subscriptions.js";
 import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
@@ -795,6 +796,7 @@ app.get("/api/v1/session", (c) =>
     data: c.get("session")
   })
 );
+app.route("/", pushSubscriptionRoutes);
 
 app.get("/api/v1/entitlements/me", (c) => {
   const session = c.get("session");
