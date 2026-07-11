@@ -4,7 +4,7 @@
  * an API response to Cache Storage and never provide a stale fallback.
  */
 
-const SW_VERSION = "iuf-pwa-v1";
+const SW_VERSION = "iuf-pwa-v2";
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const OFFLINE_FALLBACK_URL = new URL("/__iuf_offline_fallback__", self.location.origin).href;
 const CACHE_PREFIX = "iuf-pwa-";
@@ -76,6 +76,14 @@ function isApiRequest(url) {
   return url.pathname === "/api" || url.pathname.startsWith("/api/");
 }
 
+// Auth calls (login/register/me/logout/...) go straight to the cross-origin
+// API host, not through /api/**, so isApiRequest() above never sees them.
+// Make that network-only intent explicit instead of relying on the fetch
+// listener simply never matching them.
+function isCrossOriginAuthRequest(url) {
+  return url.origin !== self.location.origin && url.pathname.startsWith("/auth");
+}
+
 function isCacheFirstStatic(url) {
   return (
     url.origin === self.location.origin &&
@@ -114,8 +122,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   // Non-negotiable: market/account API data always comes from the network.
-  // Rejections deliberately propagate so offline callers fail fast.
-  if (isApiRequest(url)) {
+  // Rejections deliberately propagate so offline callers fail fast. This also
+  // covers cross-origin calls to the API host's /auth/** routes (login,
+  // register, me, logout, ...), which never match isApiRequest()'s
+  // same-origin /api/** check.
+  if (isApiRequest(url) || isCrossOriginAuthRequest(url)) {
     event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
@@ -128,4 +139,64 @@ self.addEventListener("fetch", (event) => {
   if (isCacheFirstStatic(url)) {
     event.respondWith(cacheFirst(request));
   }
+});
+
+function safeNotificationData(data) {
+  const fallback = {
+    title: "交易提醒",
+    body: "戰情室有新的提醒，請開啟應用程式查看。",
+    url: "/alerts",
+  };
+  if (!data || typeof data !== "object") return fallback;
+
+  return {
+    title: typeof data.title === "string" && data.title.trim() ? data.title : fallback.title,
+    body: typeof data.body === "string" && data.body.trim() ? data.body : fallback.body,
+    url: isSafeAppPath(data.url) ? data.url : fallback.url,
+  };
+}
+
+function isSafeAppPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/")) return false;
+  try {
+    return new URL(value, self.location.origin).origin === self.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+self.addEventListener("push", (event) => {
+  let incoming;
+  try {
+    incoming = event.data?.json();
+  } catch {
+    incoming = null;
+  }
+  const notification = safeNotificationData(incoming);
+  event.waitUntil(
+    self.registration.showNotification(notification.title, {
+      body: notification.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icon.png",
+      data: { url: notification.url },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = event.notification.data?.url;
+  const safePath = isSafeAppPath(path) ? path : "/alerts";
+  const targetUrl = new URL(safePath, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windowClients) => {
+      const existingClient = windowClients.find((client) => new URL(client.url).origin === self.location.origin);
+      if (existingClient) {
+        await existingClient.navigate(targetUrl);
+        return existingClient.focus();
+      }
+      return self.clients.openWindow(targetUrl);
+    }),
+  );
 });
