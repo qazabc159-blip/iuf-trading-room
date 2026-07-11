@@ -95,7 +95,7 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
       "下單股數以整張向下取整；若流動性容量超過 ADV 約束，會降股數或標註 capacity warning。",
     ],
     riskControls: [
-      "全程 SIM-only，KGI real order path 保持鎖定。",
+      "全程僅使用模擬帳本，凱基正式下單路徑保持鎖定。",
       "沒有 basket 就不送單；KGI 登入、帳號或 gateway 異常只記 failsafe，不硬下單。",
       "每次訊號、委託與 EOD 報告都寫入 reports/trading_room，/ops/f-auto 可追蹤狀態。",
     ],
@@ -150,6 +150,30 @@ function formatMoney(value: number | null | undefined) {
   return value == null
     ? "尚未取得資金設定"
     : `${Math.round(value).toLocaleString("zh-TW")} TWD`;
+}
+
+// P1-1 (product critique 2026-07-10): status.capitalSource is a raw backend
+// enum (e.g. "latest_subscription") — was rendered verbatim in primaryReadout.
+function capitalSourceLabel(source: string | null | undefined): string {
+  if (source === "latest_subscription") return "最新訂閱設定";
+  if (source === "default_capital") return "預設資金";
+  return "資金來源未標示";
+}
+
+// Same leak for basket.source (e.g. "audit_log", "kgi_gateway") inside sourceLabel.
+function basketSourceLabel(source: string | null | undefined): string {
+  if (source === "audit_log") return "稽核紀錄";
+  if (source === "kgi_gateway") return "KGI 即時";
+  return "後端";
+}
+
+// dataState ("LIVE"/"PARTIAL"/"UNAVAILABLE") is an internal readiness flag,
+// not display copy — pages must go through this instead of rendering the
+// raw value.
+export function dataStateLabel(dataState: QuantStrategy["current"]["dataState"]): string {
+  if (dataState === "LIVE") return "資料齊備";
+  if (dataState === "PARTIAL") return "部分資料";
+  return "資料不可用";
 }
 
 function buildHoldings(basket: S1Basket | null, configuredCapitalTwd: number | null) {
@@ -216,14 +240,14 @@ export function hydrateQuantStrategy(
           } / ${basketSize ?? 0} 檔`
         : "尚未產生可讀取的 S1 basket",
       primaryReadout: `${formatMoney(status?.configuredCapitalTwd)} / ${
-        status?.capitalSource ?? "資金來源未標示"
+        capitalSourceLabel(status?.capitalSource)
       }`,
       secondaryReadout: status?.automaticScheduler.enabled
         ? `自動排程已啟用；${status.automaticScheduler.signalWindowTst ?? "訊號視窗未標示"}`
-        : "自動排程未啟用；SIM-only，真單保持鎖定",
+        : "自動排程未啟用；僅模擬帳本，正式下單保持鎖定",
       sourceLabel: [
         hasResearch ? "核准研究快照" : null,
-        basket?.found ? `S1 basket (${basket.source ?? "後端"})` : null,
+        basket?.found ? `S1 basket (${basketSourceLabel(basket.source)})` : null,
         status ? "S1 執行狀態" : null,
       ].filter(Boolean).join(" + ") || "尚未取得後端資料",
       researchWindow,

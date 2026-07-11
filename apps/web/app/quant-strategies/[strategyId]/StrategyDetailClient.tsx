@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 
 import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
-import type { QuantStrategy, StrategyCurvePoint } from "../strategy-data";
+import { dataStateLabel, type QuantStrategy, type StrategyCurvePoint } from "../strategy-data";
 import styles from "../QuantStrategies.module.css";
 
 const MIN_SIM_CAPITAL = 50_000;
@@ -236,7 +236,7 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
           <strong>S1 是目前唯一正式量化策略。</strong> 本頁的資金設定會接到後端 S1 runner；其他研究策略先不放進正式產品頁。
         </div>
         <div className={styles.notice} style={{ marginBottom: 16 }}>
-          <strong>{strategy.current.dataState}</strong> / {strategy.current.sourceLabel}
+          <strong>{dataStateLabel(strategy.current.dataState)}</strong> / {strategy.current.sourceLabel}
           {strategy.current.asOf ? ` / 最新 basket ${strategy.current.asOf}` : ""}
           {strategy.current.researchWindow ? ` / 核准研究窗 ${strategy.current.researchWindow}` : ""}
         </div>

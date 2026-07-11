@@ -508,6 +508,7 @@
 .ltab .ts{color:var(--fg-3);font-size:11px}
 .ltab .src.kgi{color:var(--fg-2)}
 .ltab .src.paper{color:var(--brand)}
+.ltab .src.warn{color:var(--bad);font-weight:700}
 .ltab .ev-buy{color:var(--bad)}
 .ltab .ev-sell{color:var(--ok)}
 .ltab .ev-gate{color:var(--brand)}

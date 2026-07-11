@@ -10,6 +10,7 @@ import {
   formatSignedFractionPct,
   signTone,
   fAutoDataSourceLabel,
+  fAutoBrokerConfirmed,
   briefDeliverySummary,
 } from "./weekly-review-format";
 
@@ -120,6 +121,19 @@ describe("fAutoDataSourceLabel", () => {
   it("falls back for unknown/null", () => {
     expect(fAutoDataSourceLabel(null)).toBe("資料來源待確認");
     expect(fAutoDataSourceLabel("something_else")).toBe("資料來源待確認");
+  });
+});
+
+describe("fAutoBrokerConfirmed", () => {
+  it("only kgi_gateway counts as broker-confirmed", () => {
+    expect(fAutoBrokerConfirmed("kgi_gateway")).toBe(true);
+  });
+  it("every reconstructed source is not broker-confirmed", () => {
+    expect(fAutoBrokerConfirmed("audit_log_rebuild")).toBe(false);
+    expect(fAutoBrokerConfirmed("audit_log_fallback")).toBe(false);
+    expect(fAutoBrokerConfirmed("orders_submitted_audit_rebuilt")).toBe(false);
+    expect(fAutoBrokerConfirmed(null)).toBe(false);
+    expect(fAutoBrokerConfirmed("something_else")).toBe(false);
   });
 });
 

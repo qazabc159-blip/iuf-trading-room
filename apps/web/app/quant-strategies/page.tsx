@@ -6,7 +6,7 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import styles from "./QuantStrategies.module.css";
 import { loadQuantStrategies } from "./live-strategy-data";
-import type { DisplayStatus, QuantStrategy, StrategyCurvePoint } from "./strategy-data";
+import { dataStateLabel, type DisplayStatus, type QuantStrategy, type StrategyCurvePoint } from "./strategy-data";
 import { QuantSubsPanel } from "./QuantSubsPanel";
 
 export const dynamic = "force-dynamic";
@@ -132,7 +132,7 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
         <div className={styles.metricGrid}>
           <div className={styles.metric}>
             <span>產品狀態</span>
-            <strong>S1 Only</strong>
+            <strong>僅開放 S1</strong>
             <small className={styles.metricHint}>目前正式量化只開 S1，不再混入其他研究策略。</small>
           </div>
           <div className={styles.metric}>
@@ -167,10 +167,10 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
         )}
 
         <div className={styles.notice} style={{ marginBottom: 12 }}>
-          <ShieldCheck size={15} strokeWidth={1.9} /> SIM-only / real order disabled / KGI SIM observation.
+          <ShieldCheck size={15} strokeWidth={1.9} /> 僅模擬帳本 · 正式下單已鎖定 · 僅供 KGI SIM 觀察
         </div>
         <div className={styles.notice} style={{ marginBottom: 12 }}>
-          <strong>{strategy.current.dataState}</strong> / {strategy.current.sourceLabel}
+          <strong>{dataStateLabel(strategy.current.dataState)}</strong> / {strategy.current.sourceLabel}
           {strategy.current.asOf ? ` / 最新 basket ${strategy.current.asOf}` : ""}
           {strategy.current.researchWindow ? ` / 研究窗 ${strategy.current.researchWindow}` : ""}
         </div>
@@ -266,13 +266,13 @@ export default async function QuantStrategiesPage({
       </div>
 
       {isSubsTab ? (
-        <Panel code="QNT-SUBS" title="S1 資金配置紀錄" sub="從後端 audit log 讀取最新 SIM-only 設定">
+        <Panel code="QNT-SUBS" title="S1 資金配置紀錄" sub="讀取最新一筆模擬資金設定紀錄">
           <QuantSubsPanel />
         </Panel>
       ) : (
         <Panel code="QNT-01" title="S1 F-AUTO" sub="唯一正式量化策略，接 KGI SIM 觀察線">
           <div className="_qnt-banner">
-            <b className="tg gold">SIM-only guard</b> / 這裡配置的是 F-AUTO/S1 的模擬資金，不會開啟真實委託。資金會由後端 S1 runner 讀取並用於下一次 basket sizing。
+            <b className="tg gold">僅模擬資金防呆</b> / 這裡配置的是 F-AUTO/S1 的模擬資金，不會開啟真實委託。資金會由後端 S1 runner 讀取並用於下一次 basket sizing。
           </div>
           <div className="_qnt-grid-wrap">
             <div className={styles.grid}>

@@ -311,5 +311,51 @@ describe("F-AUTO NAV Curve panel", () => {
     // Pattern must match /nav subpath
     expect(routeSource).toContain("portfolio\\/f-auto(?:\\/nav)?");
   });
+
+  // P1-7 (product critique 2026-07-10): "0/8 券商回報已對上" used to sit
+  // quietly in a neutral-colored grid cell with only a small 10px pill as
+  // signal. Escalate to a visible alert whenever any strategy-book order
+  // still lacks a broker confirmation.
+  it("escalates the reconciliation card to a visible alert state when orders are unconfirmed", () => {
+    expect(panelSource).toContain("hasUnconfirmed");
+    expect(panelSource).toContain("recon.unconfirmedCount > 0");
+    expect(panelSource).toContain("_fauto-recon-card-alert");
+    expect(panelSource).toContain("未經券商回報對帳，本頁及全站顯示的 F-AUTO 損益皆依內部委託紀錄重建");
+  });
+
+  // P1-1 (product critique 2026-07-10): this page's kv-list tables rendered
+  // several raw backend enum values verbatim ("audit_log_fallback",
+  // "weekly_tuesday_kgi_sim", "sideways", pending order status).
+  it("translates raw backend enums instead of rendering them verbatim", () => {
+    expect(panelSource).toContain("regimeLabel(state.data.regime)");
+    expect(panelSource).toContain("schedulerModeLabel(state.data.automaticScheduler.mode)");
+    expect(panelSource).toContain("capitalSourceLabel(state.data.capitalSource)");
+    expect(panelSource).toContain('mode === "weekly_tuesday_kgi_sim"');
+    expect(panelSource).toContain('regime === "sideways"');
+    expect(panelSource).not.toContain("state.data.regime ?? \"--\"");
+    expect(panelSource).not.toContain("state.data.capitalSource ?? \"--\"");
+    expect(panelSource).not.toContain("state.data.automaticScheduler.mode ?? \"--\"");
+    expect(panelSource).not.toContain("state.data.eodDataSource ?? \"--\"");
+    expect(panelSource).not.toContain("state.data.dataSource ?? \"--\"");
+  });
+
+  it("translates the last SIM order status enum (pending|pass|fail) instead of leaking it raw", () => {
+    expect(connSource).toContain("simOrderStatusLabel(state.data.last_sim_order_status)");
+    expect(connSource).toContain('status === "pending"');
+    expect(connSource).not.toContain("{state.data.last_sim_order_status}");
+  });
+
+  // P1-1: trading room used to unconditionally label every unreachable-KGI
+  // moment "連線中斷"/故障, even during the EC2 gateway's normal weekday
+  // 08:20-14:10 TST run window — unify to F-AUTO's "排程關機中，屬正常" wording.
+  it("unifies the trading-room KGI-unreachable wording with F-AUTO's scheduled-off copy", () => {
+    const liveHydration = readFileSync(
+      new URL("../../../lib/final-v031-live.ts", import.meta.url),
+      "utf8",
+    );
+    expect(liveHydration).toContain("isKgiGatewayScheduledOff");
+    expect(liveHydration).toContain("KGI_GATEWAY_SCHEDULED_OFF_DETAIL");
+    expect(liveHydration).toContain("目前在關機時段，屬正常狀態");
+  });
 });
 
