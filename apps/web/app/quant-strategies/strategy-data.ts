@@ -1,5 +1,5 @@
 import type { LabStrategySnapshot } from "@/lib/api";
-import type { S1Basket, S1SimStatus } from "@/lib/fauto-sim-api";
+import type { S1Basket, S1SimStatus, TrackRecordNavResponse } from "@/lib/fauto-sim-api";
 
 export type StrategyHolding = {
   symbol: string;
@@ -44,6 +44,18 @@ export type QuantStrategy = {
     hitRatePct: number | null;
     sampleCount: number | null;
   };
+  // P0-3 frontend follow-up (#1216, 2026-07-10): the metrics above are
+  // research/backtest numbers. isLiveVerifiedTrackRecord=false means every
+  // headline number in `metrics` must render with `headlineDisclosureZh`
+  // alongside it (see TrackRecordDisclosure component). realSimReturnPct is
+  // the site's actual F-AUTO SIM performance (含成本, GET /api/v1/track-record/nav)
+  // for side-by-side comparison — separate from and not overridden by the
+  // backtest metrics above.
+  trackRecord: {
+    isLiveVerifiedTrackRecord: boolean;
+    headlineDisclosureZh: string | null;
+  };
+  realSimReturnPct: number | null;
   current: {
     asOf: string | null;
     status: string;
@@ -99,6 +111,11 @@ export const QUANT_STRATEGIES: QuantStrategy[] = [
       hitRatePct: null,
       sampleCount: null,
     },
+    trackRecord: {
+      isLiveVerifiedTrackRecord: false,
+      headlineDisclosureZh: null,
+    },
+    realSimReturnPct: null,
     current: {
       asOf: null,
       status: "等待 S1 執行狀態",
@@ -118,6 +135,11 @@ export type QuantStrategyLiveData = {
   snapshot: LabStrategySnapshot | null;
   status: S1SimStatus | null;
   basket: S1Basket | null;
+  // P0-3 frontend follow-up: real F-AUTO SIM performance (含成本), from the
+  // public GET /api/v1/track-record/nav endpoint, for side-by-side display
+  // next to the research backtest metrics above. null when unavailable —
+  // caller must not fall back to the backtest number.
+  nav?: TrackRecordNavResponse | null;
 };
 
 function percentFromFraction(value: number | null | undefined) {
@@ -181,6 +203,11 @@ export function hydrateQuantStrategy(
       hitRatePct: percentFromFraction(metrics?.hitRatePct ?? metrics?.hitRate),
       sampleCount: metrics?.totalRebalances ?? snapshot?.panelWindow?.rebalancePeriods ?? null,
     },
+    trackRecord: {
+      isLiveVerifiedTrackRecord: snapshot?.isLiveVerifiedTrackRecord ?? false,
+      headlineDisclosureZh: snapshot?.headlineDisclosureZh ?? null,
+    },
+    realSimReturnPct: live.nav?.summary?.cumulativeReturnPct ?? null,
     current: {
       asOf: basketDate,
       status: basketDate

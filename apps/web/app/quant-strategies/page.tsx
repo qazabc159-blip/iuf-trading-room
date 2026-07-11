@@ -3,6 +3,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
+import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import styles from "./QuantStrategies.module.css";
 import { loadQuantStrategies } from "./live-strategy-data";
 import type { DisplayStatus, QuantStrategy, StrategyCurvePoint } from "./strategy-data";
@@ -115,6 +116,19 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
         </p>
         <p className={styles.signal}>{strategy.signal}</p>
 
+        {strategy.realSimReturnPct != null && (
+          <div
+            className={styles.metric}
+            style={{ marginBottom: 10, borderColor: "rgba(220,228,240,0.14)" }}
+          >
+            <span>S1 F-AUTO 實盤模擬（含成本）</span>
+            <strong style={{ color: strategy.realSimReturnPct >= 0 ? "var(--tw-up-bright)" : "var(--tw-dn-bright)", fontSize: 20 }}>
+              {pct(strategy.realSimReturnPct)}
+            </strong>
+            <small className={styles.metricHint}>KGI SIM 實際下單累積損益，非回測示意。</small>
+          </div>
+        )}
+
         <div className={styles.metricGrid}>
           <div className={styles.metric}>
             <span>產品狀態</span>
@@ -127,14 +141,22 @@ function StrategyCard({ strategy }: { strategy: QuantStrategy }) {
             <small className={styles.metricHint}>{strategy.current.primaryReadout}</small>
           </div>
           <div className={styles.metric}>
-            <span>命中率</span>
+            <span>命中率（研究回測）</span>
             <strong>{pct(strategy.metrics.hitRatePct)}</strong>
           </div>
           <div className={styles.metric}>
-            <span>最大回撤</span>
+            <span>最大回撤（研究回測）</span>
             <strong>{pct(strategy.metrics.maxDrawdownPct)}</strong>
           </div>
         </div>
+
+        {(strategy.metrics.hitRatePct != null || strategy.metrics.maxDrawdownPct != null) && (
+          <TrackRecordDisclosure
+            isLiveVerifiedTrackRecord={strategy.trackRecord.isLiveVerifiedTrackRecord}
+            headlineDisclosureZh={strategy.trackRecord.headlineDisclosureZh}
+            compact
+          />
+        )}
 
         {hasCurve ? (
           <div className={styles.spark}>

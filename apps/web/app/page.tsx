@@ -57,6 +57,8 @@ import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-ro
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
+import { getTrackRecordNav, type TrackRecordNavSummary } from "@/lib/fauto-sim-api";
+import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
 import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
 import type { StockRecCardData } from "./ai-recommendations/StockRecCard";
@@ -2648,23 +2650,61 @@ function PaperPanel({
   );
 }
 
-function StrategyPanel({ strategy }: { strategy: LoadState<S1StrategyData | null> }) {
+function StrategyPanel({
+  strategy,
+  realSim,
+}: {
+  strategy: LoadState<S1StrategyData | null>;
+  realSim: LoadState<TrackRecordNavSummary | null>;
+}) {
   const snapshot = strategy.data;
   const netReturn = snapshot?.headlineMetrics.strategyNetAbsoluteReturnPct;
   const maxDrawdown = snapshot?.headlineMetrics.maxDrawdownNetPct ?? snapshot?.headlineMetrics.maxDrawdown;
+  // P0-3 data-honesty fix (#1216, 2026-07-10): default to NOT live-verified
+  // when the flag is missing (older cached payload) — same fail-safe the
+  // backend itself uses. Never render the backtest number unqualified.
+  const isLiveVerifiedTrackRecord = snapshot?.isLiveVerifiedTrackRecord ?? false;
+  const realSimReturnPct = realSim.data?.cumulativeReturnPct ?? null;
   return (
     <Panel eyebrow="STRATEGY" title="S1 自動量化" sub="唯一正式量化策略 / KGI SIM-only" right={<StatusChip state={strategy.state === "LIVE" ? "LIVE" : stateFromLoad(strategy)} />}>
       {snapshot ? (
-        <div className="tac-strategy-table">
-          <div><span>策略</span><span>狀態</span><span>累積報酬</span><span>最大回撤</span><span>觀察台</span></div>
-          <Link href="/ops/f-auto">
-            <b>S1</b>
-            <span>{snapshot.displayName_zh || snapshot.displayName}</span>
-            <small>{netReturn == null ? "--" : `${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}</small>
-            <small>{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</small>
-            <StatusChip state={snapshot.orderState === "paper_allowed" ? "LIVE" : "REVIEW"} label="查看持倉" compact />
-          </Link>
-        </div>
+        <>
+          {realSimReturnPct != null && (
+            <div
+              style={{
+                margin: "0 16px 12px",
+                padding: "10px 12px",
+                border: "1px solid var(--tac-line)",
+                borderRadius: 4,
+                background: "rgba(255,255,255,0.02)",
+              }}
+            >
+              <b style={{ color: realSimReturnPct >= 0 ? "var(--tw-up-bright)" : "var(--tw-dn-bright)", fontSize: 15 }}>
+                S1 F-AUTO 實盤模擬（含成本）：{realSimReturnPct >= 0 ? "+" : ""}{realSimReturnPct.toFixed(2)}%
+              </b>
+              <small style={{ display: "block", marginTop: 2, color: "var(--tac-fg-2)" }}>
+                KGI SIM 實際下單累積損益，非下方研究回測示意。
+              </small>
+            </div>
+          )}
+          <div className="tac-strategy-table">
+            <div><span>策略</span><span>狀態</span><span>{isLiveVerifiedTrackRecord ? "累積報酬" : "研究回測報酬"}</span><span>最大回撤</span><span>觀察台</span></div>
+            <Link href="/ops/f-auto">
+              <b>S1</b>
+              <span>{snapshot.displayName_zh || snapshot.displayName}</span>
+              <small>{netReturn == null ? "--" : `${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}</small>
+              <small>{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</small>
+              <StatusChip state={snapshot.orderState === "paper_allowed" ? "LIVE" : "REVIEW"} label="查看持倉" compact />
+            </Link>
+          </div>
+          {netReturn != null && (
+            <TrackRecordDisclosure
+              isLiveVerifiedTrackRecord={isLiveVerifiedTrackRecord}
+              headlineDisclosureZh={snapshot.headlineDisclosureZh}
+              compact
+            />
+          )}
+        </>
       ) : (
         <div className="tac-empty-line">S1 核准快照目前無法讀取；不顯示其他研究策略或假績效。</div>
       )}
@@ -2881,6 +2921,7 @@ async function DashboardContent({
     brokerResult,
     recommendationsResult,
     s1StrategyResult,
+    s1RealSimResult,
     intelResult,
     snapshotResult,
   ] = await Promise.allSettled([
@@ -2920,6 +2961,20 @@ async function DashboardContent({
       async () => await getLabStrategySnapshot("cont_liq_v36"),
       (value) => value === null,
       "S1 核准快照目前無法讀取。",
+    )),
+    // P0-3 frontend follow-up (#1216, 2026-07-10): real F-AUTO SIM performance
+    // (含成本) for side-by-side display next to the S1 research backtest
+    // headline number above — the site's actual current track record, not the
+    // research window's backtest return.
+    timedFetch("s1_real_sim", FETCH_PRODUCT_MS, load(
+      "S1 F-AUTO SIM 實盤績效",
+      null,
+      async () => {
+        const result = await getTrackRecordNav();
+        return result.ok ? result.data.summary : null;
+      },
+      (value) => value === null,
+      "S1 F-AUTO SIM 實盤績效目前無法讀取。",
     )),
     timedFetch("intel", FETCH_INTEL_MS, loadMarketIntelDashboard()),
     timedFetch("snapshot", FETCH_HARD_MS, getDashboardSnapshot()),
@@ -3016,6 +3071,12 @@ async function DashboardContent({
     if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 strategy snapshot", reason: `資料延遲（${v._timeout}）` };
     return v;
   })();
+  const s1RealSim = (() => {
+    if (s1RealSimResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 F-AUTO SIM 實盤績效", reason: "載入失敗" };
+    const v = s1RealSimResult.value;
+    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 F-AUTO SIM 實盤績效", reason: `資料延遲（${v._timeout}）` };
+    return v;
+  })();
   const intel = (() => {
     if (intelResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "公開資訊重大訊息", reason: "載入失敗" };
     const v = intelResult.value;
@@ -3068,7 +3129,7 @@ async function DashboardContent({
           </section>
           <section className="tac-two-grid tac-action-grid">
             <AiRecommendationActionPanel recommendations={recommendations} />
-            <StrategyPanel strategy={s1Strategy} />
+            <StrategyPanel strategy={s1Strategy} realSim={s1RealSim} />
           </section>
           <section className="tac-single-panel">
             <MarketIntelPanel intel={intel} />

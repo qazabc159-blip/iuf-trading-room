@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 
+import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import type { QuantStrategy, StrategyCurvePoint } from "../strategy-data";
 import styles from "../QuantStrategies.module.css";
 
@@ -248,8 +249,23 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
           </ul>
         </section>
 
+        {strategy.realSimReturnPct != null && (
+          <section className={styles.band}>
+            <h2>S1 F-AUTO 實盤模擬（含成本）</h2>
+            <div className={styles.metricGrid}>
+              <div className={styles.metric}>
+                <span>KGI SIM 累積損益</span>
+                <strong style={{ color: strategy.realSimReturnPct >= 0 ? "var(--tw-up-bright)" : "var(--tw-dn-bright)", fontSize: 22 }}>
+                  {pct(strategy.realSimReturnPct)}
+                </strong>
+                <small className={styles.metricHint}>實際下單成交結果，非研究回測示意。</small>
+              </div>
+            </div>
+          </section>
+        )}
+
         <section className={styles.band}>
-          <h2>觀察指標</h2>
+          <h2>觀察指標（研究回測）</h2>
           <div className={styles.metricGrid}>
             <div className={styles.metric}><span>研究期淨值曲線</span><strong>{pct(strategy.metrics.netReturnPct)}</strong></div>
             <div className={styles.metric}><span>相對 0050</span><strong>{strategy.metrics.excessPct === undefined ? "NA" : pct(strategy.metrics.excessPct)}</strong></div>
@@ -258,6 +274,12 @@ export function StrategyDetailClient({ strategy }: { strategy: QuantStrategy }) 
             <div className={styles.metric}><span>命中率</span><strong>{pct(strategy.metrics.hitRatePct)}</strong></div>
             <div className={styles.metric}><span>再平衡樣本</span><strong>{strategy.metrics.sampleCount ?? "--"}</strong></div>
           </div>
+          {(strategy.metrics.netReturnPct != null || strategy.metrics.hitRatePct != null) && (
+            <TrackRecordDisclosure
+              isLiveVerifiedTrackRecord={strategy.trackRecord.isLiveVerifiedTrackRecord}
+              headlineDisclosureZh={strategy.trackRecord.headlineDisclosureZh}
+            />
+          )}
         </section>
 
         <section className={styles.band}>
