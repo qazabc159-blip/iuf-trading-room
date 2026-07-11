@@ -3021,6 +3021,16 @@ export type LabStrategySnapshot = {
   commonWindowEnd?: string;
   sourceWindowType?: string;
   caveatTextZh?: string;
+  // P0-3 data-honesty fix (#1216, 2026-07-10): every snapshot's headline
+  // metrics (netAbsoluteReturnPct / hitRatePct / etc.) are research/backtest
+  // numbers, not a live-verified track record. Consumers MUST check
+  // isLiveVerifiedTrackRecord before rendering those metrics as a bare
+  // "累積報酬"/"命中率" headline — when false, headlineDisclosureZh must be
+  // rendered with the number, not buried. Optional because older cached
+  // payloads (pre-#1216) may not carry these fields.
+  isLiveVerifiedTrackRecord?: boolean;
+  trackRecordType?: "live_verified" | "research_backtest_unverified";
+  headlineDisclosureZh?: string;
   panelWindow?: {
     start?: string;
     end?: string;

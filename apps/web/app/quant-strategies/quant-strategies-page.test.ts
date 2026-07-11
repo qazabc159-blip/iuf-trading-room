@@ -31,4 +31,25 @@ describe("quant strategies S1-only product surface", () => {
     expect(strategySource).not.toContain("示意：實際 basket");
     expect(strategySource).toContain("hydrateQuantStrategy");
   });
+
+  // P0-3 data-honesty fix (#1216, 2026-07-10) frontend follow-up: headline
+  // backtest numbers (命中率/最大回撤 on this list card) must not render
+  // without the TrackRecordDisclosure gate, and the page must not use any
+  // of the site's banned overclaim vocabulary.
+  it("gates the backtest headline numbers behind TrackRecordDisclosure", () => {
+    expect(pageSource).toContain("TrackRecordDisclosure");
+    expect(pageSource).toContain("trackRecord.isLiveVerifiedTrackRecord");
+    expect(pageSource).toContain("trackRecord.headlineDisclosureZh");
+    expect(pageSource).toContain("實盤模擬");
+  });
+
+  it("never renders banned overclaim vocabulary", () => {
+    for (const source of [pageSource, strategySource]) {
+      expect(source).not.toMatch(/approved/i);
+      expect(source).not.toMatch(/alpha confirmed/i);
+      expect(source).not.toMatch(/live-ready/i);
+      expect(source).not.toContain("可以跟單");
+      expect(source).not.toContain("保證獲利");
+    }
+  });
 });

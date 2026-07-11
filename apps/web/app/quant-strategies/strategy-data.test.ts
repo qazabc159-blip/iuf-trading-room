@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LabStrategySnapshot } from "@/lib/api";
-import type { S1Basket, S1SimStatus } from "@/lib/fauto-sim-api";
+import type { S1Basket, S1SimStatus, TrackRecordNavResponse } from "@/lib/fauto-sim-api";
 import { QUANT_STRATEGIES, hydrateQuantStrategy } from "./strategy-data";
 
 // Mirrors the real `snapshot` field returned by
@@ -21,6 +21,13 @@ const snapshot = {
   commonWindowEnd: "2026-03-06",
   commonWindowTradingDays: 223,
   caveatTextZh: "歷史研究數字 — 不可外推為未來表現預期。",
+  // P0-3 fix (#1216, 2026-07-10): mirrors mapSnapshotToV47's derived honesty
+  // fields. All three known snapshots carry false as of 2026-07-10 (no
+  // status in the live-verified allowlist).
+  isLiveVerifiedTrackRecord: false,
+  trackRecordType: "research_backtest_unverified" as const,
+  headlineDisclosureZh:
+    "歷史回測（未經驗證），非策略現況，研究窗 2025-04-10 ~ 2026-03-06。歷史研究數字 — 不可外推為未來表現預期。",
   panelWindow: { start: "2024-05-30", end: "2026-03-26", distinctDates: 487, rebalancePeriods: 13 },
   spec: {
     horizonDays: 20,
@@ -140,12 +147,31 @@ const basket: S1Basket = {
   ],
 };
 
+// Mirrors the whitelisted subset returned by GET /api/v1/track-record/nav
+// (#1177) — real F-AUTO SIM performance (含成本), independent of the research
+// backtest snapshot above.
+const nav: TrackRecordNavResponse = {
+  source: "sim_ledger_live",
+  navCurve: [
+    { date: "2026-07-07", equity: 9_790_150, source: "live" },
+    { date: "2026-07-09", equity: 9_814_000, source: "live" },
+  ],
+  weeks: [],
+  summary: {
+    initialEquity: 10_000_000,
+    currentEquity: 9_814_000,
+    cumulativeReturnPct: -1.86,
+    totalRealizedPnlTwd: -186_000,
+  },
+};
+
 describe("hydrateQuantStrategy", () => {
   it("maps sanctioned research and the latest S1 basket without placeholder values", () => {
     const strategy = hydrateQuantStrategy(QUANT_STRATEGIES[0]!, {
       snapshot,
       status,
       basket,
+      nav,
     });
 
     expect(strategy.current.dataState).toBe("LIVE");
@@ -169,6 +195,50 @@ describe("hydrateQuantStrategy", () => {
       }),
     ]);
     expect(strategy.holdings[0]?.note).toContain("101,000 股");
+    // P0-3 fix (#1216): the backtest headline number above (400.89% /
+    // 92.31%) must travel with an explicit "not live-verified" flag and the
+    // backend-provided disclosure sentence — never render bare.
+    expect(strategy.trackRecord.isLiveVerifiedTrackRecord).toBe(false);
+    expect(strategy.trackRecord.headlineDisclosureZh).toContain("歷史回測（未經驗證）");
+    // Real F-AUTO SIM performance (含成本) surfaces independently for
+    // side-by-side comparison against the backtest number.
+    expect(strategy.realSimReturnPct).toBe(-1.86);
+  });
+
+  it("flips isLiveVerifiedTrackRecord true and drops the disclosure sentence for a live-verified snapshot", () => {
+    const liveVerifiedSnapshot = {
+      ...snapshot,
+      isLiveVerifiedTrackRecord: true,
+      trackRecordType: "live_verified" as const,
+      headlineDisclosureZh: "",
+    };
+
+    const strategy = hydrateQuantStrategy(QUANT_STRATEGIES[0]!, {
+      snapshot: liveVerifiedSnapshot,
+      status,
+      basket,
+      nav,
+    });
+
+    expect(strategy.trackRecord.isLiveVerifiedTrackRecord).toBe(true);
+    expect(strategy.trackRecord.headlineDisclosureZh).toBe("");
+  });
+
+  it("defaults isLiveVerifiedTrackRecord to false when the snapshot predates #1216 (field missing)", () => {
+    const preP03Snapshot = { ...snapshot } as Record<string, unknown>;
+    delete preP03Snapshot.isLiveVerifiedTrackRecord;
+    delete preP03Snapshot.trackRecordType;
+    delete preP03Snapshot.headlineDisclosureZh;
+
+    const strategy = hydrateQuantStrategy(QUANT_STRATEGIES[0]!, {
+      snapshot: preP03Snapshot as unknown as LabStrategySnapshot,
+      status,
+      basket,
+      nav,
+    });
+
+    expect(strategy.trackRecord.isLiveVerifiedTrackRecord).toBe(false);
+    expect(strategy.trackRecord.headlineDisclosureZh).toBeNull();
   });
 
   it("shows an honest unavailable state instead of restoring static metrics", () => {
@@ -176,11 +246,14 @@ describe("hydrateQuantStrategy", () => {
       snapshot: null,
       status: null,
       basket: null,
+      nav: null,
     });
 
     expect(strategy.current.dataState).toBe("UNAVAILABLE");
     expect(strategy.metrics.netReturnPct).toBeNull();
     expect(strategy.holdings).toEqual([]);
     expect(strategy.curve).toEqual([]);
+    expect(strategy.trackRecord.isLiveVerifiedTrackRecord).toBe(false);
+    expect(strategy.realSimReturnPct).toBeNull();
   });
 });
