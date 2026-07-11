@@ -1411,7 +1411,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
   // source — reusing the existing endpoint rather than inventing a new one.
   // Capped and best-effort: a symbol that still can't resolve gets an
   // explicit "查無報價" / "查無名稱" reason instead of a silent blank dash.
-  const WATCHLIST_QUOTE_FETCH_CAP = 20;
+  const WATCHLIST_QUOTE_FETCH_CAP = 15; // ≤ kgi DYNAMIC_SLOT_COUNT(19) 且比照 #1189 cap=15 先例（Pete #1225 🟡）
   async function resolveWatchlistExtras(symbols, selectedSymbol) {
     const out = {};
     const targets = symbols
