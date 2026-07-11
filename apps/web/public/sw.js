@@ -76,6 +76,14 @@ function isApiRequest(url) {
   return url.pathname === "/api" || url.pathname.startsWith("/api/");
 }
 
+// Auth calls (login/register/me/logout/...) go straight to the cross-origin
+// API host, not through /api/**, so isApiRequest() above never sees them.
+// Make that network-only intent explicit instead of relying on the fetch
+// listener simply never matching them.
+function isCrossOriginAuthRequest(url) {
+  return url.origin !== self.location.origin && url.pathname.startsWith("/auth");
+}
+
 function isCacheFirstStatic(url) {
   return (
     url.origin === self.location.origin &&
@@ -114,8 +122,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   // Non-negotiable: market/account API data always comes from the network.
-  // Rejections deliberately propagate so offline callers fail fast.
-  if (isApiRequest(url)) {
+  // Rejections deliberately propagate so offline callers fail fast. This also
+  // covers cross-origin calls to the API host's /auth/** routes (login,
+  // register, me, logout, ...), which never match isApiRequest()'s
+  // same-origin /api/** check.
+  if (isApiRequest(url) || isCrossOriginAuthRequest(url)) {
     event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
@@ -146,7 +157,12 @@ function safeNotificationData(data) {
 }
 
 function isSafeAppPath(value) {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
+  if (typeof value !== "string" || !value.startsWith("/")) return false;
+  try {
+    return new URL(value, self.location.origin).origin === self.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 self.addEventListener("push", (event) => {

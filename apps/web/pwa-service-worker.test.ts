@@ -213,4 +213,49 @@ describe("PWA service worker", () => {
       "https://app.example.test/alerts",
     );
   });
+
+  it("rejects a backslash-normalized protocol-relative notification link (WHATWG URL /\\ bypass)", async () => {
+    const harness = createHarness();
+    const notification = { data: { url: "/\\evil.example.com" }, close: vi.fn() };
+
+    await dispatchNotificationClick(harness.listeners.get("notificationclick")!, notification);
+
+    expect(harness.self.clients.openWindow).toHaveBeenCalledWith(
+      "https://app.example.test/alerts",
+    );
+  });
+
+  it("rejects a leading double-backslash notification link", async () => {
+    const harness = createHarness();
+    const notification = { data: { url: "\\\\evil" }, close: vi.fn() };
+
+    await dispatchNotificationClick(harness.listeners.get("notificationclick")!, notification);
+
+    expect(harness.self.clients.openWindow).toHaveBeenCalledWith(
+      "https://app.example.test/alerts",
+    );
+  });
+
+  it("rejects an absolute cross-origin notification link", async () => {
+    const harness = createHarness();
+    const notification = { data: { url: "https://evil" }, close: vi.fn() };
+
+    await dispatchNotificationClick(harness.listeners.get("notificationclick")!, notification);
+
+    expect(harness.self.clients.openWindow).toHaveBeenCalledWith(
+      "https://app.example.test/alerts",
+    );
+  });
+
+  it("keeps cross-origin /auth/** requests network-only with no-store, explicitly", async () => {
+    const harness = createHarness();
+    const request = new Request("https://api.example.test/auth/login");
+
+    const response = dispatchFetch(harness.listeners.get("fetch")!, request);
+    await response;
+
+    expect(harness.fetch).toHaveBeenCalledWith(request, { cache: "no-store" });
+    expect(harness.caches.open).not.toHaveBeenCalled();
+    expect(harness.cache.match).not.toHaveBeenCalled();
+  });
 });
