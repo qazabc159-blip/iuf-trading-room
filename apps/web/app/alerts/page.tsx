@@ -24,6 +24,19 @@ type AlertsSurface =
 // ── Rule catalogue (mirrors openalice-event-rule-engine.ts) ──────────────────
 // These are static UI descriptions — NOT synthesised events.
 // "最近觸發" is derived from fetched AlertEntry[] by ruleId match.
+//
+// P1-2 (2026-07-11 product critique): this panel used to list all 10 of the
+// engine's "market/data + pipeline" rules together, including pipeline
+// self-monitoring ones (AI brief published / hallucination reject / KGI
+// gateway connect-disconnect churn) — presenting ops noise as if it were
+// market surveillance. Those are pipeline/system events (`ops_internal`
+// audience, same classification basis as push/alert-push.ts's PAYLOAD_COPY
+// allowlist), not something a trader watches here. Only the 7 genuine
+// market/data rules remain; ops rules are an Owner-only surface via
+// `GET /api/v1/alerts?audience=ops_internal`, not this page.
+// (Also fixes a pre-existing id typo on R07 — "R07_ANNOUNCEMENT_NEW" never
+// matched the engine's real id "R07_MAJOR_ANNOUNCEMENT", so its "最近觸發"
+// silently never matched a fired event.)
 const RULE_CATALOGUE = [
   {
     id: "R01_REVENUE_SURGE_YOY50",
@@ -68,32 +81,11 @@ const RULE_CATALOGUE = [
     severity: "info" as AlertSeverity,
   },
   {
-    id: "R07_ANNOUNCEMENT_NEW",
+    id: "R07_MAJOR_ANNOUNCEMENT",
     label: "公開資訊觀測站重大公告",
     desc: "重大公告事件（每輪巡檢後新增）",
     dep: "FinMind tw_company_announcement",
     severity: "warning" as AlertSeverity,
-  },
-  {
-    id: "R08_BRIEF_PUBLISHED",
-    label: "AI 每日簡報發布",
-    desc: "Pipeline 自動發布 AI 簡報",
-    dep: "audit_log (brief publish)",
-    severity: "info" as AlertSeverity,
-  },
-  {
-    id: "R09_HALLUCINATION_REJECTED",
-    label: "AI hallucination reject",
-    desc: "簡報因幻覺比率超標被退件（Layer 5 factual reviewer）",
-    dep: "audit_log (hallucination reject)",
-    severity: "warning" as AlertSeverity,
-  },
-  {
-    id: "R10_KGI_GATEWAY_STATE",
-    label: "KGI gateway 連線狀態",
-    desc: "KGI 下單閘道連線狀態變更（斷線 / 恢復）",
-    dep: "EC2 gateway /health",
-    severity: "critical" as AlertSeverity,
   },
 ] as const;
 
@@ -198,6 +190,18 @@ function payloadSummary(payload: Record<string, unknown>): string {
     if (parts.length >= 3) break;
   }
   return parts.length > 0 ? parts.join(" / ") : "條件已觸發，請依規則確認。";
+}
+
+/**
+ * P1-2 (2026-07-11): renders the backend's humanized 繁中 title instead of the
+ * raw rule definition name (e.g. "AI brief published", "KGI gateway state
+ * change") the card used to show verbatim — the "英文系統句外洩" the product
+ * critique flagged. `label` is an additive backend field not yet in the shared
+ * `AlertEntry` type, so it's read defensively here with a same-page fallback.
+ */
+function displayLabel(alert: AlertEntry): string {
+  const label = (alert as unknown as { label?: unknown }).label;
+  return typeof label === "string" && label.trim() ? label : alert.ruleName;
 }
 
 function severityCounts(alerts: AlertEntry[]) {
@@ -693,10 +697,10 @@ export default async function AlertsPage() {
         </div>
       )}
 
-      {/* ── 10 Rule Explanation Panel ────────────────────────────────────────── */}
+      {/* ── Rule Explanation Panel — market/data rules only (P1-2) ─────────────── */}
       <div className="_alr-rule-panel">
         <div className="_alr-rule-panel-header">
-          <span className="_alr-rule-panel-title">監控規則 — 10 類事件</span>
+          <span className="_alr-rule-panel-title">市場監控規則 — {RULE_CATALOGUE.length} 類事件</span>
           <span className="_alr-rule-panel-sub">引擎每 5 分鐘巡檢一次；FinMind 資料同步完成後規則自動啟用</span>
         </div>
         <div className="_alr-rule-list">
@@ -809,7 +813,7 @@ export default async function AlertsPage() {
                     >
                       {st.label}
                     </span>
-                    <span className="_alr-rule-name">{alert.ruleName}</span>
+                    <span className="_alr-rule-name">{displayLabel(alert)}</span>
                     {alert.ticker && <span className="_alr-ticker">{alert.ticker}</span>}
                   </div>
 
