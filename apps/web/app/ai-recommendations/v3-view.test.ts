@@ -128,6 +128,50 @@ describe("AI recommendations v3 view mapping", () => {
     expect(productText).not.toMatch(/trace=|parsing error|parser|diagnostic|rawSynthesisPreview|usedFallback/i);
   });
 
+  // P1-4 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): backend
+  // sends the same risk content as a merged `risk` string AND an itemized
+  // `risks` array. Old joinLines(item.risk, item.risks, ...) rendered both —
+  // the merged sentence, then every point again individually.
+  it("does not duplicate risk text when the backend sends both a merged risk string and an itemized risks array", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "3006",
+      companyName: "晶豪科",
+      bucket: "A",
+      totalScore: 77,
+      risk: "供應鏈資料company_graph_db顯示dataAvailable=false，主題分維持預設10。; 估值仍不便宜，PER 28.18。",
+      risks: [
+        "供應鏈資料company_graph_db顯示dataAvailable=false，主題分維持預設10。",
+        "估值仍不便宜，PER 28.18。",
+      ],
+    });
+
+    const occurrences = (card?.risk?.match(/估值仍不便宜/g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+
+  it("still falls back to why_not_buy for risk when risk/risks/riskFactors are all absent", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2330",
+      bucket: "B",
+      totalScore: 68,
+      why_not_buy: ["盤中跌破支撐要降風險"],
+    });
+    expect(card?.risk).toContain("盤中跌破支撐");
+  });
+
+  // P1-1: raw backend field names inside AI-generated risk narratives must be
+  // translated to human Chinese, not shown verbatim.
+  it("translates raw backend field-name fragments inside risk narratives into human Chinese", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2317",
+      bucket: "B",
+      totalScore: 70,
+      risk: "7/9成交量8545.9萬股但volumeRatio20d僅0.8；供應鏈資料dataAvailable=false，chainPosition與beneficiaryTier暫缺；產業鏈資料暫缺：company_graph_db 尚無定位。",
+    });
+    expect(card?.risk).not.toMatch(/volumeRatio20d|dataAvailable|company_graph_db|chainPosition|beneficiaryTier/);
+    expect(card?.risk).toContain("20日均量比");
+  });
+
   it("marks non-complete five-card fallback responses as degraded instead of live", () => {
     const state = buildV3PanelState({
       data: {

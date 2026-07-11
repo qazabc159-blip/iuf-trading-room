@@ -139,6 +139,10 @@ const CO_HERO_CSS = `
   text-overflow: ellipsis;
 }
 ._co-kpi-value {
+  /* P1-10 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): this
+     used to be nowrap+ellipsis, which truncated the page's single most
+     important number ("最新價") to "2,41...", silently hiding real digits.
+     Wrapping onto a second line is more honest than losing information. */
   min-width: 0;
   font-family: var(--mono);
   font-size: 26px;
@@ -146,9 +150,8 @@ const CO_HERO_CSS = `
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--night-ink, #e7ecf3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 ._co-kpi-value.--md {
   font-size: 20px;

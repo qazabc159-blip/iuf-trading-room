@@ -1618,6 +1618,16 @@ export function OhlcvCandlestickChart({
     : null;
   const highInView = chartBars.length ? Math.max(...chartBars.map((bar) => bar.high)) : null;
   const lowInView = chartBars.length ? Math.min(...chartBars.map((bar) => bar.low)) : null;
+  // P1-10 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): this
+  // stat used to render with only the interval label ("日K 顯示範圍"), never
+  // the RANGE selector (3月/6月/1年/2年/全部) that actually determines which
+  // bars are in view. With "全部" selected, highInView/lowInView cover the
+  // full ~10-year loaded history — right next to the separate "52週高/52週低"
+  // HUD stat above, two unlabeled "低點" numbers read as contradictory. Naming
+  // the active range window here disambiguates them.
+  const activeRangeWindowLabel = isIntraday
+    ? (INTRADAY_RANGE_OPTIONS.find((item) => item.value === intradayRange)?.label ?? "近期")
+    : (RANGE_OPTIONS.find((item) => item.value === range)?.label ?? "全部");
   const kbarTradingDays = new Set(kbarRows.map((row) => row.date).filter(Boolean)).size;
   const displayedIntradayDays = isIntraday
     ? new Set(chartBars.map((bar) => bar.dt.slice(0, 10))).size
@@ -1800,7 +1810,7 @@ export function OhlcvCandlestickChart({
           <div>
             <span>區間高低</span>
             <b className="num">{formatNumber(highInView)} / {formatNumber(lowInView)}</b>
-            <small>{activeMeta?.label ?? "K 線"} 顯示範圍</small>
+            <small>{activeRangeWindowLabel} 視窗最高／最低</small>
           </div>
           <div>
             <span>成交量</span>
