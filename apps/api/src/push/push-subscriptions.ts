@@ -11,6 +11,7 @@ type PushVariables = { session: AppSession };
 type PushEnvironment = { Variables: PushVariables };
 
 export type StoredPushSubscription = {
+  workspaceId: string;
   userId: string;
   endpoint: string;
   keys: PushSubscriptionKeys;
@@ -24,10 +25,10 @@ export type PushSubscriptionInput = {
 };
 
 export interface PushSubscriptionStore {
-  upsert(userId: string, subscription: PushSubscriptionInput): Promise<void>;
-  removeForUser(userId: string, endpoint: string): Promise<boolean>;
-  listAll(): Promise<StoredPushSubscription[]>;
-  removeByEndpoint(endpoint: string): Promise<boolean>;
+  upsert(workspaceId: string, userId: string, subscription: PushSubscriptionInput): Promise<void>;
+  removeForUser(workspaceId: string, userId: string, endpoint: string): Promise<boolean>;
+  listForWorkspace(workspaceId: string): Promise<StoredPushSubscription[]>;
+  removeByEndpoint(workspaceId: string, endpoint: string): Promise<boolean>;
 }
 
 export class PushSubscriptionStorageUnavailableError extends Error {
@@ -44,43 +45,52 @@ function requireDb() {
 }
 
 export const databasePushSubscriptionStore: PushSubscriptionStore = {
-  async upsert(userId, subscription) {
+  async upsert(workspaceId, userId, subscription) {
     const db = requireDb();
     await db
       .insert(pushSubscriptions)
-      .values({ userId, endpoint: subscription.endpoint, keys: subscription.keys })
+      .values({ workspaceId, userId, endpoint: subscription.endpoint, keys: subscription.keys })
       .onConflictDoUpdate({
-        target: pushSubscriptions.endpoint,
+        target: [pushSubscriptions.workspaceId, pushSubscriptions.endpoint],
         set: { userId, keys: subscription.keys },
       });
   },
 
-  async removeForUser(userId, endpoint) {
+  async removeForUser(workspaceId, userId, endpoint) {
     const db = requireDb();
     const removed = await db
       .delete(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)))
+      .where(and(
+        eq(pushSubscriptions.workspaceId, workspaceId),
+        eq(pushSubscriptions.userId, userId),
+        eq(pushSubscriptions.endpoint, endpoint),
+      ))
       .returning({ id: pushSubscriptions.id });
     return removed.length > 0;
   },
 
-  async listAll() {
+  async listForWorkspace(workspaceId) {
     const db = requireDb();
     return db
       .select({
+        workspaceId: pushSubscriptions.workspaceId,
         userId: pushSubscriptions.userId,
         endpoint: pushSubscriptions.endpoint,
         keys: pushSubscriptions.keys,
         createdAt: pushSubscriptions.createdAt,
       })
-      .from(pushSubscriptions);
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.workspaceId, workspaceId));
   },
 
-  async removeByEndpoint(endpoint) {
+  async removeByEndpoint(workspaceId, endpoint) {
     const db = requireDb();
     const removed = await db
       .delete(pushSubscriptions)
-      .where(eq(pushSubscriptions.endpoint, endpoint))
+      .where(and(
+        eq(pushSubscriptions.workspaceId, workspaceId),
+        eq(pushSubscriptions.endpoint, endpoint),
+      ))
       .returning({ id: pushSubscriptions.id });
     return removed.length > 0;
   },
@@ -107,8 +117,8 @@ const defaultDependencies: PushRouteDependencies = {
   getPushService: () => getConfiguredWebPushService(),
 };
 
-function getSessionUserId(c: Context<PushEnvironment>): string | null {
-  return c.get("session")?.user.id ?? null;
+function getSession(c: Context<PushEnvironment>): AppSession | null {
+  return c.get("session") ?? null;
 }
 
 function unavailableResponse(c: Context<PushEnvironment>, state: Extract<WebPushServiceState, { ok: false }>) {
@@ -127,15 +137,15 @@ export function createPushSubscriptionRoutes(dependencies: Partial<PushRouteDepe
   const routes = new Hono<PushEnvironment>();
 
   routes.get("/api/v1/push/vapid-public-key", (c) => {
-    if (!getSessionUserId(c)) return c.json({ error: "unauthenticated" }, 401);
+    if (!getSession(c)) return c.json({ error: "unauthenticated" }, 401);
     const pushService = deps.getPushService();
     if (!pushService.ok) return unavailableResponse(c, pushService);
     return c.json({ data: { publicKey: pushService.service.publicKey } });
   });
 
   routes.post("/api/v1/push/subscribe", async (c) => {
-    const userId = getSessionUserId(c);
-    if (!userId) return c.json({ error: "unauthenticated" }, 401);
+    const session = getSession(c);
+    if (!session) return c.json({ error: "unauthenticated" }, 401);
     const pushService = deps.getPushService();
     if (!pushService.ok) return unavailableResponse(c, pushService);
 
@@ -145,7 +155,7 @@ export function createPushSubscriptionRoutes(dependencies: Partial<PushRouteDepe
     }
 
     try {
-      await deps.store.upsert(userId, parsed.data);
+      await deps.store.upsert(session.workspace.id, session.user.id, parsed.data);
       return c.json({ data: { subscribed: true } }, 201);
     } catch (error) {
       if (error instanceof PushSubscriptionStorageUnavailableError) return storageUnavailableResponse(c);
@@ -154,8 +164,8 @@ export function createPushSubscriptionRoutes(dependencies: Partial<PushRouteDepe
   });
 
   routes.post("/api/v1/push/unsubscribe", async (c) => {
-    const userId = getSessionUserId(c);
-    if (!userId) return c.json({ error: "unauthenticated" }, 401);
+    const session = getSession(c);
+    if (!session) return c.json({ error: "unauthenticated" }, 401);
 
     const parsed = unsubscribeSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
@@ -163,7 +173,11 @@ export function createPushSubscriptionRoutes(dependencies: Partial<PushRouteDepe
     }
 
     try {
-      const removed = await deps.store.removeForUser(userId, parsed.data.endpoint);
+      const removed = await deps.store.removeForUser(
+        session.workspace.id,
+        session.user.id,
+        parsed.data.endpoint,
+      );
       return c.json({ data: { unsubscribed: true, removed } });
     } catch (error) {
       if (error instanceof PushSubscriptionStorageUnavailableError) return storageUnavailableResponse(c);

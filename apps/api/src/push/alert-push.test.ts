@@ -14,6 +14,9 @@ const endpoints = [
   "https://push.example.invalid/gone",
   "https://push.example.invalid/missing",
 ];
+const WORKSPACE_A = "00000000-0000-4000-8000-00000000000a";
+const WORKSPACE_B = "00000000-0000-4000-8000-00000000000b";
+const workspaceBEndpoint = "https://push.example.invalid/workspace-b";
 const eligibleRuleIds = [
   "R01_REVENUE_SURGE_YOY50",
   "R02_INSTITUTIONAL_CONSECUTIVE_BUY_5D",
@@ -32,8 +35,9 @@ const chineseNotificationCopy = /^[\p{Script=Han}，。！？、：；「」『�
 const forbiddenNotificationCopy =
   /保證獲利|可以跟單|alpha confirmed|live-ready|enum|model|debug|openai|llm|kgi|R\d/iu;
 
-function subscription(endpoint: string): StoredPushSubscription {
+function subscription(workspaceId: string, endpoint: string): StoredPushSubscription {
   return {
+    workspaceId,
     userId: "00000000-0000-4000-8000-000000000001",
     endpoint,
     keys: { p256dh: "browser-public-key", auth: "browser-auth-secret" },
@@ -42,26 +46,31 @@ function subscription(endpoint: string): StoredPushSubscription {
 }
 
 function createStore() {
-  const rows = new Map(endpoints.map((endpoint) => [endpoint, subscription(endpoint)]));
-  const removed: string[] = [];
+  const rowKey = (workspaceId: string, endpoint: string) => `${workspaceId}::${endpoint}`;
+  const seedRows = [
+    ...endpoints.map((endpoint) => subscription(WORKSPACE_A, endpoint)),
+    subscription(WORKSPACE_B, workspaceBEndpoint),
+  ];
+  const rows = new Map(seedRows.map((row) => [rowKey(row.workspaceId, row.endpoint), row]));
+  const removed: Array<{ workspaceId: string; endpoint: string }> = [];
   const store: PushSubscriptionStore = {
     async upsert() {},
-    async removeForUser(_userId, endpoint) {
-      return rows.delete(endpoint);
+    async removeForUser(workspaceId, _userId, endpoint) {
+      return rows.delete(rowKey(workspaceId, endpoint));
     },
-    async listAll() {
-      return [...rows.values()];
+    async listForWorkspace(workspaceId) {
+      return [...rows.values()].filter((row) => row.workspaceId === workspaceId);
     },
-    async removeByEndpoint(endpoint) {
-      removed.push(endpoint);
-      return rows.delete(endpoint);
+    async removeByEndpoint(workspaceId, endpoint) {
+      removed.push({ workspaceId, endpoint });
+      return rows.delete(rowKey(workspaceId, endpoint));
     },
   };
-  return { rows, removed, store };
+  return { rowKey, rows, removed, store };
 }
 
-test("event dispatch builds Chinese copy, sends web push, and removes 404/410 subscriptions", async () => {
-  const { rows, removed, store } = createStore();
+test("single-workspace regression sends every subscription in that workspace and removes 404/410 rows", async () => {
+  const { rowKey, rows, removed, store } = createStore();
   const deliveries: Array<{ endpoint: string; payload: string }> = [];
   const pushState: WebPushServiceState = {
     ok: true,
@@ -77,12 +86,17 @@ test("event dispatch builds Chinese copy, sends web push, and removes 404/410 su
   };
   const dispatch = createAlertPushDispatcher({ store, getPushService: () => pushState });
 
-  const result = await dispatch({ ruleId: "R07_MAJOR_ANNOUNCEMENT", ticker: "2330" });
+  const result = await dispatch({ workspaceId: WORKSPACE_A, ruleId: "R07_MAJOR_ANNOUNCEMENT", ticker: "2330" });
 
   assert.deepEqual(result, { status: "sent", attempted: 3, sent: 1, failed: 2, removed: 2 });
   assert.equal(deliveries.length, 3);
-  assert.deepEqual(removed.sort(), endpoints.slice(1).sort());
-  assert.deepEqual([...rows.keys()], [endpoints[0]]);
+  assert.deepEqual(
+    removed.sort((left, right) => left.endpoint.localeCompare(right.endpoint)),
+    endpoints.slice(1).map((endpoint) => ({ workspaceId: WORKSPACE_A, endpoint }))
+      .sort((left, right) => left.endpoint.localeCompare(right.endpoint)),
+  );
+  assert.ok(rows.has(rowKey(WORKSPACE_A, endpoints[0]!)));
+  assert.ok(rows.has(rowKey(WORKSPACE_B, workspaceBEndpoint)), "another workspace must remain untouched");
 
   const payload = JSON.parse(deliveries[0]!.payload) as { title: string; body: string; url: string };
   assert.deepEqual(payload, {
@@ -93,6 +107,34 @@ test("event dispatch builds Chinese copy, sends web push, and removes 404/410 su
   assert.match(payload.title, chineseNotificationCopy);
   assert.match(payload.body, chineseNotificationCopy);
   assert.doesNotMatch(`${payload.title} ${payload.body}`, forbiddenNotificationCopy);
+});
+
+test("workspace A events never reach workspace B subscriptions and per-workspace throttles do not collide", async () => {
+  const { store } = createStore();
+  const deliveries: string[] = [];
+  const dispatch = createAlertPushDispatcher({
+    store,
+    getPushService: () => ({
+      ok: true,
+      service: {
+        publicKey: "test-public-key",
+        async sendNotification(target) {
+          deliveries.push(target.endpoint);
+          return { statusCode: 201, body: "", headers: {} };
+        },
+      },
+    }),
+  });
+
+  const event = { ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null } as const;
+  const aResult = await dispatch({ workspaceId: WORKSPACE_A, ...event });
+  assert.equal(aResult.attempted, endpoints.length);
+  assert.equal(deliveries.includes(workspaceBEndpoint), false);
+
+  deliveries.length = 0;
+  const bResult = await dispatch({ workspaceId: WORKSPACE_B, ...event });
+  assert.deepEqual(bResult, { status: "sent", attempted: 1, sent: 1, failed: 0, removed: 0 });
+  assert.deepEqual(deliveries, [workspaceBEndpoint]);
 });
 
 test("same event type is throttled for five minutes and allowed at the boundary", async () => {
@@ -114,11 +156,11 @@ test("same event type is throttled for five minutes and allowed at the boundary"
     }),
   });
 
-  assert.equal((await dispatch({ ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "sent");
+  assert.equal((await dispatch({ workspaceId: WORKSPACE_A, ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "sent");
   now += 299_999;
-  assert.equal((await dispatch({ ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "throttled");
+  assert.equal((await dispatch({ workspaceId: WORKSPACE_A, ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "throttled");
   now += 1;
-  assert.equal((await dispatch({ ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "sent");
+  assert.equal((await dispatch({ workspaceId: WORKSPACE_A, ruleId: "R08_AI_BRIEF_PUBLISHED", ticker: null })).status, "sent");
   assert.equal(sends, 6);
 
   assert.equal(shouldSendAlertType(undefined, 10), true);
