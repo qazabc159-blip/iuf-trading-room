@@ -14654,22 +14654,34 @@ test("COMPANY-ANN-P0-GATE-1: company announcements are cache-first before TWSE l
 test("COMPANY-ANN-DETAIL-UI-1: company announcements expand official URL details even without body", async () => {
   const fs = await import("node:fs/promises");
   const timeline = await fs.readFile("apps/web/app/companies/[symbol]/AnnouncementsPanel.tsx", "utf8");
-  const fullProfile = await fs.readFile("apps/web/app/companies/[symbol]/FullProfilePanels.tsx", "utf8");
 
-  for (const [label, source] of [["timeline", timeline], ["full-profile", fullProfile]] as const) {
-    assert.ok(
-      source.includes("body || item.url || item.source"),
-      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must treat official URLs/source metadata as expandable detail`
-    );
-    assert.ok(
-      source.includes("開啟正式公告"),
-      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must expose a formal announcement CTA`
-    );
-    assert.ok(
-      source.includes("官方來源未提供完整內文"),
-      `COMPANY-ANN-DETAIL-UI-1: ${label} announcements must render a useful detail state when TWSE omits body text`
-    );
-  }
+  // Canonical detail-expansion UI lives only in AnnouncementsPanel (timeline).
+  assert.ok(
+    timeline.includes("body || item.url || item.source"),
+    "COMPANY-ANN-DETAIL-UI-1: timeline announcements must treat official URLs/source metadata as expandable detail"
+  );
+  assert.ok(
+    timeline.includes("開啟正式公告"),
+    "COMPANY-ANN-DETAIL-UI-1: timeline announcements must expose a formal announcement CTA"
+  );
+  assert.ok(
+    timeline.includes("官方來源未提供完整內文"),
+    "COMPANY-ANN-DETAIL-UI-1: timeline announcements must render a useful detail state when TWSE omits body text"
+  );
+
+  // 2026-07-12 D5 dedup (company page critique): FullProfilePanels no longer
+  // duplicates the expansion UI — it must link to the timeline section instead.
+  // Guard the dedup so the duplicate implementation cannot silently return.
+  const fullProfile = await fs.readFile("apps/web/app/companies/[symbol]/FullProfilePanels.tsx", "utf8");
+  assert.equal(
+    fullProfile.includes("官方來源未提供完整內文"),
+    false,
+    "COMPANY-ANN-DETAIL-UI-1: full-profile must not re-duplicate the announcement expansion UI (dedup guard)"
+  );
+  assert.ok(
+    fullProfile.toLowerCase().includes("announcement"),
+    "COMPANY-ANN-DETAIL-UI-1: full-profile must keep a link/reference routing users to the timeline announcements section"
+  );
 });
 
 test("TRADING-ROOM-QUOTE-STREAM-1: quote stream is symbol-safe and computes change from prev close", async () => {
