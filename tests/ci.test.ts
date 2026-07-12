@@ -8965,6 +8965,71 @@ test("migration 0054 scopes iuf_events indexes and fails closed on ambiguous leg
   );
 });
 
+test("migration 0055 scopes iuf_decisions with provenance-first backfill and DESC schema parity", () => {
+  const forward = readFileSync("packages/db/migrations/0055_iuf_decisions_workspace.sql", "utf8");
+  const down = readFileSync("packages/db/migrations/0055_iuf_decisions_workspace.down.sql", "utf8");
+  const schema = readFileSync("packages/db/src/schema.ts", "utf8");
+
+  assert.match(forward, /ADD COLUMN IF NOT EXISTS workspace_id UUID/i);
+  assert.match(forward, /SET workspace_id = e\.workspace_id[\s\S]*d\.trigger_type = 'event'/i);
+  assert.match(forward, /SET workspace_id = s\.workspace_id[\s\S]*d\.trigger_type = 'signal'/i);
+  assert.match(forward, /workspace_count <> 1/i, "orphaned legacy rows must fail closed when ownership is ambiguous");
+  assert.match(forward, /REFERENCES workspaces\(id\) ON DELETE CASCADE/i);
+  assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/i);
+  assert.match(
+    forward,
+    /iuf_decisions_workspace_trigger_uidx[\s\S]*workspace_id, trigger_type, trigger_id/i,
+  );
+  assert.match(
+    forward,
+    /iuf_decisions_workspace_status_created_idx[\s\S]*workspace_id, status, created_at DESC/i,
+  );
+  assert.match(
+    forward,
+    /iuf_decisions_workspace_action_type_created_idx[\s\S]*workspace_id, action_type, created_at DESC/i,
+  );
+  assert.match(
+    forward,
+    /iuf_decisions_workspace_created_at_idx[\s\S]*workspace_id, created_at DESC/i,
+  );
+  assert.match(down, /COUNT\(DISTINCT workspace_id\)/i);
+  assert.match(down, /tenant_count > 1/i, "down must refuse to erase multi-workspace ownership");
+  assert.match(down, /GROUP BY trigger_type, trigger_id[\s\S]*HAVING COUNT\(\*\) > 1/i);
+  assert.match(down, /DROP COLUMN IF EXISTS workspace_id/i);
+  assert.match(schema, /workspaceId:\s+uuid\("workspace_id"\)\.notNull\(\)/);
+  assert.match(
+    schema,
+    /iuf_decisions_workspace_status_created_idx[\s\S]*table\.workspaceId[\s\S]*table\.status[\s\S]*table\.createdAt\.desc\(\)/,
+  );
+  assert.match(
+    schema,
+    /iuf_decisions_workspace_action_type_created_idx[\s\S]*table\.workspaceId[\s\S]*table\.actionType[\s\S]*table\.createdAt\.desc\(\)/,
+  );
+  assert.match(
+    schema,
+    /iuf_decisions_workspace_created_at_idx[\s\S]*table\.workspaceId[\s\S]*table\.createdAt\.desc\(\)/,
+  );
+});
+
+test("OpenAlice decision SQL consumers enforce workspace scope", () => {
+  const orchestrator = readFileSync("apps/api/src/openalice-orchestrator.ts", "utf8");
+  const executor = readFileSync("apps/api/src/openalice-action-executor.ts", "utf8");
+  const verifier = readFileSync("apps/api/src/openalice-decision-verifier.ts", "utf8");
+  const server = readFileSync("apps/api/src/server.ts", "utf8");
+
+  assert.match(orchestrator, /WHERE e\.workspace_id = \$\{workspaceId\}/);
+  assert.match(orchestrator, /WHERE s\.workspace_id = \$\{workspaceId\}/);
+  assert.match(orchestrator, /INSERT INTO iuf_decisions[\s\S]*\(workspace_id, trigger_type/);
+  assert.match(orchestrator, /ON CONFLICT \(workspace_id, trigger_type, trigger_id\) DO NOTHING/);
+  assert.match(orchestrator, /FROM iuf_decisions[\s\S]*WHERE workspace_id = \$\{workspaceId\}/);
+  assert.match(executor, /FROM iuf_decisions[\s\S]*WHERE workspace_id = \$\{workspaceId\}[\s\S]*status = 'proposed'/);
+  assert.match(executor, /UPDATE iuf_decisions[\s\S]*WHERE workspace_id = \$\{workspaceId\}/);
+  assert.match(verifier, /UPDATE iuf_decisions[\s\S]*WHERE workspace_id = \$\{row\.workspace_id\}/);
+  assert.match(verifier, /getDecisionPerformance\(workspaceId: string\)/);
+  assert.match(server, /getOrchestratorObservability\(session\.workspace\.id, limit\)/);
+  assert.match(server, /decisionWhere = drizzleSql`workspace_id = \$\{session\.workspace\.id\}/);
+});
+
 test("iuf_events SQL consumers carry workspace scope", () => {
   const engine = readFileSync("apps/api/src/openalice-event-rule-engine.ts", "utf8");
   const executor = readFileSync("apps/api/src/openalice-action-executor.ts", "utf8");
