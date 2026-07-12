@@ -55,6 +55,7 @@ const OPS_INTERNAL_RULE_ID = "R13_DAILY_SMOKE_FAILED";
 
 let baseUrl = "";
 let server: ChildProcess | undefined;
+let serverOutput = "";
 let ownerCookie = "";
 let adminCookie = "";
 let analystCookie = "";
@@ -98,9 +99,17 @@ async function waitForHealth(url: string, attempts = 240): Promise<void> {
     }
     await delay(500);
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("alerts-audience-auth.test.ts: API did not become healthy in time.");
+  // Include the spawned server's own stdout/stderr tail so a boot failure is
+  // diagnosable from CI logs alone — role-matrix.test.ts's harness (which
+  // this was based on) silently swallows both streams, which made a real
+  // boot-failure investigation (2026-07-12, PR #1228) impossible from the CI
+  // log alone.
+  const tail = serverOutput.slice(-4000);
+  const base =
+    lastError instanceof Error
+      ? lastError.message
+      : "alerts-audience-auth.test.ts: API did not become healthy in time.";
+  throw new Error(`${base}\n--- spawned server stdout/stderr tail ---\n${tail}`);
 }
 
 /** Idempotent: upserts a workspace + one user per role directly through the DB. */
@@ -199,8 +208,15 @@ before(async () => {
     }
   );
   server = proc;
-  proc.stdout?.on("data", () => {});
-  proc.stderr?.on("data", () => {});
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    serverOutput += chunk.toString();
+  });
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    serverOutput += chunk.toString();
+  });
+  proc.once("exit", (code, signal) => {
+    serverOutput += `\n[spawned server exited: code=${code} signal=${signal}]\n`;
+  });
 
   await waitForHealth(baseUrl);
 
