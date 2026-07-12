@@ -180,6 +180,10 @@ jobs:
           $maxAttempts = 3
           $deployMessage = "GHA deploy ${{ github.sha }}"
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            if ("${{ matrix.service }}" -eq "api") {
+              railway variables --service api --set "RAILWAY_GIT_COMMIT_SHA=${{ github.sha }}" | Out-Null
+              Write-Host "Injected RAILWAY_GIT_COMMIT_SHA=${{ github.sha }} for api"
+            }
             Write-Host "railway up attempt $attempt/$maxAttempts for service ${{ matrix.service }}"
             railway up --service ${{ matrix.service }} --ci --message "$deployMessage"
             $exitCode = $LASTEXITCODE
