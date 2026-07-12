@@ -382,3 +382,269 @@ export async function findByIdempotencyKey(
 ): Promise<OrderState | undefined> {
   return (adapter ?? getDefaultAdapter()).findByIdempotencyKey(key);
 }
+
+// ---------------------------------------------------------------------------
+// FIFO realized P&L (2026-07-12 — paper ledger realized-PnL backlog item)
+//
+// Closes the gap flagged in PR #1222: `/paper/portfolio` only ever showed
+// unrealized state and a fixed baseCapitalTWD constant — round-tripped
+// (bought-then-sold) positions left no trace of what they actually earned.
+//
+// Design:
+//   - FIFO lot matching (台股慣例 — earliest-bought shares are sold first).
+//   - Cost is fee-inclusive at the point of purchase: costPerShareWithFee =
+//     price * (1 + buyCommissionRate). This mirrors how a real cash account
+//     works (commission leaves cash immediately, whether or not the position
+//     is later closed) and keeps the reconciliation identity below exact,
+//     not just directionally close.
+//   - realizedPnlTwd per matched trade = matchedQty * (sellProceedsPerShare
+//     - lot.costPerShareWithFee), where sellProceedsPerShare already nets
+//     out sell commission + securities transaction tax.
+//   - Pure function over an already-fetched OrderState[] — no DB access, so
+//     callers control exactly which orders (userId / status) feed it.
+//
+// Reconciliation identity (locked by paper-ledger-db.test.ts):
+//   totalRealizedPnlTwd + totalUnrealizedPnlTwd === totalMarketValueTwd + netCashFlowTwd
+//   (equivalently: baseCapital + realized + unrealized === marketValue + cash,
+//   since baseCapital cancels out of both sides when netCashFlowTwd is added
+//   to baseCapital to get available cash — see server.ts /paper/portfolio).
+//
+// Known limitation (documented, not solved here — matches the pre-existing
+// weighted-avg computePaperPortfolioPositions() limitation in server.ts):
+//   Selling more shares than currently held (short sale) has no cost basis
+//   to match against. The unmatched quantity's sale proceeds still land in
+//   netCashFlowTwd (money really arrives), but contribute 0 to realizedPnlTwd
+//   and are excluded from remainingOpenQtyShares. The reconciliation identity
+//   above is only proven exact for long-only order sequences; short-sale
+//   paths are intentionally out of scope for this pass.
+// ---------------------------------------------------------------------------
+
+/** Taiwan stock transaction cost rates used by the paper ledger's realized-PnL FIFO matcher.
+ *
+ * Numerically identical to STANDARD_COST_RATES in ../../sim-ledger-backfill.ts
+ * (the F-AUTO SIM ledger's cost model) — copied here rather than imported so the
+ * paper-ledger domain module has zero coupling to the F-AUTO ledger family (a
+ * separate, out-of-lane bounded context). Keep these two rate sets numerically
+ * in sync if the underlying broker cost model ever changes.
+ */
+export interface PaperCostRates {
+  buyCommissionRate: number;            // fraction of buy notional, e.g. 0.001425 (0.1425%)
+  sellCommissionRate: number;           // fraction of sell notional, e.g. 0.001425 (0.1425%)
+  securitiesTransactionTaxRate: number; // fraction of sell notional only, e.g. 0.003 (0.3%)
+}
+
+export const PAPER_COST_RATES: PaperCostRates = {
+  buyCommissionRate: 0.001425,
+  sellCommissionRate: 0.001425,
+  securitiesTransactionTaxRate: 0.003
+};
+
+/** One FIFO-matched (partial or full) close: a slice of a buy lot paired with a sell fill. */
+export interface RealizedTradeMatch {
+  symbol: string;
+  matchedQtyShares: number;
+  buyPrice: number;
+  sellPrice: number;
+  buyFillTime: string;
+  sellFillTime: string;
+  /** Net of buy-side commission and sell-side commission + securities transaction tax. */
+  realizedPnlTwd: number;
+}
+
+export interface SymbolFifoSummary {
+  symbol: string;
+  /** Cumulative net-of-fee realized P&L for this symbol, across all closed FIFO matches. */
+  realizedPnlTwd: number;
+  closedTradeCount: number;
+  /** Shares still held (FIFO lots not yet matched against a sell). */
+  remainingOpenQtyShares: number;
+  /** Fee-inclusive cost basis of remainingOpenQtyShares (what actually left cash to buy them). */
+  costBasisWithFeesTwd: number;
+  /** Most recent fill price for this symbol (buy or sell), or null if never traded. */
+  lastPrice: number | null;
+  marketValueTwd: number;
+  unrealizedPnlTwd: number;
+}
+
+export interface FifoRealizedPnlResult {
+  bySymbol: SymbolFifoSummary[];
+  trades: RealizedTradeMatch[];
+  totalRealizedPnlTwd: number;
+  totalUnrealizedPnlTwd: number;
+  totalCostBasisWithFeesTwd: number;
+  totalMarketValueTwd: number;
+  /** Signed cash impact of every FILLED buy/sell (fee-inclusive). Add to base capital for available cash. */
+  netCashFlowTwd: number;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function fillTimeMillis(o: OrderState): number {
+  const t = o.fill?.fillTime;
+  if (t === undefined || t === null) return 0;
+  const parsed = t instanceof Date ? t.getTime() : Date.parse(String(t));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function fillTimeIso(o: OrderState): string {
+  const t = o.fill?.fillTime;
+  if (t instanceof Date) return t.toISOString();
+  return String(t ?? "");
+}
+
+/**
+ * FIFO-match every FILLED order's fill (buys open lots, sells close the
+ * earliest-bought open lots first) and derive realized/unrealized P&L.
+ *
+ * Pure function: no DB access, no side effects. Callers pass in whatever
+ * order set they want reconciled (typically listOrders(userId, {status:"FILLED"})).
+ */
+export function computeFifoRealizedPnl(
+  orders: readonly OrderState[],
+  costRates: PaperCostRates = PAPER_COST_RATES
+): FifoRealizedPnlResult {
+  const filled = orders.filter((o) => o.fill !== null && o.intent.status === "FILLED");
+
+  const sorted = [...filled].sort((a, b) => {
+    const dt = fillTimeMillis(a) - fillTimeMillis(b);
+    if (dt !== 0) return dt;
+    const ct = a.intent.createdAt.localeCompare(b.intent.createdAt);
+    if (ct !== 0) return ct;
+    return a.intent.id.localeCompare(b.intent.id);
+  });
+
+  interface Lot {
+    qtyShares: number;
+    price: number;
+    costPerShareWithFee: number;
+    fillTime: string;
+  }
+
+  const lotsBySymbol = new Map<string, Lot[]>();
+  const trades: RealizedTradeMatch[] = [];
+  const realizedBySymbol = new Map<string, { realizedPnlTwd: number; closedTradeCount: number }>();
+  const lastPriceBySymbol = new Map<string, number>();
+  let netCashFlowTwd = 0;
+
+  const ensureLots = (symbol: string): Lot[] => {
+    let lots = lotsBySymbol.get(symbol);
+    if (!lots) {
+      lots = [];
+      lotsBySymbol.set(symbol, lots);
+    }
+    return lots;
+  };
+  const ensureRealized = (symbol: string) => {
+    let r = realizedBySymbol.get(symbol);
+    if (!r) {
+      r = { realizedPnlTwd: 0, closedTradeCount: 0 };
+      realizedBySymbol.set(symbol, r);
+    }
+    return r;
+  };
+
+  for (const o of sorted) {
+    const symbol = o.intent.symbol;
+    const fill = o.fill!;
+    const qtyShares = Math.max(0, Number(fill.fillQty) || 0);
+    if (qtyShares <= 0) continue;
+    const price = fill.fillPrice;
+    const timeIso = fillTimeIso(o);
+    lastPriceBySymbol.set(symbol, price);
+
+    if (o.intent.side === "buy") {
+      const costPerShareWithFee = price * (1 + costRates.buyCommissionRate);
+      ensureLots(symbol).push({ qtyShares, price, costPerShareWithFee, fillTime: timeIso });
+      netCashFlowTwd -= qtyShares * costPerShareWithFee;
+      continue;
+    }
+
+    // sell: FIFO-match against oldest open lots first
+    const proceedsPerShare = price * (1 - costRates.sellCommissionRate - costRates.securitiesTransactionTaxRate);
+    const lots = ensureLots(symbol);
+    let remaining = qtyShares;
+
+    while (remaining > 0 && lots.length > 0) {
+      const lot = lots[0];
+      const matchedQty = Math.min(remaining, lot.qtyShares);
+      const realizedPnlTwd = round2(matchedQty * (proceedsPerShare - lot.costPerShareWithFee));
+
+      trades.push({
+        symbol,
+        matchedQtyShares: matchedQty,
+        buyPrice: lot.price,
+        sellPrice: price,
+        buyFillTime: lot.fillTime,
+        sellFillTime: timeIso,
+        realizedPnlTwd
+      });
+
+      const r = ensureRealized(symbol);
+      r.realizedPnlTwd += realizedPnlTwd;
+      r.closedTradeCount += 1;
+
+      netCashFlowTwd += matchedQty * proceedsPerShare;
+
+      lot.qtyShares -= matchedQty;
+      remaining -= matchedQty;
+      if (lot.qtyShares <= 0) lots.shift();
+    }
+
+    // Known limitation: excess sell beyond available FIFO lots (short sale).
+    // Proceeds still land in cash (real money), but no cost basis exists so
+    // this quantity contributes 0 realized P&L and is not tracked as an open
+    // lot. See module doc comment above.
+    if (remaining > 0) {
+      netCashFlowTwd += remaining * proceedsPerShare;
+    }
+  }
+
+  const symbols = new Set<string>([...lotsBySymbol.keys(), ...realizedBySymbol.keys()]);
+  const bySymbol: SymbolFifoSummary[] = [];
+  let totalUnrealizedPnlTwd = 0;
+  let totalCostBasisWithFeesTwd = 0;
+  let totalMarketValueTwd = 0;
+
+  for (const symbol of symbols) {
+    const lots = lotsBySymbol.get(symbol) ?? [];
+    const remainingOpenQtyShares = lots.reduce((acc, l) => acc + l.qtyShares, 0);
+    const costBasisWithFeesTwd = round2(lots.reduce((acc, l) => acc + l.qtyShares * l.costPerShareWithFee, 0));
+    const lastPrice = lastPriceBySymbol.get(symbol) ?? null;
+    const marketValueTwd = lastPrice !== null ? round2(remainingOpenQtyShares * lastPrice) : 0;
+    const unrealizedPnlTwd = round2(marketValueTwd - costBasisWithFeesTwd);
+    const realized = realizedBySymbol.get(symbol) ?? { realizedPnlTwd: 0, closedTradeCount: 0 };
+
+    bySymbol.push({
+      symbol,
+      realizedPnlTwd: round2(realized.realizedPnlTwd),
+      closedTradeCount: realized.closedTradeCount,
+      remainingOpenQtyShares,
+      costBasisWithFeesTwd,
+      lastPrice,
+      marketValueTwd,
+      unrealizedPnlTwd
+    });
+
+    totalUnrealizedPnlTwd += unrealizedPnlTwd;
+    totalCostBasisWithFeesTwd += costBasisWithFeesTwd;
+    totalMarketValueTwd += marketValueTwd;
+  }
+
+  bySymbol.sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+  const totalRealizedPnlTwd = round2(
+    [...realizedBySymbol.values()].reduce((acc, r) => acc + r.realizedPnlTwd, 0)
+  );
+
+  return {
+    bySymbol,
+    trades,
+    totalRealizedPnlTwd,
+    totalUnrealizedPnlTwd: round2(totalUnrealizedPnlTwd),
+    totalCostBasisWithFeesTwd: round2(totalCostBasisWithFeesTwd),
+    totalMarketValueTwd: round2(totalMarketValueTwd),
+    netCashFlowTwd: round2(netCashFlowTwd)
+  };
+}
