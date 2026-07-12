@@ -2,6 +2,7 @@ import { timingSafeEqual, randomBytes, createHash } from "node:crypto";
 import { decode as iconvDecode } from "iconv-lite";
 // ── Sentry init must be imported before any other app module ──────────────────
 import { captureException as sentryCaptureException, captureMessage as sentryCaptureMessage } from "./sentry-init.js";
+import { resolveBuildMetadata } from "./build-metadata.js";
 import { serve } from "@hono/node-server";
 import type { Context } from "hono";
 import {
@@ -310,9 +311,10 @@ type Variables = {
 const app = new Hono<{ Variables: Variables }>();
 const repository = getTradingRoomRepository();
 const PROCESS_STARTED_AT = new Date().toISOString();
+const BUILD_METADATA = resolveBuildMetadata({ now: () => new Date(PROCESS_STARTED_AT) });
 const BUILD_INFO = {
   version: process.env.npm_package_version ?? "0.1.0",
-  commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
+  commit: BUILD_METADATA.buildCommit,
   deploymentId: process.env.RAILWAY_DEPLOYMENT_ID ?? process.env.VERCEL_DEPLOYMENT_ID ?? "unknown",
   environment: process.env.RAILWAY_ENVIRONMENT_NAME ?? process.env.VERCEL_ENV ?? "local",
   service: process.env.RAILWAY_SERVICE_NAME ?? "api",
@@ -787,6 +789,8 @@ app.get("/health", (c) =>
   c.json({
     status: "ok",
     uptime: process.uptime(),
+    buildCommit: BUILD_METADATA.buildCommit,
+    deployedAt: BUILD_METADATA.deployedAt,
     build: BUILD_INFO
   })
 );

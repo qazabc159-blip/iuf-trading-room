@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test, { after } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { resolveBuildMetadata } from "../apps/api/src/build-metadata.ts";
 
 // Self-heal for direct `tsx --test` runs that skip tests/setup-test-env.mjs
 // (the supported entry is `pnpm test`). Both flags are read at call time, and
@@ -309,6 +311,36 @@ test("RAILWAY-BOOT-1: production database boot must fail closed when migrations 
     src.includes("refusing to start because production database mode requires migrations"),
     "RAILWAY-BOOT-1: failure reason must make the product-data safety gate explicit"
   );
+});
+
+test("HEALTH-BUILD-1: Railway commit wins, artifact is fallback, and metadata is always present", () => {
+  const tempDirectory = mkdtempSync(path.join(tmpdir(), "iuf-build-metadata-"));
+  const artifactUrl = pathToFileURL(path.join(tempDirectory, "build-metadata.json"));
+  const now = () => new Date("2026-07-12T00:00:00.000Z");
+
+  try {
+    writeFileSync(
+      artifactUrl,
+      JSON.stringify({ commit: "artifact-sha", builtAt: "2026-07-11T23:59:00.000Z" }),
+      "utf8"
+    );
+    assert.deepEqual(
+      resolveBuildMetadata({
+        env: { RAILWAY_GIT_COMMIT_SHA: "railway-sha" },
+        artifactUrl,
+        now
+      }),
+      { buildCommit: "railway-sha", deployedAt: "2026-07-11T23:59:00.000Z" }
+    );
+    assert.equal(resolveBuildMetadata({ env: {}, artifactUrl, now }).buildCommit, "artifact-sha");
+    rmSync(artifactUrl);
+    assert.deepEqual(resolveBuildMetadata({ env: {}, artifactUrl, now }), {
+      buildCommit: "unknown",
+      deployedAt: "2026-07-12T00:00:00.000Z"
+    });
+  } finally {
+    rmSync(tempDirectory, { recursive: true, force: true });
+  }
 });
 
 test("SCHEDULER-BOOT-1: DB-heavy schedulers must not starve auth and K-line reads at production boot", () => {

@@ -167,6 +167,8 @@ async function main() {
     const health = await request<{
       status: string;
       uptime: number;
+      buildCommit: string;
+      deployedAt: string;
       build: {
         version: string;
         commit: string;
@@ -178,6 +180,8 @@ async function main() {
     }>(baseUrl, "/health");
     assert.equal(health.status, "ok");
     assert.equal(typeof health.uptime, "number");
+    assert.equal(typeof health.buildCommit, "string");
+    assert.match(health.deployedAt, /\d{4}-\d{2}-\d{2}T/);
     assert.equal(typeof health.build.version, "string");
     assert.equal(typeof health.build.commit, "string");
     assert.equal(typeof health.build.deploymentId, "string");
