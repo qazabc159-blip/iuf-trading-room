@@ -25,3 +25,18 @@ export async function resolvePrimaryWorkspaceId(): Promise<string | null> {
 
   return execRows<{ id?: string }>(rows)[0]?.id ?? null;
 }
+
+export async function listWorkspaceIds(): Promise<string[]> {
+  if (!isDatabaseMode()) return [];
+  const db = getDb();
+  if (!db) return [];
+
+  const rows = await db.execute(drizzleSql`
+    SELECT id
+    FROM workspaces
+    ORDER BY created_at ASC, id ASC
+  `);
+  return execRows<{ id?: string }>(rows)
+    .map((row) => row.id)
+    .filter((id): id is string => Boolean(id));
+}

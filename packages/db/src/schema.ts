@@ -1160,6 +1160,7 @@ export const iufDecisions = pgTable(
   "iuf_decisions",
   {
     id:            uuid("id").defaultRandom().primaryKey(),
+    workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     // trigger provenance
     triggerType:   text("trigger_type").notNull(),
     triggerId:     text("trigger_id").notNull(),
@@ -1180,10 +1181,14 @@ export const iufDecisions = pgTable(
     createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    statusCreatedIdx:     index("iuf_decisions_status_created_idx").on(table.status, table.createdAt.desc()),
-    actionTypeCreatedIdx: index("iuf_decisions_action_type_created_idx").on(table.actionType, table.createdAt.desc()),
-    createdAtIdx:         index("iuf_decisions_created_at_idx").on(table.createdAt.desc()),
-    triggerUidx:          uniqueIndex("iuf_decisions_trigger_uidx").on(table.triggerType, table.triggerId),
+    workspaceStatusCreatedIdx: index("iuf_decisions_workspace_status_created_idx")
+      .on(table.workspaceId, table.status, table.createdAt.desc()),
+    workspaceActionTypeCreatedIdx: index("iuf_decisions_workspace_action_type_created_idx")
+      .on(table.workspaceId, table.actionType, table.createdAt.desc()),
+    workspaceCreatedAtIdx: index("iuf_decisions_workspace_created_at_idx")
+      .on(table.workspaceId, table.createdAt.desc()),
+    workspaceTriggerUidx: uniqueIndex("iuf_decisions_workspace_trigger_uidx")
+      .on(table.workspaceId, table.triggerType, table.triggerId),
   })
 );
 

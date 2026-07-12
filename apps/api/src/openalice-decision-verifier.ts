@@ -75,6 +75,7 @@ export interface DecisionPerformanceSummary {
 // Row shape from iuf_decisions
 type DecisionRow = {
   id: string;
+  workspace_id: string;
   created_at: string | Date;
   outcome: Record<string, unknown> | string | null;
 };
@@ -270,7 +271,7 @@ export async function computeVerification(
  *
  * Returns { updated, skipped, errors }.
  */
-export async function updateDecisionVerifications(): Promise<{
+export async function updateDecisionVerifications(workspaceId?: string): Promise<{
   updated: number;
   skipped: number;
   errors: number;
@@ -284,15 +285,19 @@ export async function updateDecisionVerifications(): Promise<{
   if (!db) return { updated, skipped, errors };
 
   const typedDb = db as unknown as PriceDb;
+  const workspaceFilter = workspaceId
+    ? drizzleSql`AND workspace_id = ${workspaceId}`
+    : drizzleSql``;
 
   try {
     // Find done deep_analyze decisions whose verification is absent or stale.
     // "stale" = verification.updated_at is older than 24h AND ret_5d still null.
     // We only look at rows where created_at < today (forward data needs time to mature).
     const rows = await db.execute(drizzleSql`
-      SELECT id, created_at, outcome
+      SELECT id, workspace_id, created_at, outcome
       FROM iuf_decisions
       WHERE action_type = 'deep_analyze'
+        ${workspaceFilter}
         AND status = 'done'
         AND created_at < NOW() - INTERVAL '1 day'
         AND (
@@ -349,7 +354,8 @@ export async function updateDecisionVerifications(): Promise<{
             ${JSON.stringify(verification)}::jsonb,
             true
           )
-          WHERE id = ${row.id}::uuid
+          WHERE workspace_id = ${row.workspace_id}
+            AND id = ${row.id}::uuid
         `);
 
         updated++;
@@ -391,7 +397,7 @@ export async function updateDecisionVerifications(): Promise<{
  * Returns null when no data yet (pipe is new — honest, not fake 0%).
  * Fail-open: any DB error returns a null-fields summary.
  */
-export async function getDecisionPerformance(): Promise<DecisionPerformanceSummary> {
+export async function getDecisionPerformance(workspaceId: string): Promise<DecisionPerformanceSummary> {
   const empty: DecisionPerformanceSummary = {
     eligible: 0,
     verified_1d: 0,
@@ -413,7 +419,8 @@ export async function getDecisionPerformance(): Promise<DecisionPerformanceSumma
     const eligibleRes = await db.execute(drizzleSql`
       SELECT COUNT(*)::int AS n
       FROM iuf_decisions
-      WHERE action_type = 'deep_analyze'
+      WHERE workspace_id = ${workspaceId}
+        AND action_type = 'deep_analyze'
         AND status = 'done'
         AND outcome->'verification' IS NOT NULL
     `);
@@ -439,7 +446,8 @@ export async function getDecisionPerformance(): Promise<DecisionPerformanceSumma
           WHERE (outcome->'verification'->>'excess_5d') IS NOT NULL
         ) AS avg_excess_5d
       FROM iuf_decisions
-      WHERE action_type = 'deep_analyze'
+      WHERE workspace_id = ${workspaceId}
+        AND action_type = 'deep_analyze'
         AND status = 'done'
         AND outcome->'verification' IS NOT NULL
     `);

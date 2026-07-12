@@ -35,9 +35,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { eq, sql as drizzleSql } from "drizzle-orm";
-import { getDb, users, workspaces } from "@iuf-trading-room/db";
+import { execRows, getDb, users, workspaces } from "@iuf-trading-room/db";
 
 import { hashPassword } from "../auth-store.js";
+import { runOpenAliceActionTick } from "../openalice-action-executor.js";
 import { _eventEngineInternals } from "../openalice-event-rule-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -177,6 +178,37 @@ async function seedEvent(
     `
   );
   return id;
+}
+
+async function seedDecision(
+  workspaceId: string,
+  marker: string,
+  options: { fallback?: boolean; triggerId?: string } = {},
+): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedDecision requires PERSISTENCE_MODE=database.");
+  const id = randomUUID();
+  const triggerId = options.triggerId ?? randomUUID();
+  await db.execute(drizzleSql`
+    INSERT INTO iuf_decisions (
+      id, workspace_id, trigger_type, trigger_id, trigger_ref, reasoning,
+      action_type, action_payload, confidence, priority, status, model_key, cost_usd
+    ) VALUES (
+      ${id}, ${workspaceId}, 'event', ${triggerId},
+      ${JSON.stringify({ testMarker: marker })}::jsonb,
+      ${marker}, 'priority_alert',
+      ${JSON.stringify({ message: marker, fallback: options.fallback === true })}::jsonb,
+      1, 1, 'proposed', 'test', 0
+    )
+  `);
+  return id;
+}
+
+async function getDecisionStatus(id: string): Promise<string | undefined> {
+  const db = getDb();
+  if (!db) throw new Error("getDecisionStatus requires PERSISTENCE_MODE=database.");
+  const rows = await db.execute(drizzleSql`SELECT status FROM iuf_decisions WHERE id = ${id}::uuid`);
+  return execRows<{ status?: string }>(rows)[0]?.status;
 }
 
 /**
@@ -425,5 +457,51 @@ describe("iuf_events workspace boundary", () => {
       (event) => event.id === secondaryId,
     );
     assert.equal(secondaryEvent?.acknowledged, false, "failed cross-workspace ack must not mutate workspace B");
+  });
+});
+
+describe("iuf_decisions workspace boundary", () => {
+  test("the same trigger key is valid per workspace and observability never crosses tenants", async () => {
+    const sharedTriggerId = randomUUID();
+    const markerA = `decision-observability-a-${randomUUID()}`;
+    const markerB = `decision-observability-b-${randomUUID()}`;
+    await seedDecision(primaryWorkspaceId, markerA, { triggerId: sharedTriggerId });
+    await seedDecision(secondaryWorkspaceId, markerB, { triggerId: sharedTriggerId });
+
+    const primary = await getJson("/api/v1/openalice/orchestrator/state?limit=100", ownerCookie);
+    assert.equal(primary.status, 200);
+    const primaryReasons = (primary.body.recent as Array<{ reasoning: string }>).map((row) => row.reasoning);
+    assert.ok(primaryReasons.includes(markerA));
+    assert.ok(!primaryReasons.includes(markerB), "workspace A observability must exclude workspace B decisions");
+
+    const secondary = await getJson("/api/v1/openalice/orchestrator/state?limit=100", secondaryOwnerCookie);
+    assert.equal(secondary.status, 200);
+    const secondaryReasons = (secondary.body.recent as Array<{ reasoning: string }>).map((row) => row.reasoning);
+    assert.ok(secondaryReasons.includes(markerB));
+    assert.ok(!secondaryReasons.includes(markerA), "workspace B observability must exclude workspace A decisions");
+  });
+
+  test("an action tick for workspace A leaves workspace B proposed", async () => {
+    const decisionA = await seedDecision(primaryWorkspaceId, `decision-action-a-${randomUUID()}`);
+    const decisionB = await seedDecision(secondaryWorkspaceId, `decision-action-b-${randomUUID()}`);
+
+    await runOpenAliceActionTick(primaryWorkspaceId);
+
+    assert.equal(await getDecisionStatus(decisionA), "done", "single-workspace behavior must remain unchanged");
+    assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace A executor must not claim workspace B decisions");
+  });
+
+  test("fallback purge deletes only the caller workspace", async () => {
+    const decisionA = await seedDecision(primaryWorkspaceId, `decision-purge-a-${randomUUID()}`, { fallback: true });
+    const decisionB = await seedDecision(secondaryWorkspaceId, `decision-purge-b-${randomUUID()}`, { fallback: true });
+
+    const purge = await fetch(`${baseUrl}/api/v1/admin/openalice/decisions/purge-fallback-spam`, {
+      method: "POST",
+      headers: { cookie: ownerCookie, "content-type": "application/json" },
+      body: JSON.stringify({ apply: true }),
+    });
+    assert.equal(purge.status, 200);
+    assert.equal(await getDecisionStatus(decisionA), undefined, "workspace A fallback should be removed");
+    assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace B fallback must survive workspace A purge");
   });
 });

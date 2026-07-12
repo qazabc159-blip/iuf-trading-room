@@ -15984,7 +15984,7 @@ app.post("/api/v1/admin/openalice/decisions/purge-fallback-spam", async (c) => {
   const apply = (body as { apply?: unknown })?.apply === true;
 
   // Precise identifiers — only the LLM-unavailable fallback spam, nothing else.
-  const decisionWhere = drizzleSql`action_type = 'priority_alert' AND action_payload->>'fallback' = 'true'`;
+  const decisionWhere = drizzleSql`workspace_id = ${session.workspace.id} AND action_type = 'priority_alert' AND action_payload->>'fallback' = 'true'`;
   const eventWhere = drizzleSql`workspace_id = ${session.workspace.id} AND rule_id = 'R_OPENALICE_DECISION' AND payload->>'message' LIKE 'OpenAlice decision LLM unavailable%'`;
 
   try {
@@ -18078,9 +18078,8 @@ function startSchedulers(workspaceSlug: string): void {
       try {
         const db = getDb();
         if (!db) { await runOpenAliceActionTick(null); return; }
-        const rows = await db.select({ id: workspaces.id }).from(workspaces).limit(1);
-        const wsId = rows[0]?.id ?? null;
-        await runOpenAliceActionTick(wsId);
+        const rows = await db.select({ id: workspaces.id }).from(workspaces);
+        for (const { id } of rows) await runOpenAliceActionTick(id);
       } catch (e) {
         console.error("[openalice-action-executor] Interval tick failed:", e instanceof Error ? e.message : e);
       }
@@ -18088,9 +18087,8 @@ function startSchedulers(workspaceSlug: string): void {
     setTimeout(async () => {
       try {
         const db = getDb();
-        const rows = db ? await db.select({ id: workspaces.id }).from(workspaces).limit(1) : [];
-        const wsId = rows[0]?.id ?? null;
-        void runOpenAliceActionTick(wsId);
+        const rows = db ? await db.select({ id: workspaces.id }).from(workspaces) : [];
+        for (const { id } of rows) await runOpenAliceActionTick(id);
       } catch {
         void runOpenAliceActionTick(null);
       }
@@ -20720,7 +20718,7 @@ app.get("/api/v1/openalice/orchestrator/state", async (c) => {
   }
   const limitRaw = Number(c.req.query("limit"));
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
-  const obs = await getOrchestratorObservability(limit);
+  const obs = await getOrchestratorObservability(session.workspace.id, limit);
   return c.json(obs);
 });
 
