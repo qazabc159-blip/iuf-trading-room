@@ -50,7 +50,8 @@ import {
 import {
   getOrder,
   listOrders,
-  findByIdempotencyKey as findOrderByIdempotencyKey
+  findByIdempotencyKey as findOrderByIdempotencyKey,
+  computeFifoRealizedPnl
 } from "./domain/trading/paper-ledger-db.js";
 import {
   buildPaperOrderContext,
@@ -13959,8 +13960,10 @@ async function computePaperPortfolioPositions(userId: string): Promise<ComputedP
 app.get("/api/v1/paper/portfolio", async (c) => {
   const session = c.get("session");
   let positionList: ComputedPaperPortfolioPosition[];
+  let filledOrders: Awaited<ReturnType<typeof listOrders>> = [];
   try {
     positionList = await computePaperPortfolioPositions(session.user.id);
+    filledOrders = await listOrders(session.user.id, { status: "FILLED" });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return c.json({ error: "list_orders_failed", detail }, 500);
@@ -13978,6 +13981,16 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     .filter((p) => p.netQtyShares > 0)
     .reduce((acc, p) => acc + p.investedCostTWD, 0);
 
+  // 2026-07-12 — FIFO realized P&L (closes the gap PR #1222 flagged: round-tripped
+  // positions previously left no trace of realized gain/loss, baseCapitalTWD never moved).
+  // Additive only: existing fields above are untouched.
+  const fifo = computeFifoRealizedPnl(filledOrders);
+  const fifoBySymbol = new Map(fifo.bySymbol.map((s) => [s.symbol, s]));
+  const positionsWithRealized = positionList.map((p) => ({
+    ...p,
+    realizedPnlTwd: Math.round((fifoBySymbol.get(p.symbol)?.realizedPnlTwd ?? 0) * 100) / 100
+  }));
+
   const summary = {
     baseCapitalTWD,
     currency: "TWD",
@@ -13985,12 +13998,18 @@ app.get("/api/v1/paper/portfolio", async (c) => {
     paperMode: true,
     positionCount: positionList.filter((p) => (p.netQtyShares ?? 0) > 0).length,
     investedCostTWD: Math.round(investedCost * 100) / 100,
+    // realizedPnlTwd / unrealizedPnlTwd / availableCashTWD (new): FIFO lot-matched, fee-inclusive.
+    // Reconciliation identity (locked by paper-ledger-db.test.ts):
+    //   baseCapitalTWD + realizedPnlTwd + unrealizedPnlTwd === marketValue + availableCashTWD
+    realizedPnlTwd: fifo.totalRealizedPnlTwd,
+    unrealizedPnlTwd: fifo.totalUnrealizedPnlTwd,
+    availableCashTWD: Math.round((baseCapitalTWD + fifo.netCashFlowTwd) * 100) / 100,
     note: positionList.length === 0
       ? "empty_state: no filled orders yet; base capital available"
       : "positions computed from filled paper orders"
   };
 
-  return c.json({ data: positionList, summary });
+  return c.json({ data: positionsWithRealized, summary });
 });
 
 // =============================================================================

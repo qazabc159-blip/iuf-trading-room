@@ -35,8 +35,11 @@ import {
   getOrder,
   listOrders,
   recordFill,
-  deleteOrder
+  deleteOrder,
+  computeFifoRealizedPnl,
+  PAPER_COST_RATES
 } from "./paper-ledger-db.js";
+import type { PaperCostRates } from "./paper-ledger-db.js";
 import type { OrderIntentStatus } from "./order-intent.js";
 
 // ---------------------------------------------------------------------------
@@ -319,4 +322,203 @@ test("T7: recordFill returns false for unknown orderId", async () => {
 
   const result = await recordFill("00000000-0000-0000-0000-000000000000", fill, adapter);
   assert.equal(result, false, "recordFill should return false for unknown orderId");
+});
+
+// ---------------------------------------------------------------------------
+// FIFO realized P&L — computeFifoRealizedPnl
+// (2026-07-12 paper ledger realized-PnL backlog: PR #1222 "Known remaining gap")
+// ---------------------------------------------------------------------------
+
+function makeFilledOrder(
+  overrides: Partial<Parameters<typeof createOrderIntent>[0]> & { fillTime: string | Date },
+  fillQty: number,
+  fillPrice: number
+): OrderState {
+  const { fillTime, ...intentOverrides } = overrides;
+  const intent = createOrderIntent({
+    idempotencyKey: `idem-${randomUUID()}`,
+    symbol:         "2330",
+    side:           "buy",
+    orderType:      "market",
+    qty:            1000,
+    quantity_unit:  "LOT",
+    userId:         "00000000-0000-0000-0000-000000000001",
+    ...intentOverrides
+  });
+  return {
+    intent: { ...intent, status: "FILLED", createdAt: typeof fillTime === "string" ? fillTime : fillTime.toISOString() },
+    fill: { fillQty, fillPrice, fillTime: typeof fillTime === "string" ? new Date(fillTime) : fillTime }
+  };
+}
+
+const ZERO_COST_RATES: PaperCostRates = {
+  buyCommissionRate: 0,
+  sellCommissionRate: 0,
+  securitiesTransactionTaxRate: 0
+};
+
+function closeTo(actual: number, expected: number, epsilon = 0.02, msg?: string) {
+  assert.ok(
+    Math.abs(actual - expected) < epsilon,
+    msg ?? `expected ${actual} to be within ${epsilon} of ${expected}`
+  );
+}
+
+// FIFO-1: full close — buy then fully sell, clean cost-rate math
+test("FIFO-1: full close realized P&L nets buy + sell fees exactly", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T02:00:00Z" }, 1000, 100),
+    makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110)
+  ];
+
+  const result = computeFifoRealizedPnl(orders);
+
+  // costPerShareWithFee(buy@100) = 100 * 1.001425 = 100.1425
+  // proceedsPerShare(sell@110)   = 110 * (1 - 0.001425 - 0.003) = 109.51325
+  // pnl/share = 9.37075 * 1000 shares = 9370.75 (exact — no cent rounding ambiguity)
+  assert.equal(result.totalRealizedPnlTwd, 9370.75);
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.trades[0]?.matchedQtyShares, 1000);
+  assert.equal(result.trades[0]?.buyPrice, 100);
+  assert.equal(result.trades[0]?.sellPrice, 110);
+
+  const sym = result.bySymbol.find((s) => s.symbol === "2330");
+  assert.ok(sym);
+  assert.equal(sym.remainingOpenQtyShares, 0, "fully closed — no open lot left");
+  assert.equal(sym.costBasisWithFeesTwd, 0);
+  assert.equal(sym.closedTradeCount, 1);
+  assert.equal(sym.realizedPnlTwd, 9370.75);
+});
+
+// FIFO-2: partial close — some shares closed, remainder still open
+test("FIFO-2: partial close leaves remaining open lot with correct cost basis", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T02:00:00Z" }, 1000, 100),
+    makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 400, 110)
+  ];
+
+  const result = computeFifoRealizedPnl(orders);
+  const sym = result.bySymbol[0];
+  assert.ok(sym);
+
+  // matched 400 shares: 400 * 9.37075 = 3748.30 (clean, no rounding ambiguity)
+  assert.equal(sym.realizedPnlTwd, 3748.3);
+  assert.equal(sym.remainingOpenQtyShares, 600, "600 shares still open (1000 bought - 400 sold)");
+  // remaining lot cost basis: 600 * 100.1425 = 60085.5
+  assert.equal(sym.costBasisWithFeesTwd, 60085.5);
+  assert.equal(sym.lastPrice, 110, "lastPrice reflects the most recent fill (the sell)");
+  assert.equal(sym.marketValueTwd, 600 * 110);
+  closeTo(sym.unrealizedPnlTwd, 600 * 110 - 60085.5);
+});
+
+// FIFO-3: multiple lots at different prices, multiple partial sells — FIFO order matters
+test("FIFO-3: multiple buy lots at different prices are matched oldest-first", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T01:00:00Z" }, 500, 100), // lot 1 (oldest)
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T03:00:00Z" }, 500, 120), // lot 2 (newer, same day)
+    makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 700, 130)  // closes all of lot 1 + part of lot 2
+  ];
+
+  const result = computeFifoRealizedPnl(orders);
+  assert.equal(result.trades.length, 2, "FIFO match splits across two lots");
+
+  const [t1, t2] = result.trades;
+  assert.equal(t1?.buyPrice, 100, "lot 1 (bought first) is matched before lot 2");
+  assert.equal(t1?.matchedQtyShares, 500);
+  assert.equal(t2?.buyPrice, 120, "remaining 200 shares come from lot 2");
+  assert.equal(t2?.matchedQtyShares, 200);
+
+  const sym = result.bySymbol[0];
+  assert.ok(sym);
+  assert.equal(sym.remainingOpenQtyShares, 300, "300 shares left over from lot 2 (500 - 200)");
+  // remaining lot 2 cost basis: 300 * (120 * 1.001425) = 300 * 120.171 = 36051.3
+  closeTo(sym.costBasisWithFeesTwd, 36051.3);
+});
+
+// FIFO-4: same-day multiple fills — deterministic ordering by fillTime, then createdAt
+test("FIFO-4: same-day multiple fills are ordered by fillTime (not insertion order)", () => {
+  // Insert sell BEFORE the buy in array order, but the buy's fillTime is earlier same day —
+  // FIFO matching must still succeed (sort by fillTime, not array order).
+  const buy  = makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T01:00:00Z" }, 200, 50);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-01T05:00:00Z" }, 200, 60);
+
+  const result = computeFifoRealizedPnl([sell, buy]); // deliberately reversed input order
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.trades[0]?.buyPrice, 50);
+  assert.equal(result.trades[0]?.sellPrice, 60);
+  assert.equal(result.bySymbol[0]?.remainingOpenQtyShares, 0);
+});
+
+// FIFO-5: custom cost rates (zero-cost) — verifies the rate parameter is actually applied
+test("FIFO-5: zero-cost rates yield raw price-delta realized P&L", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T02:00:00Z" }, 1000, 100),
+    makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110)
+  ];
+
+  const result = computeFifoRealizedPnl(orders, ZERO_COST_RATES);
+  assert.equal(result.totalRealizedPnlTwd, 10_000, "no fees — pure (110-100)*1000");
+});
+
+// FIFO-6: two symbols are isolated from each other
+test("FIFO-6: realized P&L and open lots are isolated per symbol", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ symbol: "2330", side: "buy",  fillTime: "2026-07-01T01:00:00Z" }, 1000, 100),
+    makeFilledOrder({ symbol: "2330", side: "sell", fillTime: "2026-07-02T01:00:00Z" }, 1000, 110),
+    makeFilledOrder({ symbol: "2454", side: "buy",  fillTime: "2026-07-01T01:00:00Z" }, 500, 500)
+  ];
+
+  const result = computeFifoRealizedPnl(orders);
+  assert.equal(result.bySymbol.length, 2);
+
+  const s2330 = result.bySymbol.find((s) => s.symbol === "2330");
+  const s2454 = result.bySymbol.find((s) => s.symbol === "2454");
+  assert.ok(s2330 && s2454);
+  assert.equal(s2330.realizedPnlTwd, 9370.75);
+  assert.equal(s2330.remainingOpenQtyShares, 0);
+  assert.equal(s2454.realizedPnlTwd, 0, "2454 never sold — no realized P&L");
+  assert.equal(s2454.remainingOpenQtyShares, 500);
+});
+
+// FIFO-7: reconciliation identity — realized + unrealized == marketValue + netCashFlow
+// This is the "帳勾稽鐵律" lock: baseCapital cancels out of both sides when
+// netCashFlowTwd is added to baseCapital to derive available cash (see server.ts),
+// so the identity below must hold independent of baseCapital's actual value.
+test("FIFO-7: totalRealized + totalUnrealized === totalMarketValue + netCashFlow", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ symbol: "2330", side: "buy",  fillTime: "2026-07-01T01:00:00Z" }, 500, 100),
+    makeFilledOrder({ symbol: "2330", side: "buy",  fillTime: "2026-07-01T03:00:00Z" }, 500, 120),
+    makeFilledOrder({ symbol: "2330", side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 700, 130),
+    makeFilledOrder({ symbol: "2454", side: "buy",  fillTime: "2026-07-03T01:00:00Z" }, 1000, 50),
+    makeFilledOrder({ symbol: "2454", side: "sell", fillTime: "2026-07-04T01:00:00Z" }, 300, 55),
+    makeFilledOrder({ symbol: "2454", side: "buy",  fillTime: "2026-07-05T01:00:00Z" }, 200, 48)
+  ];
+
+  const result = computeFifoRealizedPnl(orders);
+  const lhs = result.totalRealizedPnlTwd + result.totalUnrealizedPnlTwd;
+  const rhs = result.totalMarketValueTwd + result.netCashFlowTwd;
+  closeTo(lhs, rhs, 0.05, `reconciliation identity broke: LHS=${lhs} RHS=${rhs}`);
+});
+
+// FIFO-8: reconciliation identity also holds for a single simple round trip
+// (independent, hand-computable sanity check backing FIFO-7's generic assertion)
+test("FIFO-8: reconciliation identity holds for a single full round trip", () => {
+  const orders: OrderState[] = [
+    makeFilledOrder({ side: "buy",  fillTime: "2026-07-01T02:00:00Z" }, 1000, 100),
+    makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110)
+  ];
+  const result = computeFifoRealizedPnl(orders);
+
+  // Fully closed: unrealized=0, marketValue=0. netCashFlow should equal realizedPnl exactly
+  // (base capital in, base capital + pnl out, no open position holding cash hostage).
+  assert.equal(result.totalUnrealizedPnlTwd, 0);
+  assert.equal(result.totalMarketValueTwd, 0);
+  closeTo(result.netCashFlowTwd, result.totalRealizedPnlTwd, 0.02);
+});
+
+// FIFO-9: default export PAPER_COST_RATES matches the documented buy/sell rates
+test("FIFO-9: PAPER_COST_RATES matches buy 0.1425% / sell 0.4425% (incl. STT)", () => {
+  assert.equal(PAPER_COST_RATES.buyCommissionRate, 0.001425);
+  const sellTotal = PAPER_COST_RATES.sellCommissionRate + PAPER_COST_RATES.securitiesTransactionTaxRate;
+  closeTo(sellTotal, 0.004425, 0.0000001);
 });
