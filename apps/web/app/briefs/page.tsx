@@ -401,7 +401,7 @@ function OpenAlicePanel({ openAlice }: { openAlice: LoadState<OpenAliceObservabi
         ))}
       </div>
       {data && (
-        <div className="brief-pipeline-grid">
+        <div className="brief-openalice-grid">
           <span>心跳 <strong>{ageText(data.workerHeartbeatAgeSeconds)}</strong></span>
           <span>掃描 <strong>{ageText(data.lastSweepAgeSeconds)}</strong></span>
           <span>最後產生 <strong>{formatDateTime(data.pipeline?.lastGeneratedAt)}</strong></span>

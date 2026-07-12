@@ -120,7 +120,7 @@ function latestBucketLabel(value: string) {
   if (key.includes("signal")) return "訊號";
   if (key.includes("plan")) return "計畫";
   if (key.includes("brief")) return "簡報";
-  if (key.includes("review")) return "覆盤";
+  if (key.includes("review")) return "復盤";
   return value.replace(/[_-]/g, " ");
 }
 
@@ -144,7 +144,7 @@ function entityLabel(value: string | null | undefined) {
   if (key.includes("signal")) return "訊號";
   if (key.includes("plan")) return "交易計畫";
   if (key.includes("brief")) return "每日簡報";
-  if (key.includes("review")) return "覆盤";
+  if (key.includes("review")) return "復盤";
   if (key.includes("paper")) return "模擬交易";
   if (key.includes("order")) return "委託";
   return value.replace(/[_-]/g, " ");
