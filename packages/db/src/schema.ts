@@ -1300,22 +1300,30 @@ export const workspaceInvites = pgTable(
   })
 );
 
-// -- migration 0051_push_subscriptions.sql
-// Browser PushSubscription endpoints are globally unique; ownership is tied to
-// the authenticated user and cascades away when that user is deleted.
+// -- migrations 0051_push_subscriptions.sql + 0052_push_subscriptions_workspace.sql
+// Browser PushSubscription endpoints are unique within a workspace; ownership
+// is tied to both the authenticated workspace and user.
 export type PushSubscriptionKeys = { p256dh: string; auth: string };
 
 export const pushSubscriptions = pgTable(
   "push_subscriptions",
   {
-    id:        uuid("id").defaultRandom().primaryKey(),
-    userId:    uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    endpoint:  text("endpoint").notNull(),
-    keys:      jsonb("keys").$type<PushSubscriptionKeys>().notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    id:          uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    endpoint:    text("endpoint").notNull(),
+    keys:        jsonb("keys").$type<PushSubscriptionKeys>().notNull(),
+    createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    endpointUidx:   uniqueIndex("push_subscriptions_endpoint_uidx").on(table.endpoint),
-    userCreatedIdx: index("push_subscriptions_user_created_idx").on(table.userId, table.createdAt.desc()),
+    workspaceEndpointUidx: uniqueIndex("push_subscriptions_workspace_endpoint_uidx").on(
+      table.workspaceId,
+      table.endpoint,
+    ),
+    workspaceUserCreatedIdx: index("push_subscriptions_workspace_user_created_idx").on(
+      table.workspaceId,
+      table.userId,
+      table.createdAt.desc(),
+    ),
   })
 );

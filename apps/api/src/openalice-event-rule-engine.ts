@@ -651,9 +651,9 @@ const RULES: EventRule[] = [
       try {
         const { getDailySmokeHistoryDurable } = await import("./broker/kgi-sim-env.js");
 
-        // Smoke history is keyed by workspace — use the primary workspace (single-tenant).
-        const rows = await db.execute(drizzleSql`SELECT id FROM workspaces LIMIT 1`);
-        const workspaceId = execRows<{ id?: string }>(rows)[0]?.id;
+        // iuf_events has no workspace column yet (Phase II). Preserve the current
+        // single-tenant source by resolving the deterministic primary workspace.
+        const workspaceId = await resolvePrimaryWorkspaceId();
         if (!workspaceId) return [];
 
         const history = await getDailySmokeHistoryDurable(workspaceId);
@@ -1025,7 +1025,34 @@ async function isDuplicateCandidate(candidate: { ruleId: string; ticker: string 
 
 // ── Event writer ───────────────────────────────────────────────────────────────
 
-async function writeEvent(event: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">): Promise<void> {
+async function resolvePrimaryWorkspaceId(): Promise<string | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  const configuredSlug = process.env.DEFAULT_WORKSPACE_SLUG?.trim();
+  const rows = configuredSlug
+    ? await db.execute(drizzleSql`
+        SELECT id
+        FROM workspaces
+        ORDER BY CASE WHEN slug = ${configuredSlug} THEN 0 ELSE 1 END,
+                 created_at ASC,
+                 id ASC
+        LIMIT 1
+      `)
+    : await db.execute(drizzleSql`
+        SELECT id
+        FROM workspaces
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      `);
+  return execRows<{ id?: string }>(rows)[0]?.id ?? null;
+}
+
+async function writeEvent(
+  event: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">,
+  workspaceId: string,
+): Promise<void> {
   if (!isDatabaseMode()) return;
   const db = getDb();
   if (!db) return;
@@ -1047,7 +1074,7 @@ async function writeEvent(event: Omit<IufEvent, "id" | "triggeredAt" | "acknowle
       `[event-engine] Event written: rule=${event.ruleId} ticker=${event.ticker ?? "system"} severity=${event.severity}`
     );
     try {
-      await dispatchAlertPush({ ruleId: event.ruleId, ticker: event.ticker });
+      await dispatchAlertPush({ workspaceId, ruleId: event.ruleId, ticker: event.ticker });
     } catch (e) {
       console.warn(`[event-engine] Push dispatch failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1095,6 +1122,8 @@ export async function runEventEngineTick(): Promise<void> {
   let eventsWritten = 0;
 
   try {
+    const workspaceId = await resolvePrimaryWorkspaceId();
+    if (!workspaceId) throw new Error("primary_workspace_unavailable");
     const state = await collectEngineState();
 
     for (const rule of RULES) {
@@ -1113,7 +1142,7 @@ export async function runEventEngineTick(): Promise<void> {
         try {
           const isDup = await isDuplicateCandidate(candidate);
           if (isDup) continue;
-          await writeEvent(candidate);
+          await writeEvent(candidate, workspaceId);
           eventsWritten++;
         } catch (e) {
           console.warn(
@@ -1166,16 +1195,20 @@ export async function runEventEngineTickForce(): Promise<{
   }
 
   const tickStart = Date.now();
+  const workspaceId = await resolvePrimaryWorkspaceId();
+  if (!workspaceId) {
+    result.errors.push("primary_workspace_unavailable");
+    return result;
+  }
 
-  // Write dispatch-start audit log via raw SQL (workspace_id nullable workaround)
+  // Force-dispatch remains bound to the same deterministic primary workspace as
+  // the normal tick until iuf_events gains workspace_id in Phase II.
   try {
     await db.execute(
       drizzleSql`
         INSERT INTO audit_logs (id, workspace_id, actor_id, action, entity_type, entity_id, payload, created_at)
-        SELECT gen_random_uuid(), w.id, NULL, 'alerts.dispatch', 'event_engine',
-               ${'force-' + new Date().toISOString()}, ${JSON.stringify({ trigger: "force_dispatch", rulesCount: RULES.length })}::jsonb, NOW()
-        FROM workspaces w
-        LIMIT 1
+        VALUES (gen_random_uuid(), ${workspaceId}, NULL, 'alerts.dispatch', 'event_engine',
+                ${'force-' + new Date().toISOString()}, ${JSON.stringify({ trigger: "force_dispatch", rulesCount: RULES.length })}::jsonb, NOW())
       `
     );
   } catch {
@@ -1201,7 +1234,7 @@ export async function runEventEngineTickForce(): Promise<{
       for (const candidate of candidates) {
         try {
           // Force-dispatch: SKIP dedup check, always write
-          await writeEvent(candidate);
+          await writeEvent(candidate, workspaceId);
           result.eventsWritten++;
 
           // Write per-event audit log via raw SQL (workspace_id via subquery)
@@ -1209,10 +1242,8 @@ export async function runEventEngineTickForce(): Promise<{
             await db.execute(
               drizzleSql`
                 INSERT INTO audit_logs (id, workspace_id, actor_id, action, entity_type, entity_id, payload, created_at)
-                SELECT gen_random_uuid(), w.id, NULL, 'alert.fire', 'iuf_event', ${candidate.ruleId},
-                       ${JSON.stringify({ ruleId: candidate.ruleId, ticker: candidate.ticker, severity: candidate.severity, forced: true })}::jsonb, NOW()
-                FROM workspaces w
-                LIMIT 1
+                VALUES (gen_random_uuid(), ${workspaceId}, NULL, 'alert.fire', 'iuf_event', ${candidate.ruleId},
+                        ${JSON.stringify({ ruleId: candidate.ruleId, ticker: candidate.ticker, severity: candidate.severity, forced: true })}::jsonb, NOW())
               `
             );
           } catch {

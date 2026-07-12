@@ -14,6 +14,7 @@ import {
 const DEFAULT_THROTTLE_MS = 5 * 60 * 1_000;
 
 export type AlertPushEvent = {
+  workspaceId: string;
   ruleId: string;
   ticker: string | null;
 };
@@ -95,7 +96,9 @@ function companyPath(ticker: string | null): string | null {
 }
 
 /** Builds user-facing copy from an allowlist; raw event metadata never enters the notification. */
-export function buildAlertPushPayload(event: AlertPushEvent): AlertPushPayload | null {
+export function buildAlertPushPayload(
+  event: Pick<AlertPushEvent, "ruleId" | "ticker">,
+): AlertPushPayload | null {
   const copy = PAYLOAD_COPY[event.ruleId];
   if (!copy) return null;
 
@@ -165,21 +168,22 @@ export function createAlertPushDispatcher(dependencies: Partial<AlertPushDepende
     }
 
     const now = deps.now();
-    if (!shouldSendAlertType(lastSentByType.get(event.ruleId), now, deps.throttleMs)) {
+    const throttleKey = `${event.workspaceId}:${event.ruleId}`;
+    if (!shouldSendAlertType(lastSentByType.get(throttleKey), now, deps.throttleMs)) {
       return { status: "throttled", attempted: 0, sent: 0, failed: 0, removed: 0 };
     }
     // Reserve the event type before the first await so concurrent ticks cannot double-send.
-    lastSentByType.set(event.ruleId, now);
+    lastSentByType.set(throttleKey, now);
 
     let subscriptions: StoredPushSubscription[];
     try {
-      subscriptions = await deps.store.listAll();
+      subscriptions = await deps.store.listForWorkspace(event.workspaceId);
     } catch (error) {
-      lastSentByType.delete(event.ruleId);
+      lastSentByType.delete(throttleKey);
       throw error;
     }
     if (subscriptions.length === 0) {
-      lastSentByType.delete(event.ruleId);
+      lastSentByType.delete(throttleKey);
       return { status: "no_subscribers", attempted: 0, sent: 0, failed: 0, removed: 0 };
     }
 
@@ -200,7 +204,7 @@ export function createAlertPushDispatcher(dependencies: Partial<AlertPushDepende
         } catch (error) {
           result.failed += 1;
           if (isExpiredSubscriptionError(error)) {
-            if (await deps.store.removeByEndpoint(subscription.endpoint)) result.removed += 1;
+            if (await deps.store.removeByEndpoint(event.workspaceId, subscription.endpoint)) result.removed += 1;
           }
         }
       }),

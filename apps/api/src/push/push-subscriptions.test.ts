@@ -26,24 +26,31 @@ const session: AppSession = {
 
 function createMemoryStore() {
   const rows = new Map<string, StoredPushSubscription>();
+  const rowKey = (workspaceId: string, endpoint: string) => `${workspaceId}::${endpoint}`;
   const store: PushSubscriptionStore = {
-    async upsert(userId: string, subscription: PushSubscriptionInput) {
-      rows.set(subscription.endpoint, {
+    async upsert(workspaceId: string, userId: string, subscription: PushSubscriptionInput) {
+      rows.set(rowKey(workspaceId, subscription.endpoint), {
+        workspaceId,
         userId,
         endpoint: subscription.endpoint,
         keys: subscription.keys,
         createdAt: new Date(),
       });
     },
-    async removeForUser(userId, endpoint) {
-      const row = rows.get(endpoint);
+    async removeForUser(workspaceId, userId, endpoint) {
+      const key = rowKey(workspaceId, endpoint);
+      const row = rows.get(key);
       if (!row || row.userId !== userId) return false;
-      return rows.delete(endpoint);
+      return rows.delete(key);
     },
-    async listAll() { return [...rows.values()]; },
-    async removeByEndpoint(endpoint) { return rows.delete(endpoint); },
+    async listForWorkspace(workspaceId) {
+      return [...rows.values()].filter((row) => row.workspaceId === workspaceId);
+    },
+    async removeByEndpoint(workspaceId, endpoint) {
+      return rows.delete(rowKey(workspaceId, endpoint));
+    },
   };
-  return { rows, store };
+  return { rows, rowKey, store };
 }
 
 function configuredPushService(): WebPushServiceState {
@@ -67,7 +74,7 @@ function createAuthenticatedApp(store: PushSubscriptionStore, getPushService = c
 }
 
 test("push subscription chain stores the authenticated row then removes it", async () => {
-  const { rows, store } = createMemoryStore();
+  const { rows, rowKey, store } = createMemoryStore();
   let pushServiceChecks = 0;
   const app = createAuthenticatedApp(store, () => {
     pushServiceChecks += 1;
@@ -89,8 +96,9 @@ test("push subscription chain stores the authenticated row then removes it", asy
     }),
   });
   assert.equal(subscribeResponse.status, 201);
-  assert.equal(rows.get(endpoint)?.userId, session.user.id);
-  assert.deepEqual(rows.get(endpoint)?.keys, {
+  assert.equal(rows.get(rowKey(session.workspace.id, endpoint))?.workspaceId, session.workspace.id);
+  assert.equal(rows.get(rowKey(session.workspace.id, endpoint))?.userId, session.user.id);
+  assert.deepEqual(rows.get(rowKey(session.workspace.id, endpoint))?.keys, {
     p256dh: "browser-public-key",
     auth: "browser-auth-secret",
   });
@@ -120,7 +128,7 @@ test("missing VAPID environment returns an honest Chinese 503 without touching s
 test("unsubscribe clears the authenticated row without requiring VAPID configuration", async () => {
   const { rows, store } = createMemoryStore();
   const endpoint = "https://push.example.invalid/subscription/revoke-without-vapid";
-  await store.upsert(session.user.id, {
+  await store.upsert(session.workspace.id, session.user.id, {
     endpoint,
     expirationTime: null,
     keys: { p256dh: "browser-public-key", auth: "browser-auth-secret" },
@@ -147,15 +155,28 @@ test("push routes reject requests without an authenticated session", async () =>
   assert.equal(response.status, 401);
 });
 
-test("migration 0051 forward/down and Drizzle schema keep DESC index alignment", () => {
-  const forward = readFileSync(new URL("../../../../packages/db/migrations/0051_push_subscriptions.sql", import.meta.url), "utf8");
-  const down = readFileSync(new URL("../../../../packages/db/migrations/0051_push_subscriptions.down.sql", import.meta.url), "utf8");
+test("migration 0052 forward/down and Drizzle schema keep workspace and DESC index alignment", () => {
+  const forward = readFileSync(new URL("../../../../packages/db/migrations/0052_push_subscriptions_workspace.sql", import.meta.url), "utf8");
+  const down = readFileSync(new URL("../../../../packages/db/migrations/0052_push_subscriptions_workspace.down.sql", import.meta.url), "utf8");
   const schema = readFileSync(new URL("../../../../packages/db/src/schema.ts", import.meta.url), "utf8");
 
-  assert.match(forward, /CREATE TABLE IF NOT EXISTS push_subscriptions/);
-  assert.match(forward, /user_id\s+UUID\s+NOT NULL REFERENCES users\(id\) ON DELETE CASCADE/);
-  assert.match(forward, /CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_uidx/);
-  assert.match(forward, /push_subscriptions\(user_id, created_at DESC\)/);
-  assert.match(down, /DROP TABLE IF EXISTS push_subscriptions/);
-  assert.match(schema, /index\("push_subscriptions_user_created_idx"\)\.on\(table\.userId, table\.createdAt\.desc\(\)\)/);
+  assert.match(forward, /ADD COLUMN IF NOT EXISTS workspace_id UUID/);
+  assert.match(forward, /FOREIGN KEY \(workspace_id\) REFERENCES workspaces\(id\) ON DELETE CASCADE/);
+  assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/);
+  assert.match(forward, /CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_workspace_endpoint_uidx\s+ON push_subscriptions\(workspace_id, endpoint\)/);
+  assert.match(forward, /push_subscriptions\(workspace_id, user_id, created_at DESC\)/);
+  assert.match(down, /DROP COLUMN IF EXISTS workspace_id/);
+  assert.match(down, /CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_uidx/);
+  assert.match(schema, /uniqueIndex\("push_subscriptions_workspace_endpoint_uidx"\)\.on\(\s*table\.workspaceId,\s*table\.endpoint/);
+  assert.match(schema, /index\("push_subscriptions_workspace_user_created_idx"\)\.on\(\s*table\.workspaceId,\s*table\.userId,\s*table\.createdAt\.desc\(\)/);
+});
+
+test("migration 0052 backfill is idempotent and preserves the owning user workspace", () => {
+  const forward = readFileSync(new URL("../../../../packages/db/migrations/0052_push_subscriptions_workspace.sql", import.meta.url), "utf8");
+
+  assert.match(forward, /SET workspace_id = COALESCE\(\s*u\.workspace_id,/);
+  assert.match(forward, /WHERE ps\.user_id = u\.id\s+AND ps\.workspace_id IS NULL/);
+  assert.match(forward, /ORDER BY w\.created_at ASC, w\.id ASC\s+LIMIT 1/);
+  assert.match(forward, /IF NOT EXISTS \(\s*SELECT 1\s*FROM pg_constraint/);
+  assert.match(forward, /CREATE (?:UNIQUE )?INDEX IF NOT EXISTS/g);
 });
