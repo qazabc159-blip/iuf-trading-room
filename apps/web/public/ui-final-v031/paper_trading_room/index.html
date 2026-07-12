@@ -218,6 +218,17 @@ body[data-screen-label="Trading Room v1"] .tape{
   padding:0;
   margin:0;
 }
+/* 桌面重排 (2026-07-13): 上面這條 body[...] .tape{height:86px} 原本假設
+   .tape 只出現在 .cpane 那個固定 86px 格子——現在五檔盤口(rpane)/資金摘要
+   (lpane) 也重用 .tape 樣式但需要各自的自然高度，不能被壓成 86px。用更高
+   specificity（多一層 .rpane>/.lpane> ancestor class）覆寫，不改上面那條
+   （保留 body[data-screen-label="Trading Room v1"] .tape 這段既有字串供既有
+   測試比對）。*/
+body[data-screen-label="Trading Room v1"] .rpane > .tape,
+body[data-screen-label="Trading Room v1"] .lpane > .tape{
+  height:auto;
+  max-height:270px;
+}
 body[data-screen-label="Trading Room v1"] .tape > div{
   min-height:0;
   overflow:hidden;
@@ -514,6 +525,25 @@ body[data-screen-label="Trading Room v1"] .tnote{
         <div class="price"><span class="v">—</span><span class="d">讀取中</span></div>
       </div>
     </div>
+
+    <!-- ⑦ 資金摘要 (moved from center 部位/資金摘要 strip, 2026-07-13 桌面重排 —
+         markup/inline-style/ids kept byte-identical to preserve
+         renderFautoSummary()'s `$("#summary-capital")?.closest("div[style*='grid-template-columns']")`
+         lookup in final-v031-live.ts; only the outer wrapper + position moved.) -->
+    <div class="tape solo">
+      <div>
+        <div class="h">資金摘要</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)">
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">待授權</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">—</div></div>
+          <!-- #1238 FIFO 已實現/未實現損益分列 (2026-07-13，資金摘要重排順帶接新後端欄位) -->
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">已實現損益</div><div id="summary-realized" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
+          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">未實現損益</div><div id="summary-pnl" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
+          <div style="grid-column:1 / -1;display:flex;justify-content:space-between;align-items:baseline;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)"><span>持倉市值</span><b id="summary-mktval" style="color:var(--fg-0);font:500 14px/1 var(--mono);font-weight:500;font-variant-numeric:tabular-nums">—</b></div>
+          <div style="grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)">持有 <b id="summary-poscount" style="color:var(--fg-1);font-weight:500">—</b> 檔模擬部位　·　今日 <b id="summary-fillcount" style="color:var(--fg-1);font-weight:500">—</b> 筆成交</div>
+        </div>
+      </div>
+    </div>
   </aside>
 
   <!-- ============ CENTER ============ -->
@@ -651,30 +681,12 @@ body[data-screen-label="Trading Room v1"] .tnote{
       </div>
     </div>
 
-    <!-- tape -->
-    <div class="tape">
-      <div>
-        <div class="h">委買 / 委賣 五檔</div>
-        <div class="stk" id="depth">
-          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">等待 KGI 連線中…</div>
-        </div>
-      </div>
-
+    <!-- tape (最近成交 only — 五檔盤口/資金摘要 moved to rpane/lpane, 2026-07-13 桌面重排) -->
+    <div class="tape solo">
       <div>
         <div class="h">最近成交</div>
         <div class="stk" id="tape" style="gap:1px">
           <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">等待 KGI 連線中…</div>
-        </div>
-      </div>
-
-      <div>
-        <div class="h">部位 / 資金摘要</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)">
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">模擬本金</div><div id="summary-capital" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">待授權</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">可用資金</div><div id="summary-avail" style="font:500 14px/1 var(--mono);color:var(--brand);font-variant-numeric:tabular-nums">—</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">持倉市值</div><div id="summary-mktval" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
-          <div><div style="color:var(--fg-3);font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px">總損益</div><div id="summary-pnl" style="font:500 14px/1 var(--mono);color:var(--fg-0);font-variant-numeric:tabular-nums">—</div></div>
-          <div style="grid-column:1 / -1;padding-top:8px;border-top:1px solid var(--line);font:500 11px/1.5 var(--sans);color:var(--fg-3)">持有 <b id="summary-poscount" style="color:var(--fg-1);font-weight:500">—</b> 檔模擬部位　·　今日 <b id="summary-fillcount" style="color:var(--fg-1);font-weight:500">—</b> 筆成交</div>
         </div>
       </div>
     </div>
@@ -770,8 +782,23 @@ body[data-screen-label="Trading Room v1"] .tnote{
 
   </section>
 
-  <!-- ============ RIGHT · TICKET ============ -->
+  <!-- ============ RIGHT · DEPTH + TICKET ============ -->
   <aside class="rpane">
+
+    <!-- ② 五檔盤口 (moved from center 委買/委賣五檔 strip, 2026-07-13 桌面重排 —
+         點盤口價位帶入委託價：動線核心，見下方 script 區塊 depth-click-to-fill。
+         #depth id/markup contract with renderDepthPanel() in final-v031-live.ts
+         unchanged, only relocated. -->
+    <div class="tape solo">
+      <div>
+        <div class="h">五檔盤口</div>
+        <div class="stk" id="depth">
+          <div class="row" style="grid-column:1/-1;color:var(--fg-3);font-size:11px;padding:10px 0;text-align:center">等待 KGI 連線中…</div>
+        </div>
+        <div class="depth-hint">點任一檔價位 <b>帶入委託價</b></div>
+      </div>
+    </div>
+
     <div class="th">
       <h3>委託預覽　<span class="bdg">紙上單</span></h3>
     </div>
@@ -790,7 +817,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
         <input id="t-sym" value="2330　台積電" readonly />
       </div>
 
-      <!-- order type + units -->
+      <!-- order type + price -->
       <div class="field row2">
         <div class="field">
           <div class="l">委託類型</div>
@@ -800,31 +827,30 @@ body[data-screen-label="Trading Room v1"] .tnote{
             <option value="stop">停損</option>
           </select>
         </div>
-        <div class="field">
-          <div class="l">單位</div>
-          <div class="units" id="t-unit">
-            <button type="button" data-unit="lot" class="on">張</button>
-            <button type="button" data-unit="share">股</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- qty + price -->
-      <div class="field row2">
-        <div class="field">
-          <div class="l">數量<span class="helper" id="t-qty-hint">1 張 = 1,000 股</span></div>
-          <div class="step">
-            <button type="button" class="stepbtn" data-q="-1">−</button>
-            <input id="t-qty" value="1" />
-            <button type="button" class="stepbtn" data-q="+1">+</button>
-          </div>
-        </div>
         <div class="field" id="t-pricewrap">
           <div class="l">委託價<span class="helper">最小升降 0.50</span></div>
           <div class="step">
             <button type="button" class="stepbtn" data-p="-0.5">−</button>
             <input id="t-price" value="" placeholder="自動填入" />
             <button type="button" class="stepbtn" data-p="+0.5">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- qty + units — glued together: 1000x risk-critical control, kept
+           immediately adjacent to the quantity field per Yang's 2026-07-13
+           correction (a), not split across a row2 column with 委託類型. -->
+      <div class="field">
+        <div class="l">數量<span class="unit-req">單位必填</span><span class="helper" id="t-qty-hint">1 張 = 1,000 股</span></div>
+        <div class="qtyunit">
+          <div class="step">
+            <button type="button" class="stepbtn" data-q="-1">−</button>
+            <input id="t-qty" value="1" />
+            <button type="button" class="stepbtn" data-q="+1">+</button>
+          </div>
+          <div class="units" id="t-unit">
+            <button type="button" data-unit="lot" class="on">張 <span class="req">LOT</span></button>
+            <button type="button" data-unit="share">股 <span class="req">SHARE</span></button>
           </div>
         </div>
       </div>
@@ -1058,6 +1084,26 @@ document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>
 document.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>{
   const i=document.getElementById('t-price');const v=Math.max(0,(+i.value+(+b.dataset.p))).toFixed(2);i.value=v;updPreview();
 }));
+/* ---------- depth-click-to-fill (2026-07-13 桌面重排 動線核心) ----------
+   #depth's rows are (re)rendered dynamically by renderDepthPanel() in
+   final-v031-live.ts, so this binds via delegation on document rather than
+   per-row listeners (survives every re-render without re-attaching). Only
+   `.px` cells inside #depth are targets — the imbalance summary row has no
+   `.px`, and the last-traded-price row's `.px` is a legitimate fill target
+   too (matches operator expectation: "click any visible price to load it"). */
+document.addEventListener('click',(event)=>{
+  const pxEl=event.target&&event.target.closest?event.target.closest('#depth .row .px'):null;
+  if(!pxEl)return;
+  const raw=pxEl.textContent.replace(/,/g,'').trim();
+  const val=Number(raw);
+  if(!Number.isFinite(val)||val<=0)return;
+  const priceInput=document.getElementById('t-price');
+  if(!priceInput)return;
+  priceInput.value=val.toFixed(2);
+  priceInput.setAttribute('value',priceInput.value);
+  if(typeof updPreview==='function')updPreview();
+},true);
+
 document.getElementById('t-qty').addEventListener('input',updPreview);
 document.getElementById('t-price').addEventListener('input',updPreview);
 document.getElementById('t-otype').addEventListener('change',updPreview);

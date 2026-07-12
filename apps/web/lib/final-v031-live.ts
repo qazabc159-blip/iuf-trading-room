@@ -623,6 +623,13 @@ function buildPaperFastShellPayload(options: FinalV031PayloadOptions = {}) {
     // real fetch lands (see hydratePaper's capitalReady gate — available
     // cash only renders once baseCapitalTWD itself is ready).
     investedCostTWD: null as number | null,
+    // #1238 (2026-07-12) FIFO lot-matched summary fields — null until a real
+    // fetch lands; render layer falls back to the pre-#1238 approximation
+    // (baseCapitalTWD - investedCostTWD, unrealized-only client calc) when
+    // these are still null (stale cache / not-yet-fetched, never a crash).
+    availableCashTWD: null as number | null,
+    realizedPnlTwd: null as number | null,
+    unrealizedPnlTwd: null as number | null,
     fauto: null as FAutoPortfolio | null,
     selected: {
       symbol: selectedSymbol,
@@ -693,6 +700,12 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
   const portfolioRaw = okValue(portfolioRawResult, { positions: [] as PaperPortfolioPosition[], summary: { baseCapitalTWD: 0, currency: "TWD", simulated: true, paperMode: true, positionCount: 0, investedCostTWD: 0, note: "" } });
   const portfolio = portfolioRaw.positions;
   const baseCapitalTWD = portfolioRawOk ? portfolioRaw.summary.baseCapitalTWD : null;
+  // #1238 (2026-07-12): FIFO lot-matched summary fields, same null-vs-0
+  // distinction as clientPaperPayload() below — optional on the type, so
+  // undefined here means "not fetched", not "computed to zero".
+  const availableCashTWD = portfolioRawOk ? (portfolioRaw.summary.availableCashTWD ?? null) : null;
+  const realizedPnlTwd = portfolioRawOk ? (portfolioRaw.summary.realizedPnlTwd ?? null) : null;
+  const unrealizedPnlTwd = portfolioRawOk ? (portfolioRaw.summary.unrealizedPnlTwd ?? null) : null;
   const fills = okValue<PaperFillLedgerRow[]>(fillsResult, []);
   const orders = okValue<PaperOrderState[]>(ordersResult, []);
   // D3 委託回報面板 (2026-07-10): 跨券商 unified_orders 帳，只顯示台北時間今日的委託。
@@ -780,6 +793,9 @@ async function buildPaperPayload(options: FinalV031PayloadOptions = {}) {
     generatedAt: new Date().toISOString(),
     health,
     baseCapitalTWD,
+    availableCashTWD,
+    realizedPnlTwd,
+    unrealizedPnlTwd,
     fauto,
     selected: {
       symbol: selectedSymbol,
@@ -1497,6 +1513,13 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // repeating the same static base-capital number regardless of trading
     // activity.
     const investedCostTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.investedCostTWD) ?? null) : null;
+    // #1238 (2026-07-12): FIFO lot-matched summary fields — null (not 0) when
+    // absent so the render layer can tell "backend didn't send it yet /
+    // older cache" apart from "computed to exactly zero", and fall back to
+    // the pre-#1238 approximation instead of showing a false zero.
+    const availableCashTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.availableCashTWD) ?? null) : null;
+    const realizedPnlTwd = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.realizedPnlTwd) ?? null) : null;
+    const unrealizedPnlTwd = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.unrealizedPnlTwd) ?? null) : null;
     const fills = fillsResult.ok ? fillsResult.data || [] : [];
     const orders = ordersResult.ok ? ordersResult.data || [] : [];
     // D3 委託回報面板 (2026-07-10): mirrors isUnifiedOrderFromTaipeiToday() in
@@ -1566,6 +1589,9 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       baseCapitalTWD,
       baseCapitalUnauthorized,
       investedCostTWD,
+      availableCashTWD,
+      realizedPnlTwd,
+      unrealizedPnlTwd,
       fauto,
       selected:{ symbol:selectedSymbol, name:company?.name || selectedSymbol, sector:industryLabel(company?.chainPosition || selectedIdea?.sector || "台股"), price:lastPrice, open:quoteSnapshot.open, high:quoteSnapshot.high, low:quoteSnapshot.low, close:lastPrice, previous, change, changePct, volume:quoteSnapshot.volume, quoteState:quote?.state || "NO_DATA" },
       watchlist,
@@ -1866,10 +1892,17 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       // in open positions) — grab it here too so 可用資金 is correct on this
       // fast path, not just once the slower full refresh lands.
       const investedCost = raw?.summary?.investedCostTWD;
+      // #1238 (2026-07-12): same fast path also carries the FIFO summary
+      // fields, so the capital card doesn't briefly show the pre-#1238
+      // approximation before the slower full refresh lands.
+      const numOrNull = (v) => (v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
       live = Object.assign({}, live, {
         baseCapitalTWD: capital,
         baseCapitalUnauthorized: false,
-        investedCostTWD: investedCost === null || investedCost === undefined || Number.isNaN(Number(investedCost)) ? null : investedCost,
+        investedCostTWD: numOrNull(investedCost),
+        availableCashTWD: numOrNull(raw?.summary?.availableCashTWD),
+        realizedPnlTwd: numOrNull(raw?.summary?.realizedPnlTwd),
+        unrealizedPnlTwd: numOrNull(raw?.summary?.unrealizedPnlTwd),
       });
       window.__IUF_FINAL_V031_LIVE__ = live;
       hydratePaper();
@@ -3178,15 +3211,38 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     // 模擬本金 verbatim — GET /paper/portfolio's summary.baseCapitalTWD is a
     // fixed constant (PAPER_BROKER_INITIAL_CASH), never adjusted for trades,
     // so "available cash" looked unchanged no matter how much was tied up in
-    // open positions. summary.investedCostTWD (cost basis of netQtyShares>0
-    // rows, backend-computed) is now subtracted. Known remaining gap: this
-    // endpoint does not track realized P&L from closed round-trips, so a
-    // fully closed position's proceeds still are not reflected in cash —
-    // that needs a backend ledger change, out of this fix's frontend scope.
+    // open positions.
+    // #1238 (2026-07-12): backend now returns a FIFO lot-matched, reconciled
+    // summary.availableCashTWD directly (accounts for realized P&L from
+    // closed round-trips too, closing the gap this comment used to describe
+    // as frontend-out-of-scope). Prefer it when present; fall back to the
+    // pre-#1238 approximation (baseCapitalTWD - investedCostTWD, which never
+    // reflected realized gains) only for a stale cache that hasn't picked up
+    // the new field yet — never crash on its absence.
     const investedCostTWD = Number(live.investedCostTWD || 0);
-    const availableCashTWD = capitalReady ? Number(capitalTWD) - investedCostTWD : null;
+    const availableCashFromBackend = live.availableCashTWD;
+    const availableCashReady = availableCashFromBackend !== null && availableCashFromBackend !== undefined && !Number.isNaN(Number(availableCashFromBackend));
+    const availableCashTWD = capitalReady
+      ? (availableCashReady ? Number(availableCashFromBackend) : Number(capitalTWD) - investedCostTWD)
+      : null;
     const summaryCapEl = $("#summary-capital"); if (summaryCapEl) summaryCapEl.textContent = capitalReady ? n(capitalTWD) : (capitalUnauthorized ? "待授權" : "載入中");
     const summaryAvailEl = $("#summary-avail"); if (summaryAvailEl) summaryAvailEl.textContent = capitalReady ? n(availableCashTWD) : "--";
+    // #1238: 已實現損益 — backend FIFO lot-matched, includes fees. No
+    // client-side fallback exists for this one (unlike 可用資金 above) since
+    // there was never a client-computable realized P&L before #1238 — an
+    // honest "—" is shown instead of a fabricated number when absent.
+    const realizedPnlReady = live.realizedPnlTwd !== null && live.realizedPnlTwd !== undefined && !Number.isNaN(Number(live.realizedPnlTwd));
+    const summaryRealizedEl = $("#summary-realized");
+    if (summaryRealizedEl) {
+      if (capitalReady && realizedPnlReady) {
+        const rv = Number(live.realizedPnlTwd);
+        summaryRealizedEl.style.color = rv >= 0 ? "var(--ok)" : "var(--bad)";
+        summaryRealizedEl.textContent = (rv >= 0 ? "+" : "−") + Math.abs(Math.round(rv)).toLocaleString("zh-TW");
+      } else {
+        summaryRealizedEl.style.color = "";
+        summaryRealizedEl.textContent = capitalReady ? "—" : (capitalUnauthorized ? "待授權" : "載入中");
+      }
+    }
     // expose to updPreview() in vendor HTML
     window.__IUF_AVAIL_CASH__ = capitalReady ? availableCashTWD : 0;
     if (capitalReady) {
@@ -3507,9 +3563,20 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         ? n(Math.round(totalMktVal)) + (hasEstimatedOpenPosition ? ' <small style="color:var(--fg-3);font-size:9.5px;font-weight:400">部分以成本估</small>' : "")
         : "—";
     }
+    // #1238 (2026-07-12): 未實現損益 (relabeled from 總損益, now split from
+    // 已實現損益 above) — prefer the backend FIFO unrealizedPnlTwd (fee- and
+    // lot-matched); fall back to this file's own client-computed
+    // mark-to-open-positions estimate only when the backend field is absent
+    // (stale cache), same fallback contract as 可用資金 above.
+    const unrealizedReady = live.unrealizedPnlTwd !== null && live.unrealizedPnlTwd !== undefined && !Number.isNaN(Number(live.unrealizedPnlTwd));
     const pnlEl = $("#summary-pnl");
     if (pnlEl) {
-      if (openPositions.length) {
+      if (unrealizedReady) {
+        const uv = Number(live.unrealizedPnlTwd);
+        pnlEl.className = "";
+        pnlEl.style.color = uv >= 0 ? "var(--ok)" : "var(--bad)";
+        pnlEl.textContent = (uv >= 0 ? "+" : "−") + Math.abs(Math.round(uv)).toLocaleString("zh-TW");
+      } else if (openPositions.length) {
         const pnlPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
         pnlEl.className = ""; // reset
         pnlEl.style.color = totalPnl >= 0 ? "var(--ok)" : "var(--bad)";

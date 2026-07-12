@@ -261,6 +261,13 @@ export type PaperPortfolioSummary = {
   positionCount: number;
   investedCostTWD: number;
   note: string;
+  // FIFO lot-matched realized/unrealized P&L + reconciled available cash
+  // (#1238, 2026-07-12) — optional so older cached responses without these
+  // fields don't break existing callers; consumers must fall back to the
+  // pre-#1238 approximation (baseCapitalTWD - investedCostTWD) when absent.
+  realizedPnlTwd?: number;
+  unrealizedPnlTwd?: number;
+  availableCashTWD?: number;
 };
 
 export type PaperPortfolioRawResponse = {
