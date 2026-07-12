@@ -174,6 +174,19 @@ async function seedEvent(
   return id;
 }
 
+/**
+ * Acknowledges every currently-unacknowledged iuf_events row. Used to give
+ * the badge test a deterministic starting point regardless of how many
+ * unread events the earlier audience-gate tests in this file left behind —
+ * a "before/after delta" assertion against a table other tests in the same
+ * file also write to is otherwise fragile to declaration-order coupling.
+ */
+async function acknowledgeAllPendingEvents(): Promise<void> {
+  const db = getDb();
+  if (!db) throw new Error("acknowledgeAllPendingEvents requires PERSISTENCE_MODE=database.");
+  await db.execute(drizzleSql`UPDATE iuf_events SET acknowledged = true WHERE acknowledged = false`);
+}
+
 async function getJson(pathAndQuery: string, cookie?: string): Promise<{ status: number; body: any }> {
   const res = await fetch(`${baseUrl}${pathAndQuery}`, {
     headers: cookie ? { cookie } : {}
@@ -313,6 +326,14 @@ describe("GET /api/v1/notifications — unread badge excludes ops_internal (#122
   });
 
   test("unread_count increases by exactly 1 when one actionable_market + one ops_internal unread event are added", async () => {
+    // Deterministic starting point — the audience-gate tests above already
+    // left several of their own unacknowledged events behind in the shared
+    // iuf_events table (by design: they assert on GET /api/v1/alerts
+    // content, not read state). Clearing them first means this test's delta
+    // assertion isn't coupled to how many rows those tests happened to
+    // create/leave unread.
+    await acknowledgeAllPendingEvents();
+
     const before = await getJson("/api/v1/notifications", ownerCookie);
     assert.equal(before.status, 200);
     const baselineUnread = before.body.unread_count as number;
