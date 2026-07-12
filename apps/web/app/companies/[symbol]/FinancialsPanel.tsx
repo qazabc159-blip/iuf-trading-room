@@ -214,12 +214,12 @@ function FinancialTable({ rows, page, onPage }: { rows: CompanyFinancialRow[]; p
           <tbody>
             {view.rows.map((row, index) => (
               <tr key={`${row.period}-${view.start + index}`}>
-                <td><span>{row.period}</span></td>
-                <td className="num"><span>{money(row.revenue)}</span></td>
-                <td className="num"><span>{percent(row.grossMarginPct)}</span></td>
-                <td className="num"><span>{percent(row.operatingMarginPct)}</span></td>
-                <td className="num"><span>{numberText(row.epsAfterTax)}</span></td>
-                <td className={`num ${row.yoyPct && row.yoyPct > 0 ? "up" : row.yoyPct && row.yoyPct < 0 ? "down" : "muted"}`}>
+                <td data-label="期別"><span>{row.period}</span></td>
+                <td className="num" data-label="營收"><span>{money(row.revenue)}</span></td>
+                <td className="num" data-label="毛利率"><span>{percent(row.grossMarginPct)}</span></td>
+                <td className="num" data-label="營益率"><span>{percent(row.operatingMarginPct)}</span></td>
+                <td className="num" data-label="EPS"><span>{numberText(row.epsAfterTax)}</span></td>
+                <td className={`num ${row.yoyPct && row.yoyPct > 0 ? "up" : row.yoyPct && row.yoyPct < 0 ? "down" : "muted"}`} data-label="年增率">
                   <span>{percent(row.yoyPct)}</span>
                 </td>
               </tr>
@@ -248,10 +248,10 @@ function RevenueTable({ rows, page, onPage }: { rows: CompanyRevenueRow[]; page:
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
-                <td className="num"><span>{money(row.revenue)}</span></td>
-                <td><span>{row.stock_id}</span></td>
-                <td><span>{row.country}</span></td>
+                <td data-label="月份"><span>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
+                <td className="num" data-label="營收"><span>{money(row.revenue)}</span></td>
+                <td data-label="代號"><span>{row.stock_id}</span></td>
+                <td data-label="國別"><span>{row.country}</span></td>
               </tr>
             ))}
           </tbody>
@@ -296,9 +296,9 @@ function SourceItemsTable({
           <tbody>
             {view.rows.map((item, index) => (
               <tr key={`${item.type}-${item.originName ?? "source"}-${index}`}>
-                <td><span>{item.type}</span></td>
-                <td><span>{item.originName ?? "未標示"}</span></td>
-                <td className="num"><span>{money(item.value)}</span></td>
+                <td data-label="類別"><span>{item.type}</span></td>
+                <td data-label="原始名稱"><span>{item.originName ?? "未標示"}</span></td>
+                <td className="num" data-label="數值"><span>{money(item.value)}</span></td>
               </tr>
             ))}
           </tbody>
@@ -388,11 +388,11 @@ function DividendTable({ rows, page, onPage }: { rows: CompanyDividendRow[]; pag
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.year}-${row.date}`}>
-                <td><span>{row.year}</span></td>
-                <td className="num"><span>{numberText(row.TotalDividend)}</span></td>
-                <td className="num"><span>{numberText(row.TotalCashDividend)}</span></td>
-                <td className="num"><span>{numberText(row.TotalStockDividend)}</span></td>
-                <td><span>{row.date}</span></td>
+                <td data-label="年度"><span>{row.year}</span></td>
+                <td className="num" data-label="總股利"><span>{numberText(row.TotalDividend)}</span></td>
+                <td className="num" data-label="現金股利"><span>{numberText(row.TotalCashDividend)}</span></td>
+                <td className="num" data-label="股票股利"><span>{numberText(row.TotalStockDividend)}</span></td>
+                <td data-label="發放日"><span>{row.date}</span></td>
               </tr>
             ))}
           </tbody>
@@ -419,10 +419,10 @@ function ValuationTable({ rows, page, onPage }: { rows: CompanyValuationRow[]; p
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span>{row.date}</span></td>
-                <td className="num"><span>{numberText(row.PER)}</span></td>
-                <td className="num"><span>{numberText(row.PBR)}</span></td>
-                <td className="num"><span>{numberText(row.dividend_yield)}%</span></td>
+                <td data-label="日期"><span>{row.date}</span></td>
+                <td className="num" data-label="本益比 PER"><span>{numberText(row.PER)}</span></td>
+                <td className="num" data-label="股價淨值比 PBR"><span>{numberText(row.PBR)}</span></td>
+                <td className="num" data-label="殖利率"><span>{numberText(row.dividend_yield)}%</span></td>
               </tr>
             ))}
           </tbody>
@@ -456,9 +456,9 @@ function MarketValueTable({
           <tbody>
             {view.rows.map((row) => (
               <tr key={`${row.stock_id}-${row.date}`}>
-                <td><span>{row.date}</span></td>
-                <td className="num"><span>{money(row.market_value)}</span></td>
-                <td><span>{row.stock_id}</span></td>
+                <td data-label="日期"><span>{row.date}</span></td>
+                <td className="num" data-label="股價市值"><span>{money(row.market_value)}</span></td>
+                <td data-label="代號"><span>{row.stock_id}</span></td>
               </tr>
             ))}
           </tbody>

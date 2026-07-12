@@ -2831,10 +2831,15 @@ export interface FullProfileMarginShortRow {
 }
 
 export interface FullProfileDividendRow {
-  year: number;
-  cashDividend: number;
-  stockDividend: number;
-  totalDividend: number;
+  // Backend `year` is a ROC-quarter string (e.g. "114年第4季"), not a number —
+  // stale annotation fixed alongside the honest-null pass below (2026-07-12).
+  year: string;
+  // Honest-null (2026-07-12, Pete #1229 review): backend no longer fabricates a
+  // 0 when FinMind didn't send a component for that row — null means "unknown",
+  // a real 0 means the company genuinely reported a zero dividend that period.
+  cashDividend: number | null;
+  stockDividend: number | null;
+  totalDividend: number | null;
   announcementDate: string | null;
 }
 

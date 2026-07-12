@@ -324,10 +324,10 @@ function FinancialsSection({ section }: { section: FullProfileEnvelope["fundamen
                 <tbody>
                   {trend.map((row) => (
                     <tr key={row.date}>
-                      <td><span>{row.date}</span></td>
-                      <td className="num"><span>{num(row.eps)}</span></td>
-                      <td className="num"><span>{money(row.revenue)}</span></td>
-                      <td className="num"><span>{money(row.opIncome)}</span></td>
+                      <td data-label="期別"><span>{row.date}</span></td>
+                      <td className="num" data-label="EPS"><span>{num(row.eps)}</span></td>
+                      <td className="num" data-label="營收"><span>{money(row.revenue)}</span></td>
+                      <td className="num" data-label="營業利益"><span>{money(row.opIncome)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -397,8 +397,8 @@ function RevenueSection({ section }: { section: FullProfileEnvelope["fundamental
                 <tbody>
                   {section.history.slice(0, 12).map((row) => (
                     <tr key={`${row.stock_id}-${row.date}`}>
-                      <td><span>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
-                      <td className="num"><span>{money(row.revenue)}</span></td>
+                      <td data-label="月份"><span>{row.revenue_year}/{String(row.revenue_month).padStart(2, "0")}</span></td>
+                      <td className="num" data-label="營收"><span>{money(row.revenue)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -480,11 +480,11 @@ function InstitutionalSection({ section }: { section: FullProfileEnvelope["tradi
                 <tbody>
                   {section.history.slice(0, 10).map((row) => (
                     <tr key={row.date}>
-                      <td><span>{row.date}</span></td>
-                      <td className={`num ${tone(row.foreign)}`}><span>{lots(row.foreign)}</span></td>
-                      <td className={`num ${tone(row.investmentTrust)}`}><span>{lots(row.investmentTrust)}</span></td>
-                      <td className={`num ${tone(row.dealer)}`}><span>{lots(row.dealer)}</span></td>
-                      <td className={`num ${tone(row.totalNetBuy)}`}><span>{lots(row.totalNetBuy)}</span></td>
+                      <td data-label="日期"><span>{row.date}</span></td>
+                      <td className={`num ${tone(row.foreign)}`} data-label="外資"><span>{lots(row.foreign)}</span></td>
+                      <td className={`num ${tone(row.investmentTrust)}`} data-label="投信"><span>{lots(row.investmentTrust)}</span></td>
+                      <td className={`num ${tone(row.dealer)}`} data-label="自營商"><span>{lots(row.dealer)}</span></td>
+                      <td className={`num ${tone(row.totalNetBuy)}`} data-label="合計"><span>{lots(row.totalNetBuy)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -548,13 +548,13 @@ function MarginShortSection({ section }: { section: FullProfileEnvelope["trading
                 <tbody>
                   {section.history.slice(0, 10).map((row) => (
                     <tr key={row.date}>
-                      <td><span>{row.date}</span></td>
-                      <td className="num"><span>{num(row.marginBalance)}</span></td>
-                      <td className={`num ${tone(row.marginChange)}`}>
+                      <td data-label="日期"><span>{row.date}</span></td>
+                      <td className="num" data-label="融資餘額"><span>{num(row.marginBalance)}</span></td>
+                      <td className={`num ${tone(row.marginChange)}`} data-label="融資變動">
                         <span>{typeof row.marginChange === "number" ? `${row.marginChange >= 0 ? "+" : ""}${num(row.marginChange)}` : "--"}</span>
                       </td>
-                      <td className="num"><span>{num(row.shortBalance)}</span></td>
-                      <td className={`num ${tone(row.shortChange)}`}>
+                      <td className="num" data-label="融券餘額"><span>{num(row.shortBalance)}</span></td>
+                      <td className={`num ${tone(row.shortChange)}`} data-label="融券變動">
                         <span>{typeof row.shortChange === "number" ? `${row.shortChange >= 0 ? "+" : ""}${num(row.shortChange)}` : "--"}</span>
                       </td>
                     </tr>
@@ -633,11 +633,11 @@ function DividendSection({
                 <tbody>
                   {section.history.slice(0, 5).map((row) => (
                     <tr key={`${row.year}-${row.announcementDate ?? "na"}`}>
-                      <td><span>{row.year}</span></td>
-                      <td className="num"><span>{num(row.cashDividend)}</span></td>
-                      <td className="num"><span>{num(row.stockDividend)}</span></td>
-                      <td className="num"><span>{num(row.totalDividend)}</span></td>
-                      <td><span>{formatTaipeiDate(row.announcementDate)}</span></td>
+                      <td data-label="年度"><span>{row.year}</span></td>
+                      <td className="num" data-label="現金股利"><span>{num(row.cashDividend)}</span></td>
+                      <td className="num" data-label="股票股利"><span>{num(row.stockDividend)}</span></td>
+                      <td className="num" data-label="總股利"><span>{num(row.totalDividend)}</span></td>
+                      <td data-label="公告日"><span>{formatTaipeiDate(row.announcementDate)}</span></td>
                     </tr>
                   ))}
                 </tbody>
