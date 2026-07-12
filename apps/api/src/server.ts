@@ -7604,6 +7604,21 @@ function finmindQuotaTier(tokenPresent: boolean): string {
   return process.env.FINMIND_QUOTA_TIER ?? process.env.FINMIND_TIER ?? "sponsor999";
 }
 
+// Shared institutional-investor name classifier (A2 fix, 2026-07-12).
+// FinMind per-stock institutional API returns Chinese labels ('外陸資'/'投信'/'自營商'…)
+// while the DB-backed tw_institutional_buysell table (and some FinMind responses) can
+// carry English variants ('Foreign_Investor' etc). Previously /chips only matched the
+// Chinese substrings (server.ts chips route) while /full-profile institutional had
+// already been widened to also match English (Cycle 10, 2026-05-14) — two independently
+// maintained copies is the same failure mode as the ROC-date-parser duplication (#1199/
+// #1202/#1203); this is the single shared implementation both routes call.
+function classifyInstitutionalName(nm: string): "foreign" | "investmentTrust" | "dealer" | null {
+  if (/外|陸資|Foreign|foreign/i.test(nm)) return "foreign";
+  if (/投信|Trust/i.test(nm)) return "investmentTrust";
+  if (/自營|Dealer|dealer/i.test(nm)) return "dealer";
+  return null;
+}
+
 function finmindQuotaLimitPerHour(tier: string): number | null {
   const configured = Number(process.env.FINMIND_QUOTA_LIMIT_PER_HOUR ?? "");
   if (Number.isFinite(configured) && configured > 0) {
@@ -8438,13 +8453,16 @@ app.get("/api/v1/companies/:id/chips", async (c) => {
 
   // Sum (buy - sell) per investor category. FinMind uses 外陸資/投信/自營商 labels;
   // 自營商 splits into 自營商(自行買賣) + 自營商(避險) — sum both into "dealer".
+  // A2 fix (2026-07-12): was matching Chinese substrings only, so English-labelled
+  // rows (e.g. Foreign_Investor) always fell through to no bucket → net30d stuck at 0
+  // (假零). Now shares classifyInstitutionalName() with /full-profile institutional.
   let foreignNet = 0, trustNet = 0, dealerNet = 0;
   for (const row of institutional) {
     const net = (row.buy ?? 0) - (row.sell ?? 0);
-    const name = row.name ?? "";
-    if (name.includes("外") || name.includes("陸")) foreignNet += net;
-    else if (name.includes("投信")) trustNet += net;
-    else if (name.includes("自營")) dealerNet += net;
+    const bucket = classifyInstitutionalName(row.name ?? "");
+    if (bucket === "foreign") foreignNet += net;
+    else if (bucket === "investmentTrust") trustNet += net;
+    else if (bucket === "dealer") dealerNet += net;
   }
   // FinMind reports shares; convert to 張 (1 lot = 1000 shares).
   const toLots = (shares: number) => Math.round(shares / 1000);
@@ -9898,9 +9916,14 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     return /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;
   }
 
-  // Helper: TWSE OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
+  // Helper: TWSE/TPEX OpenAPI EOD fallback for quote/realtime (昨收 / EOD price).
   // Used when both KGI and MIS intraday are unavailable.
-  async function _twseEodFallback(sym: string, blockReason?: string | null): Promise<{
+  // A4 fix (2026-07-12): previously TWSE-only (STOCK_DAY_ALL) — OTC tickers (8069 等)
+  // always fell through to NO_DATA even though the TPEX EOD feed (already used by the
+  // twse-eod-cron persist block, source=tpex_eod) has the row. Now picks primary source
+  // from `market`, then tries the other exchange before giving up (mirrors the MIS
+  // tse/otc fallback above — company.market can be mistagged).
+  type EodFallbackResult = {
     lastPrice: number | null;
     open: number | null;
     high: number | null;
@@ -9908,54 +9931,87 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     prevClose: number | null;
     changePct: number | null;
     volume: number | null;
-    source: "twse_openapi_eod";
+    source: "twse_openapi_eod" | "tpex_openapi_eod";
     state: "STALE" | "NO_DATA";
     freshness: "stale" | "not-available";
     note: string;
-    /** ISO trading date of the EOD row (may be 1-2 sessions behind on TWSE publish lag). */
+    /** ISO trading date of the EOD row (may be 1-2 sessions behind on publish lag). */
     dataDate: string | null;
     marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
     referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
-  }> {
+  };
+  const _parseEodNum = (value?: string | null) => {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  function _buildTwseEodResult(
+    row: { Date: string; ClosingPrice: string; OpeningPrice: string; HighestPrice: string; LowestPrice: string; TradeVolume: string; Change: string },
+    blockReason?: string | null
+  ): EodFallbackResult {
+    const close = _parseEodNum(row.ClosingPrice);
+    const open = _parseEodNum(row.OpeningPrice);
+    const high = _parseEodNum(row.HighestPrice);
+    const low = _parseEodNum(row.LowestPrice);
+    const vol = _parseEodNum(row.TradeVolume);
+    const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+    const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
+    const changePct = prevClose && prevClose > 0 ? Math.round((changeRaw / prevClose) * 10000) / 100 : null;
+    return {
+      lastPrice: close, open, high, low, prevClose, changePct, volume: vol,
+      source: "twse_openapi_eod",
+      state: close !== null ? "STALE" : "NO_DATA",
+      freshness: close !== null ? "stale" : "not-available",
+      note: `twse_eod date=${row.Date ?? "unknown"}`,
+      dataDate: parseRocEodDateIso(row.Date),
+      marketSession,
+      referenceReason: _eodReferenceReason(blockReason),
+    };
+  }
+  function _buildTpexEodResult(
+    row: { Date: string; Close: string; Open: string; High: string; Low: string; TradingShares: string; Change: string },
+    blockReason?: string | null
+  ): EodFallbackResult {
+    const close = _parseEodNum(row.Close);
+    const open = _parseEodNum(row.Open);
+    const high = _parseEodNum(row.High);
+    const low = _parseEodNum(row.Low);
+    const vol = _parseEodNum(row.TradingShares);
+    const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+    const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
+    const changePct = prevClose && prevClose > 0 ? Math.round((changeRaw / prevClose) * 10000) / 100 : null;
+    return {
+      lastPrice: close, open, high, low, prevClose, changePct, volume: vol,
+      source: "tpex_openapi_eod",
+      state: close !== null ? "STALE" : "NO_DATA",
+      freshness: close !== null ? "stale" : "not-available",
+      note: `tpex_eod date=${row.Date ?? "unknown"}`,
+      dataDate: parseRocEodDateIso(row.Date),
+      marketSession,
+      referenceReason: _eodReferenceReason(blockReason),
+    };
+  }
+  async function _twseEodFallback(sym: string, market: string, blockReason?: string | null): Promise<EodFallbackResult> {
     try {
-      const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
-      const rows = await getStockDayAllRows();
-      const row = rows.find((r) => r.Code === sym);
-      if (!row) {
-        return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_stock_day_all", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
+      const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
+      const isOtc = _misPrefixForMarket(market) === "otc";
+      if (isOtc) {
+        const tpexRows = await getTpexMainboardCloseRows();
+        const tpexRow = tpexRows.find((r) => r.SecuritiesCompanyCode?.trim() === sym);
+        if (tpexRow) return _buildTpexEodResult(tpexRow, blockReason);
+        const twseRows = await getStockDayAllRows();
+        const twseRow = twseRows.find((r) => r.Code === sym);
+        if (twseRow) return _buildTwseEodResult(twseRow, blockReason);
+      } else {
+        const twseRows = await getStockDayAllRows();
+        const twseRow = twseRows.find((r) => r.Code === sym);
+        if (twseRow) return _buildTwseEodResult(twseRow, blockReason);
+        const tpexRows = await getTpexMainboardCloseRows();
+        const tpexRow = tpexRows.find((r) => r.SecuritiesCompanyCode?.trim() === sym);
+        if (tpexRow) return _buildTpexEodResult(tpexRow, blockReason);
       }
-      const parseEodNum = (value?: string | null) => {
-        const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
-        return Number.isFinite(n) && n > 0 ? n : null;
-      };
-      const close = parseEodNum(row.ClosingPrice);
-      const open = parseEodNum(row.OpeningPrice);
-      const high = parseEodNum(row.HighestPrice);
-      const low = parseEodNum(row.LowestPrice);
-      const vol = parseEodNum(row.TradeVolume);
-      const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
-      const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
-      const changePct = prevClose && prevClose > 0
-        ? Math.round((changeRaw / prevClose) * 10000) / 100
-        : null;
-      return {
-        lastPrice: close,
-        open,
-        high,
-        low,
-        prevClose,
-        changePct,
-        volume: vol,
-        source: "twse_openapi_eod",
-        state: close !== null ? "STALE" : "NO_DATA",
-        freshness: close !== null ? "stale" : "not-available",
-        note: `twse_eod date=${row.Date ?? "unknown"}`,
-        dataDate: parseRocEodDateIso(row.Date),
-        marketSession,
-        referenceReason: _eodReferenceReason(blockReason),
-      };
+      return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_or_tpex_eod", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     } catch (e) {
-      console.warn(`[realtime] TWSE EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
+      console.warn(`[realtime] EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
       return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
   }
@@ -9989,7 +10045,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         }
       });
     }
-    const fb = await _twseRealtimeFallback(symbol);
+    const fb = await _twseRealtimeFallback(symbol, company.market);
     return c.json({
       data: {
         symbol,
@@ -10057,7 +10113,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           }
         });
       }
-      const fb = await _twseRealtimeFallback(symbol, subscribeBlockReason);
+      const fb = await _twseRealtimeFallback(symbol, company.market, subscribeBlockReason);
       return c.json({
         data: {
           symbol,
@@ -10173,7 +10229,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       });
     }
     // MIS also unavailable (e.g. non-trading hours) — fall back to EOD
-    const fb = await _twseRealtimeFallback(symbol, blockedReason);
+    const fb = await _twseRealtimeFallback(symbol, company.market, blockedReason);
     return c.json({
       data: {
         symbol,
@@ -10515,7 +10571,10 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   const today = todayDate();
 
   // Date ranges per dataset spec
-  const rev12m = nMonthsAgoDate(12);
+  // A3 fix (2026-07-12): widened from 12→14 months. YoY needs the SAME month from the
+  // prior year (12 months back from latest), which a strict 12-month fetch window never
+  // contains — yoyGrowth was permanently null. +2 months buffer covers reporting lag.
+  const rev14m = nMonthsAgoDate(14);
   const q8start = nYearsAgoDate(3);   // 8 quarters ≈ 2 years + buffer
   const d30start = nDaysAgoDate(30);
   const d90start = nDaysAgoDate(90);
@@ -10536,7 +10595,7 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
     valResult,
     newsResult
   ] = await Promise.allSettled([
-    client.getMonthRevenue(stockId, rev12m, today),
+    client.getMonthRevenue(stockId, rev14m, today),
     client.getFinancialStatements(stockId, q8start, today),
     client.getBalanceSheet(stockId, q8start, today),
     client.getCashFlow(stockId, q8start, today),
@@ -10557,19 +10616,21 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   } else {
     const rows = revResult.value as RevenueRow[];
     rows.sort((a, b) => b.date.localeCompare(a.date));
-    const hist = rows.slice(0, 12);
+    const hist = rows.slice(0, 12); // display window unchanged — still 12 months
     const latest = hist[0] ?? null;
 
-    // Compute YoY growth if we have 2+ rows
+    // Compute YoY growth against the same month a year ago.
+    // A3 fix (2026-07-12): search the full 14-month `rows` fetch, not the 12-item
+    // display `hist` — the comparison month is by definition outside a 12-month window.
     let yoyGrowth: number | null = null;
-    if (hist.length >= 2) {
-      const prev = hist.find(r => {
-        const prevYear = Number(latest?.date.slice(0, 4)) - 1;
-        return Number(r.date.slice(0, 4)) === prevYear &&
-          r.revenue_month === latest?.revenue_month;
-      });
+    if (latest) {
+      const prevYear = Number(latest.date.slice(0, 4)) - 1;
+      const prev = rows.find(r =>
+        Number(r.date.slice(0, 4)) === prevYear &&
+        r.revenue_month === latest.revenue_month
+      );
       if (prev && prev.revenue !== 0) {
-        yoyGrowth = ((latest!.revenue - prev.revenue) / prev.revenue) * 100;
+        yoyGrowth = ((latest.revenue - prev.revenue) / prev.revenue) * 100;
       }
     }
 
@@ -10686,14 +10747,8 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   // Cycle 10 FIX (2026-05-14): widen name regex to cover all FinMind name variants.
   // FinMind per-stock API returns: '外陸資' | '投信' | '自營商' | '自營商(自行買賣)' | '自營商(避險)'
   // FinMind whole-market API returns similar values. DB stores raw FinMind name verbatim.
-  // Guard against any variant by matching broader substrings + English fallbacks.
-  function classifyInstName(nm: string): "foreign" | "investmentTrust" | "dealer" | null {
-    if (/外|陸資|Foreign|foreign/i.test(nm)) return "foreign";
-    if (/投信|Trust/i.test(nm)) return "investmentTrust";
-    if (/自營|Dealer|dealer/i.test(nm)) return "dealer";
-    return null;
-  }
-
+  // A2 fix (2026-07-12): this used to be a locally-duplicated copy — now shares
+  // classifyInstitutionalName() (defined near the date helpers above) with /chips.
   function aggregateInstRows(rows: InstRow[]): FullProfileSection<{ date: string; foreign: number; investmentTrust: number; dealer: number; totalNetBuy: number }> {
     const dateMap = new Map<string, { foreign: number; investmentTrust: number; dealer: number }>();
     for (const r of rows) {
@@ -10701,7 +10756,7 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
       const entry = dateMap.get(r.date)!;
       const net = (Number(r.buy) || 0) - (Number(r.sell) || 0);
       const nm = r.name ?? "";
-      const bucket = classifyInstName(nm);
+      const bucket = classifyInstitutionalName(nm);
       if (bucket) entry[bucket] += net;
     }
     const aggregated = Array.from(dateMap.entries())
@@ -10846,23 +10901,44 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   }
 
   // ── MarketIntel: Dividend ─────────────────────────────────────────────────────
-  type DivRow = { date: string; stock_id: string; year: number; TotalCashDividend?: number; TotalStockDividend?: number; TotalDividend?: number };
-  let dividend: FullProfileSection<{ year: number; cashDividend: number; stockDividend: number; totalDividend: number; announcementDate: string | null }>;
+  // A1 fix (2026-07-12): live FinMind TaiwanStockDividend rows (curl-verified 2026-07-12)
+  // don't carry TotalCashDividend/TotalStockDividend/TotalDividend at all — those were
+  // dead field names, always undefined → cashDividend/stockDividend permanently 0. Real
+  // per-share amounts are CashEarningsDistribution + CashStatutorySurplus (cash) and
+  // StockEarningsDistribution + StockStatutorySurplus (stock). `year` is a ROC-quarter
+  // *string* like "114年第4季", not a number — `b.year - a.year` was `NaN` for every
+  // pair, so .sort() was a silent no-op and "latest" resolved to FinMind's raw row
+  // order (oldest-first) rather than the newest dividend. Staleness must key off a real
+  // date (AnnouncementDate), not the unparseable ROC-quarter label, or `getFullYear() -
+  // NaN` is always false → permanent fake LIVE badge.
+  type DivRow = { date: string; stock_id: string; year: string; CashEarningsDistribution?: number; CashStatutorySurplus?: number; StockEarningsDistribution?: number; StockStatutorySurplus?: number; AnnouncementDate?: string };
+  let dividend: FullProfileSection<{ year: string; cashDividend: number; stockDividend: number; totalDividend: number; announcementDate: string | null }>;
   if (divResult.status === "rejected") {
     dividend = errorSection("TaiwanStockDividend", String(divResult.reason));
   } else {
-    const rows = (divResult.value as DivRow[]).sort((a, b) => b.year - a.year);
-    const hist = rows.slice(0, 10).map(r => ({
-      year: r.year,
-      cashDividend: r.TotalCashDividend ?? 0,
-      stockDividend: r.TotalStockDividend ?? 0,
-      totalDividend: r.TotalDividend ?? 0,
-      announcementDate: r.date ?? null
-    }));
+    // Cast via unknown: the FinMindDividendRow client type is stale relative to the
+    // live wire schema (declares TotalCashDividend/numeric year, neither of which the
+    // live API actually returns — see the A1 fix note above), so it doesn't structurally
+    // overlap with the corrected local DivRow shape.
+    const rows = (divResult.value as unknown as DivRow[])
+      .slice()
+      .sort((a, b) => (b.AnnouncementDate ?? b.date ?? "").localeCompare(a.AnnouncementDate ?? a.date ?? ""));
+    const hist = rows.slice(0, 10).map(r => {
+      const cashDividend = (r.CashEarningsDistribution ?? 0) + (r.CashStatutorySurplus ?? 0);
+      const stockDividend = (r.StockEarningsDistribution ?? 0) + (r.StockStatutorySurplus ?? 0);
+      return {
+        year: r.year,
+        cashDividend,
+        stockDividend,
+        totalDividend: cashDividend + stockDividend,
+        announcementDate: r.AnnouncementDate ?? r.date ?? null
+      };
+    });
     const latest = hist[0] ?? null;
-    const latestYear = latest?.year ?? null;
-    // Dividend STALE if latest year < current year - 2
-    const isStale = latestYear ? (new Date().getFullYear() - latestYear) > 2 : true;
+    const latestDate = latest?.announcementDate ?? null;
+    // Dividends are typically declared ~annually (quarterly for some issuers) — allow
+    // a wide window before flagging stale rather than the old (broken) 2-year cutoff.
+    const isStale = latestDate ? Date.now() - new Date(latestDate).getTime() > 400 * 24 * 60 * 60 * 1000 : true;
     dividend = {
       state: hist.length === 0 ? "EMPTY" : isStale ? "STALE" : "LIVE",
       latest,

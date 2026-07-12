@@ -11225,6 +11225,138 @@ test("INST4: classifyInstName handles English name variants (Foreign_Investor, T
   assert.equal(classifyInstNameMirror("unknown"), null, "INST4: unknown → null (unclassified)");
 });
 
+// ── A2 fix (2026-07-12): /chips route must use the same classifier as /full-profile ──
+// Previously GET /api/v1/companies/:id/chips matched Chinese substrings only
+// (`name.includes("外")` etc), so English-labelled institutional rows always fell
+// through uncounted — foreign/trust/dealer net30d was permanently 0 (假零), even
+// though the same-day /full-profile institutional section (already widened Cycle 10,
+// 2026-05-14) showed real numbers for the identical underlying rows. Both routes now
+// call the single shared classifyInstitutionalName().
+
+test("CHIPS1: chips net30d summation no longer drops English-labelled institutional rows", () => {
+  // Mirrors the summation loop in GET /api/v1/companies/:id/chips.
+  const rows = [
+    { date: "2026-07-09", stock_id: "2330", name: "Foreign_Investor", buy: 5000000, sell: 3000000 },
+    { date: "2026-07-09", stock_id: "2330", name: "Investment_Trust", buy: 200000, sell: 100000 },
+    { date: "2026-07-09", stock_id: "2330", name: "Dealer_self", buy: 50000, sell: 80000 },
+  ];
+  let foreignNet = 0, trustNet = 0, dealerNet = 0;
+  for (const row of rows) {
+    const net = row.buy - row.sell;
+    const bucket = classifyInstNameMirror(row.name);
+    if (bucket === "foreign") foreignNet += net;
+    else if (bucket === "investmentTrust") trustNet += net;
+    else if (bucket === "dealer") dealerNet += net;
+  }
+  assert.equal(foreignNet, 2000000, "CHIPS1: foreign net counted from an English-labelled row");
+  assert.equal(trustNet, 100000, "CHIPS1: investmentTrust net counted from an English-labelled row");
+  assert.equal(dealerNet, -30000, "CHIPS1: dealer net counted from an English-labelled row");
+});
+
+test("CHIPS2: /chips and /full-profile institutional now call one shared classifier function", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /function classifyInstitutionalName\(nm: string\): "foreign" \| "investmentTrust" \| "dealer" \| null/);
+  const usages = src.match(/classifyInstitutionalName\(/g) ?? [];
+  // definition (1) + /chips call site (1) + /full-profile aggregateInstRows call site (1)
+  assert.ok(usages.length >= 3, `CHIPS2: expected >=3 references to classifyInstitutionalName (def + 2 call sites), got ${usages.length}`);
+  // the old chips-local substring check must be gone
+  assert.doesNotMatch(src, /if \(name\.includes\("外"\) \|\| name\.includes\("陸"\)\) foreignNet \+= net;/);
+  // the old locally-duplicated classifyInstName in /full-profile must be gone (renamed to the shared function)
+  assert.doesNotMatch(src, /function classifyInstName\(nm: string\)/);
+});
+
+// ── A1 fix (2026-07-12): dividend section reads real FinMind field names ──────
+// Live FinMind TaiwanStockDividend rows (curl-verified 2026-07-12 against 2330) carry
+// CashEarningsDistribution/CashStatutorySurplus/StockEarningsDistribution/
+// StockStatutorySurplus and a string `year` like "114年第4季" — never
+// TotalCashDividend/TotalStockDividend/TotalDividend, and never a numeric year.
+
+test("DIV1: dividend history reads CashEarningsDistribution, not the dead TotalCashDividend field, and sorts by real AnnouncementDate", () => {
+  type DivRow = { date: string; stock_id: string; year: string; CashEarningsDistribution?: number; CashStatutorySurplus?: number; StockEarningsDistribution?: number; StockStatutorySurplus?: number; AnnouncementDate?: string };
+  const rows: DivRow[] = [
+    { date: "2021-09-22", stock_id: "2330", year: "110年第1季", CashEarningsDistribution: 2.75, AnnouncementDate: "2021-06-16" },
+    { date: "2026-06-17", stock_id: "2330", year: "114年第4季", CashEarningsDistribution: 6.00003573, AnnouncementDate: "2026-05-27" },
+  ];
+  const sorted = rows
+    .slice()
+    .sort((a, b) => (b.AnnouncementDate ?? b.date ?? "").localeCompare(a.AnnouncementDate ?? a.date ?? ""));
+  const hist = sorted.slice(0, 10).map(r => {
+    const cashDividend = (r.CashEarningsDistribution ?? 0) + (r.CashStatutorySurplus ?? 0);
+    const stockDividend = (r.StockEarningsDistribution ?? 0) + (r.StockStatutorySurplus ?? 0);
+    return { year: r.year, cashDividend, stockDividend, totalDividend: cashDividend + stockDividend, announcementDate: r.AnnouncementDate ?? r.date ?? null };
+  });
+  assert.equal(hist[0]?.year, "114年第4季", "DIV1: latest resolves to the newest AnnouncementDate, not FinMind's raw (oldest-first) row order");
+  assert.equal(hist[0]?.cashDividend, 6.00003573, "DIV1: cashDividend reads CashEarningsDistribution — old code always produced 0 here");
+  assert.equal(hist[1]?.year, "110年第1季", "DIV1: older row sorts second");
+});
+
+test("DIV2: dividend staleness is date-based, not the old NaN-year compare that was permanently false", () => {
+  // Old code: `const latestYear = latest?.year ?? null;` — at runtime `latest.year` was
+  // the raw FinMind string "110年第1季" (the `year: number` field type was a lie the
+  // `as DivRow[]` cast let through). Since a non-empty string is truthy, the ternary
+  // `latestYear ? (new Date().getFullYear() - latestYear) > 2 : true` always took the
+  // truthy branch, and `2026 - "110年第1季"` coerces to `NaN` → `NaN > 2` is always
+  // false → isStale always false → every ticker showed a fake "LIVE" badge no matter
+  // how old the latest dividend was.
+  const oldBuggyLatestYear = "110年第1季" as unknown as number; // mirrors the `as DivRow[]` type lie
+  const oldBuggyIsStale = oldBuggyLatestYear ? (new Date().getFullYear() - oldBuggyLatestYear) > 2 : true;
+  assert.equal(oldBuggyIsStale, false, "DIV2: old logic never flags STALE even for a multi-year-old row (fake LIVE)");
+
+  const fixedLatestDate = "2021-06-16"; // ~5 years old
+  const fixedIsStale = fixedLatestDate ? Date.now() - new Date(fixedLatestDate).getTime() > 400 * 24 * 60 * 60 * 1000 : true;
+  assert.equal(fixedIsStale, true, "DIV2: fixed logic honestly flags a multi-year-old announcement as STALE");
+});
+
+test("DIV3: server.ts dividend section no longer reads the dead TotalCashDividend/TotalStockDividend fields", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const sectionStart = src.indexOf("── MarketIntel: Dividend ──");
+  const sectionEnd = src.indexOf("── MarketIntel: Market Value ──");
+  assert.ok(sectionStart > 0 && sectionEnd > sectionStart, "DIV3: dividend section must be present in server.ts");
+  const section = src.slice(sectionStart, sectionEnd);
+  // Check actual field-access syntax, not prose mentions in the fix-explanation comment.
+  assert.doesNotMatch(section, /r\.TotalCashDividend/);
+  assert.doesNotMatch(section, /r\.TotalStockDividend/);
+  assert.doesNotMatch(section, /r\.TotalDividend/);
+  assert.match(section, /r\.CashEarningsDistribution/);
+  assert.match(section, /r\.AnnouncementDate/);
+});
+
+// ── A3 fix (2026-07-12): monthly revenue YoY must find the prior-year comparison month ──
+
+test("REV1: monthlyRevenue YoY searches the full 14-month fetch window, not the 12-item display hist", () => {
+  // Mirrors the ── Fundamentals: Monthly Revenue ── mapper. Old bug: yoyGrowth searched
+  // only within `hist` (sliced to 12 rows newest-first) for the same month one year
+  // prior — that comparison month is always the 13th item, i.e. never present in a
+  // 12-item window, so yoyGrowth was permanently null.
+  type RevenueRow = { date: string; stock_id: string; revenue: number; revenue_month: number; revenue_year: number; country: string };
+  const rows: RevenueRow[] = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(Date.UTC(2026, 5 - i, 1)); // i=0 → 2026-06, counting back monthly
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    rows.push({ date: `${y}-${String(m).padStart(2, "0")}-10`, stock_id: "2330", revenue: 1000 + i, revenue_month: m, revenue_year: y, country: "Taiwan" });
+  }
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+  const hist = rows.slice(0, 12);
+  const latest = hist[0]!;
+  const prevYear = Number(latest.date.slice(0, 4)) - 1;
+
+  const oldBuggyPrev = hist.find(r => Number(r.date.slice(0, 4)) === prevYear && r.revenue_month === latest.revenue_month);
+  assert.equal(oldBuggyPrev, undefined, "REV1: old logic (search within 12-item hist) never finds the comparison month");
+
+  const fixedPrev = rows.find(r => Number(r.date.slice(0, 4)) === prevYear && r.revenue_month === latest.revenue_month);
+  assert.ok(fixedPrev, "REV1: fixed logic (search within full 14-month rows) finds the same-month prior-year row");
+  const yoyGrowth = fixedPrev && fixedPrev.revenue !== 0 ? ((latest.revenue - fixedPrev.revenue) / fixedPrev.revenue) * 100 : null;
+  assert.notEqual(yoyGrowth, null, "REV1: yoyGrowth is now computable instead of permanently null");
+});
+
+test("REV2: server.ts fetches a 14-month revenue window (rev14m), not the old 12-month one", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /const rev14m = nMonthsAgoDate\(14\);/);
+  assert.match(src, /client\.getMonthRevenue\(stockId, rev14m, today\)/);
+  assert.doesNotMatch(src, /nMonthsAgoDate\(12\)/);
+});
+
 // ── KGI SIM user-facing order endpoint — schema + guard tests (SIM1-SIM4) ────────────────────
 
 import { kgiSimOrderBodySchema } from "../apps/api/src/server.ts";
@@ -16621,6 +16753,52 @@ test("TWSE-MIS-6: cron window is 08:55-14:35 and date guard prevents after-hours
   assert.match(source, /if \(hhmm < 855 \|\| hhmm > 1435\) return false/);
   assert.match(source, /if \(!isTodayMisTradeDate\(msg\["d"\] \?\? ""\)\) continue/);
   assert.match(source, /TWSE-MIS-QUOTE-CRON \(45s intraday injection, fires 08:55-14:35 TST weekdays\)/);
+});
+
+// ── A4 fix (2026-07-12): TPEX EOD fallback for /quote/realtime ────────────────
+// OTC tickers (e.g. 8069) previously always resolved to NO_DATA off-session because
+// _twseEodFallback only checked TWSE STOCK_DAY_ALL ("not_in_twse_stock_day_all").
+// Fixed to pick a primary exchange from `market` (TPEX → getTpexMainboardCloseRows),
+// then try the other exchange before giving up — mirrors the existing MIS tse/otc
+// fallback (company.market can be mistagged, same as the MIS-PREFIX-FALLBACK case).
+
+test("A4-EOD-1: TPEX row parses into the same result shape as the TWSE row (honest STALE with a real price, not NO_DATA)", () => {
+  type TpexDailyRow = { Date: string; SecuritiesCompanyCode: string; Close: string; Change: string; Open: string; High: string; Low: string; TradingShares: string };
+  const row: TpexDailyRow = { Date: "1150703", SecuritiesCompanyCode: "8069", Close: "1,205.00", Change: "+15.00", Open: "1,190.00", High: "1,210.00", Low: "1,185.00", TradingShares: "512,300" };
+  const parseEodNum = (value?: string | null) => {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const close = parseEodNum(row.Close);
+  const changeRaw = Number(String(row.Change ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
+  const prevClose = Number.isFinite(changeRaw) && close !== null ? Number((close - changeRaw).toFixed(2)) : null;
+  assert.equal(close, 1205, "A4-EOD-1: TPEX Close parses correctly");
+  assert.equal(prevClose, 1190, "A4-EOD-1: prevClose derived from Close - Change");
+  const state = close !== null ? "STALE" : "NO_DATA";
+  assert.equal(state, "STALE", "A4-EOD-1: OTC ticker now resolves to STALE with a real price, not NO_DATA");
+});
+
+test("A4-EOD-2: primary-exchange selection follows the same tse/otc classification as the MIS fallback", () => {
+  function _misPrefixForMarket(market: string): "tse" | "otc" {
+    const m = market.trim().toUpperCase();
+    if (m === "TPEX" || m === "TWO" || m === "TW_EMERGING" || m.includes("上櫃") || m.includes("OTC")) return "otc";
+    return "tse";
+  }
+  assert.equal(_misPrefixForMarket("TWSE"), "tse", "A4-EOD-2: TWSE market picks TWSE STOCK_DAY_ALL as primary source");
+  assert.equal(_misPrefixForMarket("TPEX"), "otc", "A4-EOD-2: TPEX market picks TPEX daily close as primary source");
+});
+
+test("A4-EOD-3: _twseEodFallback now threads market through to all 3 call sites and tries both exchanges", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(src, /async function _twseEodFallback\(sym: string, market: string, blockReason\?: string \| null\): Promise<EodFallbackResult>/);
+  assert.match(src, /const isOtc = _misPrefixForMarket\(market\) === "otc";/);
+  assert.match(src, /function _buildTpexEodResult\(/);
+  assert.match(src, /function _buildTwseEodResult\(/);
+  assert.match(src, /source: "tpex_openapi_eod",/);
+  const callSites = src.match(/_twseRealtimeFallback\(symbol, company\.market/g) ?? [];
+  assert.equal(callSites.length, 3, `A4-EOD-3: expected 3 call sites passing company.market, got ${callSites.length}`);
+  assert.doesNotMatch(src, /not_in_twse_stock_day_all/, "A4-EOD-3: old TWSE-only NO_DATA note must be replaced");
+  assert.match(src, /not_in_twse_or_tpex_eod/);
 });
 
 // MIS-HEATMAP: TWSE MIS as Tier 1.5 in kgi-heatmap-enricher (MIS-HEATMAP-1..4)
