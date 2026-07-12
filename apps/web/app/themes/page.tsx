@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { getThemes } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
-import { cleanThemeThesis } from "@/lib/operator-copy";
+import { cleanThemeThesis, THEME_THESIS_FALLBACK_TEXT } from "@/lib/operator-copy";
 import { formatSourceTimestamp, latestIso, sourceFreshnessLabel } from "@/lib/source-freshness";
 
 export const dynamic = "force-dynamic";
@@ -149,6 +149,16 @@ function themeThesisText(theme: ThemeRow) {
     return cleanThemeThesis(theme.slug, theme.thesis);
   }
   return cleanThemeThesis(theme.slug, theme.thesis);
+}
+
+/** Card-level description line: only render when there's a real description
+ * (curated slug override or usable raw thesis) — the generic "說明待整理"
+ * placeholder is honest but is filler when repeated on every card, so it's
+ * omitted rather than shown. reports/product_critique_20260710/
+ * PRODUCT_CRITIQUE_v1.md P1-6: "有就顯沒有就不加". */
+function themeCardDescription(theme: ThemeRow): string | null {
+  const text = themeThesisText(theme);
+  return text === THEME_THESIS_FALLBACK_TEXT ? null : text;
 }
 
 function themeStageText(theme: ThemeRow) {
@@ -357,13 +367,20 @@ export default async function ThemesPage() {
   const coreTotal = visibleThemes.reduce((sum, theme) => sum + theme.corePoolCount, 0);
   const observationTotal = visibleThemes.reduce((sum, theme) => sum + theme.observationPoolCount, 0);
   const priorityOneCount = visibleThemes.filter((theme) => theme.priority === 1).length;
+  const activeCount = result.data.filter((theme) => theme.lifecycle === "Expansion" || theme.lifecycle === "Validation").length;
+  // P1-6: when every classification bucket is 0 (no live theme is yet
+  // attacking/defending/active/priority-1 — all still in research), showing
+  // four separate "0" cells reads as broken rather than honest. Collapse
+  // them into one explanatory sentence instead.
+  const allClassificationZero =
+    countsAvailable && attackCount === 0 && defenseCount === 0 && priorityOneCount === 0 && activeCount === 0;
 
   return (
     <PageFrame
       code="10"
       title="主題板"
       sub="台股主題階梯"
-      note="主題板 / 正式主題資料；只顯示已連結公司池與可追蹤狀態。"
+      note="主題板 / 正式主題資料；依產業與題材分類公司池，是查找個股研究與 AI 推薦標的的分類索引——點主題可看關聯公司，個股詳細研究在公司板、進場想法在 AI 推薦。只顯示已連結公司池與可追蹤狀態。"
     >
       <style>{THEMES_CSS}</style>
 
@@ -377,14 +394,18 @@ export default async function ThemesPage() {
           <span className="_bty-kpi-val gold">{countsAvailable ? visibleThemes.length : "--"}</span>
           <span className="_bty-kpi-lbl">主題總數</span>
         </div>
-        <div className="_bty-kpi-cell">
-          <span className="_bty-kpi-val up">{countsAvailable ? attackCount : "--"}</span>
-          <span className="_bty-kpi-lbl">進攻主題</span>
-        </div>
-        <div className="_bty-kpi-cell">
-          <span className="_bty-kpi-val down">{countsAvailable ? defenseCount : "--"}</span>
-          <span className="_bty-kpi-lbl">防守主題</span>
-        </div>
+        {!allClassificationZero && (
+          <>
+            <div className="_bty-kpi-cell">
+              <span className="_bty-kpi-val up">{countsAvailable ? attackCount : "--"}</span>
+              <span className="_bty-kpi-lbl">進攻主題</span>
+            </div>
+            <div className="_bty-kpi-cell">
+              <span className="_bty-kpi-val down">{countsAvailable ? defenseCount : "--"}</span>
+              <span className="_bty-kpi-lbl">防守主題</span>
+            </div>
+          </>
+        )}
         <div className="_bty-kpi-cell">
           <span className="_bty-kpi-val gold">{countsAvailable ? coreTotal : "--"}</span>
           <span className="_bty-kpi-lbl">核心公司</span>
@@ -393,10 +414,12 @@ export default async function ThemesPage() {
           <span className="_bty-kpi-val">{countsAvailable ? observationTotal : "--"}</span>
           <span className="_bty-kpi-lbl">觀察公司</span>
         </div>
-        <div className="_bty-kpi-cell">
-          <span className="_bty-kpi-val gold">{countsAvailable ? priorityOneCount : "--"}</span>
-          <span className="_bty-kpi-lbl">P1 主題</span>
-        </div>
+        {!allClassificationZero && (
+          <div className="_bty-kpi-cell">
+            <span className="_bty-kpi-val gold">{countsAvailable ? priorityOneCount : "--"}</span>
+            <span className="_bty-kpi-lbl">優先追蹤主題</span>
+          </div>
+        )}
       </div>
 
       <div className="parity-kpi-bar">
@@ -412,13 +435,15 @@ export default async function ThemesPage() {
           <span className="parity-kpi-value">{result.state !== "BLOCKED" ? result.data.length : "--"}</span>
           <span className="parity-kpi-sub">台股主題</span>
         </div>
-        <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">活躍主題</span>
-          <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t) => t.lifecycle === "Expansion" || t.lifecycle === "Validation") ? "ok" : "dim"}`}>
-            {result.state !== "BLOCKED" ? String(result.data.filter((t) => t.lifecycle === "Expansion" || t.lifecycle === "Validation").length) : "--"}
-          </span>
-          <span className="parity-kpi-sub">成長/驗證期</span>
-        </div>
+        {!allClassificationZero && (
+          <div className="parity-kpi-cell">
+            <span className="parity-kpi-label">活躍主題</span>
+            <span className={`parity-kpi-value ${activeCount > 0 ? "ok" : "dim"}`}>
+              {result.state !== "BLOCKED" ? String(activeCount) : "--"}
+            </span>
+            <span className="parity-kpi-sub">成長/驗證期</span>
+          </div>
+        )}
         <div className="parity-kpi-cell">
           <span className="parity-kpi-label">研究中</span>
           <span className={`parity-kpi-value ${result.state !== "BLOCKED" && result.data.some((t) => t.lifecycle === "Discovery") ? "warn" : "dim"}`}>
@@ -427,6 +452,11 @@ export default async function ThemesPage() {
           <span className="parity-kpi-sub">探索期</span>
         </div>
       </div>
+      {result.state === "LIVE" && visibleThemes.length > 0 && allClassificationZero && (
+        <div className="terminal-note compact">
+          <span className="tg gold">主題分類建置中</span> 目前 {visibleThemes.length} 個主題皆在研究階段，暫無進攻／防守／活躍分類可顯示。
+        </div>
+      )}
 
       <Panel
         code="THM-LDR"
@@ -445,6 +475,7 @@ export default async function ThemesPage() {
           <div className="_bty-theme-grid">
             {visibleThemes.map((theme) => {
               const accentColor = marketBadgeColor(theme.marketState);
+              const description = themeCardDescription(theme);
               return (
                 <Link
                   href={`/themes/${theme.slug}`}
@@ -481,7 +512,7 @@ export default async function ThemesPage() {
                     <div className="_bty-card-slug">{theme.slug}</div>
                   </div>
 
-                  <p className="_bty-card-thesis">{themeThesisText(theme)}</p>
+                  {description && <p className="_bty-card-thesis">{description}</p>}
 
                   <div className="_bty-card-footer">
                     <span className="tg soft" style={{ fontSize: 11 }}>{themeStageText(theme)}</span>
