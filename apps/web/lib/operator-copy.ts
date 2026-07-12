@@ -228,6 +228,14 @@ export function cleanRiskRewardText(value: string | null | undefined) {
   return cleanNarrativeText(raw, "--");
 }
 
+/** Fallback copy shown when a theme has neither a curated slug override nor
+ * usable raw thesis text. Exported so callers (e.g. the themes list page)
+ * can detect "this is just the generic placeholder" and choose to omit a
+ * card-level description line entirely rather than always rendering filler
+ * text — see reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md P1-6. */
+export const THEME_THESIS_FALLBACK_TEXT =
+  "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。";
+
 export function cleanThemeThesis(slug: string | null | undefined, thesis: string | null | undefined) {
   const key = slug?.toLowerCase() ?? "";
   const bySlug: Record<string, string> = {
@@ -243,5 +251,5 @@ export function cleanThemeThesis(slug: string | null | undefined, thesis: string
     hbm: "HBM 高頻寬記憶體受 AI 伺服器需求帶動，需追蹤價格、產能與客戶集中度。",
   };
   if (bySlug[key]) return bySlug[key];
-  return cleanNarrativeText(thesis, "主題說明待整理；目前保留來源主檔與公司池，不作自動解讀。");
+  return cleanNarrativeText(thesis, THEME_THESIS_FALLBACK_TEXT);
 }
