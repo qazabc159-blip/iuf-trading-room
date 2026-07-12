@@ -12,6 +12,7 @@ import {
   type EntitlementStatus,
 } from "@/lib/subscription-entitlements";
 import { getMyEntitlements } from "@/lib/api";
+import { translateSubscriptionCopy } from "@/lib/subscription-copy-i18n";
 
 const pageStyle = {
   minHeight: "100vh",
@@ -272,7 +273,7 @@ export default async function SubscriptionSettingsPage() {
                     <td style={{ padding: "12px 8px", borderBottom: "1px solid rgba(255,255,255,0.055)" }}>
                       <div style={{ color: "var(--fg-1, #ddd)", fontWeight: 900 }}>{feature.label}</div>
                       <div style={{ color: "var(--fg-3, #8a93a3)", marginTop: 4, lineHeight: 1.5 }}>
-                        {feature.customerCopy}
+                        {translateSubscriptionCopy(feature.customerCopy)}
                         {feature.requiresBroker ? " 需要券商連線與安全憑證。" : ""}
                       </div>
                     </td>

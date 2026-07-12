@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
+
 import type { CompanyDetailQuote, CompanyDetailView } from "@/lib/company-adapter";
 import type { CompanyRealtimeQuote } from "@/lib/api";
+import { buildCompanyPrefillHref } from "@/lib/company-prefill";
 import { industryLabel } from "@/lib/industry-i18n";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { computeFreshnessMode, computeFreshness_ms } from "@/lib/quote-store";
@@ -228,6 +231,36 @@ const CO_HERO_CSS = `
   font-size: 10px;
   color: var(--night-soft, #566276);
 }
+
+/* 帶入模擬單 CTA — closes the 決策鏈斷節 gap (看完研究要下紙上單得自己繞路).
+   44px min-height on all breakpoints, not just mobile: this is a primary action,
+   not incidental chrome, and the identity row already wraps at narrow widths. */
+._co-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 18px;
+  margin-left: auto;
+  border: 1px solid var(--gold-deep, #8a6a2a);
+  background: var(--gold, #c8943f);
+  color: var(--night, #05080c);
+  font: 800 12.5px/1.2 var(--sans-tc);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 0.15s;
+}
+._co-hero-cta:hover {
+  filter: brightness(1.08);
+}
+@media (max-width: 640px) {
+  ._co-hero-cta {
+    margin-left: 0;
+    width: 100%;
+  }
+}
 `;
 
 function signed(value: number | null | undefined, digits = 2) {
@@ -367,6 +400,13 @@ export function CompanyHeroBar({
           <span data-testid="company-hero-freshness-badge" data-freshness-mode={freshnessMode}>
             <FreshnessBadge mode={freshnessMode} ageMs={freshnessMs} />
           </span>
+          <Link
+            href={buildCompanyPrefillHref(company.symbol)}
+            className="_co-hero-cta"
+            data-testid="company-hero-prefill-cta"
+          >
+            帶入模擬單
+          </Link>
         </div>
 
         {/* Meta line */}
