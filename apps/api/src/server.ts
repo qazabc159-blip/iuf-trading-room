@@ -15379,6 +15379,7 @@ app.get("/api/v1/alerts", async (c) => {
   const events = await listEvents({
     limit,
     unreadOnly,
+    dedupeSameDay: true,
     ...(audience === "all" ? {} : { audience })
   });
   return c.json({
@@ -21101,7 +21102,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
   // ── 3. iuf_events (OpenAlice event rule engine — unified feed, 2026-06-12) ──
   // Same store as GET /api/v1/alerts. read = acknowledged (table's own flag).
   try {
-    const events = await listEvents({ limit: 50 });
+    const events = await listEvents({ limit: 50, dedupeSameDay: true });
     for (const ev of events) {
       const copy = IUF_EVENT_NOTIFICATION_COPY[ev.ruleId];
       const eventTiming = notificationEventTiming(ev.ruleId, ev.triggeredAt, ev.payload);

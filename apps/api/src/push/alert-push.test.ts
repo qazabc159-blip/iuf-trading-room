@@ -23,9 +23,11 @@ const eligibleRuleIds = [
   "R06_MAJOR_SHAREHOLDER_THRESHOLD",
   "R07_MAJOR_ANNOUNCEMENT",
   "R08_AI_BRIEF_PUBLISHED",
-  "R11_V3_REC_CRON_EXHAUSTED",
-  "R14_THEME_REFRESH_STALE",
 ];
+// P1-2 granularity fix (2026-07-11): removed from PAYLOAD_COPY — service/
+// content-freshness status notices, not a trader-actionable market signal
+// and not push-worthy either.
+const removedFromAllowlistRuleIds = ["R11_V3_REC_CRON_EXHAUSTED", "R14_THEME_REFRESH_STALE"];
 const chineseNotificationCopy = /^[\p{Script=Han}，。！？、：；「」『』（）\s]+$/u;
 const forbiddenNotificationCopy =
   /保證獲利|可以跟單|alpha confirmed|live-ready|enum|model|debug|openai|llm|kgi|R\d/iu;
@@ -138,5 +140,13 @@ test("internal event types are not eligible and raw metadata cannot enter user-f
     assert.match(payload.title, chineseNotificationCopy);
     assert.match(payload.body, chineseNotificationCopy);
     assert.doesNotMatch(`${payload.title} ${payload.body}`, forbiddenNotificationCopy);
+  }
+
+  for (const ruleId of removedFromAllowlistRuleIds) {
+    assert.equal(
+      buildAlertPushPayload({ ruleId, ticker: null }),
+      null,
+      `${ruleId} is a service/content-freshness status, not push-worthy`
+    );
   }
 });
