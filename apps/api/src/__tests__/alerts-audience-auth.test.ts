@@ -76,7 +76,17 @@ async function getFreePort(): Promise<number> {
   });
 }
 
-async function waitForHealth(url: string, attempts = 60): Promise<void> {
+// 240 attempts * 500ms = 120s. role-matrix.test.ts (memory mode, no DB round
+// trips at boot, runs on the warm self-hosted "validate" runner) gets away
+// with 60 attempts/30s. This file boots the same server.ts via tsx but in DB
+// mode on the GH-hosted ubuntu-latest "db-tests" runner — a real CI run
+// (2026-07-11, PR #1228) timed out at exactly the old 30s budget
+// (`hookFailed`/`fetch failed`, duration_ms: 30132) purely from cold
+// tsx-transpile + DB-mode boot latency, before the server ever became
+// reachable — not a server or #1224 bug. Widened with margin; the job's own
+// timeout-minutes is 15, so this budget cannot itself cause a slow suite to
+// look "hung" from the outside.
+async function waitForHealth(url: string, attempts = 240): Promise<void> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
