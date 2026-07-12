@@ -22084,6 +22084,53 @@ test("EOD-CALENDAR-GATE-2: _runTwseEodCron checks the dedup gate before injectin
   );
 });
 
+// ── SCHED-CURSOR: FinMind sync scheduler round-robin cursor (2026-07-12,
+// #1229 A5/A6 finding) ────────────────────────────────────────────────────
+// Memory-mode (no DB — PERSISTENCE_MODE unset in this test suite) coverage
+// of the round-robin batching logic itself. The prod-relevant fix (cursor
+// SURVIVES a process restart) is a DB-mode-only regression, locked
+// separately in apps/api/src/__tests__/scheduler-cursor-persistence.test.ts
+// (`pnpm run test:db`) since memory mode has no durable store to persist to.
+
+test("SCHED-CURSOR-1: takeFinMindSchedulerBatch round-robins across the ticker list and wraps around", async () => {
+  const { takeFinMindSchedulerBatch, _resetFinMindSchedulerCursorsForTest } = await import(
+    "../apps/api/src/server.ts"
+  );
+  _resetFinMindSchedulerCursorsForTest();
+  const job = `ci-test-sched-cursor-${randomUUID()}`;
+  const tickers = [
+    { ticker: "1000" },
+    { ticker: "1001" },
+    { ticker: "1002" },
+    { ticker: "1003" },
+    { ticker: "1004" }
+  ];
+  const batch1 = await takeFinMindSchedulerBatch(job, tickers, 2);
+  assert.deepEqual(batch1.map((t) => t.ticker), ["1000", "1001"]);
+  const batch2 = await takeFinMindSchedulerBatch(job, tickers, 2);
+  assert.deepEqual(batch2.map((t) => t.ticker), ["1002", "1003"]);
+  // Wraps: only "1004" remains before the cursor loops back to "1000".
+  const batch3 = await takeFinMindSchedulerBatch(job, tickers, 2);
+  assert.deepEqual(batch3.map((t) => t.ticker), ["1004", "1000"]);
+});
+
+test("SCHED-CURSOR-2: memory mode (no DB) has no durable store, so a simulated restart legitimately restarts at 0", async () => {
+  const { takeFinMindSchedulerBatch, _resetFinMindSchedulerCursorsForTest } = await import(
+    "../apps/api/src/server.ts"
+  );
+  const job = `ci-test-sched-cursor-reset-${randomUUID()}`;
+  const tickers = [{ ticker: "1000" }, { ticker: "1001" }, { ticker: "1002" }];
+  await takeFinMindSchedulerBatch(job, tickers, 1); // cursor -> 1
+  _resetFinMindSchedulerCursorsForTest(); // simulates a process restart
+  const afterReset = await takeFinMindSchedulerBatch(job, tickers, 1);
+  assert.deepEqual(
+    afterReset.map((t) => t.ticker),
+    ["1000"],
+    "memory mode has no durable store — this documents the accepted local-dev/test behavior, " +
+      "not the prod fix (see scheduler-cursor-persistence.test.ts for the DB-mode regression lock)"
+  );
+});
+
 // Teardown pollers that may be started by imported API modules.
 after(async () => {
   const { stopOutboxPoller } = await import("../apps/api/src/events/event-log-outbox.js");

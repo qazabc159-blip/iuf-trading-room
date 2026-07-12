@@ -8,7 +8,9 @@ import {
   PROVIDER_QUOTA_429_STREAK_THRESHOLD,
   ruleAudience,
   dedupeSameDayEvents,
+  _eventEngineInternals,
   type IufEventView,
+  type EngineStateSnapshot,
 } from "./openalice-event-rule-engine.js";
 
 test("daily smoke alerts only fire for a same-day weekday failure after the smoke window opens", () => {
@@ -189,4 +191,71 @@ test("dedupeSameDayEvents: uses Taipei calendar day, not UTC day, at the UTC mid
   ];
   const result = dedupeSameDayEvents(events);
   assert.equal(result.length, 1, "both fall on Taipei 07/11 — should collapse to one");
+});
+
+// ── R08 root cause (2026-07-12): content_draft.ai_approved fires for ANY
+// approved content_draft (daily_briefs / company_notes / theme_summaries),
+// not just daily briefs. R08_AI_BRIEF_PUBLISHED must only fire for drafts
+// confirmed via dailyBriefDraftIds to target daily_briefs. #1227's display-
+// layer dedup remains a second line of defence, not the fix for this root
+// cause. ───────────────────────────────────────────────────────────────────
+function fakeEngineState(overrides: Partial<EngineStateSnapshot>): EngineStateSnapshot {
+  return {
+    hasMonthlyRevenue: false,
+    hasInstitutional: false,
+    hasShareholding: false,
+    hasMarketValue: false,
+    hasAnnouncements: false,
+    recentAuditActions: [],
+    dailyBriefDraftIds: new Set(),
+    snapshotAt: "2026-07-12T01:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function findRule(ruleId: string) {
+  const rule = _eventEngineInternals.RULES.find((r) => r.id === ruleId);
+  assert.ok(rule, `rule ${ruleId} must exist`);
+  return rule!;
+}
+
+test("R08 fires only for content_draft.ai_approved rows confirmed as daily_briefs", async () => {
+  const r08 = findRule("R08_AI_BRIEF_PUBLISHED");
+  const state = fakeEngineState({
+    recentAuditActions: [
+      { action: "content_draft.ai_approved", entityId: "draft-brief-1", createdAt: new Date("2026-07-12T00:30:00.000Z") },
+      { action: "content_draft.ai_approved", entityId: "draft-company-note-1", createdAt: new Date("2026-07-12T00:31:00.000Z") },
+      { action: "content_draft.ai_approved", entityId: "draft-theme-summary-1", createdAt: new Date("2026-07-12T00:32:00.000Z") },
+    ],
+    dailyBriefDraftIds: new Set(["draft-brief-1"]),
+  });
+  const events = await r08.trigger(state);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.payload["draftId"], "draft-brief-1");
+});
+
+test("R08 does not fire when no content_draft.ai_approved rows are confirmed daily_briefs (root-cause regression)", async () => {
+  const r08 = findRule("R08_AI_BRIEF_PUBLISHED");
+  const state = fakeEngineState({
+    recentAuditActions: [
+      { action: "content_draft.ai_approved", entityId: "draft-company-note-1", createdAt: new Date("2026-07-12T00:31:00.000Z") },
+      { action: "content_draft.ai_approved", entityId: "draft-theme-summary-1", createdAt: new Date("2026-07-12T00:32:00.000Z") },
+    ],
+    dailyBriefDraftIds: new Set(), // lookup found none of these are daily_briefs
+  });
+  const events = await r08.trigger(state);
+  assert.equal(events.length, 0);
+});
+
+test("R08 ignores unrelated audit actions even if their entityId happens to be in dailyBriefDraftIds", () => {
+  const r08 = findRule("R08_AI_BRIEF_PUBLISHED");
+  const state = fakeEngineState({
+    recentAuditActions: [
+      { action: "content_draft.ai_rejected", entityId: "draft-brief-1", createdAt: new Date("2026-07-12T00:30:00.000Z") },
+    ],
+    dailyBriefDraftIds: new Set(["draft-brief-1"]),
+  });
+  return r08.trigger(state).then((events) => {
+    assert.equal(events.length, 0);
+  });
 });
