@@ -19,7 +19,7 @@
   <a href="./index.html" class="active"><span class="n">·</span><span>市場情報</span></a>
 
   <div class="grp">策略決策</div>
-  <a target="_top" href="/ideas"><span class="n">·</span><span>策略想法</span></a>
+  <a target="_top" href="/ai-recommendations"><span class="n">·</span><span>AI 推薦</span></a>
   <a href="#" class="muted"><span class="n">·</span><span>策略批次</span></a>
 
   <div class="grp">執行</div>
@@ -50,7 +50,7 @@
 
   <div class="safetybar">
     <i></i>
-    <span>本頁僅做研究判讀，<b>不下單、不顯示目標價或勝率</b>。下一步請進策略想法。</span>
+    <span>本頁僅做研究判讀，<b>不下單、不顯示目標價或勝率</b>。下一步請進 AI 推薦。</span>
     <span class="tag">RESEARCH</span>
   </div>
 
@@ -140,7 +140,7 @@
       <section class="panel compact">
         <div class="ph">
           <h2>資料準備度</h2>
-          <span class="meta">影響策略想法</span>
+          <span class="meta">影響 AI 推薦</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div>
@@ -211,8 +211,8 @@
 
   <div class="next">
     <span class="l">下一步</span>
-    <span class="t">看完今日重點？前往 <b>策略想法</b> 查看 AI 已挑出的候選清單。</span>
-    <a class="btn primary" target="_top" href="/ideas">策略想法 <span class="arr">→</span></a>
+    <span class="t">看完今日重點？前往 <b>AI 推薦</b> 查看已挑出的候選清單。</span>
+    <a class="btn primary" target="_top" href="/ai-recommendations">AI 推薦 <span class="arr">→</span></a>
     <a class="btn" target="_top" href="/themes">主題板</a>
   </div>
 
@@ -259,7 +259,7 @@
     </div>
   </div>
   <div class="df">
-    <button class="btn primary" onclick="window.top.location.href='/ideas'">查看策略想法 →</button>
+    <button class="btn primary" onclick="window.top.location.href='/ai-recommendations'">查看 AI 推薦 →</button>
     <button class="btn" onclick="window.top.location.href='/market-intel'">回市場情報</button>
     <button class="btn ghost" onclick="closeDrawer()">關閉</button>
   </div>
@@ -374,7 +374,7 @@ function openDrawer(index){
   document.getElementById('d-score').textContent=item.rank?'#'+item.rank:'—';
   document.getElementById('d-conf').textContent=item.confidence||'正式精選';
   const age=document.getElementById('d-age');age.textContent=item.age||'剛剛';age.className='v ok';
-  document.getElementById('d-why').textContent=item.why||'請搭配來源狀態與策略想法交叉判讀。';
+  document.getElementById('d-why').textContent=item.why||'請搭配來源狀態與 AI 推薦交叉判讀。';
   document.getElementById('scrim').classList.add('open');
   document.getElementById('drawer').classList.add('open');
 }

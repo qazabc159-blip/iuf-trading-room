@@ -584,7 +584,7 @@ export default async function PlansPage() {
       code="09"
       title="交易計畫"
       sub="計畫書與審核佇列"
-      note="交易計畫 / 正式交易計畫、簡報、覆盤、訊號與策略想法；本頁不提供模擬或實盤下單。"
+      note="交易計畫 / 正式交易計畫、簡報、復盤、訊號與策略想法；本頁不提供模擬或實盤下單。"
     >
       <style>{PLANS_CSS}</style>
 
@@ -612,7 +612,7 @@ export default async function PlansPage() {
           <span className="_pln-hero-val" style={{ color: countsAvailable && result.data.reviews.length > 0 ? "#e2b85c" : "#566276" }}>
             {countsAvailable ? result.data.reviews.length : "--"}
           </span>
-          <span className="_pln-hero-lbl">覆盤</span>
+          <span className="_pln-hero-lbl">復盤</span>
         </div>
         <div className="_pln-hero-cell">
           <span className="_pln-hero-val" style={{ color: countsAvailable && result.data.briefs.length > 0 ? "#e2b85c" : "#566276" }}>
@@ -728,7 +728,7 @@ export default async function PlansPage() {
                             <span className="_pln-plan-meta-dd">{cleanRiskRewardText(plan.riskReward)}</span>
                           </div>
                           <div className="_pln-plan-meta-item">
-                            <span className="_pln-plan-meta-dt">覆盤</span>
+                            <span className="_pln-plan-meta-dt">復盤</span>
                             <span className="_pln-plan-meta-dd" style={{ color: reviewed ? "#e2b85c" : "#566276" }}>
                               {reviewed ? "有" : "無"}
                             </span>
@@ -851,13 +851,13 @@ export default async function PlansPage() {
           {/* Reviews */}
           <div className="_pln-section">
             <div className="_pln-section-head">
-              <span className="_pln-section-code">覆盤紀錄</span>
+              <span className="_pln-section-code">復盤紀錄</span>
               <span className="_pln-section-title">交易後檢討</span>
               <span className="_pln-section-count">{contextLive ? `${result.data.reviews.length} 筆` : "暫停"}</span>
             </div>
             <div className="_pln-section-body">
-              {!contextLive && <div className="_pln-empty-note">交易計畫來源未正常時，覆盤紀錄先隱藏。</div>}
-              {contextLive && result.data.reviews.length === 0 && <div className="_pln-empty-note">目前沒有覆盤紀錄</div>}
+              {!contextLive && <div className="_pln-empty-note">交易計畫來源未正常時，復盤紀錄先隱藏。</div>}
+              {contextLive && result.data.reviews.length === 0 && <div className="_pln-empty-note">目前沒有復盤紀錄</div>}
               {contextLive && result.data.reviews.slice(0, 6).map((review) => {
                 const qv = review.executionQuality;
                 const qColor = qv >= 4 ? "#4adb88" : qv <= 2 ? "#ff6b77" : "#e2b85c";
@@ -875,7 +875,7 @@ export default async function PlansPage() {
                         {formatDate(review.createdAt)}
                       </div>
                       <div className="_pln-review-text">
-                        {cleanTradePlanText(review.outcome, "覆盤紀錄尚未完成中文整理；保留來源紀錄。")}
+                        {cleanTradePlanText(review.outcome, "復盤紀錄尚未完成中文整理；保留來源紀錄。")}
                       </div>
                     </div>
                   </div>

@@ -71,7 +71,7 @@ function displayCode(code: string) {
     PROMO: "推廣",
     QTE: "報價",
     QNT: "量化策略",
-    REV: "複盤",
+    REV: "復盤",
     RISK: "風控",
     RSK: "風控",
     RUN: "策略執行",

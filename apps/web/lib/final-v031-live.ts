@@ -233,7 +233,7 @@ function mapNewsItem(item: NewsAiItem, index: number) {
     title,
     source: sourceLabel(item.source),
     tag,
-    why: item.why_matters ?? "已列入今日研究清單，需搭配來源狀態與策略想法交叉判讀。",
+    why: item.why_matters ?? "已列入今日研究清單，需搭配來源狀態與 AI 推薦交叉判讀。",
     age: minutesAgoText(item.date),
     category: inferTopic(`${title} ${tag}`),
     rank: item.rank ?? index + 1,
@@ -252,7 +252,7 @@ function mapAnnouncement(item: CompanyAnnouncement, index: number) {
     title,
     source: sourceLabel(item.source),
     tag,
-    why: item.body?.slice(0, 72) || "官方來源已進入今日市場情報，請搭配策略想法做研究判讀。",
+    why: item.body?.slice(0, 72) || "官方來源已進入今日市場情報，請搭配 AI 推薦做研究判讀。",
     age: minutesAgoText(item.date),
     category: inferTopic(`${title} ${tag}`),
     rank: index + 1,
@@ -1179,7 +1179,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       title,
       source: sourceName(item.source),
       tag,
-      why: item.why_matters || item.why || "已列入今日研究清單，需搭配來源狀態與策略想法交叉判讀。",
+      why: item.why_matters || item.why || "已列入今日研究清單，需搭配來源狀態與 AI 推薦交叉判讀。",
       age: ago(item.date || item.as_of || item.updatedAt),
       category: topicOf(String(title) + " " + String(tag)),
       rank: item.rank || index + 1,
@@ -1198,7 +1198,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       title,
       source: sourceName(item.source || "mops"),
       tag,
-      why: item.body ? String(item.body).slice(0, 72) : "官方來源已進入今日市場情報，請搭配策略想法做研究判讀。",
+      why: item.body ? String(item.body).slice(0, 72) : "官方來源已進入今日市場情報，請搭配 AI 推薦做研究判讀。",
       age: ago(item.date || item.updatedAt),
       category: topicOf(String(title) + " " + String(tag)),
       rank: index + 1,
@@ -3595,7 +3595,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     const wlPaperGroup = $("#wl-paper-group");
     const allowIdeas = ideas.filter((idea) => String(idea.decision || "") === "allow" || String(idea.decision || "") === "review");
     if (wlPaper && allowIdeas.length) {
-      if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自策略想法 · " + allowIdeas.length + " 檔";
+      if (wlPaperGroup) wlPaperGroup.textContent = "可觀察 · 來自 AI 推薦 · " + allowIdeas.length + " 檔";
       Array.from(wlPaper.querySelectorAll(".wrow")).forEach((el) => el.remove());
       allowIdeas.slice(0, 6).forEach((idea) => {
         const div = document.createElement("div");

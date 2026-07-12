@@ -220,7 +220,7 @@ export default async function ReviewsPage({
       {/* parity-kpi-bar hero */}
       <div className="parity-kpi-bar">
         <div className="parity-kpi-cell">
-          <span className="parity-kpi-label">覆盤紀錄</span>
+          <span className="parity-kpi-label">復盤紀錄</span>
           <span className={`parity-kpi-value ${reviews.length > 0 ? "ok" : "dim"}`}>
             {reviews.length}
           </span>
@@ -252,7 +252,7 @@ export default async function ReviewsPage({
           <span className={`parity-kpi-value ${taggedCount > 0 ? "warn" : "dim"}`}>
             {taggedCount}
           </span>
-          <span className="parity-kpi-sub">標籤化覆盤</span>
+          <span className="parity-kpi-sub">標籤化復盤</span>
         </div>
       </div>
 
@@ -267,8 +267,8 @@ export default async function ReviewsPage({
       {!error && reviews.length === 0 && (
         <div className="parity-empty">
           <div className="parity-empty-icon">◌</div>
-          <h3>尚無覆盤紀錄</h3>
-          <p>目前工作區沒有交易檢討紀錄。完成交易後由操作員建立覆盤條目，數據不補假值。</p>
+          <h3>尚無復盤紀錄</h3>
+          <p>目前工作區沒有交易檢討紀錄。完成交易後由操作員建立復盤條目，數據不補假值。</p>
         </div>
       )}
 
@@ -357,7 +357,7 @@ export default async function ReviewsPage({
       <div className="_rev-note" style={{ marginTop: reviews.length > 0 ? 24 : 16 }}>
         <div className="_rev-note-title">READ-ONLY 邊界</div>
         <div className="_rev-note-body">
-          本頁是只讀覆盤面板。模擬預覽、風控核對與委託送出集中在交易室；核准或退回動作尚未有正式後端契約，舊的本地按鈕已移除。
+          本頁是只讀復盤面板。模擬預覽、風控核對與委託送出集中在交易室；核准或退回動作尚未有正式後端契約，舊的本地按鈕已移除。
         </div>
       </div>
     </PageFrame>

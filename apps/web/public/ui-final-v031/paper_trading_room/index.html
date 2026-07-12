@@ -381,7 +381,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
 <div class="tbar">
   <div class="brand"><i></i><span class="m">IUF</span><span class="nm">·  情報—決策—倉位</span></div>
   <span style="color:var(--fg-3)">/</span>
-  <div class="crumb"><a target="_top" href="/">產品</a><span class="sep">/</span><a target="_top" href="/ideas">策略想法</a><span class="sep">/</span><b>模擬交易室</b></div>
+  <div class="crumb"><a target="_top" href="/">產品</a><span class="sep">/</span><a target="_top" href="/ai-recommendations">AI 推薦</a><span class="sep">/</span><b>模擬交易室</b></div>
   <div class="right">
     <span class="kbd" id="cmdopen">搜尋 / 跳轉 <kbd>⌘</kbd><kbd>K</kbd></span>
     <span style="color:var(--fg-3)">·</span>
@@ -396,7 +396,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
   <span class="badge read"><i></i>KGI 唯讀</span>
   <span class="badge iso"><i></i>模擬帳本隔離</span>
   <span class="sep">·</span>
-  <span>本頁所有委託皆走模擬通道，<b>不會送出實單</b>；KGI 連線僅供讀取庫存對照。</span>
+  <span>KGI 連線僅供讀取庫存對照。</span>
 </div>
 
 <!-- ============ BROKER SELECTOR ============ -->
@@ -408,7 +408,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
   <button type="button" class="bbtn active" data-broker="paper">模擬 <span class="bsub">Paper</span></button>
   <button type="button" class="bbtn soon" data-broker="fubon" disabled title="富邦證券接入中，敬請期待">富邦 <span class="bsoon">即將開放</span></button>
   <span class="bbgap"></span>
-  <span class="bbmode"><i></i>模擬模式 · 本頁不送實單</span>
+  <span class="bbmode"><i></i>模擬模式</span>
 </div>
 
 <!-- ============ MAIN ============ -->
@@ -462,7 +462,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
 
     <!-- 今日有訊號 (隱藏，由 tab 控制) -->
     <div class="wlist" id="wl-sig" style="display:none">
-      <div class="group" id="wl-sig-group">沿用策略想法 · 載入中</div>
+      <div class="group" id="wl-sig-group">沿用 AI 推薦 · 載入中</div>
       <div class="wrow on" data-sym="2330">
         <span class="sym">2330</span>
         <div class="body"><div class="nm">台積電</div><div class="meta">3 訊號 · 完整度 87%</div></div>
@@ -528,7 +528,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
             <div class="nm">台積電 · TSMC</div>
             <div class="meta">
               半導體 · IC 製造
-              <span class="pill warn"><i></i>策略想法 · 可觀察</span>
+              <span class="pill warn"><i></i>AI 推薦 · 可觀察</span>
               <span class="pill" style="color:var(--brand);border-color:var(--brand-line);background:var(--brand-bg)"><i style="background:var(--brand)"></i>AI 主題 · 先進製程節點</span>
             </div>
           </div>
@@ -762,9 +762,9 @@ body[data-screen-label="Trading Room v1"] .tnote{
     <!-- bottom note -->
     <div class="tnote">
       <span class="l">下一步</span>
-      <span>核對今日委託與 KGI 庫存，或回到 <b>策略想法</b> 重新挑選候選。</span>
+      <span>核對今日委託與 KGI 庫存，或回到 <b>AI 推薦</b> 重新挑選候選。</span>
       <span class="seprule"></span>
-      <a class="btn" target="_top" href="/ideas">回策略想法</a>
+      <a class="btn" target="_top" href="/ai-recommendations">回 AI 推薦</a>
       <a class="btn" target="_top" href="/market-intel">回市場情報</a>
     </div>
 
@@ -886,7 +886,7 @@ body[data-screen-label="Trading Room v1"] .tnote{
     <div class="item" data-act="sym:2382"><span class="ico">▢</span>切換到　廣達<span class="sym">2382</span></div>
     <div class="item" data-act="sym:2454"><span class="ico">▢</span>切換到　聯發科<span class="sym">2454</span></div>
     <div class="grp">跳轉</div>
-    <div class="item" data-act="go:strategy"><span class="ico">→</span>策略想法<span class="sub">回上一頁</span></div>
+    <div class="item" data-act="go:strategy"><span class="ico">→</span>AI 推薦<span class="sub">回上一頁</span></div>
     <div class="item" data-act="go:market"><span class="ico">→</span>市場情報</div>
     <div class="grp">動作</div>
     <div class="item" data-act="do:focusqty"><span class="ico">⌨</span>把焦點移到「數量」</div>
@@ -1484,7 +1484,7 @@ document.addEventListener('keydown',e=>{
 document.querySelectorAll('.cmd .item').forEach(it=>it.addEventListener('click',()=>{
   const a=it.dataset.act||'';closeCmd();
   if(a.startsWith('sym:'))pickRow(a.slice(4));
-  else if(a==='go:strategy')window.top.location.href='/ideas';
+  else if(a==='go:strategy')window.top.location.href='/ai-recommendations';
   else if(a==='go:market')window.top.location.href='/market-intel';
   else if(a==='do:focusqty')document.getElementById('t-qty').focus();
   else if(a==='do:tf1d')document.querySelector('#tfseg [data-tf="1d"]').click();
