@@ -10916,7 +10916,7 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
   // date (AnnouncementDate), not the unparseable ROC-quarter label, or `getFullYear() -
   // NaN` is always false → permanent fake LIVE badge.
   type DivRow = { date: string; stock_id: string; year: string; CashEarningsDistribution?: number; CashStatutorySurplus?: number; StockEarningsDistribution?: number; StockStatutorySurplus?: number; AnnouncementDate?: string };
-  let dividend: FullProfileSection<{ year: string; cashDividend: number; stockDividend: number; totalDividend: number; announcementDate: string | null }>;
+  let dividend: FullProfileSection<{ year: string; cashDividend: number | null; stockDividend: number | null; totalDividend: number | null; announcementDate: string | null }>;
   if (divResult.status === "rejected") {
     dividend = errorSection("TaiwanStockDividend", String(divResult.reason));
   } else {
@@ -10928,13 +10928,27 @@ app.get("/api/v1/companies/:id/full-profile", async (c) => {
       .slice()
       .sort((a, b) => (b.AnnouncementDate ?? b.date ?? "").localeCompare(a.AnnouncementDate ?? a.date ?? ""));
     const hist = rows.slice(0, 10).map(r => {
-      const cashDividend = (r.CashEarningsDistribution ?? 0) + (r.CashStatutorySurplus ?? 0);
-      const stockDividend = (r.StockEarningsDistribution ?? 0) + (r.StockStatutorySurplus ?? 0);
+      // Pete #1229 review fix (2026-07-12): `?? 0` silently turned "field absent
+      // from this row" into a fake real zero — a row that genuinely paid 0 cash
+      // dividend was indistinguishable from a row FinMind simply didn't send a
+      // cash component for. Only collapse to 0 when at least one of the two
+      // underlying components is actually present (a real, if partial, number);
+      // when BOTH are absent for a component, that component is unknown → null,
+      // not a fabricated 0.
+      const cashDividend = r.CashEarningsDistribution === undefined && r.CashStatutorySurplus === undefined
+        ? null
+        : (r.CashEarningsDistribution ?? 0) + (r.CashStatutorySurplus ?? 0);
+      const stockDividend = r.StockEarningsDistribution === undefined && r.StockStatutorySurplus === undefined
+        ? null
+        : (r.StockEarningsDistribution ?? 0) + (r.StockStatutorySurplus ?? 0);
+      const totalDividend = cashDividend === null && stockDividend === null
+        ? null
+        : (cashDividend ?? 0) + (stockDividend ?? 0);
       return {
         year: r.year,
         cashDividend,
         stockDividend,
-        totalDividend: cashDividend + stockDividend,
+        totalDividend,
         announcementDate: r.AnnouncementDate ?? r.date ?? null
       };
     });

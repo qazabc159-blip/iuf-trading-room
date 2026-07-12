@@ -54,6 +54,36 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\btrace\b(?!\s*=)/g, "資料軌跡"],
   [/\binstitutional\b/g, "法人資料"],
   [/\bthemes?\b/g, "主題"],
+
+  // Catch-all (2026-07-12, Pete #1226 review 🟡: "translateNarrativeJargon()
+  // 漏網 token 裸英文"). The rules above only cover tokens someone has
+  // already SEEN leak in prod narrative text and hand-added — a NEW raw
+  // field name or debug flag the recommendation engine starts emitting
+  // tomorrow would print straight through until it's noticed and added,
+  // one token at a time, same as how dataAvailable/chainPosition/etc were
+  // each discovered. Rather than chase vocabulary forever, these last three
+  // rules match the general SHAPE an engineering identifier takes —
+  // lowerCamelCase, snake_case, SCREAMING_SNAKE_CASE, and a trailing
+  // `key=value` — regardless of what the identifier actually says. That
+  // shape is what marks a token as "leaked from code" in the first place;
+  // ordinary Chinese narrative text and legitimate bare English loanwords
+  // (AI, ETF, TAIEX, KGI — single-segment, no internal case/underscore
+  // split) never take this shape, so they pass through untouched. Because
+  // these are pattern-shape matches rather than a known-meaning lookup, the
+  // replacement can only honestly say "there was a technical value here",
+  // never claim to know what it meant — that's a deliberate accuracy
+  // tradeoff versus the specific, meaning-preserving entries above, which
+  // is exactly why this block runs LAST: any token this array already knows
+  // a real translation for is gone before these rules ever see it.
+  // `key=value` residue for any identifier without a specific rule above
+  // (dataAvailable=/itemCount= already matched and consumed earlier).
+  [/\b[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*(?:true|false|-?\d+(?:\.\d+)?|"[^"]*"|'[^']*')/g, "系統參數已處理"],
+  // SCREAMING_SNAKE_CASE constants / error codes, e.g. QUANTITY_UNIT_REQUIRED.
+  [/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g, "系統代碼"],
+  // snake_case identifiers, e.g. net_buy_amount.
+  [/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g, "系統欄位"],
+  // lowerCamelCase identifiers, e.g. epsGrowthRate.
+  [/\b[a-z]+(?:[A-Z][a-z0-9]*)+\b/g, "系統欄位"],
 ];
 
 /** Translates known raw backend field-name fragments inside AI-generated

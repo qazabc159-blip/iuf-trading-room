@@ -5029,14 +5029,18 @@ button { font: inherit; }
     font-size: 11px;
     font-weight: 500;
     line-height: 1.35;
+    /* Follow-up fix (2026-07-12): this used to be six hardcoded nth-child
+       rules assuming every .company-data-table-fit table has exactly the
+       財報 6-column shape (期別/營收/毛利率/營益率/EPS/年增率). Every OTHER
+       table sharing this class (月營收/法人籌碼/融資融券/股利政策, and 5 of
+       FinancialsPanel.tsx's own 6 tabs) has a different column count and
+       order, so nth-child silently mislabeled their mobile card rows
+       (confirmed pre-existing via #1232's diagnosis). content: attr()
+       reads the label straight from each <td>'s own data-label, so it is
+       correct for any column count/order without a bespoke CSS rule set
+       per table shape. */
+    content: attr(data-label);
   }
-
-  .company-data-table-fit td:nth-child(1)::before { content: "期別"; }
-  .company-data-table-fit td:nth-child(2)::before { content: "營收"; }
-  .company-data-table-fit td:nth-child(3)::before { content: "毛利率"; }
-  .company-data-table-fit td:nth-child(4)::before { content: "營益率"; }
-  .company-data-table-fit td:nth-child(5)::before { content: "EPS"; }
-  .company-data-table-fit td:nth-child(6)::before { content: "年增率"; }
 
   .theme-row.table-head,
   .dashboard-theme-row.table-head,

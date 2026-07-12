@@ -11353,6 +11353,59 @@ test("DIV3: server.ts dividend section no longer reads the dead TotalCashDividen
   assert.match(section, /r\.AnnouncementDate/);
 });
 
+// ── Pete #1229 review fix (2026-07-12): dividend mapper must not fabricate a real
+// 0 when FinMind simply didn't send a component for that row — "field absent"
+// (unknown) and "field present with value 0" (a real, reported zero dividend)
+// were collapsed into the same `0` by the original `?? 0` mapper. A row with a
+// genuinely paid 0 cash dividend must stay distinguishable from a row FinMind
+// never sent a cash component for at all.
+
+test("DIV4: cashDividend/stockDividend are null (not a fabricated 0) when both underlying components are absent", () => {
+  type DivRow = { date: string; stock_id: string; year: string; CashEarningsDistribution?: number; CashStatutorySurplus?: number; StockEarningsDistribution?: number; StockStatutorySurplus?: number; AnnouncementDate?: string };
+  const mapRow = (r: DivRow) => {
+    const cashDividend = r.CashEarningsDistribution === undefined && r.CashStatutorySurplus === undefined
+      ? null
+      : (r.CashEarningsDistribution ?? 0) + (r.CashStatutorySurplus ?? 0);
+    const stockDividend = r.StockEarningsDistribution === undefined && r.StockStatutorySurplus === undefined
+      ? null
+      : (r.StockEarningsDistribution ?? 0) + (r.StockStatutorySurplus ?? 0);
+    const totalDividend = cashDividend === null && stockDividend === null ? null : (cashDividend ?? 0) + (stockDividend ?? 0);
+    return { cashDividend, stockDividend, totalDividend };
+  };
+
+  // Row where the API sent neither cash field at all (e.g. a stock-only dividend year).
+  const noCashRow: DivRow = { date: "2024-07-01", stock_id: "2330", year: "113年第1季", StockEarningsDistribution: 1.5, AnnouncementDate: "2024-06-01" };
+  const noCash = mapRow(noCashRow);
+  assert.equal(noCash.cashDividend, null, "DIV4: cashDividend is null, not a fabricated 0, when both cash components are absent");
+  assert.equal(noCash.stockDividend, 1.5, "DIV4: stockDividend still computes normally when its components are present");
+  assert.equal(noCash.totalDividend, 1.5, "DIV4: totalDividend treats the null cash leg as 0 when combining with a real stock value, not as null");
+
+  // Row where FinMind genuinely reports a real 0 cash dividend (component present, value 0).
+  const realZeroRow: DivRow = { date: "2023-07-01", stock_id: "2330", year: "112年第1季", CashEarningsDistribution: 0, StockEarningsDistribution: 0, AnnouncementDate: "2023-06-01" };
+  const realZero = mapRow(realZeroRow);
+  assert.equal(realZero.cashDividend, 0, "DIV4: a real reported 0 stays 0, not null");
+  assert.equal(realZero.stockDividend, 0, "DIV4: a real reported 0 stays 0, not null");
+  assert.equal(realZero.totalDividend, 0, "DIV4: totalDividend of two real zeros is a real 0, not null");
+
+  // Row where neither leg has any component at all (fully empty row).
+  const allAbsentRow: DivRow = { date: "2020-07-01", stock_id: "2330", year: "109年第1季", AnnouncementDate: "2020-06-01" };
+  const allAbsent = mapRow(allAbsentRow);
+  assert.equal(allAbsent.cashDividend, null, "DIV4: cashDividend null when fully absent");
+  assert.equal(allAbsent.stockDividend, null, "DIV4: stockDividend null when fully absent");
+  assert.equal(allAbsent.totalDividend, null, "DIV4: totalDividend null when both legs are unknown — must not report a fabricated 0");
+});
+
+test("DIV5: server.ts dividend mapper no longer collapses absent components to a bare `?? 0`", () => {
+  const src = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  const sectionStart = src.indexOf("── MarketIntel: Dividend ──");
+  const sectionEnd = src.indexOf("── MarketIntel: Market Value ──");
+  assert.ok(sectionStart > 0 && sectionEnd > sectionStart, "DIV5: dividend section must be present in server.ts");
+  const section = src.slice(sectionStart, sectionEnd);
+  assert.doesNotMatch(section, /const cashDividend = \(r\.CashEarningsDistribution \?\? 0\) \+ \(r\.CashStatutorySurplus \?\? 0\);/, "DIV5: cashDividend must no longer be an unconditional ?? 0 sum");
+  assert.doesNotMatch(section, /const stockDividend = \(r\.StockEarningsDistribution \?\? 0\) \+ \(r\.StockStatutorySurplus \?\? 0\);/, "DIV5: stockDividend must no longer be an unconditional ?? 0 sum");
+  assert.match(section, /cashDividend === null && stockDividend === null/, "DIV5: totalDividend must honor the honest-null case for both legs absent");
+});
+
 // ── A3 fix (2026-07-12): monthly revenue YoY must find the prior-year comparison month ──
 
 test("REV1: monthlyRevenue YoY searches the full 14-month fetch window, not the 12-item display hist", () => {
