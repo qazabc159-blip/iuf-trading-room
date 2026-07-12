@@ -222,7 +222,16 @@ export function TickStreamPanel({
             <span className="state-reason">{state.reason}</span>
           </div>
           <div className="table-scroll">
-            <table className="data-table">
+            {/* D4 fix (2026-07-12 diagnosis): base .data-table padding (24px 26px,
+                sized for financial-statement tables) made a 20-row tick list ~67px
+                per row (1,600px+). NOTE: company-data-table-fit was tried first but
+                its mobile card-conversion CSS hardcodes nth-child labels for the
+                6-column financial-statement table shape (期別/營收/毛利率/...) —
+                applying it here mislabeled every tick row on mobile. Use the
+                tick-specific company-tick-table-fit instead (desktop padding only,
+                no mobile card conversion; mobile keeps the existing safe
+                horizontal-scroll behavior). */}
+            <table className="data-table company-tick-table-fit">
               <thead>
                 <tr>
                   <th>時間</th>
@@ -252,7 +261,7 @@ export function TickStreamPanel({
 
       {state.status === "live" && (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table company-tick-table-fit">
             <thead>
               <tr>
                 <th>時間</th>

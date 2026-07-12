@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getCompanyFullProfile, type FullProfileInstitutionalRow } from "@/lib/api";
+import { formatInstitutionalNetLotsZh } from "@/lib/institutional-lots-format";
 
 type InstState =
   | { status: "loading" }
@@ -39,11 +40,6 @@ const INST_CSS = `
 ._inst-value.buy, ._inst-total-val.buy { color: var(--tw-up-bright, #e63946); }
 ._inst-value.sell, ._inst-total-val.sell { color: var(--tac-ok, #4ade80); }
 ._inst-value.flat, ._inst-total-val.flat { color: var(--night-mid, #91a0b5); }
-._inst-sub {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--night-mid, #91a0b5);
-}
 ._inst-total-row {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 4px 0;
@@ -52,13 +48,6 @@ const INST_CSS = `
 ._inst-total-label { color: var(--night-mid, #91a0b5); }
 ._inst-total-val { font-weight: 700; font-variant-numeric: tabular-nums; }
 `;
-
-function fmtLots(value: number): string {
-  const abs = Math.abs(value);
-  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
-  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}萬`;
-  return `${sign}${abs.toLocaleString("zh-TW")}`;
-}
 
 function tone(value: number): string {
   return value > 0 ? "buy" : value < 0 ? "sell" : "flat";
@@ -135,24 +124,23 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
       {state.status === "live" && (() => {
         const { row } = state;
         const cells = [
-          { label: "外資", value: row.foreign, unit: "張" },
-          { label: "投信", value: row.investmentTrust, unit: "張" },
-          { label: "自營商", value: row.dealer, unit: "張" },
+          { label: "外資", value: row.foreign },
+          { label: "投信", value: row.investmentTrust },
+          { label: "自營商", value: row.dealer },
         ];
         return (
           <>
             <div className="_inst-bar">
-              {cells.map(({ label, value, unit }) => (
+              {cells.map(({ label, value }) => (
                 <div key={label} className="_inst-cell">
                   <span className="_inst-label">{label}</span>
-                  <span className={`_inst-value ${tone(value)}`}>{fmtLots(value)}</span>
-                  <span className="_inst-sub">{unit}</span>
+                  <span className={`_inst-value ${tone(value)}`}>{formatInstitutionalNetLotsZh(value)}</span>
                 </div>
               ))}
             </div>
             <div className="_inst-total-row">
               <span className="_inst-total-label">三大法人合計</span>
-              <span className={`_inst-total-val ${tone(row.totalNetBuy)}`}>{fmtLots(row.totalNetBuy)} 張</span>
+              <span className={`_inst-total-val ${tone(row.totalNetBuy)}`}>{formatInstitutionalNetLotsZh(row.totalNetBuy)}</span>
             </div>
           </>
         );

@@ -28,14 +28,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  getCompanyAnnouncements,
   getCompanyFullProfile,
-  type CompanyAnnouncement,
   type FullProfileEnvelope,
   type FullProfileSection,
   type FullProfileSourceState,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { formatInstitutionalNetLotsZh } from "@/lib/institutional-lots-format";
+import { monthlyRevenueCadenceNote, quarterlyReportCadenceNote } from "@/lib/report-cadence-freshness";
 
 // ----------------------------------------------------------------------------- //
 // state
@@ -45,12 +45,6 @@ type EnvelopeState =
   | { status: "loading" }
   | { status: "blocked"; reason: string; fetchedAt: string }
   | { status: "live"; envelope: FullProfileEnvelope; fetchedAt: string };
-
-type AnnouncementsState =
-  | { status: "loading" }
-  | { status: "blocked"; reason: string; fetchedAt: string }
-  | { status: "empty"; reason: string; fetchedAt: string }
-  | { status: "live"; items: CompanyAnnouncement[]; fetchedAt: string };
 
 // ----------------------------------------------------------------------------- //
 // helpers
@@ -129,10 +123,12 @@ function money(value: number | null | undefined) {
   return value.toLocaleString("zh-TW", { maximumFractionDigits: 0 });
 }
 
+// B1 fix (2026-07-12): full-profile institutional rows are raw net SHARES（股）,
+// not 張 — delegate to the shared ÷1000 + 萬/億 formatter (see
+// apps/web/lib/institutional-lots-format.ts) instead of labeling raw shares as 張.
 function lots(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "--";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toLocaleString("zh-TW")} 張`;
+  return formatInstitutionalNetLotsZh(value);
 }
 
 function pct(value: number | null | undefined) {
@@ -339,8 +335,13 @@ function FinancialsSection({ section }: { section: FullProfileEnvelope["fundamen
             </div>
           ) : null}
           {section.state === "STALE" ? (
-            <div className="tg soft" style={{ marginTop: 8 }}>
-              {emptyReason(section.state, section.sourceTrail.datasetKey, section.sourceTrail.degradedReason)}
+            <div className="tg soft" style={{ marginTop: 8, whiteSpace: "normal", lineHeight: 1.6 }}>
+              {/* B2 fix (2026-07-12 diagnosis): quarterly filings only release ~4x/year —
+                  a genuinely-current Q1 report reads "STALE" under one blanket global
+                  threshold for months. Badge above still shows the honest backend state;
+                  this line explains cadence instead of the generic alarming default. */}
+              {quarterlyReportCadenceNote(latest?.date)
+                ?? emptyReason(section.state, section.sourceTrail.datasetKey, section.sourceTrail.degradedReason)}
             </div>
           ) : null}
         </div>
@@ -402,6 +403,13 @@ function RevenueSection({ section }: { section: FullProfileEnvelope["fundamental
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+          {section.state === "STALE" ? (
+            <div className="tg soft" style={{ marginTop: 8, whiteSpace: "normal", lineHeight: 1.6 }}>
+              {/* B2 fix (2026-07-12 diagnosis): same cadence-aware treatment as [06]. */}
+              {monthlyRevenueCadenceNote(latest?.revenue_year, latest?.revenue_month)
+                ?? emptyReason(section.state, section.sourceTrail.datasetKey, section.sourceTrail.degradedReason)}
             </div>
           ) : null}
         </div>
@@ -645,142 +653,26 @@ function DividendSection({
 }
 
 // ----------------------------------------------------------------------------- //
-// [11] Announcements (independent endpoint with DEGRADED honest)
+// [11] Announcements — D5 fix (2026-07-12 diagnosis): this used to be a full,
+// independently-fetched duplicate of [05] AnnouncementsPanel.tsx (same endpoint,
+// same days=30 param, same list UI, rendered twice on one page). Per diagnosis
+// recommendation, keep [05]'s richer timeline as the single source of truth and
+// collapse [11] into a link — no second fetch, no second list.
 // ----------------------------------------------------------------------------- //
 
-function announcementBadge(category: string) {
-  if (/dividend|cash dividend|stock dividend|股利|除權|除息/i.test(category)) return "badge-yellow";
-  if (/financial|revenue|eps|earnings|財報|營收|獲利|盈餘/i.test(category)) return "badge-green";
-  if (/material|announcement|重大|公告|董事會/i.test(category)) return "badge-blue";
-  return "badge";
-}
-
-function announcementSourceLabel(source?: string | null) {
-  const text = String(source || "").toLowerCase();
-  if (text.includes("twse_iih")) return "TWSE 公司資訊揭露";
-  if (text.includes("tw_announcements") || text.includes("twse_announcements")) return "TWSE 公告快取";
-  if (text.includes("finmind")) return "FinMind 新聞";
-  return source || "正式公告來源";
-}
-
-function AnnouncementsSection({ companyId }: { companyId: string }) {
-  const [state, setState] = useState<AnnouncementsState>({ status: "loading" });
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const fetchedAt = new Date().toISOString();
-    getCompanyAnnouncements(companyId, { days: 30 })
-      .then((response) => {
-        if (!active) return;
-        const items = response.data ?? [];
-        if (items.length === 0) {
-          setState({
-            status: "empty",
-            fetchedAt,
-            reason: "近 30 天沒有重大訊息可顯示。",
-          });
-        } else {
-          setState({ status: "live", items, fetchedAt });
-        }
-      })
-      .catch((error) => {
-        if (!active) return;
-        const message = friendlyDataError(error, "重大訊息資料暫時無法讀取。");
-        // PR #265 ships state field DEGRADED honest — surface the upstream pause copy.
-        const isUpstream = /TWSE|FinMind|upstream|maintenance|維護|degrade/i.test(
-          error instanceof Error ? error.message : String(error ?? ""),
-        );
-        setState({
-          status: "blocked",
-          fetchedAt,
-          reason: isUpstream ? `資料源暫停（TWSE 維護）：${message}` : message,
-        });
-      });
-    return () => {
-      active = false;
-    };
-  }, [companyId]);
-
+function AnnouncementsSection() {
   return (
     <section className="panel hud-frame company-intel-panel">
       <SectionHeader index="[11]" title="重大訊息" hint="近 30 日 TWSE 公告 + 新聞線索" />
-      {state.status === "loading" ? (
-        <div className="state-panel">
-          <span className="badge badge-blue">讀取中</span>
-          <span className="tg soft">正在讀取近 30 天重大訊息。</span>
-        </div>
-      ) : null}
-      {state.status === "blocked" ? (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">來源：TWSE 公告 / FinMind 新聞</span>
-          <span className="tg soft">更新：{formatTaipei(state.fetchedAt)}</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      ) : null}
-      {state.status === "empty" ? (
-        <div className="state-panel">
-          <span className="badge badge-yellow">無資料</span>
-          <span className="tg soft">來源：TWSE 公告 / FinMind 新聞</span>
-          <span className="tg soft">更新：{formatTaipei(state.fetchedAt)}</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      ) : null}
-      {state.status === "live" ? (
-        <div className="market-intel-list">
-          <div className="source-line">
-            <span className="badge badge-green">正常</span>
-            <span className="tg soft">來源：TWSE 公告 / FinMind 新聞</span>
-            <span className="tg soft">筆數：{state.items.length}</span>
-            <span className="tg soft">更新：{formatTaipei(state.fetchedAt)}</span>
-          </div>
-          {state.items.slice(0, 12).map((item) => {
-            const expanded = expandedId === item.id;
-            const body = item.body?.trim() ?? "";
-            const hasDetail = Boolean(body || item.url || item.source);
-            return (
-              <div className="market-intel-row" key={item.id}>
-                {hasDetail ? (
-                  <button
-                    type="button"
-                    className="market-intel-button"
-                    onClick={() => setExpandedId(expanded ? null : item.id)}
-                    aria-expanded={expanded}
-                  >
-                    <span className="tg soft">{item.date || "--"}</span>
-                    <span className={`badge ${announcementBadge(item.category)}`}>{item.category || "重大訊息"}</span>
-                    <span className="market-intel-title">{item.title || "未命名公告"}</span>
-                    <span className="tg soft">{expanded ? "收合" : "詳情"}</span>
-                  </button>
-                ) : (
-                  <div className="market-intel-button market-intel-static">
-                    <span className="tg soft">{item.date || "--"}</span>
-                    <span className={`badge ${announcementBadge(item.category)}`}>{item.category || "重大訊息"}</span>
-                    <span className="market-intel-title">{item.title || "未命名公告"}</span>
-                    <span className="tg soft">公告</span>
-                  </div>
-                )}
-                {expanded && hasDetail ? (
-                  <div className="market-intel-body company-announcement-detail">
-                    <p>{body || "官方來源未提供完整內文；請開啟正式公告頁查看原始揭露。"}</p>
-                    <div className="company-announcement-detail-grid">
-                      <span>日期 <b>{item.date || "--"}</b></span>
-                      <span>來源 <b>{announcementSourceLabel(item.source)}</b></span>
-                      <span>公司 <b>{item.ticker || companyId} {item.companyName || ""}</b></span>
-                    </div>
-                    {item.url ? (
-                      <a className="company-announcement-link" href={item.url} target="_blank" rel="noreferrer">
-                        開啟正式公告
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      <div className="state-panel">
+        <span className="badge badge-blue">已整合</span>
+        <span className="state-reason">
+          重大訊息已顯示於本頁上方「[05] 重大訊息」區塊，避免同一份資料重複呈現兩次。
+        </span>
+        <a className="company-announcement-link" href="#company-announcements">
+          前往 [05] 重大訊息 →
+        </a>
+      </div>
     </section>
   );
 }
@@ -853,7 +745,7 @@ export function FullProfilePanels({ companyId }: { companyId: string }) {
             <span className="state-reason">{state.reason}</span>
           </div>
         </section>
-        <AnnouncementsSection companyId={companyId} />
+        <AnnouncementsSection />
       </div>
     );
   }
@@ -865,7 +757,7 @@ export function FullProfilePanels({ companyId }: { companyId: string }) {
     return (
       <div className="full-profile-grid">
         <FullProfileEmptySummary envelope={env} />
-        <AnnouncementsSection companyId={companyId} />
+        <AnnouncementsSection />
       </div>
     );
   }
@@ -877,7 +769,7 @@ export function FullProfilePanels({ companyId }: { companyId: string }) {
       <InstitutionalSection section={env.tradingFlow.institutional} />
       <MarginShortSection section={env.tradingFlow.marginShort} />
       <DividendSection section={env.marketIntel.dividend} valuation={env.marketIntel.valuation} />
-      <AnnouncementsSection companyId={companyId} />
+      <AnnouncementsSection />
     </div>
   );
 }

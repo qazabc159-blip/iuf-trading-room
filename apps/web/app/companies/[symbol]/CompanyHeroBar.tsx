@@ -90,7 +90,14 @@ const CO_HERO_CSS = `
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
   border-top: 1px solid rgba(220,228,240,0.07);
 }
-@media (min-width: 1280px) {
+/* D2 fix (2026-07-12 diagnosis): was min-width:1280px. At a 1280px *viewport* the
+   main column is only ~490-620px wide (side column reserves 320-360px + gap, see
+   CompanyPageStyleBlock.tsx company-detail-layout) — forcing exactly 10 equal
+   columns there gave each cell ~49-62px, wrapping "2,415.0" onto 3 lines. 1440px
+   matches the D1 threshold where the main column is wide enough (~850px+) for 10
+   real columns; below that the base auto-fit rule (minmax(132px,1fr) above) wraps
+   cells onto more rows instead of squeezing them illegibly. */
+@media (min-width: 1440px) {
   ._co-kpi-strip { grid-template-columns: repeat(10, minmax(0, 1fr)); }
 }
 @media (max-width: 1200px) {
@@ -311,9 +318,16 @@ export function CompanyHeroBar({
   // label with that date instead of claiming「今日收盤」on yesterday's price.
   const eodIso = realtimeQuote?.dataDate ?? null;
   const eodDateLabel = eodIso && eodIso.length >= 10 ? `${eodIso.slice(5, 7)}/${eodIso.slice(8, 10)} 收盤` : null;
+  // B3 fix (2026-07-12 diagnosis): when realtimeQuote has no dataDate (e.g. OTC
+  // tickers with NO_DATA realtime, A4), the hero used to fall through to a bare
+  // "收盤參考" with no date at all — leaving only the fetch-time "更新 HH:MM"
+  // label, which reads as if the price were current when it may be days old.
+  // Fall back to the actual latest OHLCV bar's date so there's always a real
+  // data date shown, not just a fetch timestamp.
+  const barDateLabel = lastBar?.dt && lastBar.dt.length >= 10 ? `${lastBar.dt.slice(5, 7)}/${lastBar.dt.slice(8, 10)} 收盤` : null;
   const rtSource = realtimeQuote
-    ? (isLive ? "即時報價" : eodDateLabel ?? "收盤參考")
-    : quote?.source === "kgi" || quote?.source === "finmind" ? "收盤資料" : null;
+    ? (isLive ? "即時報價" : eodDateLabel ?? barDateLabel ?? "收盤參考")
+    : quote?.source === "kgi" || quote?.source === "finmind" ? (barDateLabel ?? "收盤資料") : null;
 
   // Compute canonical freshness_mode for FreshnessBadge
   const freshnessMode = realtimeQuote
