@@ -1327,3 +1327,13 @@ export const pushSubscriptions = pgTable(
     ),
   })
 );
+
+// ── Migration 0053: durable scheduler round-robin cursors ─────────────────────
+// See migration file header for full context (2026-07-12, #1229 A5/A6
+// finding). Single global row per job name — no workspace scoping, matching
+// the pre-existing in-memory Map<string, number> this replaces.
+export const schedulerCursors = pgTable("scheduler_cursors", {
+  job:       text("job").primaryKey(),
+  cursor:    integer("cursor").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

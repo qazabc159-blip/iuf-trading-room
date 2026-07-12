@@ -1771,12 +1771,47 @@ export function resolveDailyBriefLlmRuntimeOptions(modelKey = resolveDailyBriefM
   };
 }
 
+/**
+ * P1-8 holiday-wording half (2026-07-12, wording-only follow-up to #1224's
+ * deferred half). `isTwTradingDay()` only checks a pre-seeded
+ * `tw_trading_calendar` table and has a known blind spot to ad-hoc closures
+ * (the 07/10 typhoon bug) — seeding the calendar / restructuring the
+ * skip-vs-publish control flow is explicitly out of scope this round
+ * (openalice-pipeline.ts has a lot of documented gate-loop / trail-
+ * completeness scars; see #1224 PR body). This reuses the SAME reactive,
+ * already-endorsed heuristic `evaluatePipelinePublishGate` uses for its own
+ * "weekend/holiday" empty-source override (search `sourcePackAllSourcesEmpty`
+ * further down this file): every source reporting EMPTY on a day sources
+ * were actually queried is a reliable holiday/closure signal, not a data
+ * outage — OHLCV/institutional/announcement feeds simply have nothing to
+ * report when the market never opened. A same-day *technical* ingest outage
+ * on a genuine trading day would (at worst) make the brief use "回顧與展望"
+ * framing instead of "盤前情境" framing — a copy mismatch, not a hallucination
+ * or factual risk, since the hard data-fabrication rules below are unchanged
+ * either way.
+ */
+export function shouldUseHolidayBriefFraming(sourcePack: SourcePack): boolean {
+  return sourcePack.sources.length > 0 && sourcePack.sources.every((s) => s.status === "EMPTY");
+}
+
+/** Wording-only framing block shared by both daily-brief prompt builders. */
+export function buildDailyBriefFramingInstruction(isHolidayFraming: boolean): string {
+  if (isHolidayFraming) {
+    return `今日休市，以下為前一交易日回顧與下週展望。
+你的任務是生成一份「休市回顧簡報」：總結上一個交易日的市場表現（技術面+法人籌碼+新聞面+風控面），並展望下週的觀察重點。
+語氣為「回顧與展望」，不要使用「今日開盤」「盤前情境」等暗示今日有交易的措辭。`;
+  }
+  return `你的任務是生成一份給台股操盤師開盤前閱讀的「多維度盤前分析簡報」。
+這份簡報應具備：有觀點（不是列清單）、多維度（技術面+法人籌碼+新聞面+風控面）、緊跟市場最新動態，幫助操盤師建立今日市場情境認知。`;
+}
+
 async function generateDirectDailyBriefDraft(input: {
   workspaceId: string;
   sourcePack: SourcePack;
   reason: "historical_backfill" | "no_active_openalice_device" | "enqueue_failed";
 }): Promise<{ draftId: string } | null> {
   const sourceContext = buildSourcePackContext(input.sourcePack);
+  const briefFraming = buildDailyBriefFramingInstruction(shouldUseHolidayBriefFraming(input.sourcePack));
 
   // F1: Collect live market numbers from TWSE OpenAPI + DB (non-blocking, best-effort)
   // Historical backfill skips LLM entirely; live snapshot still collected for source context accuracy.
@@ -1800,8 +1835,7 @@ async function generateDirectDailyBriefDraft(input: {
   //   5. Contract instructions enforce detailed per-section writing guidelines.
   const prompt = `你是台股 AI 交易戰情室的專業盤前分析師。今日交易日：${input.sourcePack.tradingDate}。
 
-你的任務是生成一份給台股操盤師開盤前閱讀的「多維度盤前分析簡報」。
-這份簡報應具備：有觀點（不是列清單）、多維度（技術面+法人籌碼+新聞面+風控面）、緊跟市場最新動態，幫助操盤師建立今日市場情境認知。
+${briefFraming}
 
 === 重要資料邊界聲明 ===
 - 美股隔夜行情（道瓊/S&P 500/Nasdaq/費半）：本系統目前未接入美股即時資料源。
@@ -1923,8 +1957,7 @@ async function generateDailyBrief(
   // institutional flow analysis, sector themes, and quantitative risk reporting.
   const instructions = `你是台股 AI 交易戰情室的專業盤前分析師。今日交易日：${sourcePack.tradingDate}。Tick: ${sourcePack.tick}。
 
-你的任務是生成一份給台股操盤師開盤前閱讀的「多維度盤前分析簡報」。
-這份簡報應具備：有觀點（不是列清單）、多維度（技術面+法人籌碼+新聞面+風控面）、緊跟市場最新動態，幫助操盤師建立今日市場情境認知。
+${buildDailyBriefFramingInstruction(shouldUseHolidayBriefFraming(sourcePack))}
 
 === 重要資料邊界聲明 ===
 - 美股隔夜行情：本系統目前未接入美股即時資料源。絕對禁止捏造美股指數數字。

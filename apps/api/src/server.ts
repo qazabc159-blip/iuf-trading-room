@@ -77,7 +77,7 @@ import {
 import { runOpenAliceActionTick } from "./openalice-action-executor.js";
 import { dedupeNotificationItems, notificationEventTiming, taipeiDateFromIso } from "./notification-feed.js";
 import { pushSubscriptionRoutes } from "./push/push-subscriptions.js";
-import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks } from "@iuf-trading-room/db";
+import { isDatabaseMode, getDb, execRows as dbExecRows, dailyBriefs, dailyThemeSummaries, companies, openAliceJobs, workspaces, contentDrafts, auditLogs, themes as themesTable, companyThemeLinks, schedulerCursors } from "@iuf-trading-room/db";
 import { eq, and, sql as drizzleSql, desc, inArray, gte, lte, or, like, not, count as drizzleCount } from "drizzle-orm";
 import {
   getTradingRoomRepository,
@@ -15199,7 +15199,7 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
       .filter((r) => /^\d{4}$/.test(r.ticker)) // Taiwan 4-digit only
       .map((r) => ({ companyId: r.id, ticker: r.ticker, workspaceId: r.workspaceId }));
     const deepCandidates = await resolveOhlcvDeepBackfillCandidates(workspaceId);
-    const deepTickers = takeFinMindSchedulerBatch(
+    const deepTickers = await takeFinMindSchedulerBatch(
       "ohlcv-deep-backfill",
       deepCandidates,
       schedulerPositiveInt("FINMIND_OHLCV_DEEP_BACKFILL_BATCH_SIZE", 48),
@@ -15219,7 +15219,7 @@ async function runOhlcvSchedulerTick(workspaceSlug: string): Promise<void> {
         `failed=${deepResult.tickersFailed} durationMs=${deepResult.durationMs}`
       );
     }
-    const tickers = takeFinMindSchedulerBatch(
+    const tickers = await takeFinMindSchedulerBatch(
       "ohlcv",
       allTickers,
       schedulerPositiveInt("FINMIND_OHLCV_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 500))
@@ -16962,7 +16962,72 @@ async function resolveWorkspaceTickers(workspaceSlug: string): Promise<Array<{ t
 
 type SchedulerTicker = { ticker: string };
 
+// 2026-07-12 (#1229 A5/A6 finding): this Map used to be the ONLY place the
+// round-robin cursor lived, so every process restart (this repo deploys many
+// times/day) reset every job's cursor to 0 — low-sort-order tickers got
+// refreshed on every reset while high-sort-order tickers (e.g. 8069) could
+// starve for days. It now doubles as: (a) the memory-mode source of truth
+// (PERSISTENCE_MODE!=database — unchanged behavior), and (b) an in-process
+// fast-path cache in DB mode, kept in sync with `scheduler_cursors` on every
+// write so a burst of ticks within one process doesn't need a DB round trip
+// each time. The durable source of truth in DB mode is the table.
 const _finMindSchedulerCursors = new Map<string, number>();
+
+/** Test-only: simulates a process restart wiping the in-memory fast-path cache. */
+export function _resetFinMindSchedulerCursorsForTest(): void {
+  _finMindSchedulerCursors.clear();
+}
+
+async function loadSchedulerCursor(job: string): Promise<number> {
+  if (isDatabaseMode()) {
+    const db = getDb();
+    if (db) {
+      try {
+        const rows = await db
+          .select({ cursor: schedulerCursors.cursor })
+          .from(schedulerCursors)
+          .where(eq(schedulerCursors.job, job))
+          .limit(1);
+        if (rows.length > 0 && typeof rows[0].cursor === "number") {
+          return rows[0].cursor;
+        }
+      } catch (err) {
+        console.warn(
+          `[schedulers] loadSchedulerCursor(${job}) DB read failed, falling back to in-memory:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+  }
+  return _finMindSchedulerCursors.get(job) ?? 0;
+}
+
+async function persistSchedulerCursor(job: string, cursor: number): Promise<void> {
+  // Always update the in-memory fast-path cache — this is what memory mode
+  // relies on entirely, and what DB mode reads first on the next call within
+  // the same process.
+  _finMindSchedulerCursors.set(job, cursor);
+  if (!isDatabaseMode()) return;
+  const db = getDb();
+  if (!db) return;
+  try {
+    await db
+      .insert(schedulerCursors)
+      .values({ job, cursor, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: schedulerCursors.job,
+        set: { cursor: drizzleSql`excluded.cursor`, updatedAt: drizzleSql`NOW()` }
+      });
+  } catch (err) {
+    // Non-critical: in-memory cursor above is already updated, so this
+    // process's own scheduling is unaffected — only cross-restart durability
+    // is degraded for this one write.
+    console.warn(
+      `[schedulers] persistSchedulerCursor(${job}) DB write failed (in-memory cursor still updated):`,
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
 
 function schedulerPositiveInt(name: string, fallback: number): number {
   const raw = Number(process.env[name] ?? "");
@@ -16979,23 +17044,24 @@ function finMindSchedulerCircuitOpen(job: string): boolean {
   return true;
 }
 
-function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
+export async function takeFinMindSchedulerBatch<T extends SchedulerTicker>(
   job: string,
   tickers: T[],
   maxBatchSize: number,
   preserveOrder = false
-): T[] {
+): Promise<T[]> {
   if (tickers.length === 0) return [];
   const ordered = preserveOrder
     ? [...tickers]
     : [...tickers].sort((a, b) => a.ticker.localeCompare(b.ticker));
   const batchSize = Math.min(Math.max(1, maxBatchSize), ordered.length);
-  const start = (_finMindSchedulerCursors.get(job) ?? 0) % ordered.length;
+  const cursor = await loadSchedulerCursor(job);
+  const start = cursor % ordered.length;
   const first = ordered.slice(start, start + batchSize);
   const overflow = Math.max(0, start + batchSize - ordered.length);
   const batch = overflow > 0 ? first.concat(ordered.slice(0, overflow)) : first;
   const next = (start + batch.length) % ordered.length;
-  _finMindSchedulerCursors.set(job, next);
+  await persistSchedulerCursor(job, next);
   console.log(
     `[schedulers] ${job} batch start=${start} size=${batch.length}/${ordered.length} next=${next} ` +
     `preserveOrder=${preserveOrder}`
@@ -17026,7 +17092,7 @@ async function runMonthlyRevenueSchedulerTick(workspaceSlug: string): Promise<vo
       console.warn("[fundamentals-scheduler] no tickers found for monthly revenue sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "monthly-revenue",
       tickers,
       schedulerPositiveInt("FINMIND_MONTHLY_REVENUE_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
@@ -17066,7 +17132,7 @@ async function runFinancialsSchedulerTick(workspaceSlug: string): Promise<void> 
       console.warn("[fundamentals-scheduler] no tickers found for financials sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "financials",
       tickers,
       schedulerPositiveInt("FINMIND_FINANCIALS_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 50))
@@ -17130,7 +17196,7 @@ async function runTradingFlowInstitutionalTick(workspaceSlug: string): Promise<v
       console.warn("[trading-flow-scheduler] no tickers found for institutional buysell sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "institutional",
       tickers,
       schedulerPositiveInt("FINMIND_INSTITUTIONAL_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 80))
@@ -17162,7 +17228,7 @@ async function runTradingFlowMarginShortTick(workspaceSlug: string): Promise<voi
       console.warn("[trading-flow-scheduler] no tickers found for margin-short sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "margin-short",
       tickers,
       schedulerPositiveInt("FINMIND_MARGIN_SHORT_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 80))
@@ -17194,7 +17260,7 @@ async function runTradingFlowShareholdingTick(workspaceSlug: string): Promise<vo
       console.warn("[trading-flow-scheduler] no tickers found for shareholding sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "shareholding",
       tickers,
       schedulerPositiveInt("FINMIND_SHAREHOLDING_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 80))
@@ -17229,7 +17295,7 @@ async function runMarketIntelDividendTick(workspaceSlug: string): Promise<void> 
       console.warn("[market-intel-scheduler] no tickers found for dividend sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "dividend",
       tickers,
       schedulerPositiveInt("FINMIND_DIVIDEND_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
@@ -17261,7 +17327,7 @@ async function runMarketIntelMarketValueTick(workspaceSlug: string): Promise<voi
       console.warn("[market-intel-scheduler] no tickers found for market-value sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "market-value",
       tickers,
       schedulerPositiveInt("FINMIND_MARKET_VALUE_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
@@ -17289,7 +17355,7 @@ async function runMarketIntelValuationTick(workspaceSlug: string): Promise<void>
       console.warn("[market-intel-scheduler] no tickers found for valuation sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "valuation",
       tickers,
       schedulerPositiveInt("FINMIND_VALUATION_BATCH_SIZE", schedulerPositiveInt("FINMIND_SCHEDULER_BATCH_SIZE", 120))
@@ -17318,7 +17384,7 @@ async function runMarketIntelNewsTick(workspaceSlug: string): Promise<void> {
       console.warn("[market-intel-scheduler] no tickers found for stock-news sync");
       return;
     }
-    tickers = takeFinMindSchedulerBatch(
+    tickers = await takeFinMindSchedulerBatch(
       "stock-news",
       tickers,
       schedulerPositiveInt("FINMIND_STOCK_NEWS_BATCH_SIZE", schedulerPositiveInt("FINMIND_INTRADAY_DATASET_BATCH_SIZE", 40))

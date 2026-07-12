@@ -40,8 +40,8 @@
 
 import { randomUUID } from "node:crypto";
 
-import { sql as drizzleSql, desc, gte, and, eq } from "drizzle-orm";
-import { getDb, isDatabaseMode, auditLogs, execRows } from "@iuf-trading-room/db";
+import { sql as drizzleSql, desc, gte, and, eq, inArray } from "drizzle-orm";
+import { getDb, isDatabaseMode, auditLogs, contentDrafts, execRows } from "@iuf-trading-room/db";
 import { dispatchAlertPush, buildAlertPushPayload } from "./push/alert-push.js";
 import { taipeiDateFromIso } from "./notification-feed.js";
 
@@ -92,6 +92,15 @@ export type EngineStateSnapshot = {
   hasAnnouncements: boolean;
   // Audit log tail (last N rows for system-event rules)
   recentAuditActions: Array<{ action: string; entityId: string; createdAt: Date }>;
+  // 2026-07-12 R08 root-cause fix: content_draft.ai_approved audit rows fire
+  // for ANY approved content_draft (daily_briefs / company_notes /
+  // theme_summaries — see content-draft-store.ts approveContentDraft), not
+  // just daily briefs. R08_AI_BRIEF_PUBLISHED must only fire for drafts whose
+  // contentDrafts.targetTable === "daily_briefs". Precomputed here (rather
+  // than queried inside the R08 trigger) so triggers stay pure/state-only and
+  // unit-testable without a DB. Empty set on any lookup failure — fail safe
+  // to NOT firing, never to over-firing.
+  dailyBriefDraftIds: Set<string>;
   // Snapshot timestamp
   snapshotAt: string;
 };
@@ -490,9 +499,13 @@ const RULES: EventRule[] = [
     name: "AI brief published",
     severity: "info",
     trigger: async (state) => {
-      // Detect "content_draft.ai_approved" in recent audit log tail
+      // Detect "content_draft.ai_approved" in recent audit log tail — but
+      // ONLY for drafts confirmed to target daily_briefs (see
+      // dailyBriefDraftIds doc comment on EngineStateSnapshot). This same
+      // audit action also fires for company_notes / theme_summaries, which
+      // must not masquerade as "今日簡報已發布".
       const publishEvents = state.recentAuditActions.filter(
-        (a) => a.action === "content_draft.ai_approved"
+        (a) => a.action === "content_draft.ai_approved" && state.dailyBriefDraftIds.has(a.entityId)
       );
       return publishEvents.map((e) => ({
         ruleId: "R08_AI_BRIEF_PUBLISHED",
@@ -918,6 +931,9 @@ async function collectEngineState(): Promise<EngineStateSnapshot> {
 
   // Load last 100 audit log rows for system-event rules (R08, R09, R10)
   let recentAuditActions: EngineStateSnapshot["recentAuditActions"] = [];
+  // 2026-07-12: subset of the above rows' entityIds confirmed to be
+  // content_drafts targeting daily_briefs — see EngineStateSnapshot doc.
+  let dailyBriefDraftIds: EngineStateSnapshot["dailyBriefDraftIds"] = new Set();
   if (isDatabaseMode()) {
     const db = getDb();
     if (db) {
@@ -938,6 +954,27 @@ async function collectEngineState(): Promise<EngineStateSnapshot> {
       } catch {
         // Non-critical
       }
+
+      const approvedDraftIds = Array.from(
+        new Set(
+          recentAuditActions
+            .filter((a) => a.action === "content_draft.ai_approved")
+            .map((a) => a.entityId)
+        )
+      );
+      if (approvedDraftIds.length > 0) {
+        try {
+          const draftRows = await db
+            .select({ id: contentDrafts.id, targetTable: contentDrafts.targetTable })
+            .from(contentDrafts)
+            .where(inArray(contentDrafts.id, approvedDraftIds));
+          dailyBriefDraftIds = new Set(
+            draftRows.filter((r) => r.targetTable === "daily_briefs").map((r) => r.id)
+          );
+        } catch {
+          // Non-critical — fail safe to empty set (R08 simply won't fire)
+        }
+      }
     }
   }
 
@@ -948,6 +985,7 @@ async function collectEngineState(): Promise<EngineStateSnapshot> {
     hasMarketValue,
     hasAnnouncements,
     recentAuditActions,
+    dailyBriefDraftIds,
     snapshotAt: new Date().toISOString()
   };
 }

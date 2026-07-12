@@ -14,6 +14,7 @@ import { shouldReuseExistingContentDraftForDedupe } from "./content-draft-store.
 import {
   aggregateInstitutionalFlowRows,
   buildDailyBriefContractInstructions,
+  buildDailyBriefFramingInstruction,
   buildMarketOverviewSourceEntryFromSnapshot,
   formatInstitutionalNetLotsZh,
   formatLiveMarketSnapshotForPrompt,
@@ -38,6 +39,7 @@ import {
   sanitizeBriefBody,
   scrubForbiddenPhrases,
   scrubReplacementChars,
+  shouldUseHolidayBriefFraming,
   tableSourceDateColumn,
   validateDailyBriefSectionsContract,
   _lastPipelineState,
@@ -455,6 +457,53 @@ test("source pack trailComplete allows DEGRADED for optional sources", () => {
     trailComplete: true // explicitly set; real collectSourcePack would compute this
   });
   assert.equal(pack.trailComplete, true);
+});
+
+// ── P1-8 holiday-wording half (2026-07-12): shouldUseHolidayBriefFraming /
+// buildDailyBriefFramingInstruction ─────────────────────────────────────────
+
+test("shouldUseHolidayBriefFraming: true when every source is EMPTY (holiday/closure signal)", () => {
+  const pack = makePack({
+    sources: [
+      { source: "companies_ohlcv", status: "EMPTY", rowCount: 0, latestDate: null, note: null },
+      { source: "tw_monthly_revenue", status: "EMPTY", rowCount: 0, latestDate: null, note: null },
+      { source: "tw_institutional_buysell", status: "EMPTY", rowCount: 0, latestDate: null, note: null }
+    ]
+  });
+  assert.equal(shouldUseHolidayBriefFraming(pack), true);
+});
+
+test("shouldUseHolidayBriefFraming: false when even one source is non-EMPTY (normal trading day)", () => {
+  const pack = makePack({
+    sources: [
+      { source: "companies_ohlcv", status: "LIVE", rowCount: 500, latestDate: "2026-05-05", note: null },
+      { source: "tw_monthly_revenue", status: "EMPTY", rowCount: 0, latestDate: null, note: null }
+    ]
+  });
+  assert.equal(shouldUseHolidayBriefFraming(pack), false);
+});
+
+test("shouldUseHolidayBriefFraming: false for an empty sources array (no signal, fail-open to normal framing)", () => {
+  const pack = makePack({ sources: [] });
+  assert.equal(shouldUseHolidayBriefFraming(pack), false);
+});
+
+test("buildDailyBriefFramingInstruction: holiday framing mentions 休市/回顧/展望, does not instruct 'today is a trading day' framing", () => {
+  const text = buildDailyBriefFramingInstruction(true);
+  assert.match(text, /休市/);
+  assert.match(text, /回顧/);
+  assert.match(text, /展望/);
+  // The holiday instruction legitimately quotes "今日開盤" once, inside a
+  // negative instruction ("不要使用「今日開盤」...") — so this asserts the
+  // normal-day framing's actual opening line is absent, not a bare
+  // substring match that the negative instruction itself would trip.
+  assert.doesNotMatch(text, /你的任務是生成一份給台股操盤師開盤前閱讀/);
+});
+
+test("buildDailyBriefFramingInstruction: normal framing keeps 開盤前 premarket wording", () => {
+  const text = buildDailyBriefFramingInstruction(false);
+  assert.match(text, /開盤前/);
+  assert.doesNotMatch(text, /休市/);
 });
 
 // ── Test 3: publish gate Green tier (auto-publish) ────────────────────────────
