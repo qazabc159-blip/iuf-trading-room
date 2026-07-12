@@ -5957,9 +5957,10 @@ body:has(.login-route) > div {
   top: 10px;
   right: 12px;
   z-index: 2;
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 8px;
   max-width: min(360px, calc(100% - 24px));
   padding: 7px 10px;
   border: 1px solid rgba(226, 184, 92, 0.2);
@@ -5972,11 +5973,20 @@ body:has(.login-route) > div {
 .kline-price-ribbon b {
   color: var(--night-ink);
   font-size: 19px;
+  min-width: 0;
 }
 
 .kline-price-ribbon small {
   color: var(--night-soft);
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* D3 fix (2026-07-12 diagnosis): the OHLC detail line ("開/高/低/量") used to sit
+   in the same unwrapped flex row as the big price number, squeezing/overlapping
+   text at narrow chart widths. Force it onto its own row. */
+.kline-readout-detail {
+  flex-basis: 100%;
 }
 
 .company-main-column .kline-panel:hover,
@@ -6137,6 +6147,20 @@ body:has(.login-route) > div {
 .company-data-table-fit td {
   padding: 15px 18px;
   line-height: 1.62;
+}
+
+/* D4 fix (2026-07-12 diagnosis): TickStreamPanel's tick list needed the same
+   compact padding as .company-data-table-fit (base .data-table's 24px/26px
+   padding made a 20-row list ~1,600px tall) WITHOUT that class's mobile
+   card-conversion CSS (below, ~line 4977) — that conversion hardcodes
+   nth-child labels for the 6-column financial-statement table shape
+   (期別/營收/毛利率/營益率/EPS/年增率) and mislabels any other table shape.
+   Desktop-only compact padding; mobile keeps the existing horizontal-scroll
+   behavior instead of a broken card conversion. */
+.company-tick-table-fit th,
+.company-tick-table-fit td {
+  padding: 10px 14px;
+  line-height: 1.5;
 }
 
 .table-cell-inner {
@@ -6594,42 +6618,6 @@ body:has(.login-route) > div {
   font-size: 11px;
   line-height: 1.7;
   white-space: pre-wrap;
-}
-
-.company-announcement-detail {
-  display: grid;
-  gap: 10px;
-  white-space: normal;
-}
-
-.company-announcement-detail p {
-  margin: 0;
-  color: var(--night-mid, #91a0b5);
-  font-family: var(--sans-tc);
-  line-height: 1.8;
-}
-
-.company-announcement-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.company-announcement-detail-grid span {
-  min-width: 0;
-  padding: 7px 9px;
-  border: 1px solid rgba(220, 228, 240, 0.09);
-  background: rgba(7, 11, 17, 0.42);
-  color: var(--night-soft, #566276);
-  font-family: var(--mono);
-  font-size: 10px;
-}
-
-.company-announcement-detail-grid b {
-  display: block;
-  margin-top: 3px;
-  color: var(--night-ink, #e7ecf3);
-  overflow-wrap: anywhere;
 }
 
 .company-announcement-link {
@@ -9808,6 +9796,10 @@ body:has(.login-route) > div {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: clamp(12px, 1.25vw, 16px);
   min-width: 0;
+  /* D4 fix (2026-07-12 diagnosis): default grid align-items:stretch forced the
+     short 衍生品「未啟用」placeholder to match 成交明細's ~1,600px+ tick-list
+     height, producing a 1,686px empty black box next to it. */
+  align-items: start;
 }
 
 .company-data-dock .panel {
@@ -10552,13 +10544,6 @@ body:has(.login-route) > div {
     display: none;
   }
 
-  .company-announcement-detail {
-    padding-left: 0;
-  }
-
-  .company-announcement-detail-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Vendor command-center homepage integration. */

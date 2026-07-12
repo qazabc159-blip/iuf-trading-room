@@ -199,9 +199,13 @@ export function CompanyPageStyleBlock() {
   padding: 10px 0 6px;
 }
 
-/* Desktop: show knowledge + industry graph side by side starting at 1280px viewport.
-   Previously 1500px — the main column is ~850px wide at 1440px viewport, plenty of room. */
-@media (min-width: 1280px) {
+/* Desktop: show knowledge + industry graph side by side starting at 1440px viewport.
+   D1 fix (2026-07-12 diagnosis): was 1280px, but at a 1280px *viewport* the main
+   column itself is only ~490-620px wide (side column reserves 320-360px + gap) —
+   forcing a 2-col split there squeezed the text column to ~207px, wrapping every
+   Chinese word onto its own line and stretching the panel to 2,000-2,930px tall.
+   1440px viewport gives the main column ~850px+, enough room for a real 2-col split. */
+@media (min-width: 1440px) {
   .company-knowledge-grid {
     grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
   }
@@ -641,7 +645,12 @@ export function CompanyPageStyleBlock() {
   min-width: 0;
   max-width: 100%;
 }
-@media (max-width: 1180px) {
+/* D1 fix (2026-07-12 diagnosis): was max-width:1180px. Between 1181-1439px viewport
+   the outer .company-detail-layout is still 2-col (main + fixed 320-360px side
+   column), so the main column itself is only ~490-620px — the 64/36 row split
+   (#1160) squeezed the K-line chart pane down to ~313px. Stack until 1440px, where
+   the main column is wide enough (~850px+) for the #1160 row layout to make sense. */
+@media (max-width: 1439px) {
   ._co-trading-view {
     flex-direction: column;
     gap: 10px;
