@@ -19710,9 +19710,19 @@ function startSchedulers(workspaceSlug: string): void {
       _oaVerifyUpdatedDate = todayDate;
       try {
         const { updateDecisionVerifications } = await import("./openalice-decision-verifier.js");
-        const result = await updateDecisionVerifications();
+        const { listWorkspaceIds } = await import("./workspace-scope.js");
+        const workspaceIds = await listWorkspaceIds();
+        let updated = 0;
+        let skipped = 0;
+        let errors = 0;
+        for (const workspaceId of workspaceIds) {
+          const result = await updateDecisionVerifications(workspaceId);
+          updated += result.updated;
+          skipped += result.skipped;
+          errors += result.errors;
+        }
         console.info(
-          `[openalice-m4-cron] decision verification done: updated=${result.updated} skipped=${result.skipped} errors=${result.errors}`
+          `[openalice-m4-cron] decision verification done: workspaces=${workspaceIds.length} updated=${updated} skipped=${skipped} errors=${errors}`
         );
       } catch (e) {
         console.warn("[openalice-m4-cron] tick error:", e instanceof Error ? e.message : String(e));

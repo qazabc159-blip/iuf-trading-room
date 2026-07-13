@@ -9046,6 +9046,14 @@ test("OpenAlice decision SQL consumers enforce workspace scope", () => {
   assert.match(verifier, /getDecisionPerformance\(workspaceId: string\)/);
   assert.match(server, /getOrchestratorObservability\(session\.workspace\.id, limit\)/);
   assert.match(server, /decisionWhere = drizzleSql`workspace_id = \$\{session\.workspace\.id\}/);
+  // OPENALICE-M4-CRON (Pete review, 2026-07-13): the only production caller of
+  // updateDecisionVerifications() must fan out per-workspace via listWorkspaceIds(),
+  // not call it with zero args (which was a silent global-scope fallback).
+  assert.match(
+    server,
+    /listWorkspaceIds[\s\S]{0,400}for \(const workspaceId of workspaceIds\)[\s\S]{0,80}updateDecisionVerifications\(workspaceId\)/,
+    "OPENALICE-M4-CRON must scope updateDecisionVerifications per workspace, not call it unscoped",
+  );
 });
 
 test("iuf_events SQL consumers carry workspace scope", () => {

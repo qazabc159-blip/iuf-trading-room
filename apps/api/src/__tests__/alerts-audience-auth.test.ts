@@ -39,6 +39,7 @@ import { execRows, getDb, users, workspaces } from "@iuf-trading-room/db";
 
 import { hashPassword } from "../auth-store.js";
 import { runOpenAliceActionTick } from "../openalice-action-executor.js";
+import { updateDecisionVerifications } from "../openalice-decision-verifier.js";
 import { _eventEngineInternals } from "../openalice-event-rule-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +210,41 @@ async function getDecisionStatus(id: string): Promise<string | undefined> {
   if (!db) throw new Error("getDecisionStatus requires PERSISTENCE_MODE=database.");
   const rows = await db.execute(drizzleSql`SELECT status FROM iuf_decisions WHERE id = ${id}::uuid`);
   return execRows<{ status?: string }>(rows)[0]?.status;
+}
+
+/**
+ * Seeds a `deep_analyze`/`done` decision that satisfies updateDecisionVerifications()'s
+ * SELECT criteria (status='done', created_at > 1 day old, real report, no verification
+ * yet) but uses an unresolvable ticker so computeVerification() always returns null
+ * (no price data) — making the row deterministically fall into the `skipped` bucket
+ * regardless of what OHLCV fixture data does or does not exist in this test DB. Used to
+ * observe workspace-scoping of the SELECT itself via the returned skipped count, not the
+ * (fixture-dependent) success of an actual forward-return computation.
+ */
+async function seedVerifiableDeepAnalyzeDecision(workspaceId: string, marker: string): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedVerifiableDeepAnalyzeDecision requires PERSISTENCE_MODE=database.");
+  const id = randomUUID();
+  const ticker = `NOPRICE${marker.slice(-6).toUpperCase()}`;
+  const outcome = {
+    tickers: [ticker],
+    analyses: [{ status: "complete", reportSummary: `test report ${marker}`, ticker }]
+  };
+  await db.execute(drizzleSql`
+    INSERT INTO iuf_decisions (
+      id, workspace_id, trigger_type, trigger_id, trigger_ref, reasoning,
+      action_type, action_payload, confidence, priority, status, outcome,
+      model_key, cost_usd, created_at
+    ) VALUES (
+      ${id}, ${workspaceId}, 'event', ${randomUUID()},
+      ${JSON.stringify({ testMarker: marker })}::jsonb,
+      ${marker}, 'deep_analyze',
+      ${JSON.stringify({ tickers: [ticker] })}::jsonb,
+      1, 1, 'done', ${JSON.stringify(outcome)}::jsonb,
+      'test', 0, NOW() - INTERVAL '2 days'
+    )
+  `);
+  return id;
 }
 
 /**
@@ -503,5 +539,30 @@ describe("iuf_decisions workspace boundary", () => {
     assert.equal(purge.status, 200);
     assert.equal(await getDecisionStatus(decisionA), undefined, "workspace A fallback should be removed");
     assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace B fallback must survive workspace A purge");
+  });
+
+  // Pete review, 2026-07-13: updateDecisionVerifications() was the one decision
+  // lifecycle stage (generate/execute/verify/observe/purge) whose only production
+  // call site (OPENALICE-M4-CRON in server.ts) invoked it with zero args, silently
+  // scanning `deep_analyze` decisions across every workspace in one unfiltered
+  // batch instead of per-tenant. This calls the real exported function against a
+  // real two-tenant DB and asserts the SELECT itself is workspace-scoped — a
+  // scoped call for workspace A must never see workspace B's pending row (and
+  // vice versa), proven via the `skipped` count rather than a full
+  // forward-return computation (which needs OHLCV fixture data this test doesn't
+  // seed): each workspace has exactly one qualifying row, so an unscoped SELECT
+  // would report skipped=2 for either call, while a correctly scoped SELECT
+  // reports skipped=1.
+  test("a workspace-scoped verification tick never processes another workspace's pending decision", async () => {
+    await seedVerifiableDeepAnalyzeDecision(primaryWorkspaceId, `decision-verify-a-${randomUUID()}`);
+    await seedVerifiableDeepAnalyzeDecision(secondaryWorkspaceId, `decision-verify-b-${randomUUID()}`);
+
+    const resultA = await updateDecisionVerifications(primaryWorkspaceId);
+    assert.equal(resultA.skipped, 1, "workspace A tick must only see workspace A's pending decision");
+    assert.equal(resultA.errors, 0);
+
+    const resultB = await updateDecisionVerifications(secondaryWorkspaceId);
+    assert.equal(resultB.skipped, 1, "workspace B tick must only see workspace B's pending decision");
+    assert.equal(resultB.errors, 0);
   });
 });
