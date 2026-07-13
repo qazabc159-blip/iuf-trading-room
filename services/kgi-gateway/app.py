@@ -1032,11 +1032,15 @@ async def recover_kbar(symbol: str, from_date: str, to_date: str):
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
-                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Quote session not logged in. Set KGI_QUOTE_PERSON_ID/"
+                            "KGI_QUOTE_PERSON_PWD + KGI_QUOTE_AUTO_LOGIN=true.",
+                )
             ).model_dump(),
         )
     if not from_date or not to_date:
@@ -1046,17 +1050,17 @@ async def recover_kbar(symbol: str, from_date: str, to_date: str):
                 error=ErrorDetail(code="MISSING_DATE_RANGE", message="from and to are required (YYYYMMDD).")
             ).model_dump(),
         )
-    if session.api is None:
+    if quote_session.api is None:
         # Empty-safe: return empty bars instead of 500
-        logger.warning("recover_kbar: session.api is None, returning empty bars")
+        logger.warning("recover_kbar: quote_session.api is None, returning empty bars")
         return KbarRecoverResponse(
             symbol=symbol, bars=[], count=0,
             from_date=from_date, to_date=to_date,
-            note="session.api not available — call POST /session/set-account first",
+            note="quote_session.api not available — quote leg not logged in",
         )
 
     try:
-        raw_bars = recover_kbar_from_sdk(session.api, symbol, from_date, to_date)
+        raw_bars = recover_kbar_from_sdk(quote_session.api, symbol, from_date, to_date)
         bars = [KBarData(**b) for b in raw_bars]
         logger.info("recover_kbar OK: symbol=%s from=%s to=%s count=%d", symbol, from_date, to_date, len(bars))
         return KbarRecoverResponse(
@@ -1110,11 +1114,15 @@ async def subscribe_kbar(body: SubscribeKbarRequest):
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
-                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Quote session not logged in. Set KGI_QUOTE_PERSON_ID/"
+                            "KGI_QUOTE_PERSON_PWD + KGI_QUOTE_AUTO_LOGIN=true.",
+                )
             ).model_dump(),
         )
 
@@ -1140,11 +1148,11 @@ async def subscribe_kbar(body: SubscribeKbarRequest):
         else:
             interval_status = "unknown"
 
-    if session.api is None:
+    if quote_session.api is None:
         raise HTTPException(status_code=500, detail="No API handle")
 
     try:
-        label = kbar_manager.subscribe_kbar(session.api, body.symbol, odd_lot=body.odd_lot)
+        label = kbar_manager.subscribe_kbar(quote_session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_kbar OK: symbol=%s label=%s interval=%s", body.symbol, label, body.interval)
         return SubscribeKbarResponse(
             ok=True,
@@ -1200,11 +1208,15 @@ async def get_quote_kbar(symbol: str, limit: int = 10):
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
-                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Quote session not logged in. Set KGI_QUOTE_PERSON_ID/"
+                            "KGI_QUOTE_PERSON_PWD + KGI_QUOTE_AUTO_LOGIN=true.",
+                )
             ).model_dump(),
         )
     if not is_kbar_subscribed(symbol):
@@ -1242,6 +1254,7 @@ async def kbar_status():
     return {
         **status,
         "kgi_logged_in": session.is_logged_in,
+        "kgi_quote_logged_in": quote_session.is_logged_in,
         "quote_disabled_flag": settings.QUOTE_DISABLED,
     }
 
