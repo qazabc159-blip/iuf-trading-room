@@ -8998,6 +8998,22 @@ test("OpenAlice decision SQL consumers enforce workspace scope", () => {
   assert.match(server, /decisionWhere = drizzleSql`workspace_id = \$\{session\.workspace\.id\}/);
 });
 
+test("Brain decision list/detail/company-report reads require workspace scope", () => {
+  const reactLoop = readFileSync("apps/api/src/brain/react-loop.ts", "utf8");
+  const server = readFileSync("apps/api/src/server.ts", "utf8");
+
+  assert.match(reactLoop, /listRecentDecisions\(workspaceId: string, limit = 20\)/);
+  assert.match(reactLoop, /getDecisionByRunId\(workspaceId: string, runId: string\)/);
+  assert.match(reactLoop, /getLatestCompanyAiAnalystDecision\(ticker: string, workspaceId: string\)/);
+  assert.match(
+    reactLoop,
+    /\.where\(and\([\s\S]*eq\(brainDecisions\.workspaceId, workspaceId\)[\s\S]*eq\(brainDecisions\.runId, runId\)/,
+  );
+  assert.match(server, /listRecentDecisions\(session\.workspace\.id, limit\)/);
+  assert.match(server, /getDecisionByRunId\(session\.workspace\.id, runId\)/);
+  assert.match(server, /getLatestCompanyAiAnalystDecision\(ticker, session\.workspace\.id\)/);
+});
+
 test("iuf_events SQL consumers carry workspace scope", () => {
   const engine = readFileSync("apps/api/src/openalice-event-rule-engine.ts", "utf8");
   const executor = readFileSync("apps/api/src/openalice-action-executor.ts", "utf8");

@@ -38,7 +38,7 @@ import { randomUUID } from "crypto";
 import { callLlm, estimateCostUsd, type LlmMessage } from "../llm/llm-gateway.js";
 import { callTool } from "../tools/tool-registry-store.js";
 import { getDb, isDatabaseMode, brainDecisions } from "@iuf-trading-room/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -961,7 +961,7 @@ function mapDecisionDetail(r: typeof brainDecisions.$inferSelect): DecisionDetai
   };
 }
 
-export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[]> {
+export async function listRecentDecisions(workspaceId: string, limit = 20): Promise<DecisionListItem[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
@@ -971,6 +971,7 @@ export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[
     const rows = await db
       .select()
       .from(brainDecisions)
+      .where(eq(brainDecisions.workspaceId, workspaceId))
       .orderBy(desc(brainDecisions.createdAt))
       .limit(Math.min(limit, 100));
 
@@ -993,7 +994,7 @@ export async function listRecentDecisions(limit = 20): Promise<DecisionListItem[
   }
 }
 
-export async function getDecisionByRunId(runId: string): Promise<DecisionDetail | null> {
+export async function getDecisionByRunId(workspaceId: string, runId: string): Promise<DecisionDetail | null> {
   if (!isDatabaseMode()) return null;
   const db = getDb();
   if (!db) return null;
@@ -1002,7 +1003,10 @@ export async function getDecisionByRunId(runId: string): Promise<DecisionDetail 
     const rows = await db
       .select()
       .from(brainDecisions)
-      .where(eq(brainDecisions.runId, runId))
+      .where(and(
+        eq(brainDecisions.workspaceId, workspaceId),
+        eq(brainDecisions.runId, runId),
+      ))
       .limit(1);
 
     const r = rows[0];
@@ -1015,7 +1019,7 @@ export async function getDecisionByRunId(runId: string): Promise<DecisionDetail 
   }
 }
 
-export async function getLatestCompanyAiAnalystDecision(ticker: string, workspaceId?: string | null): Promise<DecisionDetail | null> {
+export async function getLatestCompanyAiAnalystDecision(ticker: string, workspaceId: string): Promise<DecisionDetail | null> {
   if (!isDatabaseMode()) return null;
   const db = getDb();
   if (!db) return null;
@@ -1025,15 +1029,13 @@ export async function getLatestCompanyAiAnalystDecision(ticker: string, workspac
     const rows = await db
       .select()
       .from(brainDecisions)
+      .where(eq(brainDecisions.workspaceId, workspaceId))
       .orderBy(desc(brainDecisions.createdAt))
       .limit(100);
 
-    const normalizedWorkspaceId = workspaceId ?? null;
     const row = rows.find((r) => {
-      const sameWorkspace = (r.workspaceId ?? null) === normalizedWorkspaceId;
       const finalReport = r.finalReport ?? "";
-      return sameWorkspace
-        && r.status === "complete"
+      return r.status === "complete"
         && Boolean(finalReport.trim())
         && validateCompanyAiAnalystSections(finalReport).length === 0
         && validateCompanyAiAnalystQualityIssues(finalReport).length === 0

@@ -22802,7 +22802,7 @@ app.get("/api/v1/admin/brain/react/decisions", async (c) => {
   const limit = Math.min(parseInt(limitParam ?? "20", 10) || 20, 100);
 
   const { listRecentDecisions } = await import("./brain/react-loop.js");
-  const decisions = await listRecentDecisions(limit);
+  const decisions = await listRecentDecisions(session.workspace.id, limit);
   return c.json({ data: decisions, count: decisions.length });
 });
 
@@ -22819,7 +22819,7 @@ app.get("/api/v1/admin/brain/react/company-report/:ticker", async (c) => {
   }
 
   const { getLatestCompanyAiAnalystDecision } = await import("./brain/react-loop.js");
-  const decision = await getLatestCompanyAiAnalystDecision(ticker, session.workspace?.id ?? null);
+  const decision = await getLatestCompanyAiAnalystDecision(ticker, session.workspace.id);
   if (!decision) {
     return c.json({ data: null });
   }
@@ -22854,7 +22854,7 @@ app.get("/api/v1/admin/brain/react/decisions/:run_id", async (c) => {
   }
 
   const { getDecisionByRunId } = await import("./brain/react-loop.js");
-  const decision = await getDecisionByRunId(runId);
+  const decision = await getDecisionByRunId(session.workspace.id, runId);
   if (!decision) {
     return c.json({ error: "NOT_FOUND" }, 404);
   }
