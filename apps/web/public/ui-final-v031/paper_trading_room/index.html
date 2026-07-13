@@ -817,6 +817,28 @@ body[data-screen-label="Trading Room v1"] .tnote{
         <input id="t-sym" value="2330　台積電" readonly />
       </div>
 
+      <!-- 交易類別 (session) — 台股下單能力矩陣 T-3 (2026-07-13) -->
+      <div class="field">
+        <div class="l">交易類別<span class="helper" id="t-session-hint">09:00–13:30</span></div>
+        <div class="seg4" id="t-session">
+          <button type="button" data-session="regular" class="on">整股</button>
+          <button type="button" data-session="intraday_odd">盤中零股</button>
+          <button type="button" data-session="afterhours_odd">盤後零股</button>
+          <button type="button" data-session="afterhours_fixed">盤後定價</button>
+        </div>
+      </div>
+
+      <!-- 委託種類 (orderCond) -->
+      <div class="field">
+        <div class="l">委託種類</div>
+        <div class="seg4" id="t-cond">
+          <button type="button" data-cond="cash" class="on">現股</button>
+          <button type="button" data-cond="margin">融資</button>
+          <button type="button" data-cond="short">融券</button>
+          <button type="button" data-cond="daytrade">當沖</button>
+        </div>
+      </div>
+
       <!-- order type + price -->
       <div class="field row2">
         <div class="field">
@@ -828,12 +850,22 @@ body[data-screen-label="Trading Room v1"] .tnote{
           </select>
         </div>
         <div class="field" id="t-pricewrap">
-          <div class="l">委託價<span class="helper">最小升降 0.50</span></div>
+          <div class="l">委託價<span class="helper" id="t-price-hint">最小升降 0.50</span></div>
           <div class="step">
             <button type="button" class="stepbtn" data-p="-0.5">−</button>
             <input id="t-price" value="" placeholder="自動填入" />
             <button type="button" class="stepbtn" data-p="+0.5">+</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 委託效期 (TIF) -->
+      <div class="field">
+        <div class="l">委託效期</div>
+        <div class="seg3" id="t-tif">
+          <button type="button" data-tif="rod" class="on" title="當日有效">ROD</button>
+          <button type="button" data-tif="ioc" title="立即成交，剩餘取消">IOC</button>
+          <button type="button" data-tif="fok" title="全部成交，否則取消">FOK</button>
         </div>
       </div>
 
@@ -963,6 +995,7 @@ function pickRow(sym){
   }
   const fmt=v=>(v==null?'—':(+v).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2}));
   const price=d.price,prev=d.prev;
+  window.__IUF_REF_PRICE__=(prev!=null&&Number.isFinite(+prev))?+prev:null;
   const chg=(price!=null&&prev!=null)?price-prev:null;
   const pct=(chg!=null&&prev)?chg/prev*100:null;
   document.querySelector('.symhead .sym').textContent=sym;
@@ -1072,10 +1105,176 @@ document.querySelectorAll('#side button').forEach(b=>b.addEventListener('click',
 
 /* ---------- units toggle ---------- */
 document.querySelectorAll('#t-unit button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.disabled)return;
   document.querySelectorAll('#t-unit button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-  document.getElementById('t-qty-hint').textContent=b.dataset.unit==='lot'?'1 張 = 1,000 股':'整數股單位';
   updPreview();
 }));
+
+/* =====================================================================
+   台股下單能力矩陣（T-3） — client-side mirror of apps/api/src/broker/
+   order-rules.ts §4 (市價TIF／零股session×TIF／tick／漲跌停／session×
+   委託種類／數量) so illegal combinations grey out before submit instead
+   of only failing after a round-trip.
+   Source: reports/epic_trading_desk_20260702/ORDER_TYPE_MATRIX_DESIGN_v1.md
+   ===================================================================== */
+const TICK_SIZE_TIERS=[
+  {minPrice:1000,tickSize:5.0},
+  {minPrice:500,tickSize:1.0},
+  {minPrice:100,tickSize:0.5},
+  {minPrice:50,tickSize:0.1},
+  {minPrice:10,tickSize:0.05},
+  {minPrice:0,tickSize:0.01}
+];
+function getTickSize(refPrice){
+  for(const t of TICK_SIZE_TIERS){if(refPrice>=t.minPrice)return t.tickSize;}
+  return 0.01;
+}
+function roundToTick(value,tick){
+  const rounded=Math.round(value/tick)*tick;
+  const decimals=tick<1?(String(tick).split('.')[1]||'').length||2:0;
+  return Number(rounded.toFixed(decimals));
+}
+const SESSION_HOURS={
+  regular:'09:00–13:30',
+  intraday_odd:'09:10–13:30 逐筆',
+  afterhours_odd:'13:40–14:30 集合競價',
+  afterhours_fixed:'14:00–14:30 以收盤價成交'
+};
+function allowedTifSet(type,session){
+  let set=type==='market'?new Set(['ioc','fok']):new Set(['rod','ioc','fok']);
+  if(session==='afterhours_odd'||session==='afterhours_fixed'){
+    set=new Set([...set].filter(t=>t==='rod'));
+  }
+  return set;
+}
+
+/* ---------- session / orderCond / TIF toggles ---------- */
+document.querySelectorAll('#t-session button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.disabled)return;
+  document.querySelectorAll('#t-session button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  updPreview();
+}));
+document.querySelectorAll('#t-cond button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.disabled)return;
+  document.querySelectorAll('#t-cond button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  updPreview();
+}));
+document.querySelectorAll('#t-tif button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.disabled)return;
+  document.querySelectorAll('#t-tif button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  updPreview();
+}));
+
+// Proactively grey out illegal combinations (session⇄unit, session⇄orderCond,
+// type×session⇄TIF) and refresh the price tick/漲跌停 hint. Returns the
+// resolved {session,type,cond,tif,unit} after auto-correcting any button
+// that just became illegal (e.g. switching to 盤後零股 while 融資 was on).
+function applyMatrixGating(){
+  const session=document.querySelector('#t-session button.on')?.dataset.session||'regular';
+  const type=document.getElementById('t-otype').value||'limit';
+  const isOddSession=session!=='regular';
+
+  // session -> unit (odd-lot sessions are share-denominated per D4/§3)
+  document.querySelectorAll('#t-unit button').forEach(b=>{b.disabled=isOddSession&&b.dataset.unit==='lot';});
+  if(isOddSession&&document.querySelector('#t-unit button.on')?.dataset.unit==='lot'){
+    document.querySelectorAll('#t-unit button').forEach(x=>x.classList.remove('on'));
+    document.querySelector('#t-unit button[data-unit="share"]').classList.add('on');
+  }
+  const unit=document.querySelector('#t-unit button.on')?.dataset.unit||'lot';
+  const qtyHint=document.getElementById('t-qty-hint');
+  if(qtyHint)qtyHint.textContent=isOddSession?'零股：1–999 股':(unit==='lot'?'1 張 = 1,000 股':'需為 1,000 股整數倍');
+
+  // session -> orderCond (odd-lot / 盤後定價 only support 現股)
+  document.querySelectorAll('#t-cond button').forEach(b=>{b.disabled=isOddSession&&b.dataset.cond!=='cash';});
+  if(isOddSession&&document.querySelector('#t-cond button.on')?.dataset.cond!=='cash'){
+    document.querySelectorAll('#t-cond button').forEach(x=>x.classList.remove('on'));
+    document.querySelector('#t-cond button[data-cond="cash"]').classList.add('on');
+  }
+  const cond=document.querySelector('#t-cond button.on')?.dataset.cond||'cash';
+
+  const hintEl=document.getElementById('t-session-hint');
+  if(hintEl)hintEl.textContent=SESSION_HOURS[session]||'';
+
+  // type × session -> TIF
+  const allowed=allowedTifSet(type,session);
+  document.querySelectorAll('#t-tif button').forEach(b=>{b.disabled=!allowed.has(b.dataset.tif);});
+  if(!allowed.has(document.querySelector('#t-tif button.on')?.dataset.tif)){
+    document.querySelectorAll('#t-tif button').forEach(x=>x.classList.remove('on'));
+    const fallback=[...allowed][0];
+    if(fallback)document.querySelector('#t-tif button[data-tif="'+fallback+'"]')?.classList.add('on');
+  }
+  const tif=document.querySelector('#t-tif button.on')?.dataset.tif||'rod';
+
+  // price tick / 漲跌停 hint
+  const priceInput=document.getElementById('t-price');
+  const priceHint=document.getElementById('t-price-hint');
+  const px=+priceInput.value||0;
+  const refPrice=window.__IUF_REF_PRICE__;
+  let bandText='',bandBad=false;
+  if(type==='limit'){
+    const tick=getTickSize(px>0?px:(refPrice||10));
+    bandText='最小升降 '+tick;
+    if(refPrice&&refPrice>0){
+      const refTick=getTickSize(refPrice);
+      const upper=Math.floor((refPrice*1.1)/refTick)*refTick;
+      const lower=Math.ceil((refPrice*0.9)/refTick)*refTick;
+      bandText+='／漲跌停 '+lower.toFixed(2)+'–'+upper.toFixed(2);
+      if(px>0&&(px>upper+1e-6||px<lower-1e-6))bandBad=true;
+    }
+  }else{
+    bandText='市價單以當前最佳價成交';
+  }
+  if(priceHint){priceHint.textContent=bandText;priceHint.className='helper band'+(bandBad?' bad':'');}
+
+  return {session,type,cond,tif,unit};
+}
+
+// Pure re-check (no DOM writes) mirroring order-rules.ts §4.1/§4.2/§4.3/
+// §4.4/§4.5/§4.6 — returns product-grade 繁中 messages, first one wins as
+// the blocking reason (same convention as the existing qty/price checks).
+function computeMatrixViolations(state){
+  const violations=[];
+  const {session,type,cond,tif,unit}=state;
+  const qty=+document.getElementById('t-qty').value||0;
+  const shares=unit==='lot'?qty*1000:qty;
+  const px=+document.getElementById('t-price').value||0;
+  const refPrice=window.__IUF_REF_PRICE__;
+  const isOddSession=session!=='regular';
+
+  if(type==='market'&&tif!=='ioc'&&tif!=='fok'){
+    violations.push('市價單僅允許 IOC 或 FOK，禁止 ROD');
+  }
+  if((session==='afterhours_odd'||session==='afterhours_fixed')&&tif!=='rod'){
+    violations.push('盤後零股／盤後定價僅允許 ROD（集合競價）');
+  }
+  if(isOddSession&&cond!=='cash'){
+    violations.push('零股／盤後定價僅支援現股，不支援融資／融券／當沖');
+  }
+  if(shares>0){
+    if(!isOddSession&&shares%1000!==0){
+      violations.push('整股委託數量須為整張（1,000 股）倍數');
+    }
+    if(isOddSession&&(shares<1||shares>=1000)){
+      violations.push('零股委託股數須介於 1–999 股');
+    }
+  }
+  if(type==='limit'&&px>0){
+    const tick=getTickSize(px);
+    const nearest=roundToTick(px,tick);
+    if(Math.abs(nearest-px)>1e-6){
+      violations.push('限價 '+px+' 不在合法升降單位（'+tick+'）上，最近合法價 '+nearest.toFixed(2));
+    }
+    if(refPrice&&refPrice>0){
+      const refTick=getTickSize(refPrice);
+      const upper=Math.floor((refPrice*1.1)/refTick)*refTick;
+      const lower=Math.ceil((refPrice*0.9)/refTick)*refTick;
+      if(px>upper+1e-6||px<lower-1e-6){
+        violations.push('限價超出漲跌停區間 ['+lower.toFixed(2)+', '+upper.toFixed(2)+']');
+      }
+    }
+  }
+  return violations;
+}
 
 /* ---------- qty/price steppers ---------- */
 document.querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>{
@@ -1111,9 +1310,10 @@ document.getElementById('t-otype').addEventListener('change',updPreview);
 function updPreview(){
   const sym=document.querySelector('.symhead .sym').textContent;
   const side=document.querySelector('#side button.on').dataset.side;
-  const unit=document.querySelector('#t-unit button.on').dataset.unit;
+  const matrixState=applyMatrixGating();
+  const unit=matrixState.unit;
   const unitLabel=unit==='lot'?'張':'股';
-  const orderType=document.getElementById('t-otype').value||'limit';
+  const orderType=matrixState.type;
   const qty=+document.getElementById('t-qty').value||0;
   const inputPx=+document.getElementById('t-price').value||0;
   const selectedPx=+window.__IUF_SELECTED_PRICE__||0;
@@ -1122,7 +1322,8 @@ function updPreview(){
   const validQty=Number.isFinite(qty)&&qty>0&&shares>0;
   const validPrice=Number.isFinite(px)&&px>0;
   const lockReason=window.__IUF_TICKET_LOCK_REASON__||'';
-  const validTicket=validQty&&validPrice&&!lockReason;
+  const matrixViolations=(validQty&&validPrice)?computeMatrixViolations(matrixState):[];
+  const validTicket=validQty&&validPrice&&!lockReason&&matrixViolations.length===0;
   const submitBtn=document.getElementById('submit-btn');
   const sub=submitBtn.querySelector('span');
   const kgiBtn=document.getElementById('submit-kgi-sim-btn');
@@ -1131,7 +1332,7 @@ function updPreview(){
   document.getElementById('p-avail').textContent=avail.toLocaleString('zh-TW');
 
   if(!validTicket){
-    const reason=lockReason||(!validQty?'請輸入有效數量':(orderType==='market'?'等待有效市價':'請輸入有效委託價'));
+    const reason=lockReason||matrixViolations[0]||(!validQty?'請輸入有效數量':(orderType==='market'?'等待有效市價':'請輸入有效委託價'));
     document.getElementById('p-notional').innerHTML='待輸入 <small>NTD</small>';
     document.getElementById('p-fee').innerHTML='待輸入 <small>NTD</small>';
     const afterEl=document.getElementById('p-after-avail');
@@ -1161,7 +1362,14 @@ function updPreview(){
   submitBtn.removeAttribute('aria-disabled');
   delete submitBtn.dataset.blocked;
   if(kgiBtn){
-    const kgiBlocked=orderType==='stop';
+    // KGI SIM 送單對映（T-2）尚未串接 orderCond/session — 融資融券當沖與零股／
+    // 盤後買法在 KGI 通道先誠實擋下，紙上單通道（submit-btn）不受影響。
+    const kgiUnsupportedReason=orderType==='stop'
+      ?'KGI SIM 不支援停損單'
+      :(matrixState.cond!=='cash'
+        ?'KGI SIM 尚未支援融資／融券／當沖'
+        :(matrixState.session!=='regular'?'KGI SIM 尚未支援零股／盤後委託':''));
+    const kgiBlocked=!!kgiUnsupportedReason;
     kgiBtn.disabled=kgiBlocked;
     kgiBtn.classList.toggle('is-blocked',kgiBlocked);
     if(kgiBlocked){
@@ -1171,7 +1379,7 @@ function updPreview(){
       kgiBtn.removeAttribute('aria-disabled');
       delete kgiBtn.dataset.blocked;
     }
-    if(kgiLabel)kgiLabel.textContent=kgiBlocked?'KGI SIM 不支援停損單':sym+' '+(side==='buy'?'買進':'賣出')+' '+qty+' '+unitLabel+' @ '+px.toFixed(2);
+    if(kgiLabel)kgiLabel.textContent=kgiBlocked?kgiUnsupportedReason:sym+' '+(side==='buy'?'買進':'賣出')+' '+qty+' '+unitLabel+' @ '+px.toFixed(2);
   }
   const notion=Math.round(shares*px);
   const fee=Math.round(notion*0.001425);

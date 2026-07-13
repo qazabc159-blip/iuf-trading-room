@@ -421,6 +421,23 @@
 .tform .field .units button.on .req{color:var(--brand);opacity:.85}
 .tform .field .l .unit-req{font:700 8.5px/1 var(--mono);letter-spacing:.04em;color:var(--brand);text-transform:none;white-space:nowrap}
 
+/* ===== order-type-matrix segmented pickers (session / orderCond / TIF) ===== */
+.tform .seg4,.tform .seg3{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.tform .seg4{grid-template-columns:1fr 1fr}
+.tform .seg3{grid-template-columns:1fr 1fr 1fr}
+.tform .seg4 button,.tform .seg3 button{
+  background:var(--bg-2);border:0;padding:9px 6px;font:500 11.5px/1 var(--sans);color:var(--fg-2);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;letter-spacing:.01em
+}
+.tform .seg4 button.on,.tform .seg3 button.on{color:var(--brand);background:var(--brand-bg);box-shadow:inset 0 -2px 0 var(--brand)}
+.tform .seg4 button:not(.on):hover:not([disabled]),.tform .seg3 button:not(.on):hover:not([disabled]){color:var(--fg-0);background:var(--bg-3)}
+.tform .seg4 button[disabled],.tform .seg3 button[disabled]{color:var(--fg-3);opacity:.38;cursor:not-allowed;background:var(--bg-2)}
+.tform .seg4 button[disabled].on,.tform .seg3 button[disabled].on{background:var(--bg-2);box-shadow:none;color:var(--fg-3)}
+
+/* price / band helper line under 委託價 */
+.tform .field .l .helper.band{color:var(--fg-2)}
+.tform .field .l .helper.band.bad{color:var(--bad)}
+
 .preview{background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;animation:fadeUp .25s var(--e-out)}
 .preview .item{display:flex;flex-direction:column;gap:3px}
 .preview .l{font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--fg-3);text-transform:uppercase}

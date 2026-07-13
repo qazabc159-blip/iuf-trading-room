@@ -983,6 +983,22 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
     manual_disable: "人工停用"
   };
   const riskGuardLabel = (key) => RISK_GUARD_LABELS[String(key || "")] || String(key || "").replace(/_/g, " ");
+  // 台股下單能力矩陣 T-3 (2026-07-13) — order-rules.ts (apps/api/src/broker/
+  // order-rules.ts) rejects at the placePaperOrder() layer with status="rejected"
+  // + reason=<code> instead of the trading-service blocked:true/422 shape above.
+  // POST /trading/orders still returns 201 in that case (result.blocked stays
+  // false — the matrix rejection is an Order row, not a submit-level block), so
+  // without this the UI would otherwise show a false "已送出" success message.
+  const ORDER_RULE_REASON_LABELS = {
+    MARKET_ORDER_TIF_INVALID: "市價單僅允許 IOC 或 FOK",
+    ODD_LOT_SESSION_TIF_INVALID: "零股／盤後委託效期不合法",
+    PRICE_TICK_INVALID: "限價不在合法升降單位上",
+    PRICE_LIMIT_EXCEEDED: "限價超出漲跌停區間",
+    ODD_LOT_CASH_ONLY: "零股／盤後定價僅支援現股",
+    LOT_QUANTITY_INVALID: "整股委託數量須為整張倍數",
+    ODD_LOT_QUANTITY_INVALID: "零股委託股數須介於 1–999 股"
+  };
+  const orderRuleReasonLabel = (code) => ORDER_RULE_REASON_LABELS[String(code || "")] || null;
   // Builds the Chinese "why blocked" line from a SubmitOrderResult-shaped
   // body (order:null, riskCheck, blocked:true, quoteGate) — the 422 shape
   // POST /trading/orders returns when risk or the quote gate rejects.
@@ -3317,6 +3333,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
       const rawPx = Number($("#t-price")?.value || 0);
       const selectedPx = Number(selected.price || 0);
       const px = orderType === "market" ? selectedPx : rawPx;
+      // 台股下單能力矩陣 T-3 (2026-07-13): captured by the new ticket controls
+      // and forwarded on orderPayload below — POST /api/v1/trading/orders'
+      // orderCreateInputSchema already declares orderCond/session (T-1, #1250)
+      // and placePaperOrder() already runs order-rules.ts on this path, so
+      // these are genuinely live-enforced on the paper channel (unlike the
+      // preview-only /api/v1/paper/preview call further down, which still
+      // uses the older paperOrderCreateInputSchema and does not know them).
+      const orderCond = $("#t-cond .on")?.dataset.cond || "cash";
+      const session = $("#t-session .on")?.dataset.session || "regular";
+      const timeInForce = $("#t-tif .on")?.dataset.tif || "rod";
       const getSubmitLabel = () => $("#submit-btn-label") || submit.querySelector("b");
       const priceRequired = orderType !== "market";
       const invalidQty = !Number.isFinite(qty) || qty <= 0;
@@ -3356,7 +3382,7 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
           return;
         }
         const submitLabel1 = getSubmitLabel(); if (submitLabel1) submitLabel1.textContent = "送單中...";
-        const orderPayload = { accountId, symbol: selected.symbol, side, type: orderType, quantity: qty, quantity_unit: unit, price: orderType === "market" ? null : px };
+        const orderPayload = { accountId, symbol: selected.symbol, side, type: orderType, quantity: qty, quantity_unit: unit, price: orderType === "market" ? null : px, orderCond, session, timeInForce };
         const result = await submitUnifiedOrder(orderPayload);
 
         if (result.status === 409) {
@@ -3375,6 +3401,16 @@ window.__IUF_FINAL_V031_INDUSTRY_LABELS__=${jsonScriptValue(INDUSTRY_LABEL_MAP)}
         }
 
         const order = result.body && result.body.data && result.body.data.order;
+        // 台股下單能力矩陣 (T-1) can reject at the Order-row layer (status=
+        // "rejected", reason=<order-rules.ts code>) rather than the submit-
+        // level blocked:true/422 shape handled above — surface that honestly
+        // instead of showing a false "已送出" success message.
+        if (order && order.status === "rejected") {
+          const reasonMessage = orderRuleReasonLabel(order.reason) || "委託未通過（不合法的買法組合）";
+          const blockedLabel = getSubmitLabel(); if (blockedLabel) blockedLabel.textContent = "紙上單未通過";
+          const gate = $(".gate .h .v"); if (gate) gate.textContent = reasonMessage;
+          return;
+        }
         const orderId = order && order.id ? String(order.id) : "";
         const lbl1 = getSubmitLabel(); if (lbl1) lbl1.textContent = orderId ? "紙上單 #" + orderId : "紙上單已送出";
         // Refresh orders/fills/positions without full reload
