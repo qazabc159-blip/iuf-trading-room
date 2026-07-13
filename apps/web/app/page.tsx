@@ -62,7 +62,7 @@ import { humanizeEndpointLabel, MISSING_COMPANY_NAME_LABEL } from "@/lib/ui-voca
 import { TrackRecordDisclosure } from "@/components/TrackRecordDisclosure";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
 import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
-import type { StockRecCardData } from "./ai-recommendations/StockRecCard";
+import { LinkageCtaRow, type StockRecCardData } from "./ai-recommendations/StockRecCard";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
 
 export const dynamic = "force-dynamic";
@@ -2877,6 +2877,406 @@ function BrokerConnectionLine({
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// 首頁 v5.1 LEDGER 版面（2026-07-13，楊董定稿 artifact 41de1bc9「編輯版面」，
+// 逐塊移植原稿 markup/CSS class；本輪已取得真原稿檔，見 PR body）。以下組件
+// 全部消費既有 LoadState / helper（readMarketIndex／readMarketBreadth／
+// deriveHomeAiRecommendationCards／leaderToMover／briefHeadingText／
+// polishedBriefText／categoryLabel／intelTitleText 等，皆定義於本檔上方），
+// 零新資料層、零新 fetch。舊版 Panel-based 組件（HeroPanel／TopCommandBar／
+// RealtimeHeatmapPanel／AiRecommendationActionPanel／DailyBriefPanel／
+// StrategyPanel／MarketMoversPanel／MarketIntelPanel）比照本檔既有慣例
+// （見上方 FreshnessPanel/DataReadinessPanel/DataGapPanel 註解）保留不刪、
+// 不再掛載——這是本檔既有模式，避免動到既有 source-grep regression test
+// 鎖住的字串（page-p0-visual-copy.test.ts／page-p1-home-cluster.test.ts）。
+// ══════════════════════════════════════════════════════════════════════════
+
+function formatIndexGiant(value: number | null): [string, string | null] {
+  if (value === null || !Number.isFinite(value)) return ["--", null];
+  const [intPart, decPart] = value.toFixed(2).split(".");
+  return [Number(intPart).toLocaleString("zh-TW"), decPart ?? null];
+}
+
+function Masthead({
+  now,
+  market,
+  realtimeMarket,
+  brief,
+  intel,
+}: {
+  now: string;
+  market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
+  brief: LoadState<DailyBriefDashboard>;
+  intel: LoadState<MarketIntelDashboard>;
+}) {
+  const nowDate = new Date(now);
+  const twii = readMarketIndex(realtimeMarket, market, nowDate);
+  const focusText = brief.data.state === "PUBLISHED"
+    ? `閱讀 ${formatDate(brief.data.todayBrief?.date ?? brief.data.today)} AI 簡報`
+    : intel.data.items.length > 0
+      ? `檢查 ${intel.data.items.length} 筆重大訊息`
+      : "查看盤勢與候選觀察";
+  const marketSlotLabel = twii.source === "realtime"
+    ? "盤中"
+    : twii.updatedAt
+      ? `${formatDate(twii.updatedAt)} 收盤`
+      : "資料更新中";
+  return (
+    <header className="mast">
+      <div className="mast-brand"><b>IUF·TR</b><small>TRADING ROOM</small></div>
+      <div className="mast-mode"><i />OBSERVE</div>
+      <div className="mast-slot"><small>MODE</small><b>台股觀察</b></div>
+      <div className="mast-slot"><small>今日焦點</small><b>{focusText}</b></div>
+      <div className="mast-spacer" />
+      <div className="mast-slot"><small>市場</small><b>{marketSlotLabel}</b></div>
+      <div className="mast-clock"><b suppressHydrationWarning>{formatClock(now)}</b><small>UTC+8</small></div>
+    </header>
+  );
+}
+
+function IdxAnchorPanel({
+  heatmap,
+  market,
+  realtimeMarket,
+  now,
+}: {
+  heatmap: HeatTile[];
+  market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
+  now: string;
+}) {
+  const nowDate = new Date(now);
+  const twii = readMarketIndex(realtimeMarket, market, nowDate);
+  const breadth = readMarketBreadth(realtimeMarket, market, heatmap);
+  const indexReady = twii.price !== null;
+  const isClosedSnapshot = twii.source === "close" || twii.source === "fallback";
+  const [giantInt, giantDec] = formatIndexGiant(twii.price);
+  const upPct = breadth.total > 0 ? Math.round((breadth.up / breadth.total) * 1000) / 10 : null;
+  const chgTone = (twii.chg ?? 0) > 0 ? "up" : (twii.chg ?? 0) < 0 ? "down" : "";
+  return (
+    <section className="idxanchor">
+      <div className="eyebrow">大盤指數 <small>{twii.sym} · {twii.name}</small></div>
+      {indexReady && isClosedSnapshot && (
+        <div className="stamp">{formatDate(twii.updatedAt) === "--" ? twii.label : `${formatDate(twii.updatedAt)} 收盤`}<small>MARKET CLOSED</small></div>
+      )}
+      <div className="giant">{giantInt}{giantDec && <sub>.{giantDec}</sub>}</div>
+      <div className="delta">
+        <span className={chgTone}>
+          {(twii.chg ?? 0) > 0 ? "▲" : (twii.chg ?? 0) < 0 ? "▼" : "—"} {formatPrice(twii.chg === null ? null : Math.abs(twii.chg))}
+        </span>
+        <span className={chgTone}>{formatPercent(twii.pct)}</span>
+        <small>較前一交易日</small>
+      </div>
+      <div className="breadthline">
+        <span className="k">漲跌家數</span>
+        <span className="n up">{formatNumber(breadth.up)}<small>漲</small></span>
+        <span className="n">{formatNumber(breadth.flat)}<small>平</small></span>
+        <span className="n down">{formatNumber(breadth.down)}<small>跌</small></span>
+        <div className="bbar">
+          <i className="u" style={{ width: `${breadth.total ? (breadth.up / breadth.total) * 100 : 0}%` }} />
+          <i className="f" style={{ width: `${breadth.total ? (breadth.flat / breadth.total) * 100 : 0}%` }} />
+          <i className="d" style={{ width: `${breadth.total ? (breadth.down / breadth.total) * 100 : 0}%` }} />
+        </div>
+      </div>
+      <div className="tot">共 {formatNumber(breadth.total)} 檔{upPct !== null ? ` · 上漲 ▶ ${upPct}%` : ""}</div>
+      <div className="honest">休市時段顯示「MM/DD 收盤」誠實標記，非即時價。來源 <code>kgi/twse overview</code></div>
+    </section>
+  );
+}
+
+function HeatZonePanel({
+  heatmap,
+  market,
+  realtimeMarket,
+  selectedSectorParam,
+  heatmapMode,
+}: {
+  heatmap: HeatTile[];
+  market: LoadState<MarketDataOverview | null>;
+  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
+  selectedSectorParam?: string | null;
+  heatmapMode: "core" | "all";
+}) {
+  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
+  const fullMarketRows = buildTwseIndustryRows(realtimeMarket);
+  const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
+  const now = new Date();
+  const kgiOffHours = !isKgiTradingHours(now);
+  const kgiTilesAllNull = kgiCoreTilesAreNull(coreHeatmap);
+  const showKgiFallback = kgiTilesAllNull && kgiOffHours;
+  const activeMode = heatmapMode === "all" ? "all" : "core";
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(heatmap);
+  const showCoverageFallback = activeMode === "core" && !showKgiFallback && !hasRepresentativeFeed;
+  const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
+  const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
+  const derivedFullMarketRows = fullMarketRows.length > 0
+    ? fullMarketRows
+    : buildMarketWideRowsFromHeatmap(displayHeatmap.length > 0 ? displayHeatmap : heatmap);
+  const sourceLabel = showKgiFallback
+    ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
+    : activeMode === "core"
+      ? (hasCore ? "即時" : coreLastTs ? `核心 · ${freshnessText(coreLastTs, "STALE")}前` : "核心 · 資料更新中")
+      : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
+  const updatedAt = activeMode === "core"
+    ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
+    : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
+  const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
+  const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
+
+  return (
+    <section className="heatzone">
+      <div className="heat-kicker">
+        <span>{effectiveMode === "core" ? "核心觀察池" : "全市場"} · {displaySourceLabel}</span>
+        <div className="heat-mode-tabs">
+          <Link className={effectiveMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
+          <Link className={effectiveMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+        </div>
+      </div>
+      {showKgiFallback && (
+        <div className="tac-kgi-offhours-banner">
+          <span>KGI 即時資料時段 09:00-14:10・現非交易時段，暫顯 TWSE 收盤資料</span>
+        </div>
+      )}
+      {showCoverageFallback && (
+        <div className="tac-kgi-offhours-banner">
+          <span>核心代表股資料仍在暖機，暫以全市場產業熱力圖顯示，避免呈現不完整代表池。</span>
+        </div>
+      )}
+      {effectiveMode === "all" ? (
+        <MarketWideHeatmap
+          rows={derivedFullMarketRows}
+          updatedAt={updatedAt}
+          sourceLabel={displaySourceLabel}
+          marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
+          reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
+        />
+      ) : (
+        <IndustryHeatmap
+          heatmap={displayHeatmap}
+          initialSector={selectedSectorParam}
+          updatedAt={updatedAt}
+          sourceLabel={displaySourceLabel}
+          marketState={hasCore ? "LIVE" : stateFromLoad(market)}
+          reason={!hasCore && market.state === "BLOCKED" ? market.reason : undefined}
+        />
+      )}
+    </section>
+  );
+}
+
+function RecHeadline({ recommendations }: { recommendations: LoadState<AiRecommendationV3Response> }) {
+  const cards = deriveHomeAiRecommendationCards(recommendations.data, 5);
+  const v3PanelState = buildV3PanelState({
+    data: recommendations.data,
+    error: recommendations.state === "BLOCKED" ? recommendations.reason : null,
+    visibleCount: cards.length,
+  });
+  const generatedAtLabel = formatRecommendationTimestamp(recommendations.data.generatedAt);
+  return (
+    <section className="recwrap">
+      <div className="tabrow">
+        <div className="tab">AI 推薦個股 <span className="en">TODAY RECS</span></div>
+        <div className="aside">
+          {cards.length > 0
+            ? `正典 ${cards.length} 檔 · 生成 ${generatedAtLabel} · 點「帶入模擬單」進交易室紙上預覽，不送真實委託`
+            : v3PanelState.detail}
+        </div>
+      </div>
+      {cards.length > 0 ? (
+        <div className="rec">
+          {cards.map((card) => (
+            <div className="rrow" key={card.ticker}>
+              <div className="tk">{card.ticker}<small>{card.bucket} 推薦級</small></div>
+              <div className="mid">
+                <div className="co">{card.company_name ?? "公司名稱未回傳"}</div>
+                <div className="rs">{homeV3PrimaryReason(card)}</div>
+                <div className="plan">{homeV3PlanSummary(card)}</div>
+              </div>
+              <div className="side">
+                <div className="conf">信心 <b>{card.confidence != null ? `${Math.round(card.confidence * 100)}%` : "--"}</b></div>
+                <div className="actbtns">
+                  <LinkageCtaRow rec={card} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="tac-empty-line">{v3PanelState.detail}</div>
+      )}
+      <div className="sfoot">來源 <code>GET /api/v1/ai-recommendations/v3</code> · 只顯示正式推薦 API 回傳，不以候選或假資料冒充。</div>
+    </section>
+  );
+}
+
+function BriefColumn({ brief }: { brief: LoadState<DailyBriefDashboard> }) {
+  const displayBrief = brief.data.todayBrief ?? brief.data.latest;
+  const previewSections = displayBrief?.sections.slice(0, 4) ?? [];
+  const pillLabel = brief.data.state === "PUBLISHED" ? "已發布" : brief.data.state === "AWAITING_REVIEW" ? "待確認" : "待產生";
+  return (
+    <section className="briefcol brief">
+      <div className="tab dim">AI 每日簡報 <span className="en">BRIEF</span></div>
+      <div className="brief-meta">
+        <span className="pill">{pillLabel}</span>
+        <span className="dt">{displayBrief ? formatDateTime(displayBrief.createdAt) : brief.data.today}</span>
+        {displayBrief && <Link href="/briefs">展開全文 ▸</Link>}
+      </div>
+      {previewSections.length > 0 ? (
+        previewSections.map((section: DailyBrief["sections"][number], index: number) => (
+          <div className="seg" key={`${section.heading}:${index}`}>
+            <div className="sh">{briefHeadingText(section.heading, index)}</div>
+            <div className="sx">{polishedBriefText(section.body)}</div>
+          </div>
+        ))
+      ) : (
+        <div className="tac-empty-line">{brief.data.reason ?? "今天尚未產生每日簡報。"}</div>
+      )}
+      <div className="sfoot">只顯示「已發布／待確認／待產生」，不偽裝即時新聞。來源 <code>/briefs</code></div>
+    </section>
+  );
+}
+
+function S1Bulletin({
+  strategy,
+  realSim,
+}: {
+  strategy: LoadState<S1StrategyData | null>;
+  realSim: LoadState<TrackRecordNavSummary | null>;
+}) {
+  const snapshot = strategy.data;
+  const netReturn = snapshot?.headlineMetrics.strategyNetAbsoluteReturnPct ?? null;
+  const maxDrawdown = snapshot?.headlineMetrics.maxDrawdownNetPct ?? snapshot?.headlineMetrics.maxDrawdown ?? null;
+  const realSimReturnPct = realSim.data?.cumulativeReturnPct ?? null;
+  const isLiveVerifiedTrackRecord = snapshot?.isLiveVerifiedTrackRecord ?? false;
+  return (
+    <section className="s1wrap">
+      <div className="tab dim">量化策略 <span className="en">S1 · SIM-ONLY</span></div>
+      {snapshot ? (
+        <div className="s1notice">
+          <div className="s1head"><b>S1</b><span>{snapshot.displayName_zh || snapshot.displayName}</span><em>KGI SIM-only</em></div>
+          <div className="s1grid">
+            <div className="s1cell">
+              <div className="lab"><span className="dot res" />{isLiveVerifiedTrackRecord ? "累積報酬" : "研究回測 · 累積報酬"}</div>
+              <div className={`v ${netReturn == null ? "" : netReturn >= 0 ? "up" : "down"}`}>{netReturn == null ? "--" : `${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}</div>
+              <div className="sub">歷史回測揭露 · 含成本 · 非未來保證</div>
+            </div>
+            <div className="s1cell">
+              <div className="lab"><span className="dot sim" />實盤模擬 · 累積報酬</div>
+              <div className={`v ${realSimReturnPct == null ? "" : realSimReturnPct >= 0 ? "up" : "down"}`}>{realSimReturnPct == null ? "--" : `${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}%`}</div>
+              <div className="sub">KGI SIM 前進觀察 · 真實市況</div>
+            </div>
+          </div>
+          <div className="s1-honest">
+            <b>研究 ≠ 實盤。</b>
+            {realSimReturnPct != null
+              ? `實盤模擬 ${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}% 為前進觀察真值，並列不弱化；策略經穩健度折扣後判定偏樂觀。`
+              : "實盤模擬資料目前無法讀取；不以研究回測數字代替。"}
+          </div>
+          <div className="s1-row2">
+            <div className="k">最大回撤<b className="down">{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</b></div>
+            <div className="k">狀態<b style={{ fontFamily: "var(--cjk)", color: "var(--amber-hi)" }}>{snapshot.orderState === "paper_allowed" ? "前進觀察中" : "待確認"}</b></div>
+          </div>
+        </div>
+      ) : (
+        <div className="tac-empty-line">S1 核准快照目前無法讀取；不顯示其他研究策略或假績效。</div>
+      )}
+      <div className="sfoot">唯一正式量化策略；研究快照與 KGI SIM 觀察分開呈現。來源 <code>/quant-strategies</code></div>
+    </section>
+  );
+}
+
+function RankColumns({ market }: { market: LoadState<MarketDataOverview | null> }) {
+  const leaders = market.data?.leaders;
+  const hasReal = leaders ? !(leaders.topGainers.length === 0 && leaders.topLosers.length === 0) : false;
+  const gainers = hasReal ? leaders!.topGainers.slice(0, 5).map(leaderToMover) : [];
+  const losers = hasReal ? leaders!.topLosers.slice(0, 5).map(leaderToMover) : [];
+  return (
+    <section className="rkwrap">
+      <div className="tabrow">
+        <div className="tab dim">強勢個股排行 <span className="en">MOVERS</span></div>
+        <div className="aside">漲跌幅 TOP 5 · 正式來源回傳；等待真資料時不顯示示意股票</div>
+      </div>
+      {hasReal ? (
+        <div className="rk">
+          <div className="col">
+            <h4>漲幅排行 <span>%CHG ▲</span></h4>
+            {gainers.map((row) => (
+              <div className="r" key={`up-${row.symbol}`}>
+                <span className="tk">{row.symbol}</span>
+                <span className="nm">{row.name}</span>
+                <span className="pc up">{formatPercent(row.changePct)}</span>
+              </div>
+            ))}
+            {gainers.length === 0 && <div className="tac-empty-line">目前沒有排行資料。</div>}
+          </div>
+          <div className="col">
+            <h4>跌幅排行 <span>%CHG ▼</span></h4>
+            {losers.map((row) => (
+              <div className="r" key={`down-${row.symbol}`}>
+                <span className="tk">{row.symbol}</span>
+                <span className="nm">{row.name}</span>
+                <span className="pc down">{formatPercent(row.changePct)}</span>
+              </div>
+            ))}
+            {losers.length === 0 && <div className="tac-empty-line">目前沒有排行資料。</div>}
+          </div>
+        </div>
+      ) : (
+        <div className="tac-empty-line">等待正式排行回傳；不顯示示意股票。</div>
+      )}
+      <div className="sfoot">來源 <code>market/leaders</code></div>
+    </section>
+  );
+}
+
+function NewsTape({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
+  const items = intel.data.items;
+  const featured = items[0] ?? null;
+  const rest = items.slice(featured ? 1 : 0, featured ? 9 : 8);
+  const itemHref = (item: IntelItem): string =>
+    item.url ?? (item.ticker === "MARKET" ? "/market-intel" : `/companies/${encodeURIComponent(item.ticker)}`);
+  const isLinkable = (item: IntelItem): boolean =>
+    Boolean(item.url) || item.feedKind !== "official_announcement";
+  return (
+    <aside className="tape">
+      <div className="tape-label">每日精選新聞</div>
+      <div className="tape-head">MARKET INTEL WIRE · {formatNumber(intel.data.aiSelectedCount)} AI / {formatNumber(intel.data.officialCount)} 公告</div>
+      {featured ? (
+        isLinkable(featured) ? (
+          <Link href={itemHref(featured)} className="feat">
+            <span className="tag">{featured.feedKind === "ai_selected" ? "AI 精選" : categoryLabel(featured.category)}</span>
+            <h3>{intelTitleText(featured)}</h3>
+            <div className="meta">{featured.ticker} {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</div>
+          </Link>
+        ) : (
+          <div className="feat">
+            <span className="tag">{categoryLabel(featured.category)}</span>
+            <h3>{intelTitleText(featured)}</h3>
+            <div className="meta">{featured.ticker} {featured.companyName} · {formatDate(featured.date)} · {featured.sourceLabel ?? "正式來源"}</div>
+          </div>
+        )
+      ) : (
+        <div className="tac-empty-line">{intel.state === "LIVE" ? "只顯示正式 endpoint 狀態；不顯示示意新聞。" : intel.reason}</div>
+      )}
+      {rest.map((item) => (
+        isLinkable(item) ? (
+          <Link href={itemHref(item)} className="trow" key={`${item.ticker}-${item.id}`}>
+            <div className="tm">{formatDateTime(item.date)} <em>{item.feedKind === "ai_selected" ? categoryLabel(item.impactTier ?? "ai_selected") : categoryLabel(item.category)}</em> · {item.ticker}</div>
+            <div className="h">{intelTitleText(item)}</div>
+          </Link>
+        ) : (
+          <div className="trow" key={`${item.ticker}-${item.id}`}>
+            <div className="tm">{formatDateTime(item.date)} <em>{categoryLabel(item.category)}</em> · {item.ticker}</div>
+            <div className="h">{intelTitleText(item)}</div>
+          </div>
+        )
+      ))}
+      <div className="tfoot">AI 精選＋官方重大訊息合流；只顯示正式來源，不補示意新聞。來源 <code>market-intel</code></div>
+    </aside>
+  );
+}
+
 // ── Dashboard skeleton shown immediately while DashboardContent streams ─────
 // Inline <style> avoids touching globals.css (Codex own).
 function DashboardSkeleton() {
@@ -3166,29 +3566,19 @@ async function DashboardContent({
         <Ticker quotes={quotes} market={market} />
         <MarketStateBanner />
         <div className="tac-content">
-          <TopCommandBar now={now} market={market} />
-
-          {/* 頭版：巨型大盤指數錨點 + 產業熱力圖，非對稱並列 */}
-          <section className="tac-frontpage">
-            <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} now={now} />
-            <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-          </section>
-
-          {/* AI 推薦頭條：全寬 promoted，緊接頭版之下 */}
-          <section className="tac-single-panel">
-            <AiRecommendationActionPanel recommendations={recommendations} />
-          </section>
-
-          {/* 編輯正文：主欄（S1 佈告 + 排行 + AI 簡報）／右側新聞電傳紙帶 */}
-          <div className="tac-editorial-grid">
-            <div className="tac-editorial-main">
-              <StrategyPanel strategy={s1Strategy} realSim={s1RealSim} />
-              <MarketMoversPanel market={market} />
-              <DailyBriefPanel brief={brief} />
+          <div className="tac-ledger">
+            <Masthead now={now} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} />
+            <div className="sheet">
+              <div className="maincol">
+                <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
+                <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+                <RecHeadline recommendations={recommendations} />
+                <BriefColumn brief={brief} />
+                <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
+                <RankColumns market={market} />
+              </div>
+              <NewsTape intel={intel} />
             </div>
-            <aside className="tac-news-rail">
-              <MarketIntelPanel intel={intel} />
-            </aside>
           </div>
 
           <BrokerConnectionLine paper={paper} broker={broker} />

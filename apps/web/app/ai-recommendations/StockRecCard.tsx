@@ -176,7 +176,7 @@ function AddWatchlistButton({ symbol, name }: { symbol: string; name?: string | 
   );
 }
 
-function LinkageCtaRow({ rec }: { rec: StockRecCardData }) {
+export function LinkageCtaRow({ rec }: { rec: StockRecCardData }) {
   const ticker = safeCardTicker(rec.ticker);
   const prefillHref = buildV3PrefillHref(rec);
   if (!ticker) {

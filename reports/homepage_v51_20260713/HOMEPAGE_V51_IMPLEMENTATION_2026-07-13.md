@@ -1,5 +1,85 @@
 # 首頁 v5.1 LEDGER 揭示板改版 — 實作報告（2026-07-13, Jim）
 
+## ⭐ ROUND 2 更新（同日晚間）— 已取得真 artifact 原稿，逐塊移植
+
+Round 1（下方原始報告）誠實揭露當時工具集沒有 WebFetch，只能依文字規格近似重建。
+Elva 本輪把真 artifact 原稿（`homepage_v51_artifact_source.html`，862 行完整桌面
+1280 + 手機 390 markup/CSS）存檔提供，楊董同時下達「跟原稿一模一樣」的像素級標準。
+本節記錄 Round 2 逐塊移植的落地情形，取代 Round 1「近似版」的定性。
+
+### 對齊程度（逐塊自評）
+| 區塊 | 對齊程度 | 說明 |
+|---|---|---|
+| masthead 五欄 | 高 | brand/mode/今日焦點/spacer/市場+clock 五欄結構、字級、字距逐值搬（12.5px/9px/11px/16px…），手機版依原稿簡化（隱藏 mode/slot，只留 brand+clock，比原稿再收斂一點，避免手機窄版擁擠） |
+| 巨型指數錨點 | 高 | `.giant` 82px/手機54px、`.stamp` 收盤章旋轉徽章、`.breadthline`+`.bbar` 三色比例條、CSS 變數（`--lg-amber` #c8943f／`--lg-up` #e63946／`--lg-down` #2ecc71 等）逐值照搬 |
+| 熱力圖 | **中（唯一結構性偏離，已揭露）** | `industry-heatmap.tsx` 內部分組/治理/treemap 排版邏輯楊董 7/13 鎖定不動，未改成原稿 `repeat(8,1fr)` 均分網格；只重新著色 toolbar/chips/footer 視覺語彙貼近原稿，磚格本身沿用真產品的 treemap 面積演算法（比原稿寫死的 10 階固定色階更真實，覆寫掉等於砍真資料維度）。磚格文字互蓋是既有 prod 缺陷（已用相同欄寬對 prod 現況截圖佐證非本輪引入），維持不修 |
+| AI 推薦頭條 rrow | 高 | tk/mid/side 三欄、`bucket 推薦級`／進場計畫／信心分數、看公司／加觀察／帶入模擬單三鍵（直接重用 `/ai-recommendations` 頁既有 `LinkageCtaRow`，非重造） |
+| AI 簡報純排印 | 高 | `.seg`/`.sh`/`.sx` 段落結構、pill 已發布徽章、展開全文連結 |
+| S1 佈告 | 高（少一項） | `.s1notice`/`.s1grid` 研究 vs 實盤並列、dot 顏色語彙、s1-honest 免責宣告；**缺「觀察起日」**——`TrackRecordNavSummary` 沒有回傳起始日期欄位，寧可誠實省略也不猜測編造 |
+| 排行雙欄 | 中 | 漲幅/跌幅兩欄結構、字級、色彩完全比照；**只留兩欄**（原本產品有第三欄「成交活躍」，原稿只有兩欄，故捨棄第三欄以貼合原稿版面，非資料遺失） |
+| 新聞電傳紙帶 | 高 | 齒孔 `radial-gradient` 紋理、直書 `.tape-label`、feat 頭條卡+tag、trow 逐行 dashed 分隔全部搬；驗證過與 header-dock 通知圖示無真實重疊（fullPage 截圖偽影，`getBoundingClientRect` 交叉驗證證實） |
+| 版面比例（頭版 454px/1fr、頭條帶 1fr/348px、摺下帶 392px/1fr） | **低（已揭露的唯一非數字類偏離）** | 真站點多 252px 固定側欄，1280px 下 `.maincol` 只剩 ~728px 可用寬度，若按原稿 454px/1fr 並列會把熱力圖壓到 <370px（比 Round 1 已踩過的 <420px 截斷坑更窄）。改為：巨型指數錨點與熱力圖各自整行（拿到全部 ~728px 寬度，避免新增比既有更嚴重的截斷）；AI 推薦/簡報維持並列；S1/排行維持並列 |
+| 摺線 760 + device-frame 外殼 | **不還原（判斷性排除，非遺漏）** | 原稿的 `.stage-head`/`.frames`/`.device` 邊框陰影/`.scroll` 固定760px高度內捲/摺線標註是給人審稿用的「設計稿展示外殼」語彙，不是真網站會出現的 UI（真網站是可自由捲動的長頁，不會有一條寫著「↑一屏摺線」的裝飾線穿過內容）。CRT scanline 效果本身**已經是既有真產品的 `.tac-scanline`**（沿用不重造）。此判斷未經 Elva/楊董事先確認，明確列出待裁決 |
+
+### 修改檔案（Round 2）
+- `apps/web/app/page.tsx` — 新增 `Masthead`／`IdxAnchorPanel`／`HeatZonePanel`／
+  `RecHeadline`／`BriefColumn`／`S1Bulletin`／`RankColumns`／`NewsTape` 8 個組件，
+  render tree 全面改用這組新結構；`DashboardContent` 回傳區塊改寫。舊版
+  Panel-based 組件（`HeroPanel`／`TopCommandBar`／`RealtimeHeatmapPanel`／
+  `AiRecommendationActionPanel`／`DailyBriefPanel`／`StrategyPanel`／
+  `MarketMoversPanel`／`MarketIntelPanel`）比照本檔既有慣例（`FreshnessPanel`/
+  `DataReadinessPanel`/`DataGapPanel` 已有先例）**保留不刪、不再掛載**——避免
+  牽動 `page-p0-visual-copy.test.ts`/`page-p1-home-cluster.test.ts` 既有
+  source-grep 回歸鎖字串。零新 fetch、零新資料層。
+- `apps/web/app/ai-recommendations/StockRecCard.tsx` — `LinkageCtaRow` 加
+  `export`（原本是檔案內部函式），供首頁直接重用「看公司／加觀察／帶入模擬單」
+  三鍵邏輯，不重造第二套 watchlist 呼叫。
+- `apps/web/app/globals.css` — 移除 Round 1 遺留的 `.tac-frontpage`／
+  `.tac-editorial-grid`／`.tac-editorial-main`／`.tac-news-rail`／
+  `.tac-headline-panel`／`.tac-bulletin-panel`（已不再被 JSX 引用，同分支內
+  同日尚未上線的 WIP，直接清乾淨不留死碼）；`.tac-index-card`/`.tac-index-main
+  strong` 兩處 Round 1 調整字級還原（元件已不掛載）；新增 `.tac-ledger` 為
+  scope 根的完整新 CSS 區塊（masthead/idxanchor/heatzone/recwrap/briefcol/
+  s1wrap/rkwrap/tape 全套 class，含 `--lg-*` 前綴的原稿色票變數）+ 480px
+  mobile media query（用 `grid-template-areas` 重排區塊順序貼合原稿手機版視覺
+  動線，不用兩套 DOM）。
+
+### 驗證（Round 2）
+- `pnpm typecheck`：15/15 綠
+- `pnpm --filter @iuf-trading-room/web test`：681/681 綠（零新增/修改測試，全部
+  既有測試原樣通過，含首頁 source-grep 回歸鎖）
+- `pnpm run build:web`：全綠，31 routes 含 `/`（中途踩到並修正一次 CSS 註解裡的
+  字面 `*/` 提前結束 comment 導致 cssnano 解析失敗——`--tac-*/--tw-*` 這種寫法
+  在 CSS block comment 裡會被解析成註解結尾，已改寫措辭，這是本檔既有 memory
+  記錄過的同款陷阱）
+- 真瀏覽器驗證（本機 `next start` 打 `https://api.eycvector.com` + 真 owner
+  session，railway CLI 取得 `SEED_OWNER_*`）：`mobile-390.spec.ts` 13/13 PASS
+  （含首頁 `/` 390px 無水平溢出）；ad-hoc Playwright 桌面 1280×1400 +
+  手機 390×1400 全頁截圖，`document.documentElement.scrollWidth` 兩斷點皆
+  `CLEAN`、零 console error
+- 熱力圖磚格文字互蓋：本輪未改動 `industry-heatmap.tsx`，維持 Round 1 已佐證
+  的「既有 prod 缺陷，非本輪引入」結論不變
+
+### 截圖（`reports/homepage_v51_20260713/round2/`）
+- `desktop_1280_full.png` — 桌面 1280 全頁
+- `desktop_1280_top.png` / `desktop_1280_heatzone.png` / `desktop_1280_s1.png` /
+  `desktop_1280_tape.png` — 桌面局部細節裁圖
+- `mobile_390_full.png` — 手機 390 全頁
+- `mobile_390_mast.png` / `mobile_390_rank.png` — 手機局部細節裁圖
+
+### 待 Elva/楊董裁決
+1. 熱力圖是否接受「治理邏輯鎖定 + 視覺語彙貼近」的中間路線，或要求進一步犧牲
+   真資料維度換取原稿的均分網格外觀（不建議，但列出讓楊董知道有這個選項）。
+2. 摺線/device-frame 外殼判斷為「設計稿專用不還原」是否正確——如果楊董認為
+   摺線本身有實際產品意義（例如標示「首屏可見範圍」的操作提示），需要重新
+   設計成真正的 UI 元件而非原樣搬運裝飾線。
+3. 版面比例從原稿的不對稱 px 改成等寬雙欄（見上表），是否可接受，或要求另尋
+   方法逼近原稿比例（例如縮小側欄、或熱力圖另開全螢幕模式）。
+
+---
+
+## Round 1（原始報告，2026-07-13 稍早）
+
 ## 範圍與定位
 楊董動員令：「首頁還是舊版的，你給我全部搞好弄好」——把線上舊 A 案（#1215）換成 v5.1
 定稿方向。派工訊息指定設計權威來源為 artifact

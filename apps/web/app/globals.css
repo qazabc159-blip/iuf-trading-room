@@ -12312,44 +12312,6 @@ body:has(.tactical-dashboard) .app-sidebar {
   grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
 }
 
-/* v5.1 LEDGER 首頁改版（2026-07-13）：非對稱頭版（巨型指數錨點 + 熱力圖）＋
-   編輯正文兩欄（主欄 / 右側新聞電傳紙帶）。這幾個 class 僅供首頁使用
-   （.tactical-dashboard 只掛載於 app/page.tsx），不影響其他頁面。 */
-.tac-frontpage {
-  display: grid;
-  /* v5.1 修正（1280px 真瀏覽器驗證後）：原 1.25fr/1fr 非對稱比例會把熱力圖
-     擠到 <420px，導致 40 檔磚格內文字截斷溢出（違反「文字絕不可超出框框」
-     鐵律，見 memory）。改回等寬（跟舊 A 案 .tac-two-grid 已驗證安全的比例
-     一致）；非對稱張力改用下面的 align-items:start（兩欄自然高度不同，
-     不強制等高），不犧牲熱力圖可讀性。 */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-  margin-top: 16px;
-}
-
-.tac-editorial-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
-  gap: 16px;
-  align-items: start;
-  margin-top: 16px;
-}
-
-.tac-editorial-main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.tac-news-rail {
-  position: sticky;
-  top: 16px;
-  min-width: 0;
-  align-self: start;
-}
-
 .tac-single-grid {
   display: grid;
   gap: 16px;
@@ -12381,6 +12343,301 @@ body:has(.tactical-dashboard) .app-sidebar {
   margin-left: auto;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   首頁 v5.1 LEDGER 版面（2026-07-13）— 逐塊移植楊董核定 artifact 41de1bc9
+   「編輯版面」真原稿 markup/CSS class（masthead 五欄／巨型指數錨點／熱力
+   圖頭版／AI 推薦頭條 rrow／簡報純排印 seg／S1 佈告 outline／排行雙欄／
+   右側新聞電傳紙帶）。scope 全部掛在 .tac-ledger 之下（只在首頁掛載），
+   token 用 --lg 開頭前綴，避免與既有 --tac 系列、--tw 系列全站色階衝突。
+   ══════════════════════════════════════════════════════════════════════ */
+.tac-ledger {
+  --lg-black: #080b10;
+  --lg-panel: #0b0f16;
+  --lg-line: #1b2432;
+  --lg-line2: #26324a;
+  --lg-amber: #c8943f;
+  --lg-amber-hi: #e2b85c;
+  --lg-amber-dim: #6f5c37;
+  --lg-amber-ink: #0a0d12;
+  --lg-ink: #aab4c2;
+  --lg-ink-dim: #5d6675;
+  --lg-ink-faint: #3f4a5a;
+  --lg-up: #e63946;
+  --lg-down: #2ecc71;
+  margin-top: 16px;
+  color: var(--lg-ink);
+  font-family: var(--mono);
+  border: 1px solid var(--lg-line2);
+  background: var(--lg-black);
+}
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+.tac-ledger .mast {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lg-line2);
+  background: #0a0f17;
+  height: 44px;
+}
+.tac-ledger .mast-brand { padding: 8px 14px; border-right: 1px solid var(--lg-line); display: flex; flex-direction: column; gap: 1px; justify-content: center; }
+.tac-ledger .mast-brand b { color: var(--lg-amber-hi); font-size: 12.5px; letter-spacing: .22em; font-weight: 700; }
+.tac-ledger .mast-brand small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .28em; }
+.tac-ledger .mast-mode { display: flex; align-items: center; gap: 7px; padding: 0 14px; border-right: 1px solid var(--lg-line); color: var(--lg-amber); font-size: 11px; letter-spacing: .16em; white-space: nowrap; }
+.tac-ledger .mast-mode i { width: 6px; height: 6px; background: var(--lg-amber); border-radius: 50%; box-shadow: 0 0 7px var(--lg-amber); }
+.tac-ledger .mast-slot { padding: 0 14px; border-right: 1px solid var(--lg-line); display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.tac-ledger .mast-slot small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .2em; }
+.tac-ledger .mast-slot b { color: var(--lg-ink); font-size: 12px; font-weight: 500; font-family: var(--sans-tc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tac-ledger .mast-spacer { flex: 1; }
+.tac-ledger .mast-clock { padding: 0 16px; display: flex; flex-direction: column; justify-content: center; text-align: right; gap: 2px; }
+.tac-ledger .mast-clock b { color: var(--lg-amber-hi); font-size: 16px; letter-spacing: .06em; font-weight: 700; }
+.tac-ledger .mast-clock small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .2em; }
+
+/* ── shared vocab: tab / up / down / sfoot ───────────────────────────── */
+.tac-ledger .tab {
+  display: inline-flex; align-items: center; gap: 7px; height: 21px;
+  background: var(--lg-amber); color: var(--lg-amber-ink);
+  font-family: var(--sans-tc); font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+  padding: 0 16px 0 10px;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 100%, 0 100%);
+  white-space: nowrap; max-width: 100%; flex: none;
+}
+.tac-ledger .tab .en { font-family: var(--mono); font-size: 8px; letter-spacing: .18em; color: rgba(10,13,18,.6); font-weight: 700; }
+.tac-ledger .tab.dim { background: var(--lg-amber-dim); }
+.tac-ledger .tabrow { display: flex; align-items: flex-end; gap: 10px; min-width: 0; flex-wrap: wrap; padding: 10px 14px 0; }
+.tac-ledger .tabrow .aside { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .05em; padding-bottom: 4px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tac-ledger .up { color: var(--lg-up); }
+.tac-ledger .down { color: var(--lg-down); }
+.tac-ledger .sfoot {
+  font-family: var(--sans-tc); color: var(--lg-ink-faint); font-size: 9.5px; letter-spacing: .03em;
+  border-top: 1px dashed var(--lg-line2); margin: 8px 14px 0; padding: 6px 0 12px; line-height: 1.4;
+}
+.tac-ledger .sfoot code { font-family: var(--mono); color: var(--lg-amber-dim); }
+.tac-ledger .tac-empty-line { padding: 10px 14px 12px; color: var(--lg-ink-dim); font-family: var(--sans-tc); font-size: 11.5px; }
+
+/* ── sheet: 主欄 + 右側電傳紙帶 ───────────────────────────────────── */
+.tac-ledger .sheet { display: grid; grid-template-columns: minmax(0, 1fr) 236px; }
+.tac-ledger .maincol {
+  border-right: 1px solid var(--lg-line2);
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "hero hero"
+    "heat heat"
+    "rec  brief"
+    "s1   rank";
+}
+/* 與原稿版面不同處（本輪唯一結構性偏離，PR body 已揭露）：原稿 heroband
+   把巨型指數錨點跟熱力圖並列（454px/1fr）。真站點多了 252px 固定側欄，
+   1280px 下 .maincol 實際可用寬度只剩 ~728px，並列會把熱力圖壓到
+   <370px（比上一輪已踩過的 <420px 截斷坑還窄，且熱力圖磚格文字互蓋是
+   楊董 7/13 鎖定不修的既有 prod 缺陷，範圍內不能讓它更嚴重）。改成上下
+   兩個整行（巨型指數錨點整行 → 熱力圖整行），讓熱力圖拿到全部 ~728px
+   可用寬度，跟現行已上線 A 案給熱力圖的寬度同量級，不引入新的窄欄截斷
+   風險。頭條帶（AI 推薦/簡報）與摺下帶（S1/排行）維持原稿的並列結構。 */
+.tac-ledger .idxanchor { grid-area: hero; }
+.tac-ledger .heatzone { grid-area: heat; }
+.tac-ledger .recwrap { grid-area: rec; }
+.tac-ledger .briefcol { grid-area: brief; }
+.tac-ledger .s1wrap { grid-area: s1; }
+.tac-ledger .rkwrap { grid-area: rank; }
+
+/* ── 大盤指數：頭版巨型錨點 ───────────────────────────────────────── */
+.tac-ledger .idxanchor { padding: 20px 24px 16px; position: relative; border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .idxanchor .eyebrow { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-amber); letter-spacing: .3em; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tac-ledger .idxanchor .eyebrow small { font-family: var(--mono); color: var(--lg-ink-faint); letter-spacing: .14em; font-size: 9px; }
+.tac-ledger .idxanchor .giant {
+  font-size: 82px; font-weight: 700; line-height: .96; color: #cdd6e2;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 14px; white-space: nowrap;
+}
+.tac-ledger .idxanchor .giant sub { font-size: 32px; vertical-align: baseline; color: var(--lg-ink); }
+.tac-ledger .idxanchor .delta { display: flex; gap: 20px; align-items: baseline; margin-top: 10px; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .idxanchor .delta small { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); font-weight: 400; }
+.tac-ledger .stamp {
+  position: absolute; top: 18px; right: 18px; transform: rotate(-5deg);
+  border: 2px solid var(--lg-amber); color: var(--lg-amber);
+  font-family: var(--sans-tc); font-size: 11px; font-weight: 700; letter-spacing: .24em;
+  padding: 4px 8px 4px 12px; opacity: .92; white-space: nowrap;
+  box-shadow: inset 0 0 8px rgba(200,148,63,.12);
+}
+.tac-ledger .stamp small { display: block; font-family: var(--mono); font-size: 7.5px; letter-spacing: .28em; text-align: center; opacity: .75; margin-top: 1px; }
+.tac-ledger .breadthline { display: flex; align-items: center; gap: 14px; margin-top: 18px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .breadthline .k { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); letter-spacing: .1em; }
+.tac-ledger .breadthline .n { font-size: 17px; font-weight: 700; white-space: nowrap; color: var(--lg-ink); }
+.tac-ledger .breadthline .n small { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); font-weight: 400; margin-left: 3px; }
+.tac-ledger .bbar { flex: 1 1 100%; display: flex; height: 8px; border: 1px solid var(--lg-line2); margin-top: 2px; }
+.tac-ledger .bbar i { display: block; height: 100%; }
+.tac-ledger .bbar .u { background: var(--lg-up); }
+.tac-ledger .bbar .f { background: #3a4456; }
+.tac-ledger .bbar .d { background: var(--lg-down); }
+.tac-ledger .idxanchor .tot { margin-top: 7px; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); }
+.tac-ledger .idxanchor .honest { margin-top: 12px; font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); line-height: 1.45; }
+.tac-ledger .idxanchor .honest code { font-family: var(--mono); color: var(--lg-amber-dim); }
+
+/* ── 熱力圖頭版（industry-heatmap.tsx 內部分組/treemap/tile 邏輯楊董 7/13
+   鎖定不動，這裡只重新設色/排版讓視覺語彙貼近原稿 .heat-* 系列） ─────── */
+.tac-ledger .heatzone { border-bottom: 1px solid var(--lg-line2); padding: 10px 14px 12px; min-width: 0; }
+.tac-ledger .heat-kicker {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); letter-spacing: .04em;
+  padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--lg-line);
+}
+.tac-ledger .heat-mode-tabs { display: flex; gap: 6px; }
+.tac-ledger .heat-mode-tabs a {
+  font-family: var(--sans-tc); font-size: 9px; letter-spacing: .04em; text-decoration: none;
+  color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 8px; background: #0a0e15;
+}
+.tac-ledger .heat-mode-tabs a.is-active { background: var(--lg-amber); border-color: var(--lg-amber); color: var(--lg-amber-ink); font-weight: 700; }
+.tac-ledger .heatzone .tac-heat-toolbar { border-bottom-color: var(--lg-line); }
+.tac-ledger .heatzone .tac-heat-kicker { color: var(--lg-ink-faint); }
+.tac-ledger .heatzone .tac-heat-stats { color: var(--lg-ink-dim); }
+.tac-ledger .heatzone .tac-heat-stats b { color: var(--lg-ink); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button {
+  font-family: var(--sans-tc); background: #0a0e15; border: 1px solid var(--lg-line2); color: var(--lg-ink-dim);
+}
+.tac-ledger .heatzone .tac-heat-sector-tabs button b { font-weight: 700; color: var(--lg-ink); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active { background: var(--lg-amber); border-color: var(--lg-amber); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active b,
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active span { color: var(--lg-amber-ink); }
+.tac-ledger .heatzone .tac-heatmap { min-height: 260px; }
+/* 磚格底色刻意不覆寫：真元件用 --heat 變數依實際漲跌幅算漸層強度（見
+   industry-heatmap.tsx HeatmapTile），比原稿固定 10 階色階更真實，覆寫
+   成原稿的死色階等於砍掉一個真資料維度——只調邊框/圓角貼近原稿的「磚」
+   語彙，色彩強度邏輯完全不動。 */
+.tac-ledger .heatzone .tac-heat-tile { border-radius: 1px; border-width: 1px; }
+.tac-ledger .heatzone .tac-heat-footer { color: var(--lg-ink-faint); border-top-color: var(--lg-line); }
+
+/* ── AI 推薦頭條：rrow tk/mid/side 三欄 ──────────────────────────────── */
+.tac-ledger .recwrap { border-bottom: 1px solid var(--lg-line2); border-right: 1px solid var(--lg-line); padding-bottom: 6px; min-width: 0; }
+.tac-ledger .rec { padding: 5px 14px 0; }
+.tac-ledger .rrow {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0 12px;
+  border-bottom: 1px solid var(--lg-line); padding: 8px 0 9px; align-items: start;
+}
+.tac-ledger .rrow:last-of-type { border-bottom: none; }
+.tac-ledger .rrow .tk { font-size: 17px; font-weight: 700; color: var(--lg-amber-hi); letter-spacing: .03em; line-height: 1.1; }
+.tac-ledger .rrow .tk small { display: block; font-size: 8.5px; color: var(--lg-ink-dim); letter-spacing: .08em; margin-top: 2px; }
+.tac-ledger .rrow .mid { min-width: 0; }
+.tac-ledger .rrow .mid .co { font-family: var(--sans-tc); font-size: 12.5px; color: var(--lg-ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rrow .mid .rs { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.35; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .rrow .mid .plan { font-size: 9.5px; color: var(--lg-amber-dim); margin-top: 4px; letter-spacing: .02em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rrow .side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+.tac-ledger .rrow .conf { font-size: 9px; color: var(--lg-ink-dim); font-family: var(--sans-tc); letter-spacing: .04em; text-align: right; white-space: nowrap; }
+.tac-ledger .rrow .conf b { color: var(--lg-up); font-size: 13px; font-family: var(--mono); font-weight: 700; }
+.tac-ledger .rrow .actbtns { display: flex; }
+.tac-ledger .rrow .actbtns ._src-cta-row { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.tac-ledger .rrow .actbtns ._src-cta-btn {
+  font-family: var(--sans-tc); font-size: 9px; text-decoration: none; cursor: pointer;
+  border: 1px solid var(--lg-line2); color: var(--lg-ink-dim); padding: 3px 5px; white-space: nowrap;
+  background: #0a0e15;
+}
+.tac-ledger .rrow .actbtns a._src-cta-btn:last-of-type {
+  border-color: var(--lg-amber); color: var(--lg-amber-hi); background: rgba(200,148,63,.09); font-weight: 600;
+}
+.tac-ledger .rrow .actbtns ._src-cta-unavailable { font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); }
+
+/* ── AI 簡報：純排印文字欄 ───────────────────────────────────────────── */
+.tac-ledger .briefcol { border-bottom: 1px solid var(--lg-line2); padding: 0 14px 6px; min-width: 0; }
+.tac-ledger .brief-meta { display: flex; gap: 8px; align-items: center; margin: 8px 0 6px; min-width: 0; flex-wrap: wrap; }
+.tac-ledger .pill { font-family: var(--sans-tc); font-size: 9.5px; letter-spacing: .05em; padding: 2px 7px; border: 1px solid var(--lg-amber); color: var(--lg-amber-hi); white-space: nowrap; flex: none; }
+.tac-ledger .brief-meta .dt { font-family: var(--mono); font-size: 10px; color: var(--lg-ink-dim); letter-spacing: .06em; white-space: nowrap; }
+.tac-ledger .brief-meta a { margin-left: auto; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber-dim); text-decoration: none; border-bottom: 1px dashed var(--lg-amber-dim); white-space: nowrap; flex: none; }
+.tac-ledger .seg { padding: 6px 0 7px; border-bottom: 1px solid var(--lg-line); }
+.tac-ledger .seg:last-of-type { border-bottom: none; }
+.tac-ledger .seg .sh { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber); font-weight: 700; letter-spacing: .14em; margin-bottom: 2px; }
+.tac-ledger .seg .sx { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); line-height: 1.55; overflow-wrap: anywhere; }
+
+/* ── S1 佈告 + 排行（footband） ───────────────────────────────────── */
+.tac-ledger .s1wrap { padding: 14px 14px 16px; border-right: 1px solid var(--lg-line); min-width: 0; }
+.tac-ledger .s1notice { border: 1px solid var(--lg-amber-dim); outline: 1px solid var(--lg-line2); outline-offset: 3px; padding: 10px 12px; margin-top: 10px; }
+.tac-ledger .s1head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+.tac-ledger .s1head b { font-size: 15px; color: var(--lg-amber-hi); letter-spacing: .06em; }
+.tac-ledger .s1head span { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); }
+.tac-ledger .s1head em { margin-left: auto; font-style: normal; font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 6px; white-space: nowrap; }
+.tac-ledger .s1grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--lg-line); border-bottom: 1px solid var(--lg-line); }
+.tac-ledger .s1cell { padding: 8px 10px 9px; min-width: 0; }
+.tac-ledger .s1cell + .s1cell { border-left: 1px solid var(--lg-line); }
+.tac-ledger .s1cell .lab { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .04em; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+.tac-ledger .s1cell .lab .dot { width: 6px; height: 6px; flex: none; display: inline-block; }
+.tac-ledger .s1cell .lab .dot.res { background: var(--lg-amber-dim); }
+.tac-ledger .s1cell .lab .dot.sim { background: var(--lg-down); }
+.tac-ledger .s1cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: var(--lg-ink); }
+.tac-ledger .s1cell .sub { font-family: var(--sans-tc); font-size: 8.5px; color: var(--lg-ink-faint); margin-top: 4px; line-height: 1.35; }
+.tac-ledger .s1-honest { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.5; margin-top: 8px; border-left: 2px solid var(--lg-amber-dim); padding: 2px 0 2px 9px; }
+.tac-ledger .s1-honest b { color: var(--lg-amber); }
+.tac-ledger .s1-row2 { display: flex; gap: 16px; margin-top: 8px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .s1-row2 .k { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); }
+.tac-ledger .s1-row2 .k b { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--lg-ink); margin-top: 2px; font-weight: 700; white-space: nowrap; }
+
+.tac-ledger .rkwrap { padding: 14px 14px 16px; min-width: 0; }
+.tac-ledger .rk { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-top: 10px; }
+.tac-ledger .rk .col { min-width: 0; }
+.tac-ledger .rk .col h4 { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber); letter-spacing: .1em; margin: 0 0 5px; font-weight: 700; display: flex; justify-content: space-between; gap: 6px; }
+.tac-ledger .rk .col h4 span { color: var(--lg-ink-faint); font-family: var(--mono); font-size: 9px; font-weight: 400; white-space: nowrap; }
+.tac-ledger .rk .r { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--lg-line); font-variant-numeric: tabular-nums; }
+.tac-ledger .rk .r:last-child { border-bottom: none; }
+.tac-ledger .rk .r .tk { font-size: 11px; color: var(--lg-amber-hi); font-weight: 600; }
+.tac-ledger .rk .r .nm { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rk .r .pc { font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+/* ── 新聞：右側電傳紙帶（全高） ───────────────────────────────────── */
+.tac-ledger .tape { position: relative; background: #090d14; padding: 12px 12px 16px 20px; min-width: 0; }
+.tac-ledger .tape::before {
+  content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 8px;
+  background: radial-gradient(circle at 4px 7px, var(--lg-black) 2px, transparent 2.4px);
+  background-size: 8px 16px; background-repeat: repeat-y;
+}
+.tac-ledger .tape-label {
+  font-family: var(--sans-tc); writing-mode: vertical-rl; letter-spacing: .34em;
+  font-size: 10.5px; color: var(--lg-amber); font-weight: 700;
+  position: absolute; right: 6px; top: 14px; opacity: .9;
+}
+.tac-ledger .tape-head { font-family: var(--mono); font-size: 8.5px; color: var(--lg-ink-faint); letter-spacing: .16em; border-bottom: 1px dashed var(--lg-line2); padding-bottom: 7px; margin-bottom: 8px; padding-right: 20px; }
+.tac-ledger .tape .feat { display: block; text-decoration: none; border-bottom: 1px dashed var(--lg-line2); padding-bottom: 9px; margin-bottom: 8px; cursor: pointer; padding-right: 20px; }
+.tac-ledger .tape .feat .tag { display: inline-block; font-family: var(--sans-tc); font-size: 9px; background: var(--lg-amber); color: var(--lg-amber-ink); padding: 1px 6px; font-weight: 700; margin-bottom: 5px; }
+.tac-ledger .tape .feat h3 { font-family: var(--sans-tc); font-size: 12px; color: var(--lg-ink); margin: 0 0 4px; line-height: 1.45; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .tape .feat .meta { font-size: 9px; color: var(--lg-ink-dim); font-family: var(--sans-tc); }
+.tac-ledger .tape .trow { display: block; text-decoration: none; padding: 7px 20px 8px 0; border-bottom: 1px dashed var(--lg-line2); color: inherit; }
+.tac-ledger .tape .trow:last-of-type { border-bottom: none; }
+.tac-ledger .tape .trow .tm { font-family: var(--mono); font-size: 8.5px; color: var(--lg-ink-faint); letter-spacing: .1em; display: flex; gap: 8px; flex-wrap: wrap; }
+.tac-ledger .tape .trow .tm em { font-style: normal; font-family: var(--sans-tc); color: var(--lg-amber-dim); }
+.tac-ledger .tape .trow .h { font-family: var(--sans-tc); font-size: 10.5px; color: var(--lg-ink); line-height: 1.45; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .tape .tfoot { font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); margin-top: 10px; padding-right: 20px; line-height: 1.4; }
+.tac-ledger .tape .tfoot code { font-family: var(--mono); color: var(--lg-amber-dim); }
+.tac-ledger .tape .tac-empty-line { padding: 0 20px 10px 0; }
+
+/* ── mobile（<=480px，比照全站既有卡片化斷點慣例）─────────────────────
+   原稿手機版是獨立截斷內容的 device-frame mock（推薦只顯 3 檔、熱力圖
+   6 欄、排行只顯漲幅、新聞只 2 則），因為那是固定 760px 高的預覽框裁切
+   結果，不是真正的行動版資訊架構決策。真站點是可捲動的長頁，沿用同一份
+   真實資料（不因螢幕窄而砍資料），只用 grid-template-areas 重排順序對齊
+   原稿手機版的視覺動線（大盤→推薦→簡報→熱力圖→S1→排行→新聞），其餘
+   樣式/密度/色階/字級完全比照原稿 .m-body 系列。 */
+@media (max-width: 480px) {
+  .tac-ledger .mast { height: auto; flex-wrap: wrap; }
+  .tac-ledger .mast-slot,
+  .tac-ledger .mast-mode { display: none; }
+  .tac-ledger .mast-clock { margin-left: auto; }
+  .tac-ledger .sheet { grid-template-columns: 1fr; }
+  .tac-ledger .maincol {
+    grid-template-columns: 1fr;
+    border-right: none;
+    grid-template-areas:
+      "hero"
+      "rec"
+      "brief"
+      "heat"
+      "s1"
+      "rank";
+  }
+  .tac-ledger .idxanchor { padding: 16px 14px 14px; }
+  .tac-ledger .idxanchor .giant { font-size: 54px; margin-top: 12px; }
+  .tac-ledger .idxanchor .giant sub { font-size: 23px; }
+  .tac-ledger .s1wrap,
+  .tac-ledger .recwrap { border-right: none; }
+  .tac-ledger .rk { grid-template-columns: 1fr; }
+}
+
 .tac-panel {
   position: relative;
   overflow: hidden;
@@ -12392,40 +12649,6 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: rgba(11, 16, 23, 0.88);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
   animation: tac-card-in 520ms cubic-bezier(.2,.8,.2,1) both;
-}
-
-/* AI 推薦頭條：全寬 promoted panel，比照報紙頭條放大標題 + 品牌色頂線 */
-.tac-headline-panel {
-  border-top: 2px solid var(--tac-brand);
-}
-
-.tac-headline-panel .tac-panel-h h2 {
-  font: 900 20px/1.3 var(--sans-tc);
-  letter-spacing: 0.01em;
-}
-
-.tac-headline-panel .tac-strategy-table.tac-ai-recs-table > a:first-of-type span strong {
-  font-size: 15px;
-}
-
-/* S1 佈告：主欄第一項，用左側品牌色條做「公告欄」語彙（沿用既有色條慣例，
-   如 .tac-pipeline .live 的 border-top-color 狀態語彙），不加圖示裝飾 */
-.tac-bulletin-panel {
-  border-left: 3px solid var(--tac-brand);
-}
-
-/* 右側新聞電傳紙帶：窄欄，逐行改雙列（代號+標題 / 日期+分類），取代原本
-   4 欄橫向表格在窄欄位下的擠壓 */
-.tac-news-rail .tac-panel {
-  height: 100%;
-}
-
-.tac-news-rail .tac-intel-empty-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.tac-news-rail .tac-intel-foot {
-  flex-wrap: wrap;
 }
 
 .tac-panel::before {
@@ -12632,10 +12855,8 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-index-card {
   position: relative;
   display: grid;
-  /* v5.1（2026-07-13）：頭版現與熱力圖並列（較窄），breadth 欄位下限從
-     260px 收到 200px，避免主指數欄被過度擠壓 */
-  grid-template-columns: minmax(0, 1.42fr) 1px minmax(200px, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.42fr) 1px minmax(260px, 1fr);
+  gap: 20px;
   margin: 20px 24px 0;
   padding: 16px 18px;
   border: 1px solid var(--tac-line);
@@ -12672,9 +12893,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-index-main strong {
   color: var(--tac-fg-0);
-  /* v5.1（2026-07-13）：巨型大盤指數錨點——放大自 28px，flex-wrap 容器
-     保證窄欄下優雅換行不溢出 */
-  font: 900 36px/1 var(--mono);
+  font: 900 28px/1 var(--mono);
 }
 
 .tac-index-main span {
@@ -14428,20 +14647,12 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-two-grid,
   .tac-fresh-heat,
   .tac-paper-grid,
-  .tac-bottom-grid,
-  .tac-frontpage,
-  .tac-editorial-grid {
+  .tac-bottom-grid {
     grid-template-columns: 1fr;
   }
 
   .tac-paper-steps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  /* v5.1：窄寬度收合成單欄後，右側新聞電傳紙帶不再需要 sticky 定位
-     （會跟主欄擠在同一直向流），改回一般文件流 */
-  .tac-news-rail {
-    position: static;
   }
 }
 
