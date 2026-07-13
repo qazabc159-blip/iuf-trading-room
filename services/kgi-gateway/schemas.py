@@ -249,6 +249,9 @@ class LogoutResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     kgi_logged_in: bool
+    # Dual-track quote leg (2026-07-10): quote-leg login state. Additive —
+    # kgi_logged_in above ALWAYS means the trade leg (SIM session), unchanged.
+    kgi_quote_logged_in: bool = False
     account_set: bool
     note: Optional[str] = None  # populated when logged_in=true but account_set=false
 

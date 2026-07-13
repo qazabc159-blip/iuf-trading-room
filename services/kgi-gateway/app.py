@@ -60,6 +60,7 @@ from kgi_kbar import (
 )
 from kgi_session import (
     session,
+    quote_session,
     KgiLoginFailedError,
     KgiLoginObjectMissingAttr,
     KgiPermissionOrCredentialRejected,
@@ -165,6 +166,53 @@ def _auto_login_from_env() -> None:
         )
 
 
+def _auto_login_quote_from_env() -> None:
+    """
+    Dual-track quote leg (2026-07-10 KGI_DUAL_TRACK_PATCH_PLAN_v1.md).
+
+    Logs into a SEPARATE, always-live KGI account for market-data only. Any
+    failure here (missing credentials, KGI rejection, SDK error) is caught and
+    logged — it never raises, never touches `session` (trade leg), and never
+    blocks gateway startup. Quote endpoints simply stay degraded
+    (KGI_QUOTE_AUTH_UNAVAILABLE / NOT_LOGGED_IN) exactly as they do today when
+    this fails — same fail-safe shape as the pre-existing trade-leg auto-login.
+
+    Runs as a background asyncio task (see lifespan()), NOT inline before yield —
+    a slow/failed live-account login must never delay trade-leg readiness or
+    /health responses (worst case: two sequential ~35s SDK login polls would
+    roughly double gateway boot time, which existing smoke-test / nssm wait
+    windows are not sized for).
+    """
+    if not settings.QUOTE_AUTO_LOGIN:
+        logger.info("KGI Gateway quote-leg auto-login disabled (KGI_QUOTE_AUTO_LOGIN=false)")
+        return
+    if not settings.KGI_QUOTE_PERSON_ID or not settings.KGI_QUOTE_PERSON_PWD:
+        logger.warning(
+            "KGI Gateway quote-leg auto-login skipped: "
+            "KGI_QUOTE_PERSON_ID/KGI_QUOTE_PERSON_PWD missing"
+        )
+        return
+
+    try:
+        accounts = quote_session.login(
+            person_id=settings.KGI_QUOTE_PERSON_ID,
+            person_pwd=settings.KGI_QUOTE_PERSON_PWD,
+            simulation=False,  # quote leg is always live — SIM has no quote-tier membership
+            ca_path=settings.KGI_QUOTE_CA_PATH,
+            ca_pwd=settings.KGI_QUOTE_CA_PWD,
+        )
+        logger.info(
+            "KGI Gateway quote-leg auto-login OK: simulation=False accounts=%d "
+            "(trade leg unaffected, trade simulation=%s)",
+            len(accounts), settings.SIMULATION,
+        )
+    except Exception as exc:
+        logger.error(
+            "KGI Gateway quote-leg auto-login failed (trade leg unaffected): exc_class=%s",
+            type(exc).__name__,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Lifespan: register event loop with managers + start background pumps
 # ---------------------------------------------------------------------------
@@ -189,11 +237,19 @@ async def lifespan(app: FastAPI):
     )
     _auto_login_from_env()
 
+    # Dual-track quote leg: fire-and-forget background task. Intentionally NOT
+    # awaited — quote_session.login() already logs its own success/failure and
+    # a slow/failed live-account login must never delay trade-leg readiness.
+    quote_login_task = asyncio.create_task(
+        asyncio.to_thread(_auto_login_quote_from_env)
+    )
+
     yield  # server runs here
 
     tick_pump_task.cancel()
     event_pump_task.cancel()
     kbar_pump_task.cancel()
+    quote_login_task.cancel()
     logger.info("KGI Gateway shutting down")
 
 
@@ -217,6 +273,7 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         kgi_logged_in=session.is_logged_in,
+        kgi_quote_logged_in=quote_session.is_logged_in,
         account_set=session.is_account_set,
         note=note,
     )
@@ -711,15 +768,19 @@ async def quote_status():
     Always 200 when gateway is alive.
     """
     status = get_quote_status()
+    # Dual-track: quote_auth_* diagnostics reflect the QUOTE leg (the session that
+    # actually holds the market-data token). kgi_logged_in keeps its original
+    # meaning (trade leg) — kgi_quote_logged_in is the additive quote-leg field.
     quote_auth = get_quote_auth_status(
-        session.api,
-        logged_in=session.is_logged_in,
+        quote_session.api,
+        logged_in=quote_session.is_logged_in,
         quote_disabled=settings.QUOTE_DISABLED,
     )
     return {
         **status,
         **quote_auth,
         "kgi_logged_in": session.is_logged_in,
+        "kgi_quote_logged_in": quote_session.is_logged_in,
         "quote_disabled_flag": settings.QUOTE_DISABLED,
     }
 
@@ -744,18 +805,22 @@ async def subscribe_tick(body: SubscribeTickRequest) -> SubscribeTickResponse:
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
-                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Quote session not logged in. Set KGI_QUOTE_PERSON_ID/"
+                            "KGI_QUOTE_PERSON_PWD + KGI_QUOTE_AUTO_LOGIN=true.",
+                )
             ).model_dump(),
         )
-    if session.api is None:
+    if quote_session.api is None:
         raise HTTPException(status_code=500, detail="No API handle")
 
     try:
-        label = quote_manager.subscribe_tick(session.api, body.symbol, odd_lot=body.odd_lot)
+        label = quote_manager.subscribe_tick(quote_session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_tick OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeTickResponse(ok=True, label=label)
     except KgiQuoteUnavailableError as exc:
@@ -797,7 +862,7 @@ async def get_quote_ticks(symbol: str, limit: int = 10):
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
@@ -845,18 +910,22 @@ async def subscribe_bidask(body: SubscribeBidAskRequest) -> SubscribeBidAskRespo
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
-                error=ErrorDetail(code="NOT_LOGGED_IN", message="Login first.")
+                error=ErrorDetail(
+                    code="NOT_LOGGED_IN",
+                    message="Quote session not logged in. Set KGI_QUOTE_PERSON_ID/"
+                            "KGI_QUOTE_PERSON_PWD + KGI_QUOTE_AUTO_LOGIN=true.",
+                )
             ).model_dump(),
         )
-    if session.api is None:
+    if quote_session.api is None:
         raise HTTPException(status_code=500, detail="No API handle")
 
     try:
-        label = quote_manager.subscribe_bidask(session.api, body.symbol, odd_lot=body.odd_lot)
+        label = quote_manager.subscribe_bidask(quote_session.api, body.symbol, odd_lot=body.odd_lot)
         logger.info("subscribe_bidask OK: symbol=%s label=%s", body.symbol, label)
         return SubscribeBidAskResponse(ok=True, label=label, note=None)
     except KgiQuoteUnavailableError as exc:
@@ -910,7 +979,7 @@ async def get_quote_bidask(symbol: str):
                 )
             ).model_dump(),
         )
-    if not session.is_logged_in:
+    if not quote_session.is_logged_in:
         raise HTTPException(
             status_code=401,
             detail=ErrorEnvelope(
