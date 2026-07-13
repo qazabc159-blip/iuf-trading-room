@@ -61,6 +61,7 @@ function quoteSourceLabel(source: EffectiveMarketQuote["selectedSource"]) {
   if (source === "paper") return "模擬";
   if (source === "tradingview") return "TradingView";
   if (source === "manual") return "手動資料";
+  if (source === "twse_mis") return "證交所即時";
   return source;
 }
 
