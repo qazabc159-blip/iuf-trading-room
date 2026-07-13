@@ -7,7 +7,16 @@ export const quoteSourceSchema = z.enum([
   "tradingview",
   "kgi",
   "paper",
-  "manual"
+  "manual",
+  // 2026-07-13 paper-channel quoteGate P1 fix: official TWSE MIS intraday feed
+  // injected by the MIS cron/sweep. Distinct from "manual" (genuinely
+  // hand-typed Admin values) so the quote gate can tell "real government feed,
+  // just not on KGI infra" apart from "arbitrary/synthetic value" — see
+  // reports/quote_chain_outage_20260710/. Not synthetic (isSyntheticSource),
+  // still non-live (nonLiveSource !== "kgi") — execution/live-money channel
+  // behavior is unchanged; only the paper-mode consumer decision treats it
+  // as trustworthy enough to auto-allow.
+  "twse_mis"
 ]);
 
 export const marketSchema = z.enum([

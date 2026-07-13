@@ -173,6 +173,7 @@ import {
   upsertPaperQuotes,
   upsertManualQuotes,
   upsertKgiQuotes,
+  upsertTwseMisQuotes,
   getCompaniesLiteCached
 } from "./market-data.js";
 import {
@@ -18560,7 +18561,12 @@ function startSchedulers(workspaceSlug: string): void {
 
         if (!allQuotes.length) return;
 
-        await upsertManualQuotes({ session: cronSession, quotes: allQuotes });
+        // 2026-07-13 paper-channel quoteGate P1 fix: this is the official TWSE MIS
+        // intraday feed, not a hand-typed value — tag it source="twse_mis" (not
+        // "manual") so isSyntheticSource()/quoteGate can tell it apart from a
+        // genuinely synthetic Admin-entered quote. See
+        // reports/quote_chain_outage_20260710/PAPER_QUOTEGATE_MIS_SOURCE_FIX_20260713.md.
+        await upsertTwseMisQuotes({ session: cronSession, quotes: allQuotes });
 
         // Also update the MIS tile cache so heatmap/kgi-core can use MIS as Tier 1.5.
         // We only keep entries where last > 0 (i.e. valid 盤中成交價).
@@ -18815,7 +18821,7 @@ function startSchedulers(workspaceSlug: string): void {
         const quotes: Array<{
           symbol: string;
           market: "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER";
-          source: "manual";
+          source: "twse_mis";
           last: number | null;
           bid: number | null;
           ask: number | null;
@@ -18847,7 +18853,9 @@ function startSchedulers(workspaceSlug: string): void {
 
           // Volume: thin stocks may have vol=0 — that is OK for reference price
           // We only require a valid quote (bid/ask/trade) to inject.
-          // Downstream: source="manual" → decision="review" (not block), never "allow".
+          // Downstream: source="twse_mis" (2026-07-13 fix, was "manual") →
+          // paper-mode decision="allow"; execution/live-money decision unaffected
+          // (still requires selectedSource==="kgi").
           const vol = _misSwpParseNum(msg["v"]);
 
           const companyRow = slice.find((r) => r.ticker.trim() === ticker);
@@ -18865,7 +18873,7 @@ function startSchedulers(workspaceSlug: string): void {
           quotes.push({
             symbol: ticker,
             market,
-            source: "manual",
+            source: "twse_mis",
             last,
             bid: bidNum,
             ask: askNum,
@@ -18889,8 +18897,8 @@ function startSchedulers(workspaceSlug: string): void {
 
         if (!quotes.length) return;
 
-        // upsertManualQuotes max 200 per call — slice already ≤50, so single call is fine
-        await upsertManualQuotes({ session: sweepSession, quotes });
+        // upsertTwseMisQuotes max 200 per call — slice already ≤50, so single call is fine
+        await upsertTwseMisQuotes({ session: sweepSession, quotes });
         _misFullSweepInjectedThisRound += quotes.length;
 
       } finally {

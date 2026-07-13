@@ -418,8 +418,8 @@ export const marketDataDecisionSummaryQuerySchema = marketDataEffectiveQuotesQue
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const persistedQuoteHistoryLoaded = new Set<string>();
-const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi"];
-const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "tradingview", "paper", "manual"];
+const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi", "twse_mis"];
+const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "twse_mis", "tradingview", "paper", "manual"];
 const MARKET_DATA_SURFACE_VERSION = "market-data-v1.11-overview-quality-rollup";
 const historyQualityReasonBuckets = [
   "history_strategy_ready",
@@ -468,7 +468,8 @@ function getSourcePriorityMap() {
       manual: 1,
       paper: 1,
       tradingview: 1,
-      kgi: 1
+      kgi: 1,
+      twse_mis: 1
     }
   );
 }
@@ -485,13 +486,17 @@ function getQuoteStaleMs(source: QuoteSource) {
         ? "PAPER_QUOTE_STALE_MS"
         : source === "tradingview"
           ? "TRADINGVIEW_QUOTE_STALE_MS"
-          : "KGI_QUOTE_STALE_MS";
+          : source === "twse_mis"
+            ? "TWSE_MIS_QUOTE_STALE_MS"
+            : "KGI_QUOTE_STALE_MS";
   const fallback =
     source === "manual"
       ? 60_000
       : source === "paper"
         ? 15_000
-        : 5_000;
+        : source === "twse_mis"
+          ? 60_000 // matches the prior effective threshold when this feed was tagged "manual"
+          : 5_000;
   const raw = Number(process.env[envKey]);
   return Number.isFinite(raw) && raw > 0 ? raw : fallback;
 }
@@ -646,7 +651,9 @@ function getQuoteHistoryLimit(source: QuoteSource) {
         ? "PAPER_QUOTE_HISTORY_LIMIT"
         : source === "tradingview"
           ? "TRADINGVIEW_QUOTE_HISTORY_LIMIT"
-          : "KGI_QUOTE_HISTORY_LIMIT";
+          : source === "twse_mis"
+            ? "TWSE_MIS_QUOTE_HISTORY_LIMIT"
+            : "KGI_QUOTE_HISTORY_LIMIT";
   const raw = Number(process.env[envKey]);
   return Number.isFinite(raw) && raw > 0 ? raw : 512;
 }
@@ -886,6 +893,19 @@ function buildEffectiveQuoteReasons(input: {
   return reasons;
 }
 
+// 2026-07-13 paper-channel quoteGate P1 fix: paper submits have no path to
+// pass the `quote_review` guard override (see paper-risk-bridge.ts), so any
+// non-"kgi" source permanently sat at decision="review" (blocked in
+// practice) once the KGI feed went down. A `twse_mis`-sourced quote is a
+// genuine official government real-time feed (not synthetic — just not on
+// KGI infra), so it is safe to treat as paper-mode-trustworthy without an
+// override. Deliberately scoped to mode==="paper" only: strategy mode keeps
+// its existing readiness gate, and execution (real-money) mode is a fully
+// separate branch above that never referenced this helper.
+function isPaperTrustedNonKgiSource(mode: MarketDataConsumerMode, selectedSource: QuoteSource | null) {
+  return mode === "paper" && selectedSource === "twse_mis";
+}
+
 function buildConsumerDecision(input: {
   mode: MarketDataConsumerMode;
   selectedSource: QuoteSource | null;
@@ -914,7 +934,7 @@ function buildConsumerDecision(input: {
       : input.mode === "paper"
         ? input.paperUsable
         : input.liveUsable;
-  const safe = usable && input.readiness === "ready";
+  const safe = usable && (input.readiness === "ready" || isPaperTrustedNonKgiSource(input.mode, input.selectedSource));
   const decision = !usable
     ? "block"
     : safe
@@ -951,7 +971,7 @@ function buildProviderReadiness(input: {
   const readiness: EffectiveQuoteReadiness =
     !input.connected || freshnessStatus !== "fresh"
       ? "blocked"
-      : synthetic || input.source === "tradingview"
+      : synthetic || input.source === "tradingview" || input.source === "twse_mis"
         ? "degraded"
         : "ready";
   const reasons: string[] = [];
@@ -1980,7 +2000,8 @@ const quoteProviders: Record<QuoteSource, QuoteProviderAdapter> = {
   manual: buildCachedProvider("manual", "Manual quote provider not configured."),
   paper: buildCachedProvider("paper", "Paper quote provider not configured."),
   tradingview: buildCachedProvider("tradingview", "TradingView quote provider not configured."),
-  kgi: buildCachedProvider("kgi", "KGI quote provider not configured.")
+  kgi: buildCachedProvider("kgi", "KGI quote provider not configured."),
+  twse_mis: buildCachedProvider("twse_mis", "TWSE MIS quote provider not configured.")
 };
 
 function parseSourceFilter(raw?: string) {
@@ -2195,6 +2216,31 @@ export async function upsertKgiQuotes(input: {
   return upsertProviderQuotes({
     ...input,
     sourceOverride: "kgi"
+  });
+}
+
+/**
+ * Canonical write-path entry point for the `quoteProviders.twse_mis` bucket
+ * (2026-07-13 paper-channel quoteGate P1 fix). The TWSE MIS intraday cron and
+ * full-universe sweep previously injected official real-time MIS quotes via
+ * `upsertManualQuotes`, tagging them `source: "manual"` — indistinguishable
+ * from a genuinely hand-typed Admin value. `isSyntheticSource()` therefore
+ * always flagged them synthetic, and `buildConsumerDecision()`'s paper-mode
+ * branch could never get past "review" (no override path exists for paper
+ * submits) — blocking every paper order whenever the KGI feed was down.
+ * Mirrors `upsertKgiQuotes`/`upsertPaperQuotes`: forces `sourceOverride:
+ * "twse_mis"` regardless of any `source` field on individual quote items.
+ * Purely additive — does not touch any other source bucket. The execution
+ * (real-money) channel is unaffected: `liveUsable` still strictly requires
+ * `selectedSource === "kgi"`.
+ */
+export async function upsertTwseMisQuotes(input: {
+  session: AppSession;
+  quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
+}) {
+  return upsertProviderQuotes({
+    ...input,
+    sourceOverride: "twse_mis"
   });
 }
 
@@ -2670,7 +2716,7 @@ export async function getMarketDataConsumerSummary(input: {
         : input.mode === "paper"
           ? item.paperUsable
           : item.liveUsable;
-    const safe = usable && item.readiness === "ready";
+    const safe = usable && (item.readiness === "ready" || isPaperTrustedNonKgiSource(input.mode, item.selectedSource));
     const decision = buildConsumerDecision({
       mode: input.mode,
       selectedSource: item.selectedSource,
