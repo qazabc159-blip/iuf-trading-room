@@ -1996,7 +1996,10 @@ test("market data policy reflects configured source priority and freshness thres
     assert.equal(policy.sourcePriority[0]?.source, "paper");
     assert.equal(policy.sourcePriority[1]?.source, "tradingview");
     assert.equal(policy.sourcePriority[2]?.source, "manual");
-    assert.equal(policy.sourcePriority.at(-1)?.source, "kgi");
+    // Unconfigured sources fall back to defaultSourcePriorityOrder, appended
+    // after the configured ones, in that default's own order: kgi, twse_mis.
+    assert.equal(policy.sourcePriority[3]?.source, "kgi");
+    assert.equal(policy.sourcePriority.at(-1)?.source, "twse_mis");
     assert.equal(policy.freshnessMs.find((entry) => entry.source === "tradingview")?.staleAfterMs, 7000);
     assert.equal(policy.freshnessMs.find((entry) => entry.source === "paper")?.staleAfterMs, 25000);
     assert.equal(policy.historyLimit.find((entry) => entry.source === "tradingview")?.limit, 2048);
@@ -2181,14 +2184,16 @@ test("market data resolve diagnostics expose preferred source and candidate stac
   assert.equal(resolved[0]?.staleReason, "none");
   assert.equal(resolved[0]?.preferredSource, "tradingview");
   assert.equal(resolved[0]?.preferredQuote?.last, 52);
-  assert.equal(resolved[0]?.candidates.length, 4);
+  assert.equal(resolved[0]?.candidates.length, 5);
   assert.equal(resolved[0]?.candidates[0]?.source, "kgi");
   assert.equal(resolved[0]?.candidates[0]?.freshnessStatus, "missing");
-  assert.equal(resolved[0]?.candidates[1]?.source, "tradingview");
-  assert.equal(resolved[0]?.candidates[1]?.freshnessStatus, "fresh");
-  assert.equal(resolved[0]?.candidates[2]?.source, "paper");
-  assert.equal(resolved[0]?.candidates[2]?.staleReason, "no_quote");
-  assert.equal(resolved[0]?.candidates[3]?.source, "manual");
+  assert.equal(resolved[0]?.candidates[1]?.source, "twse_mis");
+  assert.equal(resolved[0]?.candidates[1]?.freshnessStatus, "missing");
+  assert.equal(resolved[0]?.candidates[2]?.source, "tradingview");
+  assert.equal(resolved[0]?.candidates[2]?.freshnessStatus, "fresh");
+  assert.equal(resolved[0]?.candidates[3]?.source, "paper");
+  assert.equal(resolved[0]?.candidates[3]?.staleReason, "no_quote");
+  assert.equal(resolved[0]?.candidates[4]?.source, "manual");
 });
 
 test("market data effective quotes summarize readiness for strategy and paper consumers", async () => {
@@ -3007,7 +3012,7 @@ test("market data overview summarizes providers, coverage, and leaders", async (
     topLimit: 2
   });
 
-  assert.equal(overview.providers.length, 4);
+  assert.equal(overview.providers.length, 5);
   assert.equal(overview.surface.version, "market-data-v1.11-overview-quality-rollup");
   assert.equal(overview.surface.capabilities.overview, true);
   assert.equal(overview.surface.capabilities.selectionSummary, true);
