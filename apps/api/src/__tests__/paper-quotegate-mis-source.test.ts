@@ -38,6 +38,7 @@ import test from "node:test";
 
 import {
   getMarketDataConsumerSummary,
+  ingestTradingViewQuote,
   resetMarketDataWorkspaceState,
   upsertManualQuotes,
   upsertTwseMisQuotes
@@ -227,6 +228,95 @@ test("T05: evaluateExecutionGate mode=paper still blocks on a hand-typed manual 
 
     assert.equal(gate.blocked, true, "a genuinely synthetic manual quote must still block paper submits");
     assert.equal(gate.decision, "review_required");
+
+    resetMarketDataWorkspaceState(slug);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T06-T08: provenance lock on upsertManualQuotes (Pete #1246 review, Finding
+// #1). The admin manual-quotes endpoint feeds caller-controlled `source`
+// values through upsertManualQuotes; the forced sourceOverride:"manual" must
+// hold no matter what the item claims.
+// ---------------------------------------------------------------------------
+
+test("T06: upsertManualQuotes cannot spoof source=twse_mis — lands as manual, paper stays review", async () => {
+  await withTempStore(async () => {
+    const slug = `manual-spoof-mis-${Date.now()}`;
+    const session = makeSession(slug);
+    resetMarketDataWorkspaceState(slug);
+
+    await upsertManualQuotes({ session, quotes: [freshQuoteItem("2330", "twse_mis")] });
+
+    const summary = await getMarketDataConsumerSummary({
+      session,
+      mode: "paper",
+      symbols: "2330"
+    });
+
+    const item = summary.items.find((entry) => entry.symbol === "2330");
+    assert.ok(item, "2330 must be present in paper consumer summary");
+    assert.equal(
+      item!.selectedSource,
+      "manual",
+      "an admin-entered quote claiming source=twse_mis must be stored as manual"
+    );
+    assert.equal(item!.decision, "review", "the spoofed quote must not auto-allow paper orders");
+
+    resetMarketDataWorkspaceState(slug);
+  });
+});
+
+test("T07: upsertManualQuotes cannot spoof source=kgi — lands as manual, never feeds liveUsable", async () => {
+  await withTempStore(async () => {
+    const slug = `manual-spoof-kgi-${Date.now()}`;
+    const session = makeSession(slug);
+    resetMarketDataWorkspaceState(slug);
+
+    await upsertManualQuotes({
+      session,
+      quotes: [{ ...freshQuoteItem("2317"), source: "kgi" } as any]
+    });
+
+    const summary = await getMarketDataConsumerSummary({
+      session,
+      mode: "execution",
+      symbols: "2317"
+    });
+
+    const item = summary.items.find((entry) => entry.symbol === "2317");
+    assert.ok(item, "2317 must be present in execution consumer summary");
+    assert.equal(
+      item!.selectedSource,
+      "manual",
+      "an admin-entered quote claiming source=kgi must be stored as manual (pre-existing spoof gap)"
+    );
+    assert.notEqual(item!.decision, "allow", "the spoofed quote must never allow execution mode");
+
+    resetMarketDataWorkspaceState(slug);
+  });
+});
+
+test("T08: TradingView webhook ingest still lands in the tradingview bucket", async () => {
+  await withTempStore(async () => {
+    const slug = `tv-ingest-bucket-${Date.now()}`;
+    const session = makeSession(slug);
+    resetMarketDataWorkspaceState(slug);
+
+    const quote = await ingestTradingViewQuote({
+      session,
+      ticker: "2454",
+      exchange: "TWSE",
+      price: "1234.5",
+      timestamp: new Date().toISOString()
+    });
+
+    assert.ok(quote, "webhook ingest must return the upserted quote");
+    assert.equal(
+      quote!.source,
+      "tradingview",
+      "ingestTradingViewQuote must keep writing to the tradingview bucket after the manual override lock"
+    );
 
     resetMarketDataWorkspaceState(slug);
   });

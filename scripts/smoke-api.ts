@@ -403,37 +403,33 @@ async function main() {
     assert.equal(paperQuotes.data[0]?.symbol, "PAPR1");
     assert.equal(paperQuotes.data[0]?.source, "paper");
 
+    // 2026-07-13 provenance lock (#1249): /market-data/manual-quotes now
+    // force-tags source="manual", so the tradingview bucket is seeded through
+    // its real production write path — the TradingView webhook.
+    const tradingviewWebhookSeed = await request<
+      JsonEnvelope<{ id: string }>
+    >(baseUrl, "/api/v1/webhooks/tradingview", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        token: webhookToken,
+        ticker: "TVSMK1",
+        price: "234.56",
+        eventKey: "smoke-tv-seed-tvsmk1"
+      })
+    });
+    assert.ok(tradingviewWebhookSeed.data.id);
+
     const tradingviewQuotesUpsert = await request<
       JsonEnvelope<
         Array<{
           symbol: string;
-          market: string;
           source: string;
           last: number | null;
-          isStale: boolean;
         }>
       >
-    >(baseUrl, "/api/v1/market-data/manual-quotes", {
-      method: "POST",
-      headers: { "x-workspace-slug": workspaceSlug },
-      body: JSON.stringify({
-        quotes: [
-          {
-            symbol: "TVSMK1",
-            market: "OTHER",
-            source: "tradingview",
-            last: 234.56,
-            bid: 234.5,
-            ask: 234.6,
-            open: 230,
-            high: 235,
-            low: 229.5,
-            prevClose: 231,
-            volume: 700,
-            changePct: 1.54
-          }
-        ]
-      })
+    >(baseUrl, "/api/v1/market-data/quotes?symbols=TVSMK1&source=tradingview&limit=10", {
+      headers: { "x-workspace-slug": workspaceSlug }
     });
     assert.equal(tradingviewQuotesUpsert.data.length, 1);
     assert.equal(tradingviewQuotesUpsert.data[0]?.source, "tradingview");
@@ -1423,12 +1419,16 @@ async function main() {
     });
     assert.equal(signal.data.title, "CI smoke signal");
 
-    const olderStrategyQuote = await request<
+    // 2026-07-13 provenance lock (#1249): the manual-quotes admin endpoint
+    // force-tags source="manual" no matter what the body claims — HTTP-level
+    // regression lock for the spoof path Pete's #1246 review found. TVSMK1's
+    // post-seed assertions are all source=tradingview-filtered, so this extra
+    // manual-bucket row cannot perturb them.
+    const spoofedSourceUpsert = await request<
       JsonEnvelope<
         Array<{
           symbol: string;
           source: string;
-          timestamp: string;
         }>
       >
     >(baseUrl, "/api/v1/market-data/manual-quotes", {
@@ -1437,25 +1437,49 @@ async function main() {
       body: JSON.stringify({
         quotes: [
           {
-            symbol: "SMK1",
+            symbol: "TVSMK1",
             market: "OTHER",
-            source: "tradingview",
-            last: 121.5,
-            bid: 121.4,
-            ask: 121.6,
-            open: 120.8,
-            high: 122.2,
-            low: 120.4,
-            prevClose: 120.9,
-            volume: 18_500,
-            changePct: 0.5,
-            timestamp: new Date(Date.now() - 60_000).toISOString()
+            source: "twse_mis",
+            last: 111.1,
+            bid: null,
+            ask: null,
+            open: null,
+            high: null,
+            low: null,
+            prevClose: null,
+            volume: null,
+            changePct: null
           }
         ]
       })
     });
-    assert.equal(olderStrategyQuote.data[0]?.symbol, "SMK1");
-    assert.equal(olderStrategyQuote.data[0]?.source, "tradingview");
+    assert.equal(spoofedSourceUpsert.data[0]?.symbol, "TVSMK1");
+    assert.equal(
+      spoofedSourceUpsert.data[0]?.source,
+      "manual",
+      "provenance lock (#1249): manual-quotes endpoint must force-tag manual even when the body claims twse_mis"
+    );
+
+    // Older tradingview point for SMK1, seeded through the real production
+    // write path (the webhook) instead of the manual-quotes pass-through the
+    // provenance lock removed. Keeps SMK1's tradingview history at 2 points —
+    // the strategy-ideas quality gate below (exclude_insufficient) depends on
+    // more than one history entry.
+    const olderStrategyQuote = await request<
+      JsonEnvelope<{ id: string }>
+    >(baseUrl, "/api/v1/webhooks/tradingview", {
+      method: "POST",
+      headers: { "x-workspace-slug": workspaceSlug },
+      body: JSON.stringify({
+        token: webhookToken,
+        ticker: "SMK1",
+        exchange: "NASDAQ",
+        price: "121.5",
+        timestamp: new Date(Date.now() - 60_000).toISOString(),
+        eventKey: "smoke-tv-older-smk1"
+      })
+    });
+    assert.ok(olderStrategyQuote.data.id, "older SMK1 tradingview seed via webhook must create a signal");
 
     const eventTimestamp = new Date().toISOString();
     const webhookSignal = await request<

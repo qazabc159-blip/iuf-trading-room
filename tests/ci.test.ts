@@ -81,9 +81,36 @@ import {
   resolveMarketQuotes,
   upsertPaperQuotes,
   upsertManualQuotes,
-  upsertKgiQuotes
+  upsertKgiQuotes,
+  upsertTradingViewQuotes,
+  upsertTwseMisQuotes
 } from "../apps/api/src/market-data.ts";
 import { resetPersistedQuoteEntries } from "../apps/api/src/market-data-store.ts";
+
+// 2026-07-13 provenance lock: upsertManualQuotes now force-tags "manual"
+// (see market-data.ts, Pete #1246 review Finding #1), so tests seed each
+// provider bucket through that source's canonical writer instead of passing
+// arbitrary `source` values through the manual path. Per-item dispatch keeps
+// the original upsert order; each item lands in the bucket its `source` names.
+async function seedQuotesBySource(input: {
+  session: Parameters<typeof upsertManualQuotes>[0]["session"];
+  quotes: Parameters<typeof upsertManualQuotes>[0]["quotes"];
+}) {
+  const writers = {
+    manual: upsertManualQuotes,
+    paper: upsertPaperQuotes,
+    kgi: upsertKgiQuotes,
+    tradingview: upsertTradingViewQuotes,
+    twse_mis: upsertTwseMisQuotes
+  } as const;
+  const results: Awaited<ReturnType<typeof upsertManualQuotes>> = [];
+  for (const item of input.quotes) {
+    const writer = writers[(item.source ?? "manual") as keyof typeof writers];
+    results.push(...(await writer({ session: input.session, quotes: [item] })));
+  }
+  return results;
+}
+
 import { resetPersistedStrategyRuns } from "../apps/api/src/strategy-runs-store.ts";
 import {
   deleteStrategyRiskLimit,
@@ -1709,7 +1736,7 @@ test("market data keeps provider-specific quote caches isolated", async () => {
   const session = { workspace: { slug: `market-provider-cache-${randomUUID()}` } };
   const now = new Date().toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -1865,7 +1892,7 @@ test("market data resolves preferred source by freshness and precedence", async 
   const session = { workspace: { slug: `market-precedence-${randomUUID()}` } };
   const freshTimestamp = new Date().toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -1910,7 +1937,7 @@ test("market data resolves preferred source by freshness and precedence", async 
   assert.equal(preferredPaper[0]?.source, "paper");
   assert.equal(preferredPaper[0]?.last, 101);
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -1940,7 +1967,7 @@ test("market data resolves preferred source by freshness and precedence", async 
   assert.equal(preferredTradingView[0]?.source, "tradingview");
   assert.equal(preferredTradingView[0]?.last, 102);
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2037,7 +2064,7 @@ test("market data builds quote history and minute bars from preferred sources", 
   const minuteOneClose = new Date(baseMinute - 20_000).toISOString();
   const minuteTwoOpen = new Date(baseMinute + 5_000).toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2133,7 +2160,7 @@ test("market data resolve diagnostics expose preferred source and candidate stac
   const session = { workspace: { slug: `market-resolve-${randomUUID()}` } };
   const now = new Date().toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2201,7 +2228,7 @@ test("market data effective quotes summarize readiness for strategy and paper co
   const now = new Date().toISOString();
   const staleTimestamp = "2020-01-01T00:00:00.000Z";
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2314,7 +2341,7 @@ test("market data consumer summary compresses execution-safe decisions", async (
   const now = new Date().toISOString();
   const staleTimestamp = "2020-01-01T00:00:00.000Z";
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2415,7 +2442,7 @@ test("market data selection summary aligns strategy paper and execution interpre
   const session = { workspace: { slug: `market-selection-${randomUUID()}` } };
   const now = new Date().toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2482,7 +2509,7 @@ test("market data decision summary compresses selection into execution-safe cons
   const session = { workspace: { slug: `market-decision-${randomUUID()}` } };
   const now = new Date().toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2549,7 +2576,7 @@ test("market data history and bars respect time window filters", async () => {
   const newerTimestamp = new Date(baseMinute + 5_000).toISOString();
   const filterFrom = new Date(baseMinute).toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2617,7 +2644,7 @@ test("market data persists quote history and can reload it after cache reset", a
   process.env.MARKET_DATA_STORE_DIR = path.join(process.cwd(), "tmp-market-data-tests", randomUUID());
 
   try {
-    await upsertManualQuotes({
+    await seedQuotesBySource({
       session,
       quotes: [
         {
@@ -2734,7 +2761,7 @@ test("market data quality summaries distinguish strategy-ready history from refe
   const session = { workspace: { slug: `market-quality-${randomUUID()}` } };
   const baseTime = new Date();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2864,7 +2891,7 @@ test("market data symbols derive from companies and dedupe by market and ticker"
 test("market data quotes support manual upsert with stale filtering", async () => {
   const session = { workspace: { slug: `market-quotes-${randomUUID()}` } };
 
-  const upserted = await upsertManualQuotes({
+  const upserted = await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -2956,7 +2983,7 @@ test("market data overview summarizes providers, coverage, and leaders", async (
     notes: ""
   }, options);
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -3160,7 +3187,7 @@ test("risk check blocks stale market orders and oversized exposure", async () =>
     options
   );
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -3283,7 +3310,7 @@ test("risk check records committed intents and blocks duplicates", async () => {
     options
   );
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -3501,7 +3528,7 @@ test("evaluateRiskCheck attributes max_per_trade blocks to strategy and symbol l
     options
   );
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -4337,7 +4364,7 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
     companyIds: [opticsCompany.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -4372,7 +4399,7 @@ test("strategy ideas support filters, sort modes, and structured rationale", asy
       }
     ]
   });
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -4572,7 +4599,7 @@ test("strategy runs persist query, summary, and score outputs", async () => {
 
   const now = new Date().toISOString();
   const older = new Date(Date.now() - 60_000).toISOString();
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -4763,7 +4790,7 @@ test("autopilot dryRun execute returns correct result shape without placing orde
     companyIds: [company.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -4868,7 +4895,7 @@ test("autopilot execute blocks all orders when kill-switch is halted", async () 
     companyIds: [company.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -5070,7 +5097,7 @@ test("kill-switch hard precedence: liquidate_only mode + eligible item → block
   });
 
   // Provide a live quote — confirms it is the mode check, not price absence, that blocks
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -5177,7 +5204,7 @@ test("autopilot dryRun: bearish idea with bullish_long sidePolicy → eligible l
     companyIds: [company.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -5271,7 +5298,7 @@ test("autopilot dryRun: sizePct so small that quantity=0 → all go to blocked w
   });
 
   // Very high price: paper balance is typically ~100_000 equity, 0.1% sizePct → 100 / 999_999 = 0.0001 lots → floor=0
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -5372,7 +5399,7 @@ test("autopilot dryRun: bearish_short sidePolicy but idea is bullish → skipped
     companyIds: [company.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -5464,7 +5491,7 @@ test("autopilot dryRun: idempotency — same runId executed twice produces indep
     companyIds: [company.id]
   });
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -6616,7 +6643,7 @@ test("bars diagnostics: tradingview source yields synthetic=false and reference_
   const t2 = new Date(now.getTime() - 1 * 60_000).toISOString();
   const t3 = now.toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       { symbol: "QUAL1", market: "TWSE", source: "tradingview", last: 100, bid: 99, ask: 101, open: 99, high: 101, low: 99, prevClose: 98, volume: 1000, changePct: 2, timestamp: t1 },
@@ -6650,7 +6677,7 @@ test("bars diagnostics: manual source yields synthetic=true and at most referenc
   const t2 = new Date(now.getTime() - 1 * 60_000).toISOString();
   const t3 = now.toISOString();
 
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       { symbol: "QUAL2", market: "TWSE", source: "manual", last: 200, bid: 199, ask: 201, open: 198, high: 202, low: 198, prevClose: 197, volume: 500, changePct: 1.5, timestamp: t1 },
@@ -6783,7 +6810,7 @@ test("autopilot equal_weight: 2 candidates share budget equally — each gets ha
       themeIds: [],
       companyIds: [company.id]
     });
-    await upsertManualQuotes({
+    await seedQuotesBySource({
       session,
       quotes: [{
         symbol: ticker, market: "OTHER", source: "tradingview",
@@ -6862,7 +6889,7 @@ test("autopilot equal_weight: 1 candidate receives full budget (same as fixed_pc
     themeIds: [],
     companyIds: [company.id]
   });
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [{
       symbol: "EWS1", market: "OTHER", source: "tradingview",
@@ -17971,9 +17998,10 @@ test("UOF-D2/D3: kgi account routes through the SIM channel via /trading/orders,
   const now = new Date().toISOString();
   // Execution-mode gate (modeForBroker("kgi") === "execution") only treats
   // source="kgi" as liveUsable — upsertPaperQuotes forces sourceOverride:
-  // "paper" which is non_live_source for execution mode, so this must use
-  // upsertManualQuotes with an explicit source="kgi" quote row instead.
-  await upsertManualQuotes({
+  // "paper" which is non_live_source for execution mode, so this seeds a
+  // source="kgi" quote row, which seedQuotesBySource dispatches to
+  // upsertKgiQuotes (the canonical kgi-bucket writer).
+  await seedQuotesBySource({
     session,
     quotes: [
       {
@@ -18543,7 +18571,7 @@ test("UTA-C1-4: kgi channel — gateway has no /order/cancel, returns cancel_not
   });
 
   const now = new Date().toISOString();
-  await upsertManualQuotes({
+  await seedQuotesBySource({
     session,
     quotes: [
       {
