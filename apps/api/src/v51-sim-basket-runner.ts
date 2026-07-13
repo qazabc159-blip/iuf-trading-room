@@ -399,6 +399,31 @@ async function writeJson(path: string, data: unknown): Promise<void> {
   await fs.writeFile(path, JSON.stringify(data, null, 2), "utf-8");
 }
 
+/**
+ * Best-effort persistence of the human-readable report JSON. This runs after
+ * orders have already been submitted to KGI SIM, so a failure here (e.g. a
+ * container fs issue) must never propagate — if it did, the caller's catch
+ * block would release the in-memory order-submit guard with no audit_logs
+ * row written, and the next tick would re-submit the entire already-filled
+ * basket (see PR #1247 review, residual gap flagged after blocker 1's fix).
+ * The failure is recorded in `failsafeNotes` (same array reference used to
+ * build the report that's about to be audit-logged) so it's still visible.
+ * Exported for direct testing of this failure-tolerance contract.
+ */
+export async function _v51WriteReportJsonBestEffort(
+  path: string,
+  data: unknown,
+  failsafeNotes: string[]
+): Promise<void> {
+  try {
+    await writeJson(path, data);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[v51-sim] report JSON write failed for ${path} (non-fatal — audit record is still written): ${msg}`);
+    failsafeNotes.push(`report_json_write_failed: ${msg}`);
+  }
+}
+
 async function resolveWorkspaceId(): Promise<string | null> {
   const db = getDb();
   if (!db) return null;
@@ -695,7 +720,14 @@ export async function submitV51BasketOrders(signalDate: string): Promise<V51Orde
     failsafeNotes,
   };
 
-  await writeJson(join(reportsBase(), "v51_sim_order_submit", `${signalDate}.json`), report);
+  // Report JSON write is best-effort (see _v51WriteReportJsonBestEffort JSDoc) —
+  // its failure must not prevent the audit record below from being written,
+  // since orders may already have been submitted to KGI SIM by this point.
+  await _v51WriteReportJsonBestEffort(
+    join(reportsBase(), "v51_sim_order_submit", `${signalDate}.json`),
+    report,
+    failsafeNotes
+  );
   await writeAuditRecord({ basketSignalDate: signalDate, report });
 
   console.log(
@@ -740,6 +772,14 @@ export async function runV51OrderSubmitTick(): Promise<void> {
         _v51ReleaseOrderSubmitGuard();
       }
     } catch (e) {
+      // With the report-JSON write now wrapped in _v51WriteReportJsonBestEffort
+      // and writeAuditRecord() already internally swallowing its own errors,
+      // submitV51BasketOrders() cannot throw once it has started submitting
+      // orders — an audit_logs row is always attempted before this function
+      // returns. So this catch (and its unconditional guard release) is only
+      // reachable by a pre-submission throw (e.g. an unexpected error before
+      // any KGI order call was made), where no orders were placed and it is
+      // safe to retry the whole basket from scratch on the next tick.
       console.error(`[v51-order-cron] submit failed for signalDate=${signalDate}:`, e instanceof Error ? e.message : String(e));
       _v51ReleaseOrderSubmitGuard();
     }

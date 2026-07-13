@@ -8,16 +8,24 @@
  *   - Equal-weight 10M notional allocation + board-lot rounding
  *   - KGI subscription cap check (30+0050=31 pass; >40 fail-closed)
  *   - Label passthrough (V51_LABEL constant + parsed rows carry it verbatim)
+ *   - In-memory order-submit guard (claim/release, closes double-submission race)
+ *   - Report JSON write failure tolerance (real fs failure, not mocked)
  *
- * No DB. No broker. No HTTP — pure function coverage only.
+ * No DB. No broker. No HTTP — pure function coverage only (the report-write
+ * tests do real, scoped fs I/O against a temp dir / an intentionally invalid
+ * path, cleaned up after each test — not network/DB/broker I/O).
  */
 
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
   _v51ClaimOrderSubmitTickForDate,
   _v51ReleaseOrderSubmitGuard,
+  _v51WriteReportJsonBestEffort,
   checkKgiSubscriptionCap,
   computeV51OrderSizing,
   nextWeekdayIso,
@@ -255,5 +263,38 @@ test("order-submit guard: release allows a subsequent tick to retry the same dat
     assert.equal(_v51ClaimOrderSubmitTickForDate("2026-07-14"), true, "after release, the same date must be claimable again");
   } finally {
     _v51ReleaseOrderSubmitGuard();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Report JSON write failure tolerance — a residual gap found during Elva's
+// merge review of the guard fix above: if the report-JSON write throws
+// AFTER orders have already been submitted to KGI SIM, the exception used to
+// propagate up to runV51OrderSubmitTick()'s catch, which unconditionally
+// releases the guard with no audit_logs row written — re-submitting the
+// whole already-filled basket on the next tick. These exercise the real
+// writeJson() failure path (a NUL-byte path is a genuine, portable fs
+// failure — not a mock) through the wrapper the runner actually calls.
+// ---------------------------------------------------------------------------
+
+test("report JSON write: a real fs failure (NUL-byte path) is caught, recorded in failsafeNotes, and does not throw", async () => {
+  const notes: string[] = [];
+  const invalidPath = join(process.cwd(), "v51-test-\0-invalid", "report.json");
+  await assert.doesNotReject(() => _v51WriteReportJsonBestEffort(invalidPath, { ok: true }, notes));
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /report_json_write_failed/);
+});
+
+test("report JSON write: success path writes the real file and leaves failsafeNotes untouched", async () => {
+  const notes: string[] = [];
+  const tmpDir = await fs.mkdtemp(join(tmpdir(), "v51-test-"));
+  try {
+    const path = join(tmpDir, "nested", "report.json");
+    await _v51WriteReportJsonBestEffort(path, { ok: true }, notes);
+    assert.equal(notes.length, 0);
+    const written = JSON.parse(await fs.readFile(path, "utf-8"));
+    assert.deepEqual(written, { ok: true });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
