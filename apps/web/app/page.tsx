@@ -2489,6 +2489,7 @@ function AiRecommendationActionPanel({ recommendations }: { recommendations: Loa
       title="今日 AI 推薦行動板"
       sub="與 /ai-recommendations 正式頁同一份 v3 批次；不吃研究參考或舊版引擎資料"
       right={<StatusChip state={panelState} label={cards.length > 0 ? `${cards.length} 檔` : "待回補"} />}
+      className="tac-headline-panel"
     >
       {cards.length > 0 ? (
         <>
@@ -2704,7 +2705,7 @@ function StrategyPanel({
   const isLiveVerifiedTrackRecord = snapshot?.isLiveVerifiedTrackRecord ?? false;
   const realSimReturnPct = realSim.data?.cumulativeReturnPct ?? null;
   return (
-    <Panel eyebrow="STRATEGY" title="S1 自動量化" sub="唯一正式量化策略 / KGI SIM-only" right={<StatusChip state={strategy.state === "LIVE" ? "LIVE" : stateFromLoad(strategy)} />}>
+    <Panel eyebrow="STRATEGY" title="S1 自動量化" sub="唯一正式量化策略 / KGI SIM-only" right={<StatusChip state={strategy.state === "LIVE" ? "LIVE" : stateFromLoad(strategy)} />} className="tac-bulletin-panel">
       {snapshot ? (
         <>
           {realSimReturnPct != null && (
@@ -3147,12 +3148,16 @@ async function DashboardContent({
   const heatmap = realHeatmap;
   const quotes = buildTapeQuotes(realtimeMarket, market);
 
-  // 首頁 IA 審計 A 案（reports/homepage_ia_audit_20260710/HOMEPAGE_IA_AUDIT_v1.md §四）
-  // 新排序：大盤狀態(Hero) → 今日 AI 推薦行動板 → 重大訊息 top3 → 簡報摘要 →
-  // 熱力圖/排行(頁尾) → 券商連線狀態(1 行)。CUT：AgendaStrip（狀態寫死的裝飾
-  // 時間軸）、WorkflowPanel（純連結表，資訊已在 sidebar 導航＋各卡 CTA）。
-  // MERGE：FreshnessPanel/DataReadinessPanel/DataGapPanel → DataHealthPanel
-  // 單一入口，放在最底（工程遙測，不是操盤者的首頁主角）。
+  // 首頁 v5.1 LEDGER 揭示板改版（2026-07-13，楊董定稿方向 — artifact
+  // 41de1bc9「編輯版面」；本輪未取得逐 pixel HTML，依文字規格 + 既有
+  // terminal-density 語彙重建，見 PR body 誠實揭露）。
+  // 版面＝非對稱頭版：巨型大盤指數錨點 + 產業熱力圖並列頭版 → AI 推薦頭條
+  // （全寬promoted）→ 編輯正文兩欄：主欄(S1 佈告 + 排行 + AI簡報) / 右側新聞
+  // 電傳紙帶(重大訊息)。七塊 IA 內容鎖定不變（見 feedback_homepage_is_info_
+  // overview memory）：大盤總覽／熱力圖／AI推薦／AI簡報／S1量化／強勢排行／
+  // 精選新聞。DataHealth／BrokerConnectionLine 為工程遙測小計，非七塊之一，
+  // 沿用舊排序放頁尾。CUT：AgendaStrip（狀態寫死的裝飾時間軸）、WorkflowPanel
+  // （純連結表，資訊已在 sidebar 導航＋各卡 CTA）。
   return (
     <div className="tactical-dashboard">
       <div className="tac-scanline" />
@@ -3162,23 +3167,30 @@ async function DashboardContent({
         <MarketStateBanner />
         <div className="tac-content">
           <TopCommandBar now={now} market={market} />
-          <section className="tac-single-panel">
+
+          {/* 頭版：巨型大盤指數錨點 + 產業熱力圖，非對稱並列 */}
+          <section className="tac-frontpage">
             <HeroPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} now={now} />
-          </section>
-          <section className="tac-two-grid tac-action-grid">
-            <AiRecommendationActionPanel recommendations={recommendations} />
-            <StrategyPanel strategy={s1Strategy} realSim={s1RealSim} />
-          </section>
-          <section className="tac-single-panel">
-            <MarketIntelPanel intel={intel} />
-          </section>
-          <section className="tac-single-panel">
-            <DailyBriefPanel brief={brief} />
-          </section>
-          <section className="tac-two-grid">
             <RealtimeHeatmapPanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-            <MarketMoversPanel market={market} />
           </section>
+
+          {/* AI 推薦頭條：全寬 promoted，緊接頭版之下 */}
+          <section className="tac-single-panel">
+            <AiRecommendationActionPanel recommendations={recommendations} />
+          </section>
+
+          {/* 編輯正文：主欄（S1 佈告 + 排行 + AI 簡報）／右側新聞電傳紙帶 */}
+          <div className="tac-editorial-grid">
+            <div className="tac-editorial-main">
+              <StrategyPanel strategy={s1Strategy} realSim={s1RealSim} />
+              <MarketMoversPanel market={market} />
+              <DailyBriefPanel brief={brief} />
+            </div>
+            <aside className="tac-news-rail">
+              <MarketIntelPanel intel={intel} />
+            </aside>
+          </div>
+
           <BrokerConnectionLine paper={paper} broker={broker} />
           <section className="tac-single-panel">
             <DataHealthPanel sources={sources} />
