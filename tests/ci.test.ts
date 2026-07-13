@@ -6354,7 +6354,10 @@ test("placePaperOrder persists quoteContext on order and fill end-to-end", async
     symbol: "GATE2",
     side: "buy" as const,
     type: "market" as const,
-    timeInForce: "rod" as const,
+    // Order-type-matrix T-1 (2026-07-13): market orders require IOC/FOK
+    // (order-rules.ts §4.1) — "rod" would now be matrix-rejected by
+    // placePaperOrder before it ever reaches the fill logic this test covers.
+    timeInForce: "ioc" as const,
     quantity: 1000,
     price: null,
     stopPrice: null,
@@ -6452,7 +6455,9 @@ test("trading-service.submitOrder runs session + risk + gate + paper broker end-
     symbol: "SMOKE1",
     side: "buy" as const,
     type: "market" as const,
-    timeInForce: "rod" as const,
+    // Order-type-matrix T-1 (2026-07-13): market orders require IOC/FOK
+    // (order-rules.ts §4.1).
+    timeInForce: "ioc" as const,
     price: null,
     stopPrice: null,
     tradePlanId: null,
@@ -6480,11 +6485,20 @@ test("trading-service.submitOrder runs session + risk + gate + paper broker end-
   // With override the chain goes risk → gate → broker; the placed Order is
   // stamped with the same quoteContext the gate produced, and the riskCheckId
   // links back to the persisted risk record. Quantity differs so duplicate-
-  // intent detection doesn't step on the first submit.
+  // intent detection doesn't step on the first submit. Bumping the pre-T-1
+  // 1100 up to a board lot (2000) trips max_per_trade at this test account's
+  // tiny default equity, so instead this submits as an explicit intraday-odd
+  // order (order-rules.ts §4.6 caps odd-lot quantity at 1-999) — same 1100-ish
+  // notional as before, still distinct from the "denied" submit's 1000.
   const accepted = await submitOrder({
     session,
     repo,
-    order: { ...baseOrder, quantity: 1100, overrideGuards: [GATE_OVERRIDE_KEY] }
+    order: {
+      ...baseOrder,
+      quantity: 900,
+      session: "intraday_odd",
+      overrideGuards: [GATE_OVERRIDE_KEY]
+    }
   });
   assert.equal(accepted.blocked, false);
   assert.equal(accepted.riskCheck.decision, "allow");
@@ -17873,6 +17887,7 @@ function uofTestOrder(overrides: Partial<{
   symbol: string;
   side: "buy" | "sell";
   type: "market" | "limit" | "stop" | "stop_limit";
+  timeInForce: "day" | "rod" | "ioc" | "fok" | "gtc";
   quantity: number;
   quantity_unit: "SHARE" | "LOT";
   price: number | null;
@@ -17883,7 +17898,12 @@ function uofTestOrder(overrides: Partial<{
     symbol: overrides.symbol ?? "UOFTEST",
     side: overrides.side ?? ("buy" as const),
     type: overrides.type ?? ("market" as const),
-    timeInForce: "rod" as const,
+    // Order-type-matrix T-1 (2026-07-13): market orders now require IOC/FOK
+    // (order-rules.ts §4.1). Default stays "rod" so the existing non-market
+    // assertKgiSimChannel() callers above (pure validation, never reaches
+    // placePaperOrder) are untouched; call sites that submit a *market* order
+    // through placePaperOrder pass `timeInForce: "ioc"` explicitly.
+    timeInForce: overrides.timeInForce ?? ("rod" as const),
     quantity: overrides.quantity ?? 1000,
     quantity_unit: overrides.quantity_unit ?? ("SHARE" as const),
     price: overrides.price ?? null,
@@ -18956,7 +18976,7 @@ test("PAPER-SYNC-1: paper market order fills immediately, sweep syncs submitted 
   const result = await submitOrder({
     session,
     repo,
-    order: uofTestOrder({ symbol: "PSYNCFILL", accountId, type: "market", quantity: 1000, quantity_unit: "SHARE" })
+    order: uofTestOrder({ symbol: "PSYNCFILL", accountId, type: "market", timeInForce: "ioc", quantity: 1000, quantity_unit: "SHARE" })
   });
   assert.equal(result.blocked, false);
   assert.equal(result.order?.status, "filled", "sanity: the real paper order is already filled");
@@ -19123,7 +19143,7 @@ test("PAPER-SYNC-4: idempotent — re-running the sweep does not re-update an al
   await submitOrder({
     session,
     repo,
-    order: uofTestOrder({ symbol: "PSYNCIDEM", accountId, type: "market", quantity: 1000, quantity_unit: "SHARE" })
+    order: uofTestOrder({ symbol: "PSYNCIDEM", accountId, type: "market", timeInForce: "ioc", quantity: 1000, quantity_unit: "SHARE" })
   });
 
   const first = await syncPaperUnifiedOrders({ session });
