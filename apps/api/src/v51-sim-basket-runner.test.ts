@@ -16,6 +16,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  _v51ClaimOrderSubmitTickForDate,
+  _v51ReleaseOrderSubmitGuard,
   checkKgiSubscriptionCap,
   computeV51OrderSizing,
   nextWeekdayIso,
@@ -211,4 +213,47 @@ test("nextWeekdayIso: Monday signal_date -> Tuesday entry date (2026-07-13 -> 20
 test("nextWeekdayIso: Friday signal_date skips weekend -> next Monday", () => {
   // 2026-07-17 is a Friday.
   assert.equal(nextWeekdayIso("2026-07-17"), "2026-07-20");
+});
+
+// ---------------------------------------------------------------------------
+// In-memory in-flight guard — closes the double-submission race window
+// (PR #1247 review blocker 1). These exercise the exact synchronous claim/
+// release primitive runV51OrderSubmitTick() calls before any `await`, not a
+// re-implementation of the check.
+// ---------------------------------------------------------------------------
+
+test("order-submit guard: overlapping tick for the same entry date — only the first claim succeeds", () => {
+  _v51ReleaseOrderSubmitGuard(); // clean slate regardless of test execution order
+  try {
+    // Simulates two setInterval ticks landing inside the same 08:20-08:40
+    // window before the first tick's async work (DB check + submit +
+    // audit write) has resolved.
+    const firstTickClaims = _v51ClaimOrderSubmitTickForDate("2026-07-14");
+    const secondTickClaims = _v51ClaimOrderSubmitTickForDate("2026-07-14");
+    assert.equal(firstTickClaims, true, "first tick must be allowed to proceed to submit");
+    assert.equal(secondTickClaims, false, "second overlapping tick for the same date must NOT be allowed to submit again");
+  } finally {
+    _v51ReleaseOrderSubmitGuard();
+  }
+});
+
+test("order-submit guard: a different entry date is not blocked by a prior day's claim (does not block next-month baskets)", () => {
+  _v51ReleaseOrderSubmitGuard();
+  try {
+    assert.equal(_v51ClaimOrderSubmitTickForDate("2026-07-14"), true);
+    assert.equal(_v51ClaimOrderSubmitTickForDate("2026-08-11"), true);
+  } finally {
+    _v51ReleaseOrderSubmitGuard();
+  }
+});
+
+test("order-submit guard: release allows a subsequent tick to retry the same date (mirrors s1-sim-runner.ts's retryable-failure reset)", () => {
+  _v51ReleaseOrderSubmitGuard();
+  try {
+    assert.equal(_v51ClaimOrderSubmitTickForDate("2026-07-14"), true);
+    _v51ReleaseOrderSubmitGuard();
+    assert.equal(_v51ClaimOrderSubmitTickForDate("2026-07-14"), true, "after release, the same date must be claimable again");
+  } finally {
+    _v51ReleaseOrderSubmitGuard();
+  }
 });

@@ -79,6 +79,18 @@ export const V51_BENCHMARK_RESERVED_SYMBOLS = ["0050"];
 const V51_AUDIT_ACTION = "v51_sim.order_submit";
 const V51_AUDIT_ENTITY_TYPE = "v51_sim";
 
+/**
+ * In-memory in-flight guard for runV51OrderSubmitTick(). Set synchronously,
+ * before any `await`, so an overlapping poll tick (setInterval does not wait
+ * for the previous async callback to resolve) cannot slip past the
+ * async `hasAlreadySubmitted()` DB check before the first tick's
+ * writeAuditRecord() has committed. Mirrors s1-sim-runner.ts's
+ * `_orderSubmitLastFiredDate` pattern (see PR #1247 review, blocker 1).
+ * The `audit_logs` check remains in place too — it is the only guard that
+ * survives a redeploy; this in-memory guard resets to "" on process restart.
+ */
+let _v51OrderSubmitLastFiredDate = "";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -398,6 +410,32 @@ async function resolveWorkspaceId(): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+/**
+ * Synchronous, awaits-free claim of today's order-submit slot. Returns true
+ * (and marks the date as fired) if the caller may proceed; false if another
+ * tick already claimed the same date. This is the first thing
+ * runV51OrderSubmitTick() does, before any `await` — closing the race window
+ * where two overlapping ticks could both pass the async `hasAlreadySubmitted()`
+ * DB check before either finishes writing its audit record.
+ * Exported for direct testing of the guard mechanics (see PR #1247 review).
+ */
+export function _v51ClaimOrderSubmitTickForDate(todayTst: string): boolean {
+  if (_v51OrderSubmitLastFiredDate === todayTst) return false;
+  _v51OrderSubmitLastFiredDate = todayTst;
+  return true;
+}
+
+/**
+ * Releases the in-memory guard, allowing a later tick within the same day to
+ * retry. Used for known-transient failure paths (credentials not yet set,
+ * gateway not yet reachable at the very start of the 08:20 window) — mirrors
+ * s1-sim-runner.ts's `_orderSubmitLastFiredDate = ""` reset convention.
+ * Exported for test cleanup between guard test cases.
+ */
+export function _v51ReleaseOrderSubmitGuard(): void {
+  _v51OrderSubmitLastFiredDate = "";
+}
+
 /** Idempotency guard: has this basket's orders already been submitted? */
 async function hasAlreadySubmitted(basketSignalDate: string): Promise<boolean> {
   if (!isDatabaseMode()) return false;
@@ -670,20 +708,40 @@ export async function submitV51BasketOrders(signalDate: string): Promise<V51Orde
 /**
  * Scheduler entry point (wired in server.ts, same style as S1-SIM-PIPELINE).
  * Scans embedded basket CSVs for any whose computed entry date is today and
- * that have not yet been submitted, then submits them. Safe to call on every
- * poll tick — idempotent via the audit-log check.
+ * that have not yet been submitted, then submits them. Idempotent via two
+ * layered guards: a synchronous in-memory "claimed today" guard (set before
+ * any `await`, closing the overlapping-tick double-submission race — see
+ * PR #1247 review blocker 1) plus the pre-existing `audit_logs` DB check
+ * (survives redeploy, where the in-memory guard resets).
  */
 export async function runV51OrderSubmitTick(): Promise<void> {
   const todayTst = taipeiDateStr();
+
+  if (!_v51ClaimOrderSubmitTickForDate(todayTst)) {
+    console.log("[v51-order-cron] already fired today, skipping (in-memory guard)");
+    return;
+  }
+
   const signalDates = await listEmbeddedV51BasketSignalDates();
   for (const signalDate of signalDates) {
     const entryDate = nextWeekdayIso(signalDate);
     if (entryDate !== todayTst) continue;
     if (await hasAlreadySubmitted(signalDate)) continue;
     try {
-      await submitV51BasketOrders(signalDate);
+      const report = await submitV51BasketOrders(signalDate);
+      const isRetryableFailure =
+        report.results.length === 0 &&
+        report.failsafeNotes.some((n) => n.startsWith("credentials_missing") || n.startsWith("login_failed"));
+      if (isRetryableFailure) {
+        // Gateway may not be reachable yet at the very start of the 08:20
+        // window (EC2 gateway opens on the same schedule) — release the
+        // guard so the next poll tick within the window can retry.
+        console.warn(`[v51-order-cron] retryable failure for signalDate=${signalDate}, releasing guard for retry`);
+        _v51ReleaseOrderSubmitGuard();
+      }
     } catch (e) {
       console.error(`[v51-order-cron] submit failed for signalDate=${signalDate}:`, e instanceof Error ? e.message : String(e));
+      _v51ReleaseOrderSubmitGuard();
     }
   }
 }
