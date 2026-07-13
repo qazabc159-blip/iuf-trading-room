@@ -2184,7 +2184,18 @@ export async function upsertManualQuotes(input: {
   session: AppSession;
   quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
 }) {
-  return upsertProviderQuotes(input);
+  // 2026-07-13 provenance lock (Pete #1246 review, Finding #1): force the tag
+  // regardless of what each item's `source` field claims. Without this, an
+  // Admin-gated POST /api/v1/market-data/manual-quotes body could set
+  // source:"twse_mis" (auto-allows paper orders on a fabricated price) or
+  // source:"kgi" (feeds liveUsable for the execution consumer summary) and the
+  // stored row would be indistinguishable from real feed data. Every sibling
+  // in this family (upsertPaperQuotes/upsertKgiQuotes/upsertTwseMisQuotes)
+  // already forces its own override; this was the one gap.
+  return upsertProviderQuotes({
+    ...input,
+    sourceOverride: "manual"
+  });
 }
 
 export async function upsertPaperQuotes(input: {
@@ -2244,6 +2255,24 @@ export async function upsertTwseMisQuotes(input: {
   });
 }
 
+/**
+ * Canonical write-path entry point for the `quoteProviders.tradingview` bucket
+ * (2026-07-13 provenance lock). Mirrors the rest of the family: forces
+ * `sourceOverride: "tradingview"` regardless of any `source` field on
+ * individual quote items. Previously the TradingView webhook reached this
+ * bucket by passing `source: "tradingview"` through `upsertManualQuotes`'
+ * pass-through, which the provenance lock removed.
+ */
+export async function upsertTradingViewQuotes(input: {
+  session: AppSession;
+  quotes: z.infer<typeof manualQuoteUpsertItemSchema>[];
+}) {
+  return upsertProviderQuotes({
+    ...input,
+    sourceOverride: "tradingview"
+  });
+}
+
 export async function ingestTradingViewQuote(input: {
   session: AppSession;
   ticker: string;
@@ -2257,7 +2286,7 @@ export async function ingestTradingViewQuote(input: {
   }
 
   const parsedPrice = parseNullableNumber(input.price);
-  return upsertManualQuotes({
+  return upsertTradingViewQuotes({
     session: input.session,
     quotes: [
       {
