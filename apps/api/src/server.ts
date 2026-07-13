@@ -15490,6 +15490,7 @@ app.get("/api/v1/alerts", async (c) => {
     : requestedAudience;
 
   const events = await listEvents({
+    workspaceId: session.workspace.id,
     limit,
     unreadOnly,
     dedupeSameDay: true,
@@ -15512,9 +15513,9 @@ app.post("/api/v1/alerts/:id/ack", async (c) => {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "missing_id" }, 400);
 
-  const result = await acknowledgeEvent(id);
+  const result = await acknowledgeEvent(session.workspace.id, id);
   if (!result.ok) {
-    return c.json({ error: result.reason ?? "ack_failed" }, 500);
+    return c.json({ error: result.reason ?? "ack_failed" }, result.reason === "not_found" ? 404 : 500);
   }
   return c.json({ ok: true, id });
 });
@@ -15542,7 +15543,7 @@ app.get("/api/v1/alerts/sse", async (c) => {
       // Push unacked events every 15s
       const pushEvents = setInterval(async () => {
         try {
-          const events = await listEvents({ limit: 20, unreadOnly: true });
+          const events = await listEvents({ workspaceId: session.workspace.id, limit: 20, unreadOnly: true });
           if (events.length > 0) {
             controller.enqueue(
               encoder.encode(`event: alerts\ndata: ${JSON.stringify(events)}\n\n`)
@@ -15616,7 +15617,7 @@ app.get("/api/v1/iuf-events", async (c) => {
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
   const unreadOnly = unreadParam === "true";
 
-  const events = await listEvents({ limit, unreadOnly });
+  const events = await listEvents({ workspaceId: session.workspace.id, limit, unreadOnly });
   return c.json({
     data: events,
     meta: { count: events.length, unreadOnly, source: "iuf_events", engineState: getEventEngineState() }
@@ -15636,7 +15637,7 @@ app.post("/api/v1/internal/alerts/force-dispatch", async (c) => {
   }
 
   const before = getEventEngineState();
-  const result = await runEventEngineTickForce().catch((e) => ({
+  const result = await runEventEngineTickForce(session.workspace.id).catch((e) => ({
     eventsWritten: 0,
     rulesEvaluated: 0,
     errors: [e instanceof Error ? e.message : String(e)]
@@ -15984,7 +15985,7 @@ app.post("/api/v1/admin/openalice/decisions/purge-fallback-spam", async (c) => {
 
   // Precise identifiers — only the LLM-unavailable fallback spam, nothing else.
   const decisionWhere = drizzleSql`action_type = 'priority_alert' AND action_payload->>'fallback' = 'true'`;
-  const eventWhere = drizzleSql`rule_id = 'R_OPENALICE_DECISION' AND payload->>'message' LIKE 'OpenAlice decision LLM unavailable%'`;
+  const eventWhere = drizzleSql`workspace_id = ${session.workspace.id} AND rule_id = 'R_OPENALICE_DECISION' AND payload->>'message' LIKE 'OpenAlice decision LLM unavailable%'`;
 
   try {
     const decCnt = dbExecRows<{ n?: number }>(
@@ -16655,7 +16656,7 @@ app.post("/api/v1/internal/openalice/email-digest/trigger", async (c) => {
   const body = await c.req.json().catch(() => ({})) as { force?: boolean };
   const force = body.force === true;
 
-  const result = await runEmailDigestTick(force).catch((e) => ({
+  const result = await runEmailDigestTick(force, session.workspace.id).catch((e) => ({
     sent: false,
     eventCount: 0,
     criticalCount: 0,
@@ -16678,7 +16679,7 @@ app.get("/api/v1/internal/openalice/email-digest/state", async (c) => {
   if (!session || session.user.role !== "Owner") {
     return c.json({ error: "forbidden_role" }, 403);
   }
-  return c.json({ data: getDigestState() });
+  return c.json({ data: getDigestState(session.workspace.id) });
 });
 
 /**
@@ -21281,7 +21282,7 @@ async function fetchNotifications(_session: AppSession, workspaceId: string): Pr
   // ── 3. iuf_events (OpenAlice event rule engine — unified feed, 2026-06-12) ──
   // Same store as GET /api/v1/alerts. read = acknowledged (table's own flag).
   try {
-    const events = await listEvents({ limit: 50, dedupeSameDay: true });
+    const events = await listEvents({ workspaceId, limit: 50, dedupeSameDay: true });
     for (const ev of events) {
       const copy = IUF_EVENT_NOTIFICATION_COPY[ev.ruleId];
       const eventTiming = notificationEventTiming(ev.ruleId, ev.triggeredAt, ev.payload);
@@ -21351,7 +21352,7 @@ app.post("/api/v1/notifications/:id/mark-read", async (c) => {
 
   const eventId = notificationId.startsWith("event-") ? notificationId.slice("event-".length) : null;
   if (eventId) {
-    await acknowledgeEvent(eventId).catch((e: unknown) => {
+    await acknowledgeEvent(session.workspace.id, eventId).catch((e: unknown) => {
       console.error("[notifications/mark-read] acknowledgeEvent failed:", e instanceof Error ? e.message : String(e));
     });
   }
