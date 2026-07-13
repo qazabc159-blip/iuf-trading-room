@@ -35,11 +35,13 @@ import { randomUUID } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import { getDailyBudgetUsd, getTodayUtc } from "./llm/llm-gateway.js";
+import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ProposedDecisionRow = {
   id?: string;
+  workspace_id?: string;
   trigger_type?: string;
   trigger_ref?: Record<string, unknown> | string | null;
   action_type?: string;
@@ -54,7 +56,7 @@ type ActionOutcome = Record<string, unknown>;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-// Max decisions to execute per tick (keeps LLM spend bounded)
+// Max decisions to execute per workspace tick (keeps LLM spend bounded)
 const MAX_DECISIONS_PER_TICK = 5;
 
 // Maximum deep_analyze executions per calendar day (UTC).
@@ -108,33 +110,37 @@ const ALERT_RULE_NAME = "OpenAlice 決策告警";
 // ── Action tick state ──────────────────────────────────────────────────────────
 
 let _actionTickRunning = false;
-let _lastActionTickAt: string | null = null;
-let _lastActionTickDone = 0;
-let _lastActionTickSkipped = 0;
-let _lastActionTickError: string | null = null;
+const _workspaceActionTickStates = new Map<string, {
+  lastTickAt: string | null;
+  lastTickDone: number;
+  lastTickSkipped: number;
+  lastTickError: string | null;
+}>();
 
-export function getActionExecutorTickState() {
+export function getActionExecutorTickState(workspaceId: string) {
+  const state = _workspaceActionTickStates.get(workspaceId);
   return {
     tickRunning: _actionTickRunning,
-    lastTickAt: _lastActionTickAt,
-    lastTickDone: _lastActionTickDone,
-    lastTickSkipped: _lastActionTickSkipped,
-    lastTickError: _lastActionTickError,
+    lastTickAt: state?.lastTickAt ?? null,
+    lastTickDone: state?.lastTickDone ?? 0,
+    lastTickSkipped: state?.lastTickSkipped ?? 0,
+    lastTickError: state?.lastTickError ?? null,
   };
 }
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
-async function fetchProposedDecisions(): Promise<ProposedDecisionRow[]> {
+async function fetchProposedDecisions(workspaceId: string): Promise<ProposedDecisionRow[]> {
   const db = getDb();
   if (!db) return [];
 
   try {
     const rows = await db.execute(drizzleSql`
-      SELECT id, trigger_type, trigger_ref, action_type, action_payload,
+      SELECT id, workspace_id, trigger_type, trigger_ref, action_type, action_payload,
              confidence, priority, reasoning, created_at
       FROM iuf_decisions
-      WHERE status = 'proposed'
+      WHERE workspace_id = ${workspaceId}
+        AND status = 'proposed'
       ORDER BY priority ASC, confidence DESC, created_at DESC
       LIMIT ${drizzleSql.raw(String(MAX_DECISIONS_PER_TICK))}
     `);
@@ -148,40 +154,42 @@ async function fetchProposedDecisions(): Promise<ProposedDecisionRow[]> {
   }
 }
 
-async function markExecuting(decisionId: string): Promise<void> {
+async function markExecuting(workspaceId: string, decisionId: string): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db.execute(drizzleSql`
-    UPDATE iuf_decisions SET status = 'executing' WHERE id = ${decisionId}::uuid AND status = 'proposed'
+    UPDATE iuf_decisions SET status = 'executing'
+    WHERE workspace_id = ${workspaceId} AND id = ${decisionId}::uuid AND status = 'proposed'
   `);
 }
 
-async function markDone(decisionId: string, outcome: ActionOutcome): Promise<void> {
+async function markDone(workspaceId: string, decisionId: string, outcome: ActionOutcome): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db.execute(drizzleSql`
     UPDATE iuf_decisions
     SET status = 'done', outcome = ${JSON.stringify(outcome)}::jsonb
-    WHERE id = ${decisionId}::uuid
+    WHERE workspace_id = ${workspaceId} AND id = ${decisionId}::uuid
   `);
 }
 
-async function markSkipped(decisionId: string, outcome: ActionOutcome): Promise<void> {
+async function markSkipped(workspaceId: string, decisionId: string, outcome: ActionOutcome): Promise<void> {
   const db = getDb();
   if (!db) return;
   await db.execute(drizzleSql`
     UPDATE iuf_decisions
     SET status = 'skipped', outcome = ${JSON.stringify(outcome)}::jsonb
-    WHERE id = ${decisionId}::uuid
+    WHERE workspace_id = ${workspaceId} AND id = ${decisionId}::uuid
   `);
 }
 
-async function resetToProposed(decisionId: string): Promise<void> {
+async function resetToProposed(workspaceId: string, decisionId: string): Promise<void> {
   // Called on unexpected outer error to allow retry next tick.
   const db = getDb();
   if (!db) return;
   await db.execute(drizzleSql`
-    UPDATE iuf_decisions SET status = 'proposed' WHERE id = ${decisionId}::uuid AND status = 'executing'
+    UPDATE iuf_decisions SET status = 'proposed'
+    WHERE workspace_id = ${workspaceId} AND id = ${decisionId}::uuid AND status = 'executing'
   `);
 }
 
@@ -191,7 +199,7 @@ async function resetToProposed(decisionId: string): Promise<void> {
  * Returns the number of deep_analyze decisions that completed today (UTC).
  * Used to enforce OPENALICE_DEEP_ANALYZE_DAILY_CAP.
  */
-async function countTodayDeepAnalyzeDone(): Promise<number> {
+async function countTodayDeepAnalyzeDone(workspaceId: string): Promise<number> {
   const db = getDb();
   if (!db) return 0;
   try {
@@ -199,7 +207,8 @@ async function countTodayDeepAnalyzeDone(): Promise<number> {
     const rows = await db.execute(drizzleSql`
       SELECT COUNT(*)::int AS cnt
       FROM iuf_decisions
-      WHERE action_type = 'deep_analyze'
+      WHERE workspace_id = ${workspaceId}
+        AND action_type = 'deep_analyze'
         AND status = 'done'
         AND DATE(created_at AT TIME ZONE 'UTC') = ${today}::date
     `);
@@ -218,7 +227,7 @@ async function countTodayDeepAnalyzeDone(): Promise<number> {
  * Returns true if the ticker has already been deep_analyzed today (UTC).
  * Prevents same-ticker budget burn on multiple breakout signals.
  */
-async function isTickerDeepAnalyzedToday(ticker: string): Promise<boolean> {
+async function isTickerDeepAnalyzedToday(workspaceId: string, ticker: string): Promise<boolean> {
   const db = getDb();
   if (!db) return false;
   try {
@@ -226,7 +235,8 @@ async function isTickerDeepAnalyzedToday(ticker: string): Promise<boolean> {
     const rows = await db.execute(drizzleSql`
       SELECT COUNT(*)::int AS cnt
       FROM iuf_decisions
-      WHERE action_type = 'deep_analyze'
+      WHERE workspace_id = ${workspaceId}
+        AND action_type = 'deep_analyze'
         AND status = 'done'
         AND DATE(created_at AT TIME ZONE 'UTC') = ${today}::date
         AND (
@@ -299,7 +309,7 @@ async function handleDeepAnalyze(
   payload: Record<string, unknown>,
   triggerRef: Record<string, unknown>,
   confidence: number,
-  workspaceId: string | null,
+  workspaceId: string,
   dailyCapState: { doneCount: number; cap: number }
 ): Promise<{ status: "done" | "skipped"; outcome: ActionOutcome }> {
   // ── Governance gate 1: daily cap ──────────────────────────────────────────
@@ -395,7 +405,7 @@ async function handleDeepAnalyze(
 
   for (const ticker of tickers) {
     // ── Governance gate 4: per-ticker daily dedup ───────────────────────────
-    const alreadyDone = await isTickerDeepAnalyzedToday(ticker.toUpperCase());
+    const alreadyDone = await isTickerDeepAnalyzedToday(workspaceId, ticker.toUpperCase());
     if (alreadyDone) {
       console.log(
         `[openalice-action-executor] deep_analyze ${ticker} already analyzed today — skipping`
@@ -538,11 +548,15 @@ async function handlePriorityAlert(
   payload: Record<string, unknown>,
   triggerRef: Record<string, unknown>,
   reasoning: string,
-  priority: number
+  priority: number,
+  workspaceId: string,
 ): Promise<{ status: "done" | "skipped"; outcome: ActionOutcome }> {
   const db = getDb();
   if (!db) {
     return { status: "skipped", outcome: { reason: "db_unavailable" } };
+  }
+  if (!workspaceId) {
+    return { status: "skipped", outcome: { reason: "workspace_unavailable" } };
   }
 
   // Build alert message — prefer payload.message, fall back to reasoning
@@ -571,9 +585,9 @@ async function handlePriorityAlert(
   try {
     await db.execute(drizzleSql`
       INSERT INTO iuf_events
-        (id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
+        (id, workspace_id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
       VALUES
-        (${eventId}, ${ALERT_RULE_ID}, ${ALERT_RULE_NAME}, ${severity},
+        (${eventId}, ${workspaceId}, ${ALERT_RULE_ID}, ${ALERT_RULE_NAME}, ${severity},
          ${ticker}, ${JSON.stringify(eventPayload)}::jsonb, ${triggeredAt}, false)
     `);
 
@@ -706,7 +720,7 @@ async function handleRebalanceSuggest(
  * Safe-default: never throws. All per-decision errors caught internally.
  * On unexpected outer error: resets executing decisions back to proposed for retry.
  */
-export async function runOpenAliceActionTick(workspaceId?: string | null): Promise<void> {
+export async function runOpenAliceActionTick(workspaceIdOverride?: string | null): Promise<void> {
   if (!isDatabaseMode()) return;
   if (_actionTickRunning) {
     console.log("[openalice-action-executor] tick already running — skipping");
@@ -714,17 +728,24 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
   }
 
   _actionTickRunning = true;
-  _lastActionTickError = null;
   let done = 0;
   let skipped = 0;
   const executingIds: string[] = [];
+  let scopedWorkspaceId = workspaceIdOverride ?? null;
 
   try {
-    const rows = await fetchProposedDecisions();
+    scopedWorkspaceId = scopedWorkspaceId ?? await resolvePrimaryWorkspaceId();
+    if (!scopedWorkspaceId) throw new Error("primary_workspace_unavailable");
+    const rows = await fetchProposedDecisions(scopedWorkspaceId);
 
     if (rows.length === 0) {
       console.log("[openalice-action-executor] no proposed decisions — tick complete");
-      _lastActionTickAt = new Date().toISOString();
+      _workspaceActionTickStates.set(scopedWorkspaceId, {
+        lastTickAt: new Date().toISOString(),
+        lastTickDone: 0,
+        lastTickSkipped: 0,
+        lastTickError: null,
+      });
       return;
     }
 
@@ -734,7 +755,7 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
     // This is mutable state passed to handleDeepAnalyze so ticker-loop increments are visible.
     const deepAnalyzeCap = getDeepAnalyzeDailyCap();
     const deepAnalyzeCapState = {
-      doneCount: await countTodayDeepAnalyzeDone(),
+      doneCount: await countTodayDeepAnalyzeDone(scopedWorkspaceId),
       cap: deepAnalyzeCap,
     };
 
@@ -759,7 +780,7 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
 
       // Mark executing so concurrent ticks won't pick it up
       try {
-        await markExecuting(decisionId);
+        await markExecuting(scopedWorkspaceId, decisionId);
         executingIds.push(decisionId);
       } catch (e) {
         console.warn(`[openalice-action-executor] markExecuting ${decisionId} failed — skipping:`, e instanceof Error ? e.message : String(e));
@@ -776,7 +797,7 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
               payload,
               triggerRef,
               confidence,
-              workspaceId ?? null,
+              scopedWorkspaceId,
               deepAnalyzeCapState
             );
             break;
@@ -787,7 +808,8 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
               payload,
               triggerRef,
               reasoning,
-              priority
+              priority,
+              scopedWorkspaceId,
             );
             break;
 
@@ -808,10 +830,10 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
         }
 
         if (result.status === "done") {
-          await markDone(decisionId, result.outcome);
+          await markDone(scopedWorkspaceId, decisionId, result.outcome);
           done++;
         } else {
-          await markSkipped(decisionId, result.outcome);
+          await markSkipped(scopedWorkspaceId, decisionId, result.outcome);
           skipped++;
         }
 
@@ -827,7 +849,7 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
         console.warn(`[openalice-action-executor] decision ${decisionId} error — resetting to proposed: ${msg}`);
         // Reset to proposed so next tick can retry
         try {
-          await resetToProposed(decisionId);
+          await resetToProposed(scopedWorkspaceId, decisionId);
         } catch {
           // Best-effort
         }
@@ -836,20 +858,31 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
       }
     }
 
-    _lastActionTickDone = done;
-    _lastActionTickSkipped = skipped;
-    _lastActionTickAt = new Date().toISOString();
+    _workspaceActionTickStates.set(scopedWorkspaceId, {
+      lastTickAt: new Date().toISOString(),
+      lastTickDone: done,
+      lastTickSkipped: skipped,
+      lastTickError: null,
+    });
     console.log(
       `[openalice-action-executor] tick complete — done=${done} skipped=${skipped} of ${rows.length}`
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    _lastActionTickError = msg;
+    if (scopedWorkspaceId) {
+      _workspaceActionTickStates.set(scopedWorkspaceId, {
+        lastTickAt: new Date().toISOString(),
+        lastTickDone: done,
+        lastTickSkipped: skipped,
+        lastTickError: msg,
+      });
+    }
     console.error("[openalice-action-executor] tick fatal error (contained):", msg);
 
     // Safety: reset any stuck executing rows back to proposed
     for (const id of executingIds) {
-      try { await resetToProposed(id); } catch { /* best-effort */ }
+      if (!scopedWorkspaceId) break;
+      try { await resetToProposed(scopedWorkspaceId, id); } catch { /* best-effort */ }
     }
   } finally {
     _actionTickRunning = false;

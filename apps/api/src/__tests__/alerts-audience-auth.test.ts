@@ -35,9 +35,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { eq, sql as drizzleSql } from "drizzle-orm";
-import { getDb, users, workspaces } from "@iuf-trading-room/db";
+import { execRows, getDb, users, workspaces } from "@iuf-trading-room/db";
 
 import { hashPassword } from "../auth-store.js";
+import { runOpenAliceActionTick } from "../openalice-action-executor.js";
+import { updateDecisionVerifications } from "../openalice-decision-verifier.js";
+import { _eventEngineInternals } from "../openalice-event-rule-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
@@ -60,6 +63,9 @@ let ownerCookie = "";
 let adminCookie = "";
 let analystCookie = "";
 let viewerCookie = "";
+let secondaryOwnerCookie = "";
+let primaryWorkspaceId = "";
+let secondaryWorkspaceId = "";
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -129,10 +135,10 @@ async function ensureWorkspace(): Promise<string> {
   return created!.id;
 }
 
-async function ensureTestUser(role: Role, workspaceId: string): Promise<string> {
+async function ensureTestUser(role: Role, workspaceId: string, tenant = "primary"): Promise<string> {
   const db = getDb();
   if (!db) throw new Error("ensureTestUser requires PERSISTENCE_MODE=database.");
-  const email = `alerts-audience-auth-${role.toLowerCase()}@test.iuf.local`;
+  const email = `alerts-audience-auth-${tenant}-${role.toLowerCase()}@test.iuf.local`;
   const passwordHash = await hashPassword(TEST_PASSWORD);
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing) {
@@ -160,17 +166,84 @@ async function seedEvent(
   ruleId: string,
   ruleName: string,
   ticker: string | null,
-  marker: string
+  marker: string,
+  workspaceId = primaryWorkspaceId,
 ): Promise<string> {
   const db = getDb();
   if (!db) throw new Error("seedEvent requires PERSISTENCE_MODE=database.");
   const id = randomUUID();
   await db.execute(
     drizzleSql`
-      INSERT INTO iuf_events (id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
-      VALUES (${id}, ${ruleId}, ${ruleName}, 'info', ${ticker}, ${JSON.stringify({ testMarker: marker })}::jsonb, NOW(), false)
+      INSERT INTO iuf_events (id, workspace_id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
+      VALUES (${id}, ${workspaceId}, ${ruleId}, ${ruleName}, 'info', ${ticker}, ${JSON.stringify({ testMarker: marker })}::jsonb, NOW(), false)
     `
   );
+  return id;
+}
+
+async function seedDecision(
+  workspaceId: string,
+  marker: string,
+  options: { fallback?: boolean; triggerId?: string } = {},
+): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedDecision requires PERSISTENCE_MODE=database.");
+  const id = randomUUID();
+  const triggerId = options.triggerId ?? randomUUID();
+  await db.execute(drizzleSql`
+    INSERT INTO iuf_decisions (
+      id, workspace_id, trigger_type, trigger_id, trigger_ref, reasoning,
+      action_type, action_payload, confidence, priority, status, model_key, cost_usd
+    ) VALUES (
+      ${id}, ${workspaceId}, 'event', ${triggerId},
+      ${JSON.stringify({ testMarker: marker })}::jsonb,
+      ${marker}, 'priority_alert',
+      ${JSON.stringify({ message: marker, fallback: options.fallback === true })}::jsonb,
+      1, 1, 'proposed', 'test', 0
+    )
+  `);
+  return id;
+}
+
+async function getDecisionStatus(id: string): Promise<string | undefined> {
+  const db = getDb();
+  if (!db) throw new Error("getDecisionStatus requires PERSISTENCE_MODE=database.");
+  const rows = await db.execute(drizzleSql`SELECT status FROM iuf_decisions WHERE id = ${id}::uuid`);
+  return execRows<{ status?: string }>(rows)[0]?.status;
+}
+
+/**
+ * Seeds a `deep_analyze`/`done` decision that satisfies updateDecisionVerifications()'s
+ * SELECT criteria (status='done', created_at > 1 day old, real report, no verification
+ * yet) but uses an unresolvable ticker so computeVerification() always returns null
+ * (no price data) — making the row deterministically fall into the `skipped` bucket
+ * regardless of what OHLCV fixture data does or does not exist in this test DB. Used to
+ * observe workspace-scoping of the SELECT itself via the returned skipped count, not the
+ * (fixture-dependent) success of an actual forward-return computation.
+ */
+async function seedVerifiableDeepAnalyzeDecision(workspaceId: string, marker: string): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedVerifiableDeepAnalyzeDecision requires PERSISTENCE_MODE=database.");
+  const id = randomUUID();
+  const ticker = `NOPRICE${marker.slice(-6).toUpperCase()}`;
+  const outcome = {
+    tickers: [ticker],
+    analyses: [{ status: "complete", reportSummary: `test report ${marker}`, ticker }]
+  };
+  await db.execute(drizzleSql`
+    INSERT INTO iuf_decisions (
+      id, workspace_id, trigger_type, trigger_id, trigger_ref, reasoning,
+      action_type, action_payload, confidence, priority, status, outcome,
+      model_key, cost_usd, created_at
+    ) VALUES (
+      ${id}, ${workspaceId}, 'event', ${randomUUID()},
+      ${JSON.stringify({ testMarker: marker })}::jsonb,
+      ${marker}, 'deep_analyze',
+      ${JSON.stringify({ tickers: [ticker] })}::jsonb,
+      1, 1, 'done', ${JSON.stringify(outcome)}::jsonb,
+      'test', 0, NOW() - INTERVAL '2 days'
+    )
+  `);
   return id;
 }
 
@@ -184,7 +257,7 @@ async function seedEvent(
 async function acknowledgeAllPendingEvents(): Promise<void> {
   const db = getDb();
   if (!db) throw new Error("acknowledgeAllPendingEvents requires PERSISTENCE_MODE=database.");
-  await db.execute(drizzleSql`UPDATE iuf_events SET acknowledged = true WHERE acknowledged = false`);
+  await db.execute(drizzleSql`UPDATE iuf_events SET acknowledged = true WHERE workspace_id = ${primaryWorkspaceId} AND acknowledged = false`);
 }
 
 async function getJson(pathAndQuery: string, cookie?: string): Promise<{ status: number; body: any }> {
@@ -233,18 +306,27 @@ before(async () => {
 
   await waitForHealth(baseUrl);
 
-  const workspaceId = await ensureWorkspace();
+  primaryWorkspaceId = await ensureWorkspace();
+  const db = getDb();
+  if (!db) throw new Error("database unavailable while creating secondary workspace");
+  const [secondaryWorkspace] = await db
+    .insert(workspaces)
+    .values({ name: "Alerts Tenant B", slug: `alerts-tenant-b-${randomUUID()}` })
+    .returning();
+  secondaryWorkspaceId = secondaryWorkspace!.id;
   const [ownerEmail, adminEmail, analystEmail, viewerEmail] = await Promise.all([
-    ensureTestUser("Owner", workspaceId),
-    ensureTestUser("Admin", workspaceId),
-    ensureTestUser("Analyst", workspaceId),
-    ensureTestUser("Viewer", workspaceId)
+    ensureTestUser("Owner", primaryWorkspaceId),
+    ensureTestUser("Admin", primaryWorkspaceId),
+    ensureTestUser("Analyst", primaryWorkspaceId),
+    ensureTestUser("Viewer", primaryWorkspaceId)
   ]);
+  const secondaryOwnerEmail = await ensureTestUser("Owner", secondaryWorkspaceId, "secondary");
 
   ownerCookie = await loginAs(ownerEmail);
   adminCookie = await loginAs(adminEmail);
   analystCookie = await loginAs(analystEmail);
   viewerCookie = await loginAs(viewerEmail);
+  secondaryOwnerCookie = await loginAs(secondaryOwnerEmail);
 });
 
 after(async () => {
@@ -358,5 +440,129 @@ describe("GET /api/v1/notifications — unread badge excludes ops_internal (#122
     const drawerIds: string[] = (after.body.notifications as Array<{ id: string }>).map((n) => n.id);
     assert.ok(drawerIds.includes(`event-${actionableId}`), "actionable event should appear in the drawer list");
     assert.ok(drawerIds.includes(`event-${opsId}`), "ops_internal event should still appear in the drawer list (Owner-only surface), just not counted");
+  });
+});
+
+describe("iuf_events workspace boundary", () => {
+  test("list, raw diagnostics, notifications, and ack never cross workspaces", async () => {
+    const primaryId = await seedEvent(ACTIONABLE_RULE_ID, "租戶 A 事件", "1111", "tenant-a");
+    assert.equal(
+      await _eventEngineInternals.isDuplicateEvent(primaryWorkspaceId, ACTIONABLE_RULE_ID, "1111"),
+      true,
+      "workspace A should dedupe its own matching event",
+    );
+    assert.equal(
+      await _eventEngineInternals.isDuplicateEvent(secondaryWorkspaceId, ACTIONABLE_RULE_ID, "1111"),
+      false,
+      "workspace A event must not throttle workspace B",
+    );
+    const secondaryId = await seedEvent(
+      ACTIONABLE_RULE_ID,
+      "租戶 B 事件",
+      "1111",
+      "tenant-b",
+      secondaryWorkspaceId,
+    );
+
+    const primaryAlerts = await getJson("/api/v1/alerts?audience=all&limit=200", ownerCookie);
+    const primaryAlertIds = (primaryAlerts.body.data as Array<{ id: string }>).map((event) => event.id);
+    assert.ok(primaryAlertIds.includes(primaryId));
+    assert.ok(!primaryAlertIds.includes(secondaryId), "workspace A alerts must exclude workspace B");
+
+    const secondaryAlerts = await getJson("/api/v1/alerts?audience=all&limit=200", secondaryOwnerCookie);
+    const secondaryAlertIds = (secondaryAlerts.body.data as Array<{ id: string }>).map((event) => event.id);
+    assert.ok(secondaryAlertIds.includes(secondaryId));
+    assert.ok(!secondaryAlertIds.includes(primaryId), "workspace B alerts must exclude workspace A");
+
+    const primaryRaw = await getJson("/api/v1/iuf-events?limit=200", ownerCookie);
+    const primaryRawIds = (primaryRaw.body.data as Array<{ id: string }>).map((event) => event.id);
+    assert.ok(!primaryRawIds.includes(secondaryId), "raw diagnostics must remain workspace-scoped");
+
+    const primaryNotifications = await getJson("/api/v1/notifications", ownerCookie);
+    const primaryNotificationIds = (primaryNotifications.body.notifications as Array<{ id: string }>).map((item) => item.id);
+    assert.ok(!primaryNotificationIds.includes(`event-${secondaryId}`), "notification drawer must exclude workspace B");
+
+    const ack = await fetch(`${baseUrl}/api/v1/alerts/${secondaryId}/ack`, {
+      method: "POST",
+      headers: { cookie: ownerCookie },
+    });
+    assert.equal(ack.status, 404, "workspace A must not acknowledge workspace B event ids");
+
+    const secondaryAfterAck = await getJson("/api/v1/alerts?audience=all&limit=200", secondaryOwnerCookie);
+    const secondaryEvent = (secondaryAfterAck.body.data as Array<{ id: string; acknowledged: boolean }>).find(
+      (event) => event.id === secondaryId,
+    );
+    assert.equal(secondaryEvent?.acknowledged, false, "failed cross-workspace ack must not mutate workspace B");
+  });
+});
+
+describe("iuf_decisions workspace boundary", () => {
+  test("the same trigger key is valid per workspace and observability never crosses tenants", async () => {
+    const sharedTriggerId = randomUUID();
+    const markerA = `decision-observability-a-${randomUUID()}`;
+    const markerB = `decision-observability-b-${randomUUID()}`;
+    await seedDecision(primaryWorkspaceId, markerA, { triggerId: sharedTriggerId });
+    await seedDecision(secondaryWorkspaceId, markerB, { triggerId: sharedTriggerId });
+
+    const primary = await getJson("/api/v1/openalice/orchestrator/state?limit=100", ownerCookie);
+    assert.equal(primary.status, 200);
+    const primaryReasons = (primary.body.recent as Array<{ reasoning: string }>).map((row) => row.reasoning);
+    assert.ok(primaryReasons.includes(markerA));
+    assert.ok(!primaryReasons.includes(markerB), "workspace A observability must exclude workspace B decisions");
+
+    const secondary = await getJson("/api/v1/openalice/orchestrator/state?limit=100", secondaryOwnerCookie);
+    assert.equal(secondary.status, 200);
+    const secondaryReasons = (secondary.body.recent as Array<{ reasoning: string }>).map((row) => row.reasoning);
+    assert.ok(secondaryReasons.includes(markerB));
+    assert.ok(!secondaryReasons.includes(markerA), "workspace B observability must exclude workspace A decisions");
+  });
+
+  test("an action tick for workspace A leaves workspace B proposed", async () => {
+    const decisionA = await seedDecision(primaryWorkspaceId, `decision-action-a-${randomUUID()}`);
+    const decisionB = await seedDecision(secondaryWorkspaceId, `decision-action-b-${randomUUID()}`);
+
+    await runOpenAliceActionTick(primaryWorkspaceId);
+
+    assert.equal(await getDecisionStatus(decisionA), "done", "single-workspace behavior must remain unchanged");
+    assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace A executor must not claim workspace B decisions");
+  });
+
+  test("fallback purge deletes only the caller workspace", async () => {
+    const decisionA = await seedDecision(primaryWorkspaceId, `decision-purge-a-${randomUUID()}`, { fallback: true });
+    const decisionB = await seedDecision(secondaryWorkspaceId, `decision-purge-b-${randomUUID()}`, { fallback: true });
+
+    const purge = await fetch(`${baseUrl}/api/v1/admin/openalice/decisions/purge-fallback-spam`, {
+      method: "POST",
+      headers: { cookie: ownerCookie, "content-type": "application/json" },
+      body: JSON.stringify({ apply: true }),
+    });
+    assert.equal(purge.status, 200);
+    assert.equal(await getDecisionStatus(decisionA), undefined, "workspace A fallback should be removed");
+    assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace B fallback must survive workspace A purge");
+  });
+
+  // Pete review, 2026-07-13: updateDecisionVerifications() was the one decision
+  // lifecycle stage (generate/execute/verify/observe/purge) whose only production
+  // call site (OPENALICE-M4-CRON in server.ts) invoked it with zero args, silently
+  // scanning `deep_analyze` decisions across every workspace in one unfiltered
+  // batch instead of per-tenant. This calls the real exported function against a
+  // real two-tenant DB and asserts the SELECT itself is workspace-scoped — a
+  // scoped call for workspace A must never see workspace B's pending row (and
+  // vice versa), proven via the `skipped` count rather than a full
+  // forward-return computation (which needs OHLCV fixture data this test doesn't
+  // seed): each workspace has exactly one qualifying row, so an unscoped SELECT
+  // would report skipped=2 for either call, while a correctly scoped SELECT
+  // reports skipped=1.
+  test("a workspace-scoped verification tick never processes another workspace's pending decision", async () => {
+    await seedVerifiableDeepAnalyzeDecision(primaryWorkspaceId, `decision-verify-a-${randomUUID()}`);
+    await seedVerifiableDeepAnalyzeDecision(secondaryWorkspaceId, `decision-verify-b-${randomUUID()}`);
+
+    const resultA = await updateDecisionVerifications(primaryWorkspaceId);
+    assert.equal(resultA.skipped, 1, "workspace A tick must only see workspace A's pending decision");
+    assert.equal(resultA.errors, 0);
+
+    const resultB = await updateDecisionVerifications(secondaryWorkspaceId);
+    assert.equal(resultB.skipped, 1, "workspace B tick must only see workspace B's pending decision");
+    assert.equal(resultB.errors, 0);
   });
 });

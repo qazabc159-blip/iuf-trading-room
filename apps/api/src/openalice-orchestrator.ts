@@ -12,7 +12,7 @@
  *   5. Safe-default: any per-trigger error is caught + logged; tick continues
  *
  * Budget: callLlm() enforces getDailyBudgetUsd() ($10/day default).
- * Per-tick: max 10 events + 5 signals = 15 LLM calls × ~800 tokens × $0.00015/1k = ~$0.002/tick.
+ * Per-workspace tick: max 10 events + 5 signals = 15 LLM calls × ~800 tokens × $0.00015/1k.
  * At 10-min cadence: ~$0.3/day well within budget.
  *
  * Lane boundary:
@@ -27,6 +27,7 @@
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
+import { listWorkspaceIds } from "./workspace-scope.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ export type DecisionStatus = "proposed" | "executing" | "done" | "skipped";
 
 export type IufDecision = {
   id: string;
+  workspaceId: string;
   triggerType: "event" | "signal";
   triggerId: string;
   triggerRef: Record<string, unknown>;
@@ -66,6 +68,7 @@ type LlmDecisionOutput = {
 // Row shapes from raw SQL queries
 type IufEventRow = {
   id?: string;
+  workspace_id?: string;
   rule_id?: string;
   rule_name?: string;
   severity?: string;
@@ -76,6 +79,7 @@ type IufEventRow = {
 
 type SignalRow = {
   id?: string;
+  workspace_id?: string;
   category?: string;
   direction?: string;
   title?: string;
@@ -97,7 +101,7 @@ const VALID_ACTION_TYPES = new Set<DecisionActionType>([
 // How far back to look for unprocessed events/signals per tick
 const LOOKBACK_HOURS = 2;
 
-// Per-tick limits to bound LLM spend
+// Per-workspace limits to bound LLM spend
 const MAX_EVENTS_PER_TICK = 10;
 const MAX_SIGNALS_PER_TICK = 5;
 
@@ -291,19 +295,21 @@ function buildFallbackDecision(
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-async function fetchUnprocessedEvents(): Promise<IufEventRow[]> {
+async function fetchUnprocessedEvents(workspaceId: string): Promise<IufEventRow[]> {
   const db = getDb();
   if (!db) return [];
 
   try {
     const rows = await db.execute(drizzleSql`
-      SELECT e.id, e.rule_id, e.rule_name, e.severity, e.ticker, e.payload, e.triggered_at
+      SELECT e.id, e.workspace_id, e.rule_id, e.rule_name, e.severity, e.ticker, e.payload, e.triggered_at
       FROM iuf_events e
-      WHERE e.triggered_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
+      WHERE e.workspace_id = ${workspaceId}
+        AND e.triggered_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
         AND e.rule_id IS DISTINCT FROM ${SELF_ALERT_RULE_ID}
         AND NOT EXISTS (
           SELECT 1 FROM iuf_decisions d
-          WHERE d.trigger_type = 'event'
+          WHERE d.workspace_id = ${workspaceId}
+            AND d.trigger_type = 'event'
             AND d.trigger_id = e.id::text
         )
       ORDER BY e.triggered_at DESC
@@ -316,18 +322,20 @@ async function fetchUnprocessedEvents(): Promise<IufEventRow[]> {
   }
 }
 
-async function fetchUnprocessedSignals(): Promise<SignalRow[]> {
+async function fetchUnprocessedSignals(workspaceId: string): Promise<SignalRow[]> {
   const db = getDb();
   if (!db) return [];
 
   try {
     const rows = await db.execute(drizzleSql`
-      SELECT s.id, s.category, s.direction, s.title, s.summary, s.confidence, s.created_at
+      SELECT s.id, s.workspace_id, s.category, s.direction, s.title, s.summary, s.confidence, s.created_at
       FROM signals s
-      WHERE s.created_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
+      WHERE s.workspace_id = ${workspaceId}
+        AND s.created_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
         AND NOT EXISTS (
           SELECT 1 FROM iuf_decisions d
-          WHERE d.trigger_type = 'signal'
+          WHERE d.workspace_id = ${workspaceId}
+            AND d.trigger_type = 'signal'
             AND d.trigger_id = s.id::text
         )
       ORDER BY s.created_at DESC
@@ -341,6 +349,7 @@ async function fetchUnprocessedSignals(): Promise<SignalRow[]> {
 }
 
 async function insertDecision(
+  workspaceId: string,
   triggerType: "event" | "signal",
   triggerId: string,
   triggerRef: Record<string, unknown>,
@@ -354,9 +363,10 @@ async function insertDecision(
   // ON CONFLICT DO NOTHING: dedup guard — same trigger can't produce two decisions
   await db.execute(drizzleSql`
     INSERT INTO iuf_decisions
-      (trigger_type, trigger_id, trigger_ref, reasoning, action_type, action_payload,
+      (workspace_id, trigger_type, trigger_id, trigger_ref, reasoning, action_type, action_payload,
        confidence, priority, status, model_key, cost_usd)
     VALUES (
+      ${workspaceId},
       ${triggerType},
       ${triggerId},
       ${JSON.stringify(triggerRef)}::jsonb,
@@ -369,23 +379,26 @@ async function insertDecision(
       ${modelKey},
       ${costUsd}
     )
-    ON CONFLICT (trigger_type, trigger_id) DO NOTHING
+    ON CONFLICT (workspace_id, trigger_type, trigger_id) DO NOTHING
   `);
 }
 
 // ── Tick function ──────────────────────────────────────────────────────────────
 
 let _tickRunning = false;
-let _lastTickAt: string | null = null;
-let _lastTickDecisions = 0;
-let _lastTickError: string | null = null;
+const _workspaceTickStates = new Map<string, {
+  lastTickAt: string | null;
+  lastTickDecisions: number;
+  lastTickError: string | null;
+}>();
 
-export function getOrchestratorTickState() {
+export function getOrchestratorTickState(workspaceId: string) {
+  const state = _workspaceTickStates.get(workspaceId);
   return {
     tickRunning: _tickRunning,
-    lastTickAt: _lastTickAt,
-    lastTickDecisions: _lastTickDecisions,
-    lastTickError: _lastTickError,
+    lastTickAt: state?.lastTickAt ?? null,
+    lastTickDecisions: state?.lastTickDecisions ?? 0,
+    lastTickError: state?.lastTickError ?? null,
   };
 }
 
@@ -417,7 +430,7 @@ type DecisionPerformanceSummary = {
   computed_at: string;
 };
 
-export async function getOrchestratorObservability(limit = 20): Promise<{
+export async function getOrchestratorObservability(workspaceId: string, limit = 20): Promise<{
   tick: ReturnType<typeof getOrchestratorTickState>;
   actionTick?: ActionTickState;
   decisionPerformance?: DecisionPerformanceSummary;
@@ -434,14 +447,14 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     createdAt: string;
   }>;
 }> {
-  const tick = getOrchestratorTickState();
+  const tick = getOrchestratorTickState(workspaceId);
   const empty = { total: 0, byStatus: {}, byActionType: {} };
 
   // Lazily fetch M2 action tick state — dynamic import avoids circular dep
   let actionTick: ActionTickState | undefined;
   try {
     const { getActionExecutorTickState } = await import("./openalice-action-executor.js");
-    actionTick = getActionExecutorTickState();
+    actionTick = getActionExecutorTickState(workspaceId);
   } catch {
     // M2 not loaded yet (startup race) — omit from response
   }
@@ -450,7 +463,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
   let decisionPerformance: DecisionPerformanceSummary | undefined;
   try {
     const { getDecisionPerformance } = await import("./openalice-decision-verifier.js");
-    decisionPerformance = await getDecisionPerformance();
+    decisionPerformance = await getDecisionPerformance(workspaceId);
   } catch {
     // Verifier not loaded or DB error — omit from response (fail-open)
   }
@@ -464,10 +477,20 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     // Must await db.execute() FIRST, then pass to execRows — passing the unresolved
     // Promise makes Array.isArray()=false → always [] (the 2026-06-25 zero-decisions bug).
     const statusRows = execRows<{ status: string; n: string | number }>(
-      await db.execute(drizzleSql`SELECT status, count(*) AS n FROM iuf_decisions GROUP BY status`)
+      await db.execute(drizzleSql`
+        SELECT status, count(*) AS n
+        FROM iuf_decisions
+        WHERE workspace_id = ${workspaceId}
+        GROUP BY status
+      `)
     );
     const actionRows = execRows<{ action_type: string; n: string | number }>(
-      await db.execute(drizzleSql`SELECT action_type, count(*) AS n FROM iuf_decisions GROUP BY action_type`)
+      await db.execute(drizzleSql`
+        SELECT action_type, count(*) AS n
+        FROM iuf_decisions
+        WHERE workspace_id = ${workspaceId}
+        GROUP BY action_type
+      `)
     );
     const recentRows = execRows<{
       id: string; trigger_type: string; action_type: string; confidence: number;
@@ -476,7 +499,10 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
     }>(
       await db.execute(drizzleSql`
         SELECT id, trigger_type, action_type, confidence, priority, status, reasoning, outcome, created_at
-        FROM iuf_decisions ORDER BY created_at DESC LIMIT ${limit}
+        FROM iuf_decisions
+        WHERE workspace_id = ${workspaceId}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
       `)
     );
     const byStatus: Record<string, number> = {};
@@ -514,7 +540,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
  * Fetches unprocessed events + signals → LLM reasoning → writes iuf_decisions.
  * Safe-default: never throws. All per-trigger errors are caught internally.
  */
-export async function runOpenAliceDecisionTick(): Promise<void> {
+export async function runOpenAliceDecisionTick(workspaceIdOverride?: string): Promise<void> {
   if (!isDatabaseMode()) return;
   if (_tickRunning) {
     console.log("[openalice-orchestrator] tick already running — skipping");
@@ -522,117 +548,149 @@ export async function runOpenAliceDecisionTick(): Promise<void> {
   }
 
   _tickRunning = true;
-  _lastTickError = null;
-  let decisionsWritten = 0;
 
   try {
-    const [events, signals] = await Promise.all([
-      fetchUnprocessedEvents(),
-      fetchUnprocessedSignals(),
-    ]);
+    const workspaceIds = workspaceIdOverride ? [workspaceIdOverride] : await listWorkspaceIds();
+    if (workspaceIds.length === 0) throw new Error("workspace_unavailable");
 
-    const totalTriggers = events.length + signals.length;
-    if (totalTriggers === 0) {
-      console.log("[openalice-orchestrator] no new triggers — tick complete");
-      _lastTickAt = new Date().toISOString();
-      return;
-    }
-
-    console.log(
-      `[openalice-orchestrator] processing ${events.length} events + ${signals.length} signals`
-    );
-
-    // Process events
-    for (const row of events) {
-      if (!row.id) continue;
-
-      const triggerRef: Record<string, unknown> = {
-        type: "event",
-        id: row.id,
-        ruleId: row.rule_id ?? null,
-        ruleName: row.rule_name ?? null,
-        severity: row.severity ?? "info",
-        ticker: row.ticker ?? null,
-        payload: row.payload ?? {},
-        triggeredAt: row.triggered_at ? String(row.triggered_at) : null,
-      };
-
+    for (const workspaceId of workspaceIds) {
+      let decisionsWritten = 0;
       try {
-        const llmResult = await callOrchestratorLlm("event", triggerRef);
-        const decision = llmResult?.output ?? buildFallbackDecision(triggerRef);
-        const cost = llmResult?.costUsd ?? 0;
-        const model = llmResult?.modelKey ?? "fallback";
+        const [events, signals] = await Promise.all([
+          fetchUnprocessedEvents(workspaceId),
+          fetchUnprocessedSignals(workspaceId),
+        ]);
 
-        await insertDecision("event", String(row.id), triggerRef, decision, model, cost);
-        decisionsWritten++;
+        const totalTriggers = events.length + signals.length;
+        if (totalTriggers === 0) {
+          _workspaceTickStates.set(workspaceId, {
+            lastTickAt: new Date().toISOString(),
+            lastTickDecisions: 0,
+            lastTickError: null,
+          });
+          console.log(`[openalice-orchestrator] workspace=${workspaceId} no new triggers — tick complete`);
+          continue;
+        }
 
         console.log(
-          `[openalice-orchestrator] event ${row.rule_id} → ${decision.action_type} ` +
-          `(confidence=${decision.confidence.toFixed(2)}, priority=${decision.priority})`
+          `[openalice-orchestrator] workspace=${workspaceId} processing ${events.length} events + ${signals.length} signals`
+        );
+
+        for (const row of events) {
+          if (!row.id) continue;
+          const triggerRef: Record<string, unknown> = {
+            type: "event",
+            workspaceId,
+            id: row.id,
+            ruleId: row.rule_id ?? null,
+            ruleName: row.rule_name ?? null,
+            severity: row.severity ?? "info",
+            ticker: row.ticker ?? null,
+            payload: row.payload ?? {},
+            triggeredAt: row.triggered_at ? String(row.triggered_at) : null,
+          };
+
+          try {
+            const llmResult = await callOrchestratorLlm("event", triggerRef);
+            const decision = llmResult?.output ?? buildFallbackDecision(triggerRef);
+            await insertDecision(
+              workspaceId,
+              "event",
+              String(row.id),
+              triggerRef,
+              decision,
+              llmResult?.modelKey ?? "fallback",
+              llmResult?.costUsd ?? 0,
+            );
+            decisionsWritten++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`[openalice-orchestrator] event ${row.id} failed — using fallback: ${msg}`);
+            try {
+              await insertDecision(
+                workspaceId,
+                "event",
+                String(row.id),
+                triggerRef,
+                buildFallbackDecision(triggerRef),
+                "fallback",
+                0,
+              );
+              decisionsWritten++;
+            } catch {
+              // Per-trigger double failure is contained; later ticks may retry.
+            }
+          }
+        }
+
+        for (const row of signals) {
+          if (!row.id) continue;
+          const triggerRef: Record<string, unknown> = {
+            type: "signal",
+            workspaceId,
+            id: row.id,
+            source: row.category ?? null,
+            direction: row.direction ?? null,
+            title: row.title ?? null,
+            summary: row.summary ?? null,
+            confidence: row.confidence ?? null,
+            createdAt: row.created_at ? String(row.created_at) : null,
+          };
+
+          try {
+            const llmResult = await callOrchestratorLlm("signal", triggerRef);
+            const decision = llmResult?.output ?? buildFallbackDecision(triggerRef);
+            await insertDecision(
+              workspaceId,
+              "signal",
+              String(row.id),
+              triggerRef,
+              decision,
+              llmResult?.modelKey ?? "fallback",
+              llmResult?.costUsd ?? 0,
+            );
+            decisionsWritten++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.warn(`[openalice-orchestrator] signal ${row.id} failed — using fallback: ${msg}`);
+            try {
+              await insertDecision(
+                workspaceId,
+                "signal",
+                String(row.id),
+                triggerRef,
+                buildFallbackDecision(triggerRef),
+                "fallback",
+                0,
+              );
+              decisionsWritten++;
+            } catch {
+              // Per-trigger double failure is contained; later ticks may retry.
+            }
+          }
+        }
+
+        _workspaceTickStates.set(workspaceId, {
+          lastTickAt: new Date().toISOString(),
+          lastTickDecisions: decisionsWritten,
+          lastTickError: null,
+        });
+        console.log(
+          `[openalice-orchestrator] workspace=${workspaceId} tick complete — ` +
+          `${decisionsWritten} decisions written from ${totalTriggers} triggers`
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[openalice-orchestrator] event ${row.id} failed — skipping: ${msg}`);
-        // Attempt fallback insert so this event isn't retried indefinitely
-        try {
-          const fallback = buildFallbackDecision(triggerRef);
-          await insertDecision("event", String(row.id), triggerRef, fallback, "fallback", 0);
-          decisionsWritten++;
-        } catch {
-          // Double failure — log and move on; dedup will prevent retry storm
-        }
+        _workspaceTickStates.set(workspaceId, {
+          lastTickAt: new Date().toISOString(),
+          lastTickDecisions: decisionsWritten,
+          lastTickError: msg,
+        });
+        console.error(`[openalice-orchestrator] workspace=${workspaceId} tick error (contained):`, msg);
       }
     }
-
-    // Process signals
-    for (const row of signals) {
-      if (!row.id) continue;
-
-      const triggerRef: Record<string, unknown> = {
-        type: "signal",
-        id: row.id,
-        source: row.category ?? null,
-        direction: row.direction ?? null,
-        title: row.title ?? null,
-        summary: row.summary ?? null,
-        confidence: row.confidence ?? null,
-        createdAt: row.created_at ? String(row.created_at) : null,
-      };
-
-      try {
-        const llmResult = await callOrchestratorLlm("signal", triggerRef);
-        const decision = llmResult?.output ?? buildFallbackDecision(triggerRef);
-        const cost = llmResult?.costUsd ?? 0;
-        const model = llmResult?.modelKey ?? "fallback";
-
-        await insertDecision("signal", String(row.id), triggerRef, decision, model, cost);
-        decisionsWritten++;
-
-        console.log(
-          `[openalice-orchestrator] signal ${row.category}/${row.direction} → ${decision.action_type} ` +
-          `(confidence=${decision.confidence.toFixed(2)}, priority=${decision.priority})`
-        );
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[openalice-orchestrator] signal ${row.id} failed — skipping: ${msg}`);
-        try {
-          const fallback = buildFallbackDecision(triggerRef);
-          await insertDecision("signal", String(row.id), triggerRef, fallback, "fallback", 0);
-          decisionsWritten++;
-        } catch {
-          // Double failure — log and move on
-        }
-      }
-    }
-
-    _lastTickDecisions = decisionsWritten;
-    _lastTickAt = new Date().toISOString();
-    console.log(
-      `[openalice-orchestrator] tick complete — ${decisionsWritten} decisions written from ${totalTriggers} triggers`
-    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    _lastTickError = msg;
     console.error("[openalice-orchestrator] tick fatal error (contained):", msg);
   } finally {
     _tickRunning = false;

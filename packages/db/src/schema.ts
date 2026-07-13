@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const marketStateEnum = pgEnum("market_state", [
   "Attack",
@@ -1124,6 +1125,31 @@ export const aiRecPickSnapshots = pgTable(
   })
 );
 
+// -- iuf_events -- migrations 0025_iuf_events.sql + 0054_iuf_events_workspace.sql
+export const iufEvents = pgTable(
+  "iuf_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    ruleId: text("rule_id").notNull(),
+    ruleName: text("rule_name").notNull(),
+    severity: text("severity").notNull(),
+    ticker: text("ticker"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    triggeredAt: timestamp("triggered_at", { withTimezone: true }).defaultNow().notNull(),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+  },
+  (table) => ({
+    workspaceRuleTickerTimeIdx: index("iuf_events_workspace_rule_ticker_time_idx")
+      .on(table.workspaceId, table.ruleId, table.ticker, table.triggeredAt.desc()),
+    workspaceTriggeredAtIdx: index("iuf_events_workspace_triggered_at_idx")
+      .on(table.workspaceId, table.triggeredAt.desc()),
+    workspaceUnreadIdx: index("iuf_events_workspace_unread_idx")
+      .on(table.workspaceId, table.triggeredAt.desc())
+      .where(sql`${table.acknowledged} = false`),
+  })
+);
+
 // -- iuf_decisions -- migration 0046_iuf_decisions.sql
 // OpenAlice M1 decision layer: orchestrator consumes iuf_events + signals →
 // LLM reasoning → decision rows. M1 writes status='proposed' only; M2 executes.
@@ -1134,6 +1160,7 @@ export const iufDecisions = pgTable(
   "iuf_decisions",
   {
     id:            uuid("id").defaultRandom().primaryKey(),
+    workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     // trigger provenance
     triggerType:   text("trigger_type").notNull(),
     triggerId:     text("trigger_id").notNull(),
@@ -1154,10 +1181,14 @@ export const iufDecisions = pgTable(
     createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    statusCreatedIdx:     index("iuf_decisions_status_created_idx").on(table.status, table.createdAt.desc()),
-    actionTypeCreatedIdx: index("iuf_decisions_action_type_created_idx").on(table.actionType, table.createdAt.desc()),
-    createdAtIdx:         index("iuf_decisions_created_at_idx").on(table.createdAt.desc()),
-    triggerUidx:          uniqueIndex("iuf_decisions_trigger_uidx").on(table.triggerType, table.triggerId),
+    workspaceStatusCreatedIdx: index("iuf_decisions_workspace_status_created_idx")
+      .on(table.workspaceId, table.status, table.createdAt.desc()),
+    workspaceActionTypeCreatedIdx: index("iuf_decisions_workspace_action_type_created_idx")
+      .on(table.workspaceId, table.actionType, table.createdAt.desc()),
+    workspaceCreatedAtIdx: index("iuf_decisions_workspace_created_at_idx")
+      .on(table.workspaceId, table.createdAt.desc()),
+    workspaceTriggerUidx: uniqueIndex("iuf_decisions_workspace_trigger_uidx")
+      .on(table.workspaceId, table.triggerType, table.triggerId),
   })
 );
 
