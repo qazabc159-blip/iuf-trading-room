@@ -8935,7 +8935,16 @@ test("migration 0054 scopes iuf_events indexes and fails closed on ambiguous leg
 
   assert.match(forward, /ADD COLUMN IF NOT EXISTS workspace_id UUID/i);
   assert.match(forward, /WHERE workspace_id IS NULL/i, "backfill must only touch unresolved legacy rows");
-  assert.match(forward, /workspace_count <> 1/i, "ambiguous multi-workspace backfill must fail closed");
+  assert.match(
+    forward,
+    /default_workspace_id CONSTANT UUID := '888fd3bd-4a48-4656-9e6a-ac19360cc0de'/i,
+    "orphan backfill must use the explicit, hard-coded Primary Desk workspace, not a workspace-count guess",
+  );
+  assert.match(
+    forward,
+    /NOT EXISTS \(SELECT 1 FROM workspaces WHERE id = default_workspace_id\)/i,
+    "must fail closed if the hard-coded default workspace no longer exists",
+  );
   assert.match(forward, /REFERENCES workspaces\(id\) ON DELETE CASCADE/i);
   assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/i);
   assert.match(
@@ -8973,7 +8982,16 @@ test("migration 0055 scopes iuf_decisions with provenance-first backfill and DES
   assert.match(forward, /ADD COLUMN IF NOT EXISTS workspace_id UUID/i);
   assert.match(forward, /SET workspace_id = e\.workspace_id[\s\S]*d\.trigger_type = 'event'/i);
   assert.match(forward, /SET workspace_id = s\.workspace_id[\s\S]*d\.trigger_type = 'signal'/i);
-  assert.match(forward, /workspace_count <> 1/i, "orphaned legacy rows must fail closed when ownership is ambiguous");
+  assert.match(
+    forward,
+    /default_workspace_id CONSTANT UUID := '888fd3bd-4a48-4656-9e6a-ac19360cc0de'/i,
+    "orphan backfill must use the explicit, hard-coded Primary Desk workspace, not a workspace-count guess",
+  );
+  assert.match(
+    forward,
+    /NOT EXISTS \(SELECT 1 FROM workspaces WHERE id = default_workspace_id\)/i,
+    "must fail closed if the hard-coded default workspace no longer exists",
+  );
   assert.match(forward, /REFERENCES workspaces\(id\) ON DELETE CASCADE/i);
   assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/i);
   assert.match(

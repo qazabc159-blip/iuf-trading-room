@@ -5,34 +5,34 @@
 ALTER TABLE iuf_events
   ADD COLUMN IF NOT EXISTS workspace_id UUID;
 
--- Fail closed: legacy events have no ownership evidence. They may only be
--- attributed automatically when exactly one workspace exists.
+-- Fail closed: legacy events have no ownership evidence. Do NOT infer from
+-- "how many workspaces exist" -- prod carries 18 workspaces as of
+-- 2026-07-13 (17 are 2026-04 test residue, 1 real "Primary Desk"), so a
+-- single-workspace assumption is provably false here and previously took
+-- prod down for ~40 minutes (see
+-- reports/tenancy_readiness_20260712/FIX_FORWARD_0054_SPEC_2026_07_13.md,
+-- fix-forward option ii). Assign orphans to the one workspace that has ever
+-- produced this data; fail closed if that workspace is ever renamed or
+-- removed instead of silently guessing.
 DO $$
 DECLARE
   missing_workspace_rows BIGINT;
-  workspace_count BIGINT;
-  sole_workspace_id UUID;
+  default_workspace_id CONSTANT UUID := '888fd3bd-4a48-4656-9e6a-ac19360cc0de'; -- Primary Desk
 BEGIN
   SELECT COUNT(*) INTO missing_workspace_rows
   FROM iuf_events
   WHERE workspace_id IS NULL;
 
   IF missing_workspace_rows > 0 THEN
-    SELECT COUNT(*) INTO workspace_count FROM workspaces;
-    IF workspace_count <> 1 THEN
+    IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = default_workspace_id) THEN
       RAISE EXCEPTION
-        '0054 cannot safely backfill % iuf_events rows: expected exactly one workspace, found %',
+        '0054 cannot safely backfill % iuf_events rows: hard-coded default workspace % (Primary Desk) not found',
         missing_workspace_rows,
-        workspace_count;
+        default_workspace_id;
     END IF;
 
-    SELECT id INTO sole_workspace_id
-    FROM workspaces
-    ORDER BY created_at ASC, id ASC
-    LIMIT 1;
-
     UPDATE iuf_events
-    SET workspace_id = sole_workspace_id
+    SET workspace_id = default_workspace_id
     WHERE workspace_id IS NULL;
   END IF;
 END $$;
