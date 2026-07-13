@@ -299,6 +299,30 @@
   padding:8px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);
   border:1px solid var(--line);
 }
+/* 桌面重排 (2026-07-13): .tape 原本固定 3 欄（盤口/成交/資金），版面重排後
+   盤口→右軌、資金摘要→左軌、僅「最近成交」留在中欄——三個位置現在都只有
+   單一子欄，改 1fr 避免單一子項被強塞進 1/3 欄寬。沿用既有 .tape/.tape>div/
+   .stk/.row 全套樣式（含捲動、色彩、tick-flash），不重造一份新元件。 */
+.tape.solo{grid-template-columns:1fr}
+/* 左軌 (資金摘要) / 右軌 (五檔盤口) 內的 .tape 現在是 flex 子項而非
+   .cpane 固定列高格子的孫層——給明確 flex-basis 與間距，讓 .wlist / .tform
+   仍能用 flex:1 吃剩餘空間，不被撐爆容器（lpane/rpane 兩者都
+   overflow:hidden，見 [screen]/route.ts embedded overrides）。*/
+.lpane > .tape{flex:0 0 auto;margin:0 8px 8px}
+.rpane > .tape{flex:0 0 auto;margin:8px 8px 0;max-height:270px}
+.rpane > .tape .stk{max-height:200px}
+.depth-hint{flex:0 0 auto;padding:5px 2px 1px;font:500 9.5px/1.35 var(--sans);color:var(--fg-3)}
+.depth-hint b{color:var(--brand);font-weight:600}
+/* 點盤口價位帶入委託價 — 只有 #depth 的 .px 可點擊，資金摘要/最近成交沿用
+   既有不可互動樣式。 */
+#depth .row .px{cursor:pointer;transition:color .12s}
+#depth .row .px:hover{color:var(--brand-2)}
+/* 文字不出框：資金摘要卡片內所有 grid/flex 子項允許縮小換行，不靠固定寬度
+   賭剛好夠放（楊董 2026-07-13 追加鐵則①）。標籤字串皆為固定短中文，數值皆
+   tabular-nums 定寬數字，此規則純防禦，非已知有溢出案例。 */
+.lpane > .tape [style*="grid-template-columns"],
+.lpane > .tape [style*="grid-template-columns"] > div{min-width:0}
+.lpane > .tape [style*="justify-content:space-between"]{flex-wrap:wrap;row-gap:2px}
 /* 盤口密度（PR-B, 2026-07-10）: 每欄改 flex column，標題固定、清單本身用
    min-height:0 + overflow-y:auto 吃剩餘高度。實測 .tape 可視高度只有 41-53px
    （受 .cpane grid-template-rows 固定列高所限，未動該結構），緊湊後單列
@@ -365,7 +389,7 @@
 .tform .seg2 button.on .tag{color:inherit;opacity:.7}
 
 .tform .field{display:flex;flex-direction:column;gap:5px}
-.tform .field .l{font:500 10.5px/1 var(--mono);letter-spacing:.12em;color:var(--fg-3);text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+.tform .field .l{font:500 10.5px/1 var(--mono);letter-spacing:.12em;color:var(--fg-3);text-transform:uppercase;display:flex;flex-wrap:wrap;row-gap:2px;justify-content:space-between;align-items:center;min-width:0}
 .tform .field .l .helper{font:500 10px/1 var(--mono);color:var(--fg-3);letter-spacing:.04em;text-transform:none}
 .tform .field input,.tform .field select{
   appearance:none;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-md);
@@ -383,10 +407,19 @@
   width:32px;height:36px;color:var(--fg-2);font:500 13px/1 var(--mono);cursor:pointer;transition:all .15s
 }
 .tform .field .step .stepbtn:hover{color:var(--brand);border-color:var(--brand-line)}
-.tform .field .units{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--bg-2)}
-.tform .field .units button{background:transparent;border:0;padding:8px 10px;font:500 10.5px/1 var(--mono);color:var(--fg-2);cursor:pointer;letter-spacing:.08em;border-right:1px solid var(--line)}
+/* 張/股 (LOT/SHARE) 單位切換 — 1000 倍風險關鍵控件 (楊董 2026-07-13 修正 a)：
+   永遠帶品牌色邊框（不只 .on 態）標示「這格特別重要」，且透過 .qtyunit
+   glue 在數量欄正右側，不再跟委託類型同列分開。*/
+.qtyunit{display:flex;gap:6px;align-items:stretch}
+.qtyunit .step{flex:1 1 auto;min-width:0}
+.qtyunit .units{flex:0 0 auto}
+.tform .field .units{display:inline-flex;border:1.5px solid var(--brand-line);border-radius:var(--r-sm);overflow:hidden;background:var(--bg-2);box-shadow:0 0 0 1px rgba(200,148,63,.08)}
+.tform .field .units button{background:transparent;border:0;padding:8px 11px;font:600 11.5px/1 var(--sans);color:var(--fg-2);cursor:pointer;letter-spacing:.02em;border-right:1px solid var(--brand-line);white-space:nowrap;display:flex;align-items:center;gap:4px}
 .tform .field .units button:last-child{border-right:0}
-.tform .field .units button.on{color:var(--brand);background:var(--bg-3)}
+.tform .field .units button .req{font:600 8px/1 var(--mono);letter-spacing:.05em;color:var(--fg-3)}
+.tform .field .units button.on{color:var(--brand);background:rgba(200,148,63,.16)}
+.tform .field .units button.on .req{color:var(--brand);opacity:.85}
+.tform .field .l .unit-req{font:700 8.5px/1 var(--mono);letter-spacing:.04em;color:var(--brand);text-transform:none;white-space:nowrap}
 
 .preview{background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;animation:fadeUp .25s var(--e-out)}
 .preview .item{display:flex;flex-direction:column;gap:3px}

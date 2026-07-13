@@ -816,7 +816,12 @@ describe("final-v031 paper ticket price gate", () => {
     // netQtyShares>0 rows only) is threaded through and subtracted.
     expect(liveHydration).toContain("investedCostTWD: null as number | null,");
     expect(liveHydration).toContain("const investedCostTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.investedCostTWD) ?? null) : null;");
-    expect(liveHydration).toContain("const availableCashTWD = capitalReady ? Number(capitalTWD) - investedCostTWD : null;");
+    // #1238 (2026-07-12): backend now returns a FIFO lot-matched, reconciled
+    // summary.availableCashTWD directly — preferred when present; the
+    // baseCapitalTWD-minus-investedCostTWD expression below survives only as
+    // the fallback for a stale cache that hasn't picked up the new field.
+    expect(liveHydration).toContain("Number(capitalTWD) - investedCostTWD");
+    expect(liveHydration).toContain("availableCashReady ? Number(availableCashFromBackend) : Number(capitalTWD) - investedCostTWD");
     expect(liveHydration).toContain('summaryAvailEl.textContent = capitalReady ? n(availableCashTWD) : "--";');
     expect(liveHydration).toContain("window.__IUF_AVAIL_CASH__ = capitalReady ? availableCashTWD : 0;");
     expect(liveHydration).toContain('pAvail.textContent = capitalReady ? n(availableCashTWD) : "--";');
@@ -824,6 +829,124 @@ describe("final-v031 paper ticket price gate", () => {
     // baseCapitalTWD, so the fast-unlocked ticket shows correct available
     // cash too, not a stale full-base-capital number.
     expect(liveHydration).toContain("const investedCost = raw?.summary?.investedCostTWD;");
+  });
+
+  it("#1238 (2026-07-12): consumes the FIFO lot-matched realizedPnlTwd/unrealizedPnlTwd/availableCashTWD backend fields with a null-safe fallback, never crashing on a stale cache missing them", () => {
+    // Type carries the three new fields as optional — a response from before
+    // #1238 (or a stale CDN/browser cache) simply omits them, never crashes.
+    expect(liveHydration).toContain("availableCashTWD: null as number | null,");
+    expect(liveHydration).toContain("realizedPnlTwd: null as number | null,");
+    expect(liveHydration).toContain("unrealizedPnlTwd: null as number | null,");
+    // clientPaperPayload() (15s refresh) and fetchCapitalFast() (fast path)
+    // both extract all three fields from summary.
+    expect(liveHydration).toContain("const availableCashTWD = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.availableCashTWD) ?? null) : null;");
+    expect(liveHydration).toContain("const realizedPnlTwd = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.realizedPnlTwd) ?? null) : null;");
+    expect(liveHydration).toContain("const unrealizedPnlTwd = portfolioRawResult.ok ? ((portfolioEnvelope?.summary?.unrealizedPnlTwd) ?? null) : null;");
+    expect(liveHydration).toContain("availableCashTWD: numOrNull(raw?.summary?.availableCashTWD),");
+    expect(liveHydration).toContain("realizedPnlTwd: numOrNull(raw?.summary?.realizedPnlTwd),");
+    expect(liveHydration).toContain("unrealizedPnlTwd: numOrNull(raw?.summary?.unrealizedPnlTwd),");
+    // 已實現損益 (#summary-realized, new) renders an honest "—" when the
+    // backend field is absent — there is no pre-#1238 client-computable
+    // fallback for realized P&L (unlike 可用資金/未實現損益 above), so this
+    // must never fabricate a number.
+    expect(liveHydration).toContain('const summaryRealizedEl = $("#summary-realized");');
+    expect(liveHydration).toContain('summaryRealizedEl.textContent = capitalReady ? "—" : (capitalUnauthorized ? "待授權" : "載入中");');
+    // 未實現損益 (#summary-pnl, relabeled from 總損益) prefers the backend
+    // FIFO value; the pre-#1238 client-computed mark-to-open-positions
+    // estimate survives only as the fallback branch.
+    expect(liveHydration).toContain("const unrealizedReady = live.unrealizedPnlTwd !== null && live.unrealizedPnlTwd !== undefined");
+    expect(liveHydration).toContain("if (unrealizedReady) {");
+    expect(liveHydration).toContain("} else if (openPositions.length) {");
+    // Browser hydration script stays plain JS — no TypeScript-only param
+    // annotations even in this new helper.
+    expect(liveHydration).toContain("const numOrNull = (v) => (v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));");
+  });
+
+  it("桌面重排 (2026-07-13): 五檔盤口 moved to rpane above the ticket, 資金摘要 moved to lpane below the watchlist — #depth/#summary-* ids and renderFautoSummary()'s grid lookup preserved", () => {
+    // ② depth ladder now lives inside .rpane, directly before the ticket
+    // header, not inside the center .tape strip anymore.
+    const rpaneIndex = ticketHtml.indexOf('<aside class="rpane">');
+    const depthIndex = ticketHtml.indexOf('id="depth"');
+    const thIndex = ticketHtml.indexOf('<div class="th">');
+    expect(rpaneIndex).toBeGreaterThan(-1);
+    expect(depthIndex).toBeGreaterThan(rpaneIndex);
+    expect(thIndex).toBeGreaterThan(depthIndex);
+    // ⑦ capital summary now lives inside .lpane, after the watchlist groups,
+    // still using the exact original inline-styled 2-col grid markup so
+    // renderFautoSummary()'s `$("#summary-capital")?.closest("div[style*=
+    // 'grid-template-columns']")` lookup in final-v031-live.ts keeps working.
+    const lpaneCloseIndex = ticketHtml.indexOf("</aside>");
+    const capitalIndex = ticketHtml.indexOf('id="summary-capital"');
+    expect(capitalIndex).toBeGreaterThan(-1);
+    expect(capitalIndex).toBeLessThan(lpaneCloseIndex);
+    expect(ticketHtml).toContain('style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;font:500 11.5px/1.4 var(--sans);color:var(--fg-2)"');
+    // Only one #depth / one #summary-capital in the whole document — moved,
+    // not duplicated.
+    expect((ticketHtml.match(/id="depth"/g) || []).length).toBe(1);
+    expect((ticketHtml.match(/id="summary-capital"/g) || []).length).toBe(1);
+    // Center .tape strip now holds only 最近成交 (recent trades) — depth and
+    // capital summary no longer sit inside it as siblings.
+    expect(ticketHtml).not.toContain('<div class="h">委買 / 委賣 五檔</div>');
+    expect(ticketHtml).toContain('<div class="tape solo">');
+  });
+
+  it("桌面重排 (2026-07-13): 已實現/未實現損益分列 — new #summary-realized cell, 未實現損益 label on the existing #summary-pnl id", () => {
+    expect(ticketHtml).toContain('id="summary-realized"');
+    expect(ticketHtml).toContain(">已實現損益<");
+    expect(ticketHtml).toContain(">未實現損益<");
+    expect(ticketHtml).not.toContain(">總損益<");
+    expect(ticketHtml).toContain('id="summary-pnl"');
+  });
+
+  it("桌面重排 (2026-07-13, 楊董修正 a): 張/股單位切換 glued immediately next to the quantity field via .qtyunit, not split into a row2 column with 委託類型", () => {
+    // #t-unit and #t-qty now share one .qtyunit flex row inside the same
+    // .field — not two separate .field columns in a .field.row2.
+    const qtyFieldIndex = ticketHtml.indexOf('<div class="qtyunit">');
+    expect(qtyFieldIndex).toBeGreaterThan(-1);
+    const qtyIndex = ticketHtml.indexOf('id="t-qty"', qtyFieldIndex);
+    const unitIndex = ticketHtml.indexOf('id="t-unit"', qtyFieldIndex);
+    expect(qtyIndex).toBeGreaterThan(qtyFieldIndex);
+    expect(unitIndex).toBeGreaterThan(qtyIndex);
+    // 委託類型 now pairs with 委託價 instead of 單位.
+    const otypeIndex = ticketHtml.indexOf('id="t-otype"');
+    const priceIndex = ticketHtml.indexOf('id="t-pricewrap"');
+    expect(otypeIndex).toBeGreaterThan(-1);
+    expect(priceIndex).toBeGreaterThan(otypeIndex);
+    expect(unitIndex).toBeGreaterThan(priceIndex);
+    // 必填 badge + LOT/SHARE sub-labels for the 1000x risk-critical control.
+    expect(ticketHtml).toContain('<span class="unit-req">單位必填</span>');
+    expect(ticketHtml).toContain('data-unit="lot" class="on">張 <span class="req">LOT</span>');
+    expect(ticketHtml).toContain('data-unit="share">股 <span class="req">SHARE</span>');
+    // Hydration's existing units-toggle listener still targets #t-unit by id
+    // — zero JS logic change, only the surrounding DOM moved.
+    expect(ticketHtml).toContain("document.querySelectorAll('#t-unit button')");
+  });
+
+  it("桌面重排 (2026-07-13): 點盤口價位帶入委託價 — depth-click-to-fill delegated listener targets #depth .row .px and writes #t-price", () => {
+    expect(ticketHtml).toContain("#depth .row .px");
+    expect(ticketHtml).toContain("const priceInput=document.getElementById('t-price')");
+    expect(ticketHtml).toContain("priceInput.value=val.toFixed(2)");
+    expect(ticketHtml).toContain("if(typeof updPreview==='function')updPreview()");
+    // Static hint text next to the ladder, matching the approved mock's
+    // "點任一檔價位 帶入委託價" affordance copy.
+    expect(ticketHtml).toContain('<div class="depth-hint">點任一檔價位 <b>帶入委託價</b></div>');
+  });
+
+  it("桌面重排 (2026-07-13): .cpane row-track height rule (86px) stays scoped to the center 最近成交 strip, not force-applied to the relocated rpane/lpane panels", () => {
+    // The pre-existing always-on body[data-screen-label] rule is kept
+    // byte-identical (other assertions in this file lock its exact text) —
+    // a MORE specific follow-up rule overrides height for the two new
+    // locations instead of editing it in place.
+    expect(ticketHtml).toContain('body[data-screen-label="Trading Room v1"] .rpane > .tape,');
+    expect(ticketHtml).toContain('body[data-screen-label="Trading Room v1"] .lpane > .tape{');
+    const routeSource = readFileSync(new URL("../app/api/ui-final-v031/[screen]/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    expect(routeSource).toContain(".cpane > .tape {");
+    expect(routeSource).toContain(".rpane > .tape,\n    .lpane > .tape {\n      max-height: 200px !important;\n    }");
+    // Units toggle must not be forced to width:100% inside the new .qtyunit
+    // row (it would crowd out the adjacent quantity stepper) — a more
+    // specific selector wins regardless of source order.
+    expect(routeSource).toContain(".tform .field .qtyunit .units {");
+    expect(routeSource).toContain("width: auto !important;");
   });
 
   it("P0-4: tags cost-basis-substituted prices and closed rows in the 模擬庫存 ledger instead of silently presenting them as live/held (mirrors #1149's 未計價/以成本估 pattern)", () => {

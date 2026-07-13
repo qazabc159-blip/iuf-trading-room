@@ -158,6 +158,19 @@ function contentShellOverrides(screen: ScreenKey) {
     scrollbar-width: none !important;
   }
 
+  /* 桌面重排 (2026-07-13): 五檔盤口(rpane)/資金摘要(lpane) 現在是各自 flex
+     父層的固定高度子項，.tform/.wlist 用既有 flex:1 吃剩餘高度——不需要動
+     .rpane/.lpane 本身的 display:flex（trading.css 已是 flex-direction:column），
+     只需鎖住新子項的 flex-basis 上限，避免任一者在極端視窗把票券/自選清單
+     擠到 0。 */
+  .rpane > .tape {
+    flex: 0 0 auto !important;
+  }
+
+  .lpane > .tape {
+    flex: 0 0 auto !important;
+  }
+
   .lpane,
   .rpane {
     height: 100% !important;
@@ -231,6 +244,30 @@ function contentShellOverrides(screen: ScreenKey) {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
     width: 100% !important;
+  }
+
+  /* 桌面重排 (2026-07-13, 楊董修正 a): 上面這條假設 .units 獨占一個 row2
+     欄位（原本委託類型/單位並排）。現在單位改成緊貼數量欄的 .qtyunit flex
+     row，.units 只能佔自然寬度——否則 width:100%!important 會把旁邊的
+     數量 stepper 擠不見。只在新的 .qtyunit 容器內覆寫，不影響其他既有
+     .units 用法（目前只有這一處，但用 scoped selector 保守處理）。 */
+  .tform .field .qtyunit {
+    display: flex !important;
+    gap: 6px !important;
+    align-items: stretch !important;
+  }
+
+  .tform .field .qtyunit .step {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  /* Specificity must beat ".tform .field .units" (3 classes) above, which
+     this selector deliberately keeps as a strict superset of (4 classes)
+     so it wins regardless of source order, not just because it's later. */
+  .tform .field .qtyunit .units {
+    width: auto !important;
+    flex: 0 0 auto !important;
   }
 
   .preview {
@@ -341,8 +378,17 @@ function contentShellOverrides(screen: ScreenKey) {
       gap: 6px !important;
     }
 
-    .tape {
+    /* 桌面重排 (2026-07-13): 這條原本不分位置套用到所有 .tape——現在
+       五檔盤口(rpane)/資金摘要(lpane) 也共用 .tape 樣式但各自需要自己的高度
+       （見上方 .rpane > .tape / .lpane > .tape flex-basis 規則），scope 到
+       .cpane 底下的「最近成交」實例，不要把矮視窗下的側欄卡片也硬壓 70px。 */
+    .cpane > .tape {
       height: 70px !important;
+    }
+
+    .rpane > .tape,
+    .lpane > .tape {
+      max-height: 200px !important;
     }
 
     .tape > div {
@@ -484,6 +530,18 @@ function contentShellOverrides(screen: ScreenKey) {
       flex: 0 0 auto !important;
       min-height: 70px !important;
       max-height: 200px !important;
+    }
+
+    /* 桌面重排 (2026-07-13) 手機側追加同款修正: .wlist 跟上面 #depth 是同一個
+       bug class（flex:1 1 0% + overflow-y:auto → automatic minimum size 依
+       CSS Flexbox spec 4.5 節被 overflow!=visible 壓成 0，母層 .lpane 在手機
+       又是 height:auto 沒有外部高度可分配 flex-grow），本來就存在、只是這次
+       新增 .lpane > .tape（資金摘要卡）當第 5 個手機 flex 子項時，經真瀏覽器
+       量測才確認 .wlist 塌到 12px（自選列表被壓扁到看不見，390px 實測）。
+       同款 min-height 頂住寫法，不依賴 flex-grow。*/
+    .wlist {
+      flex: 0 0 auto !important;
+      min-height: 160px !important;
     }
 
     /* 手機下單流觸控目標（動員令附加，2026-07-09）: 送出鈕在桌面緊湊嵌入模式
