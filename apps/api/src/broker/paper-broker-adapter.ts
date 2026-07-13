@@ -74,6 +74,25 @@ export class PaperBrokerAdapter implements BrokerAdapter {
     const orderType: "market" | "limit" =
       input.priceType === "Market" ? "market" : "limit";
 
+    // Taiwan order-type-matrix (T-1, 2026-07-13): market orders only accept
+    // IOC/FOK; a fixed "rod" here would make every UTA market order fail the
+    // new order-rules.ts validation. Limit orders keep ROD as before.
+    const timeInForce = orderType === "market" ? "ioc" : "rod";
+
+    // Map UTA's orderCond vocabulary (Cash/Margin/ShortSelling/LendSelling)
+    // to the order-type-matrix's orderCond (cash/margin/short/daytrade).
+    // LendSelling (借券賣出) has no daytrade equivalent in the UTA layer
+    // today, so it maps to "short" — both are borrow-based sells.
+    const orderCond: "cash" | "margin" | "short" | "daytrade" =
+      input.orderCond === "Margin"
+        ? "margin"
+        : input.orderCond === "ShortSelling" || input.orderCond === "LendSelling"
+          ? "short"
+          : "cash";
+    // UTA's oddLot is a plain boolean (no session distinction yet) — map to
+    // the intraday session; afterhours variants aren't representable here.
+    const session: "regular" | "intraday_odd" = input.oddLot ? "intraday_odd" : "regular";
+
     const order = await placePaperOrder({
       session: this._session,
       order: {
@@ -87,7 +106,9 @@ export class PaperBrokerAdapter implements BrokerAdapter {
         stopPrice: null,
         tradePlanId: null,
         strategyId: null,
-        timeInForce: "rod",
+        timeInForce,
+        orderCond,
+        session,
         clientOrderId: "uta-paper-" + randomUUID(),
         overrideGuards: [],
         overrideReason: "",

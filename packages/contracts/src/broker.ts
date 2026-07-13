@@ -32,6 +32,22 @@ export const timeInForceSchema = z.enum([
   "gtc"
 ]);
 
+// orderCond — 委託種類 (Taiwan market order condition).
+// cash = 現股, margin = 融資買進, short = 融券賣出, daytrade = 現股當沖.
+export const orderCondSchema = z.enum(["cash", "margin", "short", "daytrade"]);
+
+// session — 委託時段 (Taiwan market trading session for the order).
+// regular          = 整股一般交易 (09:00-13:30)
+// intraday_odd     = 盤中零股逐筆交易 (09:10-13:30)
+// afterhours_odd   = 盤後零股集合競價 (13:40-14:30)
+// afterhours_fixed = 盤後定價交易，以當日收盤價成交 (14:00-14:30)
+export const orderSessionSchema = z.enum([
+  "regular",
+  "intraday_odd",
+  "afterhours_odd",
+  "afterhours_fixed"
+]);
+
 // Order lifecycle — every state the risk engine / reconciliation needs to
 // reason about. "acknowledged" means broker accepted the order; "partial"
 // covers partial fills; "rejected" is broker-side rejection (not our risk
@@ -210,6 +226,22 @@ export const orderCreateInputSchema = z.object({
   tradePlanId: z.string().uuid().nullable().default(null),
   strategyId: z.string().uuid().nullable().default(null),
   clientOrderId: z.string().optional(),
+  // 台股下單能力完整矩陣 T-1 (2026-07-13, reports/epic_trading_desk_20260702/
+  // ORDER_TYPE_MATRIX_DESIGN_v1.md §3). orderCond/session are read by
+  // apps/api/src/broker/order-rules.ts before a paper order is placed.
+  // Deliberately `.optional()` WITHOUT `.default()` — unlike quantity_unit
+  // (which is required-no-default per D4), these two are genuinely additive:
+  // adding a zod-level `.default()` would make the field non-optional in the
+  // inferred TS output type, which breaks every existing raw object literal
+  // typed as OrderCreateInput across the repo (execution-gate.ts,
+  // paper-four-layer-risk-gate.ts, domain/trading/paper-risk-bridge.ts,
+  // fubon-broker.ts, ...) even though none of them set orderCond/session.
+  // Consumers that care about the default (order-rules.ts wiring in
+  // paper-broker.ts) apply `?? "cash"` / `?? "regular"` explicitly instead,
+  // which gives identical runtime behaviour for HTTP callers that omit the
+  // field while keeping every non-HTTP call site source-compatible.
+  orderCond: orderCondSchema.optional(),
+  session: orderSessionSchema.optional(),
   // Allows manual operator override of specific guards with an explicit
   // reason. Default is no override.
   overrideGuards: z.array(z.string()).default([]),
@@ -314,6 +346,8 @@ export type BrokerKind = z.infer<typeof brokerKindSchema>;
 export type OrderSide = z.infer<typeof orderSideSchema>;
 export type OrderType = z.infer<typeof orderTypeSchema>;
 export type TimeInForce = z.infer<typeof timeInForceSchema>;
+export type OrderCond = z.infer<typeof orderCondSchema>;
+export type OrderSession = z.infer<typeof orderSessionSchema>;
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 export type BrokerAccount = z.infer<typeof brokerAccountSchema>;
 export type Balance = z.infer<typeof balanceSchema>;

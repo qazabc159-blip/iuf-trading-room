@@ -17,10 +17,13 @@ import {
   type Quote,
   toTaiwanStockShareCount
 } from "@iuf-trading-room/contracts";
+import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
 
 import { getMarketDataDecisionSummary } from "../market-data.js";
+import { getLastCloses } from "../quote-last-close-store.js";
 import { appendExecutionEvent } from "./execution-events-store.js";
 import type { ExecutionGateResult } from "./execution-gate.js";
+import { validateOrderTypeMatrix } from "./order-rules.js";
 import {
   loadWorkspaceSnapshots,
   type PaperAccountSnapshot,
@@ -555,6 +558,98 @@ export async function placePaperOrder(input: {
   const now = new Date().toISOString();
   const orderId = randomUUID();
   const clientOrderId = input.order.clientOrderId ?? `po-${randomUUID()}`;
+  const quantityUnit = input.order.quantity_unit ?? "SHARE";
+  const orderQuantityShares = toTaiwanStockShareCount(input.order.quantity, quantityUnit);
+
+  // Order-type-matrix validation (T-1, 2026-07-13 —
+  // reports/epic_trading_desk_20260702/ORDER_TYPE_MATRIX_DESIGN_v1.md §4).
+  // orderCond/session are optional on the contract for backward compat
+  // (see broker.ts comment); default to cash/regular here, which matches
+  // every caller's pre-existing behaviour. Runs before the market-data quote
+  // fetch below so an obviously-invalid order never spends that lookup.
+  const orderCond = input.order.orderCond ?? "cash";
+  const session = input.order.session ?? "regular";
+  let refPrice: number | null = null;
+  if (isDatabaseMode()) {
+    try {
+      const db = getDb();
+      if (db) {
+        const closes = await getLastCloses(db, [input.order.symbol]);
+        refPrice = closes.get(input.order.symbol)?.closePrice ?? null;
+      }
+    } catch (err) {
+      // Fail-open per quote-last-close-store.ts contract — the price-limit
+      // rule (§4.4) is skipped, not blocking, when refPrice is unavailable.
+      console.error(
+        `[paper-broker] failed to read quote_last_close for ${input.order.symbol}:`,
+        err
+      );
+    }
+  }
+
+  const matrixResult = validateOrderTypeMatrix(
+    {
+      type: input.order.type,
+      timeInForce: input.order.timeInForce,
+      orderCond,
+      session,
+      quantity: input.order.quantity,
+      quantity_unit: quantityUnit,
+      price: input.order.price
+    },
+    { refPrice }
+  );
+
+  if (!matrixResult.ok) {
+    const primary = matrixResult.violations[0]!;
+    const rejectedOrder: Order = {
+      id: orderId,
+      clientOrderId,
+      brokerOrderId: null,
+      accountId: input.order.accountId,
+      broker: "paper",
+      symbol: input.order.symbol,
+      side: input.order.side,
+      type: input.order.type,
+      timeInForce: input.order.timeInForce,
+      quantity: orderQuantityShares,
+      filledQuantity: 0,
+      price: input.order.price,
+      stopPrice: input.order.stopPrice,
+      avgFillPrice: null,
+      status: "rejected" as OrderStatus,
+      reason: primary.code,
+      tradePlanId: input.order.tradePlanId,
+      strategyId: input.order.strategyId,
+      riskCheckId: input.riskCheckId,
+      submittedAt: now,
+      acknowledgedAt: null,
+      filledAt: null,
+      canceledAt: null,
+      quoteContext: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    state.orders.set(orderId, rejectedOrder);
+    state.lastEventAt = now;
+    emit(input.session, input.order.accountId, {
+      type: "reject",
+      orderId,
+      clientOrderId,
+      status: "rejected",
+      message: primary.message,
+      payload: {
+        violations: matrixResult.violations,
+        priceLimitSkipped: matrixResult.priceLimitSkipped,
+        orderCond,
+        session
+      },
+      timestamp: now
+    });
+    persistAccountAsync(input.session, state);
+    return rejectedOrder;
+  }
+
   const execQuote =
     input.quoteGate?.item
       ? executionQuoteFromDecisionItem(input.quoteGate.item)
@@ -567,8 +662,18 @@ export async function placePaperOrder(input: {
   // entirely (e.g. reconciliation / tests).
   const quoteContext: ExecutionQuoteContext =
     input.quoteGate?.quoteContext ?? quoteContextFor(execQuote, "paper", now);
-  const quantityUnit = input.order.quantity_unit ?? "SHARE";
-  const orderQuantityShares = toTaiwanStockShareCount(input.order.quantity, quantityUnit);
+
+  // Paper-simulation disclosure (T-1 §5 requirement): margin/short/daytrade
+  // eligibility and borrow-source availability are NOT checked in the paper
+  // channel — every combination is treated as immediately available. Surface
+  // that honestly on the submit event so downstream consumers don't mistake
+  // a passing paper order for a real eligibility check.
+  const paperSimulationNote =
+    orderCond !== "cash"
+      ? "模擬環境：融資／融券／當沖資格與券源未檢核，一律視為可執行"
+      : session !== "regular"
+        ? "模擬環境：零股／盤後定價撮合規則為簡化模擬，未反映真實成交機制"
+        : null;
 
   const order: Order = {
     id: orderId,
@@ -612,7 +717,10 @@ export async function placePaperOrder(input: {
       quoteDecision,
       requestedQuantity: input.order.quantity,
       quantityUnit,
-      shareQuantity: orderQuantityShares
+      shareQuantity: orderQuantityShares,
+      orderCond,
+      session,
+      paperSimulationNote
     },
     timestamp: now
   });
