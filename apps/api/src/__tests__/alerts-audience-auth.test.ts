@@ -211,6 +211,24 @@ async function getDecisionStatus(id: string): Promise<string | undefined> {
   return execRows<{ status?: string }>(rows)[0]?.status;
 }
 
+async function seedBrainDecision(workspaceId: string | null, marker: string): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedBrainDecision requires PERSISTENCE_MODE=database.");
+  const runId = `brain-${randomUUID()}`;
+  await db.execute(drizzleSql`
+    INSERT INTO brain_decisions (
+      id, workspace_id, run_id, prompt, react_trace, final_report,
+      total_tokens, total_cost_usd, status, created_at, completed_at
+    ) VALUES (
+      ${randomUUID()}, ${workspaceId}, ${runId},
+      ${JSON.stringify({ intent: marker })}::jsonb,
+      ${JSON.stringify([{ round: 1, thought: marker }])}::jsonb,
+      ${`report-${marker}`}, 10, 0.01, 'complete', NOW(), NOW()
+    )
+  `);
+  return runId;
+}
+
 /**
  * Acknowledges every currently-unacknowledged iuf_events row. Used to give
  * the badge test a deterministic starting point regardless of how many
@@ -503,5 +521,39 @@ describe("iuf_decisions workspace boundary", () => {
     assert.equal(purge.status, 200);
     assert.equal(await getDecisionStatus(decisionA), undefined, "workspace A fallback should be removed");
     assert.equal(await getDecisionStatus(decisionB), "proposed", "workspace B fallback must survive workspace A purge");
+  });
+});
+
+describe("brain_decisions workspace boundary", () => {
+  test("list/detail expose only the session workspace and fail closed for legacy NULL rows", async () => {
+    const markerA = `brain-a-${randomUUID()}`;
+    const markerB = `brain-b-${randomUUID()}`;
+    const legacyMarker = `brain-legacy-${randomUUID()}`;
+    const runA = await seedBrainDecision(primaryWorkspaceId, markerA);
+    const runB = await seedBrainDecision(secondaryWorkspaceId, markerB);
+    const legacyRun = await seedBrainDecision(null, legacyMarker);
+
+    const primaryList = await getJson("/api/v1/admin/brain/react/decisions?limit=100", ownerCookie);
+    assert.equal(primaryList.status, 200);
+    const primaryRunIds = (primaryList.body.data as Array<{ runId: string }>).map((row) => row.runId);
+    assert.ok(primaryRunIds.includes(runA), "workspace A should retain its existing list behavior");
+    assert.ok(!primaryRunIds.includes(runB), "workspace A list must exclude workspace B decisions");
+    assert.ok(!primaryRunIds.includes(legacyRun), "legacy NULL-workspace decisions must not be exposed to a tenant");
+
+    const secondaryList = await getJson("/api/v1/admin/brain/react/decisions?limit=100", secondaryOwnerCookie);
+    assert.equal(secondaryList.status, 200);
+    const secondaryRunIds = (secondaryList.body.data as Array<{ runId: string }>).map((row) => row.runId);
+    assert.ok(secondaryRunIds.includes(runB));
+    assert.ok(!secondaryRunIds.includes(runA), "workspace B list must exclude workspace A decisions");
+
+    const crossDetail = await getJson(`/api/v1/admin/brain/react/decisions/${encodeURIComponent(runB)}`, ownerCookie);
+    assert.equal(crossDetail.status, 404, "workspace A must not enumerate workspace B by run_id");
+
+    const legacyDetail = await getJson(`/api/v1/admin/brain/react/decisions/${encodeURIComponent(legacyRun)}`, ownerCookie);
+    assert.equal(legacyDetail.status, 404, "legacy NULL-workspace detail must fail closed");
+
+    const ownDetail = await getJson(`/api/v1/admin/brain/react/decisions/${encodeURIComponent(runB)}`, secondaryOwnerCookie);
+    assert.equal(ownDetail.status, 200);
+    assert.equal(ownDetail.body.data.prompt.intent, markerB, "workspace B should still read its own full prompt");
   });
 });
