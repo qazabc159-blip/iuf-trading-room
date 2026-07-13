@@ -27,7 +27,6 @@
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import { callLlm, stripCodeFences } from "./llm/llm-gateway.js";
-import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -67,7 +66,6 @@ type LlmDecisionOutput = {
 // Row shapes from raw SQL queries
 type IufEventRow = {
   id?: string;
-  workspace_id?: string;
   rule_id?: string;
   rule_name?: string;
   severity?: string;
@@ -293,16 +291,15 @@ function buildFallbackDecision(
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-async function fetchUnprocessedEvents(workspaceId: string): Promise<IufEventRow[]> {
+async function fetchUnprocessedEvents(): Promise<IufEventRow[]> {
   const db = getDb();
   if (!db) return [];
 
   try {
     const rows = await db.execute(drizzleSql`
-      SELECT e.id, e.workspace_id, e.rule_id, e.rule_name, e.severity, e.ticker, e.payload, e.triggered_at
+      SELECT e.id, e.rule_id, e.rule_name, e.severity, e.ticker, e.payload, e.triggered_at
       FROM iuf_events e
-      WHERE e.workspace_id = ${workspaceId}
-        AND e.triggered_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
+      WHERE e.triggered_at > NOW() - INTERVAL '${drizzleSql.raw(String(LOOKBACK_HOURS))} hours'
         AND e.rule_id IS DISTINCT FROM ${SELF_ALERT_RULE_ID}
         AND NOT EXISTS (
           SELECT 1 FROM iuf_decisions d
@@ -517,7 +514,7 @@ export async function getOrchestratorObservability(limit = 20): Promise<{
  * Fetches unprocessed events + signals → LLM reasoning → writes iuf_decisions.
  * Safe-default: never throws. All per-trigger errors are caught internally.
  */
-export async function runOpenAliceDecisionTick(workspaceIdOverride?: string): Promise<void> {
+export async function runOpenAliceDecisionTick(): Promise<void> {
   if (!isDatabaseMode()) return;
   if (_tickRunning) {
     console.log("[openalice-orchestrator] tick already running — skipping");
@@ -529,13 +526,8 @@ export async function runOpenAliceDecisionTick(workspaceIdOverride?: string): Pr
   let decisionsWritten = 0;
 
   try {
-    const workspaceId = await resolvePrimaryWorkspaceId();
-    if (!workspaceId) throw new Error("primary_workspace_unavailable");
-    if (workspaceIdOverride && workspaceIdOverride !== workspaceId) {
-      throw new Error("workspace_decisions_not_scoped");
-    }
     const [events, signals] = await Promise.all([
-      fetchUnprocessedEvents(workspaceId),
+      fetchUnprocessedEvents(),
       fetchUnprocessedSignals(),
     ]);
 
@@ -556,7 +548,6 @@ export async function runOpenAliceDecisionTick(workspaceIdOverride?: string): Pr
 
       const triggerRef: Record<string, unknown> = {
         type: "event",
-        workspaceId,
         id: row.id,
         ruleId: row.rule_id ?? null,
         ruleName: row.rule_name ?? null,

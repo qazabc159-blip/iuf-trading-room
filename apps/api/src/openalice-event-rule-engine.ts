@@ -44,7 +44,6 @@ import { sql as drizzleSql, desc, gte, and, eq, inArray } from "drizzle-orm";
 import { getDb, isDatabaseMode, auditLogs, contentDrafts, execRows } from "@iuf-trading-room/db";
 import { dispatchAlertPush, buildAlertPushPayload } from "./push/alert-push.js";
 import { taipeiDateFromIso } from "./notification-feed.js";
-import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -116,7 +115,7 @@ export type EventRule = {
    * Empty array = rule did not fire.
    * Must never throw — caller wraps in try/catch.
    */
-  trigger: (state: EngineStateSnapshot, workspaceId?: string) => Promise<Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[]>;
+  trigger: (state: EngineStateSnapshot) => Promise<Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[]>;
 };
 
 type V3RecommendationDelivery = {
@@ -657,14 +656,18 @@ const RULES: EventRule[] = [
     id: "R13_DAILY_SMOKE_FAILED",
     name: "每日 smoke 測試失敗",
     severity: "critical",
-    trigger: async (_state, workspaceId) => {
+    trigger: async () => {
       if (!isDatabaseMode()) return [];
       const db = getDb();
       if (!db) return [];
-      if (!workspaceId) return [];
 
       try {
         const { getDailySmokeHistoryDurable } = await import("./broker/kgi-sim-env.js");
+
+        // iuf_events has no workspace column yet (Phase II). Preserve the current
+        // single-tenant source by resolving the deterministic primary workspace.
+        const workspaceId = await resolvePrimaryWorkspaceId();
+        if (!workspaceId) return [];
 
         const history = await getDailySmokeHistoryDurable(workspaceId);
         const last = history[0];
@@ -989,7 +992,7 @@ async function collectEngineState(): Promise<EngineStateSnapshot> {
 
 // ── Deduplication: skip re-firing same rule+ticker within 1 hour ──────────────
 
-async function isDuplicateEvent(workspaceId: string, ruleId: string, ticker: string | null): Promise<boolean> {
+async function isDuplicateEvent(ruleId: string, ticker: string | null): Promise<boolean> {
   if (!isDatabaseMode()) return false;
   const db = getDb();
   if (!db) return false;
@@ -998,8 +1001,7 @@ async function isDuplicateEvent(workspaceId: string, ruleId: string, ticker: str
     const rows = await db.execute(
       drizzleSql`
         SELECT 1 FROM iuf_events
-        WHERE workspace_id = ${workspaceId}
-          AND rule_id = ${ruleId}
+        WHERE rule_id = ${ruleId}
           AND (
             ${ticker === null ? drizzleSql`ticker IS NULL` : drizzleSql`ticker = ${ticker}`}
           )
@@ -1021,7 +1023,7 @@ function taipeiDateStr(nowMs = Date.now()): string {
   return new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-async function isDuplicateEventToday(workspaceId: string, ruleId: string): Promise<boolean> {
+async function isDuplicateEventToday(ruleId: string): Promise<boolean> {
   if (!isDatabaseMode()) return false;
   const db = getDb();
   if (!db) return false;
@@ -1030,8 +1032,7 @@ async function isDuplicateEventToday(workspaceId: string, ruleId: string): Promi
     const rows = await db.execute(
       drizzleSql`
         SELECT 1 FROM iuf_events
-        WHERE workspace_id = ${workspaceId}
-          AND rule_id = ${ruleId}
+        WHERE rule_id = ${ruleId}
           AND ticker IS NULL
           AND (triggered_at AT TIME ZONE 'Asia/Taipei')::date = ${taipeiDateStr()}::date
         LIMIT 1
@@ -1053,17 +1054,38 @@ const DAILY_DEDUP_RULE_IDS = new Set([
   "R16_LLM_PROVIDER_QUOTA_EXHAUSTED"
 ]);
 
-async function isDuplicateCandidate(
-  workspaceId: string,
-  candidate: { ruleId: string; ticker: string | null },
-): Promise<boolean> {
+async function isDuplicateCandidate(candidate: { ruleId: string; ticker: string | null }): Promise<boolean> {
   if (DAILY_DEDUP_RULE_IDS.has(candidate.ruleId)) {
-    return isDuplicateEventToday(workspaceId, candidate.ruleId);
+    return isDuplicateEventToday(candidate.ruleId);
   }
-  return isDuplicateEvent(workspaceId, candidate.ruleId, candidate.ticker);
+  return isDuplicateEvent(candidate.ruleId, candidate.ticker);
 }
 
 // ── Event writer ───────────────────────────────────────────────────────────────
+
+async function resolvePrimaryWorkspaceId(): Promise<string | null> {
+  if (!isDatabaseMode()) return null;
+  const db = getDb();
+  if (!db) return null;
+
+  const configuredSlug = process.env.DEFAULT_WORKSPACE_SLUG?.trim();
+  const rows = configuredSlug
+    ? await db.execute(drizzleSql`
+        SELECT id
+        FROM workspaces
+        ORDER BY CASE WHEN slug = ${configuredSlug} THEN 0 ELSE 1 END,
+                 created_at ASC,
+                 id ASC
+        LIMIT 1
+      `)
+    : await db.execute(drizzleSql`
+        SELECT id
+        FROM workspaces
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      `);
+  return execRows<{ id?: string }>(rows)[0]?.id ?? null;
+}
 
 async function writeEvent(
   event: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">,
@@ -1080,9 +1102,9 @@ async function writeEvent(
     await db.execute(
       drizzleSql`
         INSERT INTO iuf_events
-          (id, workspace_id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
+          (id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
         VALUES
-          (${id}, ${workspaceId}, ${event.ruleId}, ${event.ruleName}, ${event.severity},
+          (${id}, ${event.ruleId}, ${event.ruleName}, ${event.severity},
            ${event.ticker}, ${JSON.stringify(event.payload)}::jsonb, ${triggeredAt}, false)
       `
     );
@@ -1146,7 +1168,7 @@ export async function runEventEngineTick(): Promise<void> {
       let candidates: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[] = [];
 
       try {
-        candidates = await rule.trigger(state, workspaceId);
+        candidates = await rule.trigger(state);
       } catch (e) {
         console.warn(
           `[event-engine] Rule ${rule.id} trigger error: ${e instanceof Error ? e.message : String(e)}`
@@ -1156,7 +1178,7 @@ export async function runEventEngineTick(): Promise<void> {
 
       for (const candidate of candidates) {
         try {
-          const isDup = await isDuplicateCandidate(workspaceId, candidate);
+          const isDup = await isDuplicateCandidate(candidate);
           if (isDup) continue;
           await writeEvent(candidate, workspaceId);
           eventsWritten++;
@@ -1193,7 +1215,7 @@ export async function runEventEngineTick(): Promise<void> {
  * had 0 events due to missing iuf_events table or no qualifying data in trading windows.
  * Force-dispatch lets Bruce verify the engine can write events to iuf_events.
  */
-export async function runEventEngineTickForce(workspaceIdOverride?: string): Promise<{
+export async function runEventEngineTickForce(): Promise<{
   eventsWritten: number;
   rulesEvaluated: number;
   errors: string[];
@@ -1211,12 +1233,14 @@ export async function runEventEngineTickForce(workspaceIdOverride?: string): Pro
   }
 
   const tickStart = Date.now();
-  const workspaceId = workspaceIdOverride ?? await resolvePrimaryWorkspaceId();
+  const workspaceId = await resolvePrimaryWorkspaceId();
   if (!workspaceId) {
     result.errors.push("primary_workspace_unavailable");
     return result;
   }
 
+  // Force-dispatch remains bound to the same deterministic primary workspace as
+  // the normal tick until iuf_events gains workspace_id in Phase II.
   try {
     await db.execute(
       drizzleSql`
@@ -1237,7 +1261,7 @@ export async function runEventEngineTickForce(workspaceIdOverride?: string): Pro
       let candidates: Omit<IufEvent, "id" | "triggeredAt" | "acknowledged">[] = [];
 
       try {
-        candidates = await rule.trigger(state, workspaceId);
+        candidates = await rule.trigger(state);
       } catch (e) {
         const msg = `rule ${rule.id}: ${e instanceof Error ? e.message : String(e)}`;
         result.errors.push(msg);
@@ -1316,7 +1340,6 @@ export function dedupeSameDayEvents(events: IufEventView[]): IufEventView[] {
 // ── List/ack helpers (used by notification endpoints) ─────────────────────────
 
 export async function listEvents(opts: {
-  workspaceId: string;
   limit?: number;
   unreadOnly?: boolean;
   /**
@@ -1359,8 +1382,7 @@ export async function listEvents(opts: {
       drizzleSql`
         SELECT id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged
         FROM iuf_events
-        WHERE workspace_id = ${opts.workspaceId}
-          AND ${opts.unreadOnly ? drizzleSql`acknowledged = false` : drizzleSql`TRUE`}
+        WHERE ${opts.unreadOnly ? drizzleSql`acknowledged = false` : drizzleSql`TRUE`}
           AND ${audienceCondition}
         ORDER BY triggered_at DESC
         LIMIT ${limit}
@@ -1399,24 +1421,17 @@ export async function listEvents(opts: {
   }
 }
 
-export async function acknowledgeEvent(
-  workspaceId: string,
-  eventId: string,
-): Promise<{ ok: boolean; reason?: string }> {
+export async function acknowledgeEvent(eventId: string): Promise<{ ok: boolean; reason?: string }> {
   if (!isDatabaseMode()) return { ok: false, reason: "memory_mode" };
   const db = getDb();
   if (!db) return { ok: false, reason: "db_unavailable" };
 
   try {
-    const rows = await db.execute(
+    await db.execute(
       drizzleSql`
-        UPDATE iuf_events
-        SET acknowledged = true
-        WHERE workspace_id = ${workspaceId} AND id = ${eventId}
-        RETURNING id
+        UPDATE iuf_events SET acknowledged = true WHERE id = ${eventId}
       `
     );
-    if (execRows(rows).length === 0) return { ok: false, reason: "not_found" };
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) };
@@ -1426,8 +1441,6 @@ export async function acknowledgeEvent(
 // Re-export for tests (2026-06-12 C2 — unified alerts feed).
 export const _eventEngineInternals = {
   execRows,
-  isDuplicateEvent,
-  isDuplicateEventToday,
   taipeiDateStr,
   DAILY_DEDUP_RULE_IDS,
   RULES

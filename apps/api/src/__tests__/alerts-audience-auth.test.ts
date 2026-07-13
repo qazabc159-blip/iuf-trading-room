@@ -38,7 +38,6 @@ import { eq, sql as drizzleSql } from "drizzle-orm";
 import { getDb, users, workspaces } from "@iuf-trading-room/db";
 
 import { hashPassword } from "../auth-store.js";
-import { _eventEngineInternals } from "../openalice-event-rule-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
@@ -61,9 +60,6 @@ let ownerCookie = "";
 let adminCookie = "";
 let analystCookie = "";
 let viewerCookie = "";
-let secondaryOwnerCookie = "";
-let primaryWorkspaceId = "";
-let secondaryWorkspaceId = "";
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -133,10 +129,10 @@ async function ensureWorkspace(): Promise<string> {
   return created!.id;
 }
 
-async function ensureTestUser(role: Role, workspaceId: string, tenant = "primary"): Promise<string> {
+async function ensureTestUser(role: Role, workspaceId: string): Promise<string> {
   const db = getDb();
   if (!db) throw new Error("ensureTestUser requires PERSISTENCE_MODE=database.");
-  const email = `alerts-audience-auth-${tenant}-${role.toLowerCase()}@test.iuf.local`;
+  const email = `alerts-audience-auth-${role.toLowerCase()}@test.iuf.local`;
   const passwordHash = await hashPassword(TEST_PASSWORD);
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing) {
@@ -164,16 +160,15 @@ async function seedEvent(
   ruleId: string,
   ruleName: string,
   ticker: string | null,
-  marker: string,
-  workspaceId = primaryWorkspaceId,
+  marker: string
 ): Promise<string> {
   const db = getDb();
   if (!db) throw new Error("seedEvent requires PERSISTENCE_MODE=database.");
   const id = randomUUID();
   await db.execute(
     drizzleSql`
-      INSERT INTO iuf_events (id, workspace_id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
-      VALUES (${id}, ${workspaceId}, ${ruleId}, ${ruleName}, 'info', ${ticker}, ${JSON.stringify({ testMarker: marker })}::jsonb, NOW(), false)
+      INSERT INTO iuf_events (id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
+      VALUES (${id}, ${ruleId}, ${ruleName}, 'info', ${ticker}, ${JSON.stringify({ testMarker: marker })}::jsonb, NOW(), false)
     `
   );
   return id;
@@ -189,7 +184,7 @@ async function seedEvent(
 async function acknowledgeAllPendingEvents(): Promise<void> {
   const db = getDb();
   if (!db) throw new Error("acknowledgeAllPendingEvents requires PERSISTENCE_MODE=database.");
-  await db.execute(drizzleSql`UPDATE iuf_events SET acknowledged = true WHERE workspace_id = ${primaryWorkspaceId} AND acknowledged = false`);
+  await db.execute(drizzleSql`UPDATE iuf_events SET acknowledged = true WHERE acknowledged = false`);
 }
 
 async function getJson(pathAndQuery: string, cookie?: string): Promise<{ status: number; body: any }> {
@@ -238,27 +233,18 @@ before(async () => {
 
   await waitForHealth(baseUrl);
 
-  primaryWorkspaceId = await ensureWorkspace();
-  const db = getDb();
-  if (!db) throw new Error("database unavailable while creating secondary workspace");
-  const [secondaryWorkspace] = await db
-    .insert(workspaces)
-    .values({ name: "Alerts Tenant B", slug: `alerts-tenant-b-${randomUUID()}` })
-    .returning();
-  secondaryWorkspaceId = secondaryWorkspace!.id;
+  const workspaceId = await ensureWorkspace();
   const [ownerEmail, adminEmail, analystEmail, viewerEmail] = await Promise.all([
-    ensureTestUser("Owner", primaryWorkspaceId),
-    ensureTestUser("Admin", primaryWorkspaceId),
-    ensureTestUser("Analyst", primaryWorkspaceId),
-    ensureTestUser("Viewer", primaryWorkspaceId)
+    ensureTestUser("Owner", workspaceId),
+    ensureTestUser("Admin", workspaceId),
+    ensureTestUser("Analyst", workspaceId),
+    ensureTestUser("Viewer", workspaceId)
   ]);
-  const secondaryOwnerEmail = await ensureTestUser("Owner", secondaryWorkspaceId, "secondary");
 
   ownerCookie = await loginAs(ownerEmail);
   adminCookie = await loginAs(adminEmail);
   analystCookie = await loginAs(analystEmail);
   viewerCookie = await loginAs(viewerEmail);
-  secondaryOwnerCookie = await loginAs(secondaryOwnerEmail);
 });
 
 after(async () => {
@@ -372,58 +358,5 @@ describe("GET /api/v1/notifications — unread badge excludes ops_internal (#122
     const drawerIds: string[] = (after.body.notifications as Array<{ id: string }>).map((n) => n.id);
     assert.ok(drawerIds.includes(`event-${actionableId}`), "actionable event should appear in the drawer list");
     assert.ok(drawerIds.includes(`event-${opsId}`), "ops_internal event should still appear in the drawer list (Owner-only surface), just not counted");
-  });
-});
-
-describe("iuf_events workspace boundary", () => {
-  test("list, raw diagnostics, notifications, and ack never cross workspaces", async () => {
-    const primaryId = await seedEvent(ACTIONABLE_RULE_ID, "租戶 A 事件", "1111", "tenant-a");
-    assert.equal(
-      await _eventEngineInternals.isDuplicateEvent(primaryWorkspaceId, ACTIONABLE_RULE_ID, "1111"),
-      true,
-      "workspace A should dedupe its own matching event",
-    );
-    assert.equal(
-      await _eventEngineInternals.isDuplicateEvent(secondaryWorkspaceId, ACTIONABLE_RULE_ID, "1111"),
-      false,
-      "workspace A event must not throttle workspace B",
-    );
-    const secondaryId = await seedEvent(
-      ACTIONABLE_RULE_ID,
-      "租戶 B 事件",
-      "1111",
-      "tenant-b",
-      secondaryWorkspaceId,
-    );
-
-    const primaryAlerts = await getJson("/api/v1/alerts?audience=all&limit=200", ownerCookie);
-    const primaryAlertIds = (primaryAlerts.body.data as Array<{ id: string }>).map((event) => event.id);
-    assert.ok(primaryAlertIds.includes(primaryId));
-    assert.ok(!primaryAlertIds.includes(secondaryId), "workspace A alerts must exclude workspace B");
-
-    const secondaryAlerts = await getJson("/api/v1/alerts?audience=all&limit=200", secondaryOwnerCookie);
-    const secondaryAlertIds = (secondaryAlerts.body.data as Array<{ id: string }>).map((event) => event.id);
-    assert.ok(secondaryAlertIds.includes(secondaryId));
-    assert.ok(!secondaryAlertIds.includes(primaryId), "workspace B alerts must exclude workspace A");
-
-    const primaryRaw = await getJson("/api/v1/iuf-events?limit=200", ownerCookie);
-    const primaryRawIds = (primaryRaw.body.data as Array<{ id: string }>).map((event) => event.id);
-    assert.ok(!primaryRawIds.includes(secondaryId), "raw diagnostics must remain workspace-scoped");
-
-    const primaryNotifications = await getJson("/api/v1/notifications", ownerCookie);
-    const primaryNotificationIds = (primaryNotifications.body.notifications as Array<{ id: string }>).map((item) => item.id);
-    assert.ok(!primaryNotificationIds.includes(`event-${secondaryId}`), "notification drawer must exclude workspace B");
-
-    const ack = await fetch(`${baseUrl}/api/v1/alerts/${secondaryId}/ack`, {
-      method: "POST",
-      headers: { cookie: ownerCookie },
-    });
-    assert.equal(ack.status, 404, "workspace A must not acknowledge workspace B event ids");
-
-    const secondaryAfterAck = await getJson("/api/v1/alerts?audience=all&limit=200", secondaryOwnerCookie);
-    const secondaryEvent = (secondaryAfterAck.body.data as Array<{ id: string; acknowledged: boolean }>).find(
-      (event) => event.id === secondaryId,
-    );
-    assert.equal(secondaryEvent?.acknowledged, false, "failed cross-workspace ack must not mutate workspace B");
   });
 });

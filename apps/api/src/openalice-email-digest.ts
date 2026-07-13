@@ -16,7 +16,6 @@
 
 import { sql as drizzleSql, gte, and } from "drizzle-orm";
 import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
-import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -49,12 +48,8 @@ export type DigestResult = {
 
 let _lastDigestAt: string | null = null;
 let _lastDigestResult: DigestResult | null = null;
-let _lastDigestWorkspaceId: string | null = null;
 
-export function getDigestState(workspaceId?: string): { lastDigestAt: string | null; lastResult: DigestResult | null } {
-  if (workspaceId && workspaceId !== _lastDigestWorkspaceId) {
-    return { lastDigestAt: null, lastResult: null };
-  }
+export function getDigestState(): { lastDigestAt: string | null; lastResult: DigestResult | null } {
   return { lastDigestAt: _lastDigestAt, lastResult: _lastDigestResult };
 }
 
@@ -81,7 +76,7 @@ function getTaipeiHHMM(): number {
 
 // ── Event collector ────────────────────────────────────────────────────────────
 
-async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
+async function collectTodayEvents(): Promise<DigestEvent[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
@@ -93,8 +88,7 @@ async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
       drizzleSql`
         SELECT rule_id, rule_name, severity, ticker, payload, triggered_at
         FROM iuf_events
-        WHERE workspace_id = ${workspaceId}
-          AND triggered_at >= ${todayStart}::timestamptz
+        WHERE triggered_at >= ${todayStart}::timestamptz
         ORDER BY
           CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
           triggered_at DESC
@@ -270,7 +264,7 @@ async function sendDigestEmail(
  *
  * Never throws — all errors are logged and contained.
  */
-export async function runEmailDigestTick(force = false, workspaceIdOverride?: string): Promise<DigestResult> {
+export async function runEmailDigestTick(force = false): Promise<DigestResult> {
   const hhmm = getTaipeiHHMM();
   if (!force && (hhmm < 1700 || hhmm >= 1730)) {
     // Outside 17:00–17:30 window — skip silently
@@ -314,23 +308,8 @@ export async function runEmailDigestTick(force = false, workspaceIdOverride?: st
     };
   }
 
-  let activeWorkspaceId: string | null = null;
   try {
-    const primaryWorkspaceId = await resolvePrimaryWorkspaceId();
-    if (!primaryWorkspaceId) throw new Error("primary_workspace_unavailable");
-    if (workspaceIdOverride && workspaceIdOverride !== primaryWorkspaceId) {
-      return {
-        sent: false,
-        eventCount: 0,
-        criticalCount: 0,
-        warningCount: 0,
-        infoCount: 0,
-        recipient: DIGEST_EMAIL,
-        reason: "workspace_digest_not_configured"
-      };
-    }
-    activeWorkspaceId = primaryWorkspaceId;
-    const events = await collectTodayEvents(primaryWorkspaceId);
+    const events = await collectTodayEvents();
 
     const criticalCount = events.filter((e) => e.severity === "critical").length;
     const warningCount = events.filter((e) => e.severity === "warning").length;
@@ -354,7 +333,6 @@ export async function runEmailDigestTick(force = false, workspaceIdOverride?: st
 
     _lastDigestAt = new Date().toISOString();
     _lastDigestResult = result;
-    _lastDigestWorkspaceId = activeWorkspaceId;
 
     if (ok) {
       console.info(
@@ -380,7 +358,6 @@ export async function runEmailDigestTick(force = false, workspaceIdOverride?: st
       reason: `error:${msg}`
     };
     _lastDigestResult = result;
-    _lastDigestWorkspaceId = activeWorkspaceId;
     return result;
   }
 }

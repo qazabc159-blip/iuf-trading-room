@@ -8886,69 +8886,14 @@ test("event-engine: runEventEngineTick is a no-op in memory mode (isDatabaseMode
 });
 
 test("event-engine: listEvents returns empty array in memory mode", async () => {
-  const events = await listEvents({ workspaceId: "workspace-a", limit: 10, unreadOnly: false });
+  const events = await listEvents({ limit: 10, unreadOnly: false });
   assert.deepEqual(events, [], "should return empty array when not in database mode");
 });
 
 test("event-engine: acknowledgeEvent returns not-ok in memory mode", async () => {
-  const result = await acknowledgeEvent("workspace-a", "00000000-0000-0000-0000-000000000001");
+  const result = await acknowledgeEvent("00000000-0000-0000-0000-000000000001");
   assert.equal(result.ok, false, "should return ok=false in memory mode");
   assert.ok(result.reason, "should include a reason string");
-});
-
-test("migration 0054 scopes iuf_events indexes and fails closed on ambiguous legacy ownership", () => {
-  const forward = readFileSync("packages/db/migrations/0054_iuf_events_workspace.sql", "utf8");
-  const down = readFileSync("packages/db/migrations/0054_iuf_events_workspace.down.sql", "utf8");
-  const schema = readFileSync("packages/db/src/schema.ts", "utf8");
-
-  assert.match(forward, /ADD COLUMN IF NOT EXISTS workspace_id UUID/i);
-  assert.match(forward, /WHERE workspace_id IS NULL/i, "backfill must only touch unresolved legacy rows");
-  assert.match(forward, /workspace_count <> 1/i, "ambiguous multi-workspace backfill must fail closed");
-  assert.match(forward, /REFERENCES workspaces\(id\) ON DELETE CASCADE/i);
-  assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/i);
-  assert.match(
-    forward,
-    /iuf_events_workspace_rule_ticker_time_idx[\s\S]*workspace_id, rule_id, ticker, triggered_at DESC/i,
-  );
-  assert.match(
-    forward,
-    /iuf_events_workspace_triggered_at_idx[\s\S]*workspace_id, triggered_at DESC/i,
-  );
-  assert.match(
-    forward,
-    /iuf_events_workspace_unread_idx[\s\S]*workspace_id, triggered_at DESC[\s\S]*WHERE acknowledged = FALSE/i,
-  );
-  assert.match(down, /DROP COLUMN IF EXISTS workspace_id/i);
-  assert.match(down, /COUNT\(DISTINCT workspace_id\)/i, "down must detect multi-tenant data");
-  assert.match(down, /tenant_count > 1/i, "down must refuse to collapse multiple workspaces");
-  assert.match(down, /iuf_events_rule_ticker_time_idx[\s\S]*rule_id, ticker, triggered_at DESC/i);
-  assert.match(schema, /export const iufEvents = pgTable/);
-  assert.match(
-    schema,
-    /iuf_events_workspace_rule_ticker_time_idx[\s\S]*table\.workspaceId[\s\S]*table\.triggeredAt\.desc\(\)/,
-  );
-  assert.match(
-    schema,
-    /iuf_events_workspace_unread_idx[\s\S]*table\.workspaceId[\s\S]*table\.triggeredAt\.desc\(\)[\s\S]*\.where/,
-  );
-});
-
-test("iuf_events SQL consumers carry workspace scope", () => {
-  const engine = readFileSync("apps/api/src/openalice-event-rule-engine.ts", "utf8");
-  const executor = readFileSync("apps/api/src/openalice-action-executor.ts", "utf8");
-  const digest = readFileSync("apps/api/src/openalice-email-digest.ts", "utf8");
-  const orchestrator = readFileSync("apps/api/src/openalice-orchestrator.ts", "utf8");
-  const server = readFileSync("apps/api/src/server.ts", "utf8");
-
-  assert.match(engine, /INSERT INTO iuf_events[\s\S]*\(id, workspace_id,/);
-  assert.match(engine, /WHERE workspace_id = \$\{opts\.workspaceId\}/);
-  assert.match(engine, /WHERE workspace_id = \$\{workspaceId\} AND id = \$\{eventId\}/);
-  assert.match(executor, /INSERT INTO iuf_events[\s\S]*\(id, workspace_id,/);
-  assert.match(digest, /WHERE workspace_id = \$\{workspaceId\}/);
-  assert.match(orchestrator, /WHERE e\.workspace_id = \$\{workspaceId\}/);
-  assert.match(server, /listEvents\(\{ workspaceId: session\.workspace\.id, limit: 20, unreadOnly: true \}\)/);
-  assert.match(server, /runEventEngineTickForce\(session\.workspace\.id\)/);
-  assert.match(server, /runEmailDigestTick\(force, session\.workspace\.id\)/);
 });
 
 // ── 2026-06-12 C2: unified alerts feed — execRows + producer rules R11-R15 ──────
