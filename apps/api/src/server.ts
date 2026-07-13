@@ -19623,6 +19623,36 @@ function startSchedulers(workspaceSlug: string): void {
   }
 
   // =============================================================================
+  // V51-SIM-BASKET-PIPELINE: Lab-produced monthly execution sample basket → KGI SIM
+  //
+  // Contract: IUF_SHARED_CONTRACTS/lab_to_tr_v51_sim_basket_contract_2026_07_12_v1.md
+  // Elva sign-off 2026-07-13. Yang order: "週一掛 SIM 開跑" (2026-07-12 chat).
+  //
+  // Orders: weekday 08:20-08:40 TST — scans embedded data/lab/sim_baskets/*.csv,
+  // submits any basket whose next-weekday entry date is today and that hasn't
+  // already been submitted (idempotent via audit-log check).
+  //
+  // SIM_ONLY. label SIM_EXECUTION_SAMPLE_NOT_VALIDATED passed through verbatim.
+  // Distinct data track from S1 (Lab-sourced CSV, not self-computed signal) —
+  // see v51-sim-basket-runner.ts module doc for the full design rationale.
+  // =============================================================================
+  {
+    const V51_SIM_POLL_MS = 15 * 60 * 1000;
+
+    ui(async () => {
+      try {
+        const { isV51OrderSubmitWindow, runV51OrderSubmitTick } = await import("./v51-sim-basket-runner.js");
+        if (!isV51OrderSubmitWindow()) return;
+        await runV51OrderSubmitTick();
+      } catch (e) {
+        console.error("[v51-order-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, V51_SIM_POLL_MS);
+
+    console.log("[schedulers] V51-SIM-BASKET-PIPELINE wired: auto orders(weekday 08:20 TST, entry-date scan over embedded baskets)");
+  }
+
+  // =============================================================================
   // AI-REC-PERF-CRON: forward-return update for ai_rec_pick_snapshots
   //
   // Fires daily at 14:40–15:00 TST (after market close + EOD snapshot).
