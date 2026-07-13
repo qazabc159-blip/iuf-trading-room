@@ -35,6 +35,7 @@ import { randomUUID } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import { getDailyBudgetUsd, getTodayUtc } from "./llm/llm-gateway.js";
+import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -538,11 +539,15 @@ async function handlePriorityAlert(
   payload: Record<string, unknown>,
   triggerRef: Record<string, unknown>,
   reasoning: string,
-  priority: number
+  priority: number,
+  workspaceId: string | null,
 ): Promise<{ status: "done" | "skipped"; outcome: ActionOutcome }> {
   const db = getDb();
   if (!db) {
     return { status: "skipped", outcome: { reason: "db_unavailable" } };
+  }
+  if (!workspaceId) {
+    return { status: "skipped", outcome: { reason: "workspace_unavailable" } };
   }
 
   // Build alert message — prefer payload.message, fall back to reasoning
@@ -571,9 +576,9 @@ async function handlePriorityAlert(
   try {
     await db.execute(drizzleSql`
       INSERT INTO iuf_events
-        (id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
+        (id, workspace_id, rule_id, rule_name, severity, ticker, payload, triggered_at, acknowledged)
       VALUES
-        (${eventId}, ${ALERT_RULE_ID}, ${ALERT_RULE_NAME}, ${severity},
+        (${eventId}, ${workspaceId}, ${ALERT_RULE_ID}, ${ALERT_RULE_NAME}, ${severity},
          ${ticker}, ${JSON.stringify(eventPayload)}::jsonb, ${triggeredAt}, false)
     `);
 
@@ -706,7 +711,7 @@ async function handleRebalanceSuggest(
  * Safe-default: never throws. All per-decision errors caught internally.
  * On unexpected outer error: resets executing decisions back to proposed for retry.
  */
-export async function runOpenAliceActionTick(workspaceId?: string | null): Promise<void> {
+export async function runOpenAliceActionTick(_workspaceId?: string | null): Promise<void> {
   if (!isDatabaseMode()) return;
   if (_actionTickRunning) {
     console.log("[openalice-action-executor] tick already running — skipping");
@@ -720,6 +725,8 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
   const executingIds: string[] = [];
 
   try {
+    const scopedWorkspaceId = await resolvePrimaryWorkspaceId();
+    if (!scopedWorkspaceId) throw new Error("primary_workspace_unavailable");
     const rows = await fetchProposedDecisions();
 
     if (rows.length === 0) {
@@ -776,7 +783,7 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
               payload,
               triggerRef,
               confidence,
-              workspaceId ?? null,
+              scopedWorkspaceId,
               deepAnalyzeCapState
             );
             break;
@@ -787,7 +794,8 @@ export async function runOpenAliceActionTick(workspaceId?: string | null): Promi
               payload,
               triggerRef,
               reasoning,
-              priority
+              priority,
+              scopedWorkspaceId,
             );
             break;
 

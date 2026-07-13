@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const marketStateEnum = pgEnum("market_state", [
   "Attack",
@@ -1121,6 +1122,31 @@ export const aiRecPickSnapshots = pgTable(
     pickDateIdx:        index("ai_rec_pick_snaps_pick_date_idx").on(table.pickDate.desc()),
     bucketIdx:          index("ai_rec_pick_snaps_bucket_idx").on(table.bucket, table.pickDate.desc()),
     retUpdatedIdx:      index("ai_rec_pick_snaps_ret_updated_idx").on(table.retUpdatedAt, table.pickDate.desc()),
+  })
+);
+
+// -- iuf_events -- migrations 0025_iuf_events.sql + 0054_iuf_events_workspace.sql
+export const iufEvents = pgTable(
+  "iuf_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    ruleId: text("rule_id").notNull(),
+    ruleName: text("rule_name").notNull(),
+    severity: text("severity").notNull(),
+    ticker: text("ticker"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    triggeredAt: timestamp("triggered_at", { withTimezone: true }).defaultNow().notNull(),
+    acknowledged: boolean("acknowledged").notNull().default(false),
+  },
+  (table) => ({
+    workspaceRuleTickerTimeIdx: index("iuf_events_workspace_rule_ticker_time_idx")
+      .on(table.workspaceId, table.ruleId, table.ticker, table.triggeredAt.desc()),
+    workspaceTriggeredAtIdx: index("iuf_events_workspace_triggered_at_idx")
+      .on(table.workspaceId, table.triggeredAt.desc()),
+    workspaceUnreadIdx: index("iuf_events_workspace_unread_idx")
+      .on(table.workspaceId, table.triggeredAt.desc())
+      .where(sql`${table.acknowledged} = false`),
   })
 );
 
