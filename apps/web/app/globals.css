@@ -11755,8 +11755,10 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tactical-dashboard {
+  /* Round 3（2026-07-13 晚，楊董定案）：首頁拿掉左側導航欄（TacticalSidebar
+     已刪除，見 page.tsx），改全寬比照原稿——不再保留 240px 側欄軌道。 */
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
   min-height: 100vh;
   overflow-x: clip;
@@ -12419,31 +12421,22 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .maincol {
   border-right: 1px solid var(--lg-line2);
   min-width: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-areas:
-    "hero hero"
-    "heat heat"
-    "rec  brief"
-    "s1   rank";
+  display: flex;
+  flex-direction: column;
 }
-/* 與原稿版面不同處（本輪唯一結構性偏離，PR body 已揭露）：原稿 heroband
-   把巨型指數錨點跟熱力圖並列（454px/1fr）。真站點多了 252px 固定側欄，
-   1280px 下 .maincol 實際可用寬度只剩 ~728px，並列會把熱力圖壓到
-   <370px（比上一輪已踩過的 <420px 截斷坑還窄，且熱力圖磚格文字互蓋是
-   楊董 7/13 鎖定不修的既有 prod 缺陷，範圍內不能讓它更嚴重）。改成上下
-   兩個整行（巨型指數錨點整行 → 熱力圖整行），讓熱力圖拿到全部 ~728px
-   可用寬度，跟現行已上線 A 案給熱力圖的寬度同量級，不引入新的窄欄截斷
-   風險。頭條帶（AI 推薦/簡報）與摺下帶（S1/排行）維持原稿的並列結構。 */
-.tac-ledger .idxanchor { grid-area: hero; }
-.tac-ledger .heatzone { grid-area: heat; }
-.tac-ledger .recwrap { grid-area: rec; }
-.tac-ledger .briefcol { grid-area: brief; }
-.tac-ledger .s1wrap { grid-area: s1; }
-.tac-ledger .rkwrap { grid-area: rank; }
+/* Round 3（2026-07-13 晚，楊董定案「拿掉側欄+全寬」）：首頁不再保留固定
+   240px 側欄（見 .tactical-dashboard），.maincol 可用寬度回到接近原稿
+   1280px 假設，因此三個橫向配對改回原稿逐值 px 比例（454/1fr、1fr/348、
+   392/1fr），不再套用 Round 2 的等寬雙欄安全折衷。三個 band 各自獨立成
+   一個小 grid（比照原稿 .heroband/.leadband/.footband 字面結構），而非
+   單一 maincol 大 grid 硬湊統一欄寬比例——因為三個 band 的欄寬比例互不
+   相同（見下方），共用一組 grid-template-columns 無法同時滿足。 */
+.tac-ledger .heroband { display: grid; grid-template-columns: 454px minmax(0, 1fr); border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .leadband { display: grid; grid-template-columns: minmax(0, 1fr) 348px; border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .footband { display: grid; grid-template-columns: 392px minmax(0, 1fr); border-top: 1px solid var(--lg-line2); }
 
 /* ── 大盤指數：頭版巨型錨點 ───────────────────────────────────────── */
-.tac-ledger .idxanchor { padding: 20px 24px 16px; position: relative; border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .idxanchor { padding: 20px 24px 16px; position: relative; border-right: 1px solid var(--lg-line); }
 .tac-ledger .idxanchor .eyebrow { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-amber); letter-spacing: .3em; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .tac-ledger .idxanchor .eyebrow small { font-family: var(--mono); color: var(--lg-ink-faint); letter-spacing: .14em; font-size: 9px; }
 .tac-ledger .idxanchor .giant {
@@ -12476,7 +12469,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 /* ── 熱力圖頭版（industry-heatmap.tsx 內部分組/treemap/tile 邏輯楊董 7/13
    鎖定不動，這裡只重新設色/排版讓視覺語彙貼近原稿 .heat-* 系列） ─────── */
-.tac-ledger .heatzone { border-bottom: 1px solid var(--lg-line2); padding: 10px 14px 12px; min-width: 0; }
+.tac-ledger .heatzone { padding: 10px 14px 12px; min-width: 0; display: flex; flex-direction: column; }
 .tac-ledger .heat-kicker {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); letter-spacing: .04em;
@@ -12508,7 +12501,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .heatzone .tac-heat-footer { color: var(--lg-ink-faint); border-top-color: var(--lg-line); }
 
 /* ── AI 推薦頭條：rrow tk/mid/side 三欄 ──────────────────────────────── */
-.tac-ledger .recwrap { border-bottom: 1px solid var(--lg-line2); border-right: 1px solid var(--lg-line); padding-bottom: 6px; min-width: 0; }
+.tac-ledger .recwrap { border-right: 1px solid var(--lg-line); padding-bottom: 6px; min-width: 0; }
 .tac-ledger .rec { padding: 5px 14px 0; }
 .tac-ledger .rrow {
   display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0 12px;
@@ -12537,7 +12530,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .rrow .actbtns ._src-cta-unavailable { font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); }
 
 /* ── AI 簡報：純排印文字欄 ───────────────────────────────────────────── */
-.tac-ledger .briefcol { border-bottom: 1px solid var(--lg-line2); padding: 0 14px 6px; min-width: 0; }
+.tac-ledger .briefcol { padding: 0 14px 6px; min-width: 0; }
 .tac-ledger .brief-meta { display: flex; gap: 8px; align-items: center; margin: 8px 0 6px; min-width: 0; flex-wrap: wrap; }
 .tac-ledger .pill { font-family: var(--sans-tc); font-size: 9.5px; letter-spacing: .05em; padding: 2px 7px; border: 1px solid var(--lg-amber); color: var(--lg-amber-hi); white-space: nowrap; flex: none; }
 .tac-ledger .brief-meta .dt { font-family: var(--mono); font-size: 10px; color: var(--lg-ink-dim); letter-spacing: .06em; white-space: nowrap; }
@@ -12619,18 +12612,17 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-ledger .mast-mode { display: none; }
   .tac-ledger .mast-clock { margin-left: auto; }
   .tac-ledger .sheet { grid-template-columns: 1fr; }
-  .tac-ledger .maincol {
-    grid-template-columns: 1fr;
-    border-right: none;
-    grid-template-areas:
-      "hero"
-      "rec"
-      "brief"
-      "heat"
-      "s1"
-      "rank";
-  }
-  .tac-ledger .idxanchor { padding: 16px 14px 14px; }
+  .tac-ledger .maincol { border-right: none; }
+  /* Round 3：三個 band 各自獨立 grid（見桌面規則），行動版統一收成單欄，
+     DOM 順序＝ heroband(hero,heat) → leadband(rec,brief) → footband(s1,rank)
+     → tape，跟原稿手機版把 heat 挪到 brief 之後的順序不完全一致（原稿：
+     hero→rec→brief→heat→s1→rank）——這是本輪未特別處理的已知落差，已知
+     且刻意的簡化（Round 3 指示聚焦桌面全寬比例還原，未要求行動版重排），
+     非遺漏。 */
+  .tac-ledger .heroband,
+  .tac-ledger .leadband,
+  .tac-ledger .footband { grid-template-columns: 1fr; }
+  .tac-ledger .idxanchor { padding: 16px 14px 14px; border-right: none; }
   .tac-ledger .idxanchor .giant { font-size: 54px; margin-top: 12px; }
   .tac-ledger .idxanchor .giant sub { font-size: 23px; }
   .tac-ledger .s1wrap,

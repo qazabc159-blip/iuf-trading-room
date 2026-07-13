@@ -1,15 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import {
-  BarChart3,
-  Building2,
-  LineChart,
-  Newspaper,
-  Sparkles,
-  Target,
-  type LucideIcon,
-} from "lucide-react";
 
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
@@ -1681,60 +1672,6 @@ function QuoteTapeItem({ quote }: { quote: TapeQuote }) {
       <strong className={tone}>{change > 0 ? "+" : ""}{formatPrice(quote.chg)} ({formatPercent(quote.pct)})</strong>
       {quote.placeholder && <em>待資料</em>}
     </span>
-  );
-}
-
-function TacticalSidebar() {
-  const nav: Array<{
-    href: string;
-    title: string;
-    sub: string;
-    Icon: LucideIcon;
-    active?: boolean;
-  }> = [
-    { href: "/", title: "戰情台", sub: "今日總覽", Icon: Target, active: true },
-    { href: "/market-intel", title: "市場情報", sub: "AI 精選", Icon: Newspaper },
-    { href: "/ai-recommendations", title: "AI 推薦", sub: "推薦股票", Icon: Sparkles },
-    { href: "/portfolio", title: "交易室", sub: "Paper / SIM", Icon: LineChart },
-    { href: "/companies", title: "公司 / 主題", sub: "公司雷達", Icon: Building2 },
-    { href: "/quant-strategies", title: "量化策略", sub: "SIM-only", Icon: BarChart3 },
-  ];
-  return (
-    <aside className="tac-sidebar">
-      <div className="tac-brand">
-        <div className="tac-brand-row">
-          <div className="tac-logo">I<span /></div>
-          <div>
-            <div className="tac-brand-kicker">IUF Trading Room</div>
-            <div className="tac-brand-version">v3.0 · Tactical</div>
-          </div>
-        </div>
-        <strong>台股 AI 交易戰情室</strong>
-        <small>操作員 · IUF-01</small>
-        <div className="tac-mode"><span />Paper / SIM 模式 · Real Order 停用</div>
-      </div>
-      <nav className="tac-nav">
-        {nav.map((item) => {
-          const Icon = item.Icon;
-          return (
-            <Link className={item.active ? "active" : ""} href={item.href} key={item.href}>
-              <span className="tac-nav-icon" aria-hidden="true">
-                <Icon size={17} strokeWidth={1.9} />
-              </span>
-              <div>
-                <b>{item.title}</b>
-                <small>{item.sub}</small>
-              </div>
-              {item.active && <i />}
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="tac-sidebar-clock">
-        <small>本機時鐘 · 台北</small>
-        <b suppressHydrationWarning>{formatClock(nowIso())}</b>
-      </div>
-    </aside>
   );
 }
 
@@ -3557,11 +3494,17 @@ async function DashboardContent({
   // overview memory）：大盤總覽／熱力圖／AI推薦／AI簡報／S1量化／強勢排行／
   // 精選新聞。DataHealth／BrokerConnectionLine 為工程遙測小計，非七塊之一，
   // 沿用舊排序放頁尾。CUT：AgendaStrip（狀態寫死的裝飾時間軸）、WorkflowPanel
-  // （純連結表，資訊已在 sidebar 導航＋各卡 CTA）。
+  // （純連結表，資訊已在各卡 CTA）。
+  //
+  // v5.1 Round 3（2026-07-13 晚，楊董定案）：拿掉首頁專用左側導航欄
+  // （TacticalSidebar 已刪除），首頁改全寬比照原稿——導航改由 masthead
+  // （brand/OBSERVE/模式/今日焦點/clock）+ 內容中的連結（看公司/加觀察/帶入
+  // 模擬單/展開全文等）+ 全站既有 Cmd/Ctrl+K CommandPalette 承接，不是遺漏。
+  // 全寬後 heroband/leadband/footband 三個橫向配對改回原稿的不對稱 px 比例
+  // （454px/1fr、1fr/348px、392px/1fr），不再套用「等寬雙欄」安全折衷。
   return (
     <div className="tactical-dashboard">
       <div className="tac-scanline" />
-      <TacticalSidebar />
       <main className="tac-main">
         <Ticker quotes={quotes} market={market} />
         <MarketStateBanner />
@@ -3570,12 +3513,18 @@ async function DashboardContent({
             <Masthead now={now} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} />
             <div className="sheet">
               <div className="maincol">
-                <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
-                <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-                <RecHeadline recommendations={recommendations} />
-                <BriefColumn brief={brief} />
-                <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
-                <RankColumns market={market} />
+                <div className="heroband">
+                  <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
+                  <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+                </div>
+                <div className="leadband">
+                  <RecHeadline recommendations={recommendations} />
+                  <BriefColumn brief={brief} />
+                </div>
+                <div className="footband">
+                  <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
+                  <RankColumns market={market} />
+                </div>
               </div>
               <NewsTape intel={intel} />
             </div>

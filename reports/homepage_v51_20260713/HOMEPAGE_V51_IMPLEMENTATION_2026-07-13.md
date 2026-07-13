@@ -1,5 +1,76 @@
 # 首頁 v5.1 LEDGER 揭示板改版 — 實作報告（2026-07-13, Jim）
 
+## ⭐⭐ ROUND 3 更新（同日深夜）— 拿掉左側導航欄，首頁全寬，比例照原稿逐值還原
+
+楊董看了 Round 2 截圖後親口定案：「首頁全寬、拿掉左側導航欄、完全照原稿」。這是達成
+「一模一樣」的關鍵決定——Round 2 為了避免熱力圖被 240px 固定側欄擠壓成 <370px 而把
+巨型指數錨點/熱力圖改成上下堆疊，這輪拿掉側欄後這個折衷不再必要，改回原稿逐值 px 比例。
+
+### 改動
+1. **首頁拿掉左側導航欄**：刪除 `page.tsx` 內建的 `TacticalSidebar()` 函式與其掛載
+   （原本渲染 `.tac-sidebar`，含 6 個導航連結 + 版本號 + Paper/SIM 模式提示）。全站共用
+   `Sidebar.tsx`（root layout 掛載）本來就已經被既有 CSS
+   `body:has(.tactical-dashboard) .app-sidebar { display:none }` 在首頁隱藏（這條規則
+   本輪沒有動，其他頁的側欄完全不受影響——已用真瀏覽器驗證 `/companies`
+   `appSidebarDisplay:"flex"`、`mainLeft:240` 確認）。`.tactical-dashboard` 的
+   `grid-template-columns` 從 `240px minmax(0,1fr)` 改成單欄 `minmax(0,1fr)`
+   （這個 class 只在首頁掛載，改動零跨頁風險）。導航能力改由：masthead（brand/
+   OBSERVE/模式/今日焦點/clock）+ 內容中既有連結（看公司/加觀察/帶入模擬單/
+   展開全文/熱力圖磚格連結）+ 全站既有 `Cmd/Ctrl+K` CommandPalette（`root layout.tsx`
+   常駐，不受側欄有無影響）承接。移除的舊 `TacticalSidebar` 有一行「Paper / SIM 模式 ·
+   Real Order 停用」安全提示文字——這則訊息本頁底部 `BrokerConnectionLine` 已有等效
+   內容（「下單入口關閉 · 只提供只讀與紙上預覽」），未遺漏。
+2. **全寬後三個橫向配對照原稿逐值 px 比例還原**：`.heroband`（idxanchor 454px +
+   heatzone `1fr`）、`.leadband`（recwrap `1fr` + briefcol 348px）、`.footband`
+   （s1wrap 392px + rkwrap `1fr`），取代 Round 2 的等寬雙欄安全折衷。三個 band 改回
+   各自獨立的 2 欄 grid（比照原稿字面 `.heroband`/`.leadband`/`.footband` 結構），
+   `.maincol` 從「單一大 grid + grid-template-areas」改成 `display:flex;
+   flex-direction:column` 的三個 band 直向堆疊容器（三個 band 各自比例互不相同，
+   無法共用一組 grid-template-columns）。
+3. **熱力圖尺寸呈現**：全寬後熱力圖從 Round 2 的整行 ~980px 降到並列後的 ~523px（1280px
+   桌面實測 `heatWidth:523`），比 Round 2 窄，但比楊董 7/13 已鎖定 treemap/分組邏輯不能
+   改變的前提下，這是唯一能同時滿足「跟原稿並列」與「不改動元件內部邏輯」的結果。
+   **誠實揭露**：523px 寬度下磚格文字互蓋（既有 prod 缺陷）比 Round 2 全寬單行時更明顯
+   （見 `round3/desktop_1280_heatzone.png`），這是本輪拿掉側欄+並列化的直接後果，未
+   修改 `industry-heatmap.tsx` 任何內部邏輯（遵守鎖定指示），如實揭露待裁決。
+4. **行動版排序**：三個 band 各自獨立 grid，行動版收合為 DOM 順序（hero→heat→rec→
+   brief→s1→rank→news），與原稿手機版把 heat 挪到 brief 之後的順序（hero→rec→brief→
+   heat→s1→rank→news）不完全一致——Round 3 指示聚焦桌面全寬比例還原，未要求行動版
+   重排，此為已知、刻意的簡化（CSS 註解已標註原因），非遺漏。
+
+### 測試調整
+`components/sidebar-owner-boundary.test.ts` 原本斷言首頁 source 含
+`"IUF Trading Room"`／`"v3.0 · Tactical"`／`"Paper / SIM 模式 · Real Order 停用"`
+（都是舊 `TacticalSidebar` 的內容），這些字串隨側欄刪除而消失，測試改寫為驗證「首頁不再
+定義 `TacticalSidebar` 函式、且不含任何 `/admin/` 路徑」——保留原測試真正要守的安全性質
+（首頁不洩漏管理員專用連結），只是把驗證方式從「檢查特定側欄字串存在」改成「檢查側欄已刪除
+且新架構下仍無 admin 連結」，不弱化原意圖。
+
+### 驗證（Round 3）
+- `pnpm typecheck`：15/15 綠
+- `pnpm --filter @iuf-trading-room/web test`：681/681 綠（含上述測試改寫後的
+  `sidebar-owner-boundary.test.ts`）
+- `pnpm run build:web`：全綠 31 routes
+- 真瀏覽器驗證（本機 `next start` 打 `https://api.eycvector.com` + 真 owner session）：
+  `mobile-390.spec.ts` 13/13 PASS；ad-hoc 檢查確認桌面 1280px 下 `.idxanchor` 寬度
+  454px、`.heatzone` 寬度 523px、兩者同一列（`sameRow:true`）；`.app-sidebar`
+  在首頁 `display:none`、在 `/companies` 仍 `display:flex`（其他頁不受影響的直接證據）；
+  兩斷點皆零水平溢出、零 console error
+
+### 截圖（`reports/homepage_v51_20260713/round3/`）
+- `desktop_1280_full.png` — 桌面 1280 全寬全頁
+- `desktop_1280_heroband.png` / `desktop_1280_leadband.png` / `desktop_1280_footband.png` /
+  `desktop_1280_heatzone.png` — 三個橫向配對 + 熱力圖局部裁圖
+- `mobile_390_full.png` — 手機 390 全頁
+
+### 待 Elva/楊董裁決（Round 3 新增）
+1. 熱力圖 523px 下磚格文字互蓋比 Round 2 更明顯——是否接受這個代價換取跟原稿一致的
+   並列比例，或要求進一步犧牲真資料維度（固定色階換取排版好讀）。
+2. 行動版順序未跟進原稿「heat 挪到 brief 之後」的重排（本輪范圍聚焦桌面），是否需要
+   另立小任務補上。
+
+---
+
 ## ⭐ ROUND 2 更新（同日晚間）— 已取得真 artifact 原稿，逐塊移植
 
 Round 1（下方原始報告）誠實揭露當時工具集沒有 WebFetch，只能依文字規格近似重建。

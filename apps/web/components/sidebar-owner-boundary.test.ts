@@ -27,15 +27,21 @@ describe("product navigation owner boundary", () => {
     expect(sidebarSource).toContain("Paper / SIM 模式 · Real Order 停用");
   });
 
-  it("does not expose internal admin links from the standalone homepage sidebar", () => {
+  it("does not expose internal admin links anywhere on the homepage (no standalone homepage sidebar since v5.1 Round 3)", () => {
+    // v5.1 Round 3 (2026-07-13, 楊董定案): the homepage's own local TacticalSidebar
+    // (which never had any admin/internal links to begin with) was removed entirely
+    // so the homepage can go full-width like the artifact — navigation is now via
+    // the masthead + in-content links + the sitewide Cmd/Ctrl+K CommandPalette.
+    // The underlying security property this test guards (homepage never leaks
+    // admin/internal-only routes) still holds trivially with zero local nav list;
+    // keep asserting it explicitly so a future re-introduction of a homepage nav
+    // gets caught if it ever includes an admin href.
+    expect(homepageSource).not.toContain("function TacticalSidebar");
     expect(homepageSource).not.toContain("const internalNav");
     expect(homepageSource).not.toContain('href: "/admin/brain/llm"');
     expect(homepageSource).not.toContain('href: "/admin/tools"');
     expect(homepageSource).not.toContain('href: "/admin/uta/accounts"');
-    expect(homepageSource).toContain("IUF Trading Room");
-    expect(homepageSource).toContain("v3.0 · Tactical");
-    expect(homepageSource).toContain("Paper / SIM 模式 · Real Order 停用");
-    expect(homepageSource).toContain('title: "AI 推薦", sub: "推薦股票"');
+    expect(homepageSource).not.toContain("/admin/");
   });
 
   it("does not label every signed-in account as Owner in the header account menu", () => {
