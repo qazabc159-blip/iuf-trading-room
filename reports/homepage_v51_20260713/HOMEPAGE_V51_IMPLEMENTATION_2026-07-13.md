@@ -1,5 +1,81 @@
 # 首頁 v5.1 LEDGER 揭示板改版 — 實作報告（2026-07-13, Jim）
 
+## ⭐⭐⭐ ROUND 4 更新 — 修熱力圖磚格文字互蓋（Round 3 遺留的唯一已知缺陷）
+
+Round 3 全寬並列後熱力圖欄寬從整行 ~980px 降到 ~523px（1280px 桌機），
+`industry-heatmap.tsx` 磚格內 ticker/股名/漲跌幅在窄欄下互相疊印糊成一團
+（2317/2891/3443/3017/3034 等磚格皆受影響）。更正先前措辭：「industry-heatmap
+7/13 鎖定不動」是過度保守的說法，查無楊董硬鎖——本輪只動磚格**文字呈現/字級自適應**，
+不動資料來源/分組/面積=成交值 的治理邏輯。
+
+### 根因
+1. **字級與 labelMode 分類脫鉤於實際像素**：`buildTreemapLayout()` 用抽象 100×100
+   百分比座標系決定 `labelMode`（hero/large/medium/small），CSS 再依 labelMode 給
+   固定 rem/px 字級——同一個 labelMode 在寬版（~980px）和窄版（~523px）容器下會渲染
+   出天差地遠的實際像素尺寸，窄版時固定字級明顯放不下。
+2. **CSS Grid「auto 列＋overflow:hidden 子項＝自動最小尺寸視為 0」的規格陷阱**：
+   第一次修法（改用 CSS Grid `auto auto minmax(0,1fr) auto` 四列＋`overflow:hidden`）
+   在最極端的磚格（股名因太窄被隱藏後，pct 遞補進 row2）會讓 tile-symbol 那一列的
+   `grid-template-rows` 解出 `0px`——ticker 完全消失但 pct 正常顯示（比原本疊字更隱蔽
+   的新 bug，靠 `getComputedStyle`+`getBoundingClientRect` 逐磚檢查才抓到，肉眼截圖
+   看起來像是「乾淨」的）。
+
+### 修法
+1. **`.tac-heat-tile` 加 `container-type: size; container-name: heat-tile`**：讓
+   `tile-symbol`/`tile-name`/`tile-pct` 的字級改用 `clamp(floor, min(Ncqi, Mcqb), ceil)`
+   ——同時參考磚格「自己」的實際寬與高（cqi=容器寬度%，cqb=容器高度%，取兩者較小值），
+   而非磚格所在頁面的整體版寬。大磚自動大字、小磚自動小字，任何欄寬都成立（不是只修
+   首頁 523px 這一個特例）。
+2. **新增 `.tile-body` 內層 wrapper**（`industry-heatmap.tsx` markup 改動）：文字內容
+   （ticker/股名/漲跌幅/成交值）包進這個新 `<span>`，只有它自己 `overflow:hidden`，
+   確保任何殘餘溢出只會被裁在磚格自己的框內、不會糊到隔壁磚格；`TileTooltip` 維持
+   `.tile-body` 的 sibling（在 wrapper 外面），hover 上飄仍正常（已用
+   `getComputedStyle(tooltip).opacity` 驗證 hover 後 =1）。
+3. **改用 Flexbox（不用 CSS Grid）排列 `.tile-body` 內部**：`flex-direction:column`
+   + `flex:0 0 auto`（不收縮）取代具名 grid-template-rows——這是修掉「ticker 消失」
+   bug 的關鍵，Grid 的「auto 列 + overflow:hidden 子項 = 自動最小尺寸視為 0」規格
+   陷阱在 Flexbox `flex-shrink:0` 下不存在（子項一律保持自身內容尺寸，容器裝不下就在
+   `.tile-body` 邊緣裁切，不會有子項整個測量出 0px 高度消失的狀況）。
+4. **`@container heat-tile (max-width/max-height)` 顯式砍股名**：磚格窄於 58px 或矮於
+   34px 時直接 `.tile-name{display:none}`，只留 ticker+pct（原稿最小磚格就是這樣，
+   不是字級硬擠到看不清）。
+5. **最極端磚格（≤36px 高）額外用負 margin 找回 padding 空間**：`@container` 不能
+   對「自己」這個 container 元素本身生效（circular，spec 明文禁止 container 用自己的
+   尺寸改自己的樣式）——所以改對 `.tile-body`（container 的子元素，合法查詢對象）套
+   `width:calc(100% + 6px); height:calc(100% + 6px); margin:-3px`，向外借回 padding
+   讓 ticker+pct 在最小的磚格也不再被底部裁掉半個字。
+6. `@media (max-width:620px)` 既有手機版覆寫規則**完全沒動**（真手機驗證過的既有
+   行為原樣保留）——新的 `@container` 規則跟它 selector 特異度打平時，源碼順序上手機
+   媒體查詢在後面，等權時手機版覆寫贏，本輪新增規則只在「桌機版視窗但欄本身窄」這個
+   舊媒體查詢管不到的新場景才生效，兩者互不打架。
+
+### 驗證
+- **合成資料 harness**（因收工時剛好非台股交易時段，首頁核心熱力圖走 TWSE 收盤/
+  代表股暖機備援分支，暫時看不到即時逐股磚格）：暫時新增 `apps/web/app/
+  jim-heatmap-preview-temp/page.tsx`（未 commit，驗證完即刪）直接掛
+  `<IndustryHeatmap>` 灌 40 檔 `CORE_REPRESENTATIVES` 全集的假資料，523px/980px 兩種
+  欄寬皆截圖比對；用 `git stash` 暫時還原成修復前程式碼，同一組假資料重新截圖，
+  取得真正的 before/after 對照（`round4/heatmap_BEFORE_repro_523px.png` vs
+  之後的即時真資料截圖）。
+- **真 prod 資料驗證**（更強的證據）：收工前時區推進到台股盤前時段，首頁核心熱力圖
+  自然切回即時代表股磚格，直接對 prod API 截圖 `round4/heatmap_AFTER_prod_523px.png`
+  ——磚格內容剛好就是原始 bug 回報點名的 2317/2891/3443/3017/3034 等 ticker，全部
+  清楚不疊字，跟原稿一致。
+- **980px 寬版無回歸**：`round4/heatmap_wide_980px_no_regression.png`，同一批假資料
+  在寬欄下 ticker+股名+漲跌幅+成交值全部完整顯示（字級隨磚格變大自動放大），沒有因為
+  改成容器查詢而在非首頁窄欄場景變差；`IndustryHeatmap` 目前唯一真掛載點是首頁
+  `HeatZonePanel`（grep 全 app 目錄確認），但本輪 CSS 改動全部 scope 在元件自己的
+  `.tac-industry-heatmap`/`.tac-heat-tile` class 下，不是首頁 hack，未來任何頁面
+  掛這個元件都會直接受益。
+- **全頁無回歸**：`round4/homepage_full_1280_after_no_regression.png`，masthead／
+  AI 推薦／簡報／S1 佈告／排行／新聞電傳紙帶／資料健康全部正常，`scrollWidth` 維持
+  1280（零水平溢出），console 零錯誤。
+- typecheck 15/15、`pnpm --filter web test` 681/681（零測試改動——沒有任何既有測試
+  斷言磚格內部 markup 結構，`industry-heatmap-representatives.test.ts` 唯一相關斷言
+  是 `.toContain('<small className="tile-name">{tile.name}</small>')` 子字串比對，
+  縮排改變不影響）、`build:web` 全綠 31 routes、`mobile-390.spec.ts` 13/13 PASS
+  （對 prod API 真 owner session，含首頁 `/`）。
+
 ## ⭐⭐ ROUND 3 更新（同日深夜）— 拿掉左側導航欄，首頁全寬，比例照原稿逐值還原
 
 楊董看了 Round 2 截圖後親口定案：「首頁全寬、拿掉左側導航欄、完全照原稿」。這是達成

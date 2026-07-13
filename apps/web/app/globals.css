@@ -13849,10 +13849,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-industry-heatmap .tac-heat-tile {
   position: absolute;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  align-content: stretch;
-  gap: 6px;
+  display: block;
   min-width: 0;
   min-height: 0;
   padding: clamp(7px, 0.7rem, 12px);
@@ -13866,6 +13863,16 @@ body:has(.tactical-dashboard) .app-sidebar {
   overflow: visible;
   transform-origin: center;
   transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+  /* F4 (2026-07-13, Round 4): container query context so .tile-body's text can
+     size itself off THIS tile's actual rendered box, not just its labelMode
+     bucket. Fixes symbol/name/pct overlapping when the same labelMode renders
+     inside a physically narrow column (e.g. homepage heatzone squeezed to
+     ~523px beside the index anchor after the Round 3 full-width relayout) where
+     the old fixed rem/px sizes no longer fit. overflow stays visible here so
+     TileTooltip (a sibling of .tile-body, see below) keeps escaping upward on
+     hover exactly as before. */
+  container-type: size;
+  container-name: heat-tile;
 }
 
 .tac-industry-heatmap .tac-heat-tile:hover,
@@ -13897,10 +13904,87 @@ body:has(.tactical-dashboard) .app-sidebar {
     #141b26;
 }
 
+/* tile-body: clips label text to the tile's real rendered box so it can never
+   bleed into a neighboring tile (previously .tac-heat-tile itself hosted this
+   grid with overflow: visible, so an oversized line just spilled onto whatever
+   sat next to/below it). TileTooltip stays a sibling outside this wrapper, so
+   its hover-escape-upward behaviour is untouched.
+   Flexbox (not CSS Grid) on purpose: with grid-template-rows, an "auto" row
+   whose item has overflow != visible resolves its automatic minimum size to 0
+   (per spec) — when tile-name is display:none on the tiniest cells, tile-pct
+   auto-placed into the vacated row could compute to a full 9px track while
+   tile-symbol's own row collapsed to a *measured* 0px, i.e. the ticker vanished
+   entirely even though there was room. flex-shrink:0 flex items don't have that
+   collapse-to-zero failure mode — they keep their natural size and only clip at
+   the .tile-body edge in the (rare) case content still doesn't fit. */
+.tac-industry-heatmap .tile-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tac-industry-heatmap .tile-symbol,
+.tac-industry-heatmap .tile-name,
+.tac-industry-heatmap .tile-meta {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium {
+  padding: 7px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium .tile-body {
+  gap: 3px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small {
+  padding: 6px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small .tile-body {
+  gap: 2px;
+}
+
+/* Cells too short even for a single-line symbol+pct pair at the font floor
+   (see the two @container blocks further down that already drop tile-name
+   here) also give back their padding overhead so ticker+pct keep fitting
+   instead of pct getting clipped off the bottom by .tile-body's overflow.
+   Note: this targets .tile-body, not .tac-heat-tile itself — a size query
+   container can never restyle its own box off its own size (that would be
+   circular), only descendants can respond to it. .tile-body is the
+   container's child, so it can "reach back" into the parent's padding via
+   a matching negative margin + oversized box instead. */
+@container heat-tile (max-height: 36px) {
+  .tac-industry-heatmap .tile-body {
+    width: calc(100% + 6px);
+    height: calc(100% + 6px);
+    margin: -3px;
+    gap: 1px;
+  }
+}
+
+/* Font sizes scale off the tile's OWN container-query box (set on .tac-heat-tile
+   above) rather than a fixed rem/px per labelMode class. min(Ncqi, Mcqb) picks
+   whichever of the tile's real width or height is more constraining, so a wide-
+   but-short tile and a narrow-but-tall tile both get text that actually fits —
+   this is what the old static-per-labelMode sizes couldn't do, since the same
+   labelMode class can render at very different physical pixel sizes depending
+   on how narrow its parent column is (e.g. homepage heatzone ~523px vs a full-
+   width /market-intel-style column). */
 .tac-industry-heatmap .tile-symbol {
   min-width: 0;
   color: rgba(255, 255, 255, 0.92);
-  font: 950 1rem/1 var(--mono);
+  font-family: var(--mono);
+  font-weight: 950;
+  line-height: 1;
+  font-size: clamp(9px, min(15cqi, 26cqb), 17px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13908,17 +13992,25 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-industry-heatmap .tile-name {
   color: rgba(255, 255, 255, 0.84);
-  font: 850 0.88rem/1.16 var(--sans-tc);
+  font-family: var(--sans-tc);
+  font-weight: 850;
+  line-height: 1.16;
+  font-size: clamp(8px, min(10cqi, 15cqb), 14px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tac-industry-heatmap .tile-pct {
-  align-self: end;
-  justify-self: end;
+  align-self: flex-end;
+  margin-top: auto;
+  flex: 0 0 auto;
+  max-width: 100%;
   color: rgba(255, 255, 255, 0.96);
-  font: 950 1.35rem/1 var(--mono);
+  font-family: var(--mono);
+  font-weight: 950;
+  line-height: 1;
+  font-size: clamp(9px, min(13cqi, 24cqb), 22px);
   text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
   white-space: nowrap;
 }
@@ -13931,60 +14023,23 @@ body:has(.tactical-dashboard) .app-sidebar {
   text-overflow: ellipsis;
 }
 
-.tac-industry-heatmap .tac-heat-tile.large .tile-symbol {
-  font-size: 0.95rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.large .tile-pct {
-  font-size: 1.18rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium {
-  gap: 3px;
-  padding: 7px;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium .tile-symbol {
-  font-size: 0.82rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium .tile-name {
-  font-size: 0.68rem;
-}
-
 .tac-industry-heatmap .tac-heat-tile.medium .tile-pct {
-  justify-self: start;
-  font-size: 0.85rem;
+  align-self: flex-start;
 }
 
-.tac-industry-heatmap .tac-heat-tile.small {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  align-content: stretch;
-  gap: 2px;
-  padding: 6px;
+/* Below a physical width/height floor there is no room left for a company-name
+   line at all (any font small enough to fit would be unreadable) — drop to
+   ticker + pct only, same "smallest cell" behaviour as the artifact reference. */
+@container heat-tile (max-width: 58px) {
+  .tac-industry-heatmap .tile-name {
+    display: none;
+  }
 }
 
-.tac-industry-heatmap .tac-heat-tile.small .tile-symbol {
-  font-size: 11px;
-  line-height: 1;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-name {
-  display: block;
-  font-size: 10px;
-  line-height: 1.08;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-meta {
-  display: none;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-pct {
-  align-self: end;
-  justify-self: end;
-  font-size: 11px;
-  line-height: 1;
+@container heat-tile (max-height: 34px) {
+  .tac-industry-heatmap .tile-name {
+    display: none;
+  }
 }
 
 .tac-heat-tooltip {
