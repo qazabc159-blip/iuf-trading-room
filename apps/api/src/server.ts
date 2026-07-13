@@ -20427,7 +20427,7 @@ app.get("/api/v1/ai-recommendations", async (c) => {
   }
 
   const { getLatestAiRecommendationRunForRead } = await import("./ai-recommendation-v2/orchestrator.js");
-  const latest = await getLatestAiRecommendationRunForRead();
+  const latest = await getLatestAiRecommendationRunForRead(session.workspace.id);
 
   if (!latest) {
     return c.json({
@@ -20500,7 +20500,7 @@ app.get("/api/v1/admin/ai-recommendations/status", async (c) => {
   }
 
   const { getLatestAiRecommendationRunForRead } = await import("./ai-recommendation-v2/orchestrator.js");
-  const latest = await getLatestAiRecommendationRunForRead();
+  const latest = await getLatestAiRecommendationRunForRead(session.workspace.id);
 
   return c.json({
     cron_last_fired_at: _aiRecV2CronLastFiredAt,
@@ -20592,7 +20592,7 @@ app.get("/api/v1/ai-recommendations/v3", async (c) => {
     isV3RunningStale,
     V3_RUNNING_STALE_AFTER_MS,
   } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-  const latest = await getLatestAiRecommendationV3RunForRead();
+  const latest = await getLatestAiRecommendationV3RunForRead(c.get("session")?.workspace.id ?? "");
   if (!latest) {
     return c.json({
       ok: false,
@@ -20734,7 +20734,7 @@ app.get("/api/v1/admin/ai-recommendations/v3/status", async (c) => {
     isV3RunningStale,
     V3_RUNNING_STALE_AFTER_MS,
   } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-  const latest = await getLatestAiRecommendationV3RunForRead();
+  const latest = await getLatestAiRecommendationV3RunForRead(session.workspace.id);
   const latestRunAgeMs = latest ? getV3RunAgeMs(latest.generatedAt) : null;
   const latestStaleRunning = latest ? isV3RunningStale(latest.status, latest.generatedAt) : false;
   // cron_success_date is held in a module-level var that resets on every process
@@ -20849,7 +20849,7 @@ app.post("/api/v1/admin/ai-rec/snapshot", async (c) => {
   }
 
   const { getLatestAiRecommendationV3RunForRead } = await import("./ai-recommendation-v2/orchestrator-v3.js");
-  const latest = await getLatestAiRecommendationV3RunForRead();
+  const latest = await getLatestAiRecommendationV3RunForRead(session.workspace.id);
 
   if (!latest) {
     return c.json({ ok: false, error: "no_v3_run_available", hint: "Trigger a v3 refresh first." }, 404);

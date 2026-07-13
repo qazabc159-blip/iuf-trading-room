@@ -1042,8 +1042,7 @@ export const aiRecommendationsRuns = pgTable(
   "ai_recommendations_runs",
   {
     id:                   uuid("id").defaultRandom().primaryKey(),
-    // workspace_id: NULL = system-level Owner-triggered run
-    workspaceId:          uuid("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    workspaceId:          uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
     // run_id: unique per invocation, server-generated UUID as text
     runId:                text("run_id").notNull().unique(),
     generatedAt:          timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1070,7 +1069,7 @@ export const aiRecommendationsRuns = pgTable(
     completedAt:          timestamp("completed_at", { withTimezone: true })
   },
   (table) => ({
-    generatedAtIdx:       index("ai_rec_runs_generated_at_idx").on(table.generatedAt.desc()),
+    workspaceGeneratedAtIdx: index("ai_rec_runs_workspace_generated_at_idx").on(table.workspaceId, table.generatedAt.desc()),
     workspaceStatusIdx:   index("ai_rec_runs_workspace_status_idx").on(table.workspaceId, table.status, table.generatedAt.desc())
   })
 );

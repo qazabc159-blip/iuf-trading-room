@@ -229,6 +229,30 @@ async function seedBrainDecision(workspaceId: string | null, marker: string): Pr
   return runId;
 }
 
+async function seedAiRecommendationRun(
+  workspaceId: string,
+  marker: string,
+  version: "v2" | "v3",
+): Promise<string> {
+  const db = getDb();
+  if (!db) throw new Error("seedAiRecommendationRun requires PERSISTENCE_MODE=database.");
+  const runId = `ai-rec-${version}-${marker}-${randomUUID()}`;
+  const trigger = version === "v3" ? "manual_refresh:v3" : "manual_refresh";
+  await db.execute(drizzleSql`
+    INSERT INTO ai_recommendations_runs (
+      id, workspace_id, run_id, generated_at, model, status, items,
+      react_trace, final_report_markdown, cost_usd, total_tokens,
+      trigger, created_at, completed_at
+    ) VALUES (
+      ${randomUUID()}, ${workspaceId}, ${runId}, NOW(), 'test', 'complete',
+      ${JSON.stringify([{ ticker: "2330", companyName: marker, action: "observe" }])}::jsonb,
+      ${JSON.stringify([{ testMarker: marker }])}::jsonb,
+      ${`report-${marker}`}, 0, 1, ${trigger}, NOW(), NOW()
+    )
+  `);
+  return runId;
+}
+
 /**
  * Acknowledges every currently-unacknowledged iuf_events row. Used to give
  * the badge test a deterministic starting point regardless of how many
@@ -555,5 +579,56 @@ describe("brain_decisions workspace boundary", () => {
     const ownDetail = await getJson(`/api/v1/admin/brain/react/decisions/${encodeURIComponent(runB)}`, secondaryOwnerCookie);
     assert.equal(ownDetail.status, 200);
     assert.equal(ownDetail.body.data.prompt.intent, markerB, "workspace B should still read its own full prompt");
+  });
+});
+
+describe("AI recommendation v3 workspace boundary", () => {
+  test("requires login and keeps DB reads plus the in-memory cache tenant-local", async () => {
+    const unauthenticated = await getJson("/api/v1/ai-recommendations/v3");
+    assert.equal(unauthenticated.status, 401);
+
+    const runA = await seedAiRecommendationRun(primaryWorkspaceId, `tenant-a-${randomUUID()}`, "v3");
+    const runB = await seedAiRecommendationRun(secondaryWorkspaceId, `tenant-b-${randomUUID()}`, "v3");
+
+    const primary = await getJson("/api/v1/ai-recommendations/v3", ownerCookie);
+    assert.equal(primary.status, 200);
+    assert.equal(primary.body.runId, runA, "workspace A should retain its single-tenant read behavior");
+    assert.notEqual(primary.body.runId, runB, "workspace A must not read workspace B's latest run");
+
+    const secondary = await getJson("/api/v1/ai-recommendations/v3", secondaryOwnerCookie);
+    assert.equal(secondary.status, 200);
+    assert.equal(secondary.body.runId, runB);
+    assert.notEqual(secondary.body.runId, runA, "workspace B must not read workspace A's latest run");
+
+    const primaryAfterSecondaryCacheFill = await getJson("/api/v1/ai-recommendations/v3", ownerCookie);
+    assert.equal(
+      primaryAfterSecondaryCacheFill.body.runId,
+      runA,
+      "reading workspace B must not overwrite workspace A's cached recommendation",
+    );
+
+    const primaryStatus = await getJson("/api/v1/admin/ai-recommendations/v3/status", ownerCookie);
+    const secondaryStatus = await getJson("/api/v1/admin/ai-recommendations/v3/status", secondaryOwnerCookie);
+    assert.equal(primaryStatus.body.latest_run_id, runA);
+    assert.equal(secondaryStatus.body.latest_run_id, runB);
+  });
+});
+
+describe("AI recommendation v2 workspace boundary", () => {
+  test("list and status reads remain tenant-local across cache fills", async () => {
+    const runA = await seedAiRecommendationRun(primaryWorkspaceId, `tenant-a-${randomUUID()}`, "v2");
+    const runB = await seedAiRecommendationRun(secondaryWorkspaceId, `tenant-b-${randomUUID()}`, "v2");
+
+    const primary = await getJson("/api/v1/ai-recommendations", ownerCookie);
+    const secondary = await getJson("/api/v1/ai-recommendations", secondaryOwnerCookie);
+    const primaryAgain = await getJson("/api/v1/ai-recommendations", ownerCookie);
+    assert.equal(primary.body.runId, runA);
+    assert.equal(secondary.body.runId, runB);
+    assert.equal(primaryAgain.body.runId, runA, "workspace B cache fill must not overwrite workspace A");
+
+    const primaryStatus = await getJson("/api/v1/admin/ai-recommendations/status", ownerCookie);
+    const secondaryStatus = await getJson("/api/v1/admin/ai-recommendations/status", secondaryOwnerCookie);
+    assert.equal(primaryStatus.body.latest_run_id, runA);
+    assert.equal(secondaryStatus.body.latest_run_id, runB);
   });
 });

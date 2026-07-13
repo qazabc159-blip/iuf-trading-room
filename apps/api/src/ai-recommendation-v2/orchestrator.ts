@@ -60,28 +60,34 @@ export interface AiRecommendationRunResult {
 // ── In-memory cache (latest run, per-process) ─────────────────────────────────
 // Serves the GET endpoint without hitting DB on every request.
 
-let _latestRunCache: AiRecommendationRunResult | null = null;
-let _latestRunCacheExpiresAt: number = 0;
+const MEMORY_CACHE_KEY = "__memory__";
+const _latestRunCache = new Map<string, { run: AiRecommendationRunResult; expiresAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export function getLatestAiRecommendationRun(): AiRecommendationRunResult | null {
-  if (_latestRunCache && Date.now() < _latestRunCacheExpiresAt) {
-    return _latestRunCache;
+export function getLatestAiRecommendationRun(workspaceId?: string | null): AiRecommendationRunResult | null {
+  const key = workspaceId ?? MEMORY_CACHE_KEY;
+  const cached = _latestRunCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.run;
   }
+  _latestRunCache.delete(key);
   return null;
 }
 
-export async function loadLatestAiRecommendationRunFromDb(): Promise<AiRecommendationRunResult | null> {
+export async function loadLatestAiRecommendationRunFromDb(workspaceId: string): Promise<AiRecommendationRunResult | null> {
   try {
     const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return null;
     const db = getDb();
     if (!db) return null;
-    const { desc, sql } = await import("drizzle-orm");
+    const { and, desc, eq, sql } = await import("drizzle-orm");
     const rows = await db
       .select()
       .from(aiRecommendationsRuns)
-      .where(sql`${aiRecommendationsRuns.trigger} not like ${"%:v3"}`)
+      .where(and(
+        eq(aiRecommendationsRuns.workspaceId, workspaceId),
+        sql`${aiRecommendationsRuns.trigger} not like ${"%:v3"}`
+      ))
       .orderBy(desc(aiRecommendationsRuns.generatedAt))
       .limit(1);
     const row = rows[0];
@@ -103,19 +109,17 @@ export async function loadLatestAiRecommendationRunFromDb(): Promise<AiRecommend
   }
 }
 
-export async function getLatestAiRecommendationRunForRead(): Promise<AiRecommendationRunResult | null> {
-  const cached = getLatestAiRecommendationRun();
+export async function getLatestAiRecommendationRunForRead(workspaceId: string): Promise<AiRecommendationRunResult | null> {
+  const cached = getLatestAiRecommendationRun(workspaceId);
   if (cached) return cached;
-  const dbRun = await loadLatestAiRecommendationRunFromDb();
+  const dbRun = await loadLatestAiRecommendationRunFromDb(workspaceId);
   if (!dbRun) return null;
-  _latestRunCache = dbRun;
-  _latestRunCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+  _latestRunCache.set(workspaceId, { run: dbRun, expiresAt: Date.now() + CACHE_TTL_MS });
   return dbRun;
 }
 
 export function _resetAiRecommendationCache(): void {
-  _latestRunCache = null;
-  _latestRunCacheExpiresAt = 0;
+  _latestRunCache.clear();
 }
 
 // ── Date helper ───────────────────────────────────────────────────────────────
@@ -133,15 +137,16 @@ async function persistRunStart(opts: {
   workspaceId?: string | null;
   trigger: AiRecTrigger;
 }): Promise<void> {
+  const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+  if (!isDatabaseMode()) return;
+  if (!opts.workspaceId) throw new Error("workspace_required_for_ai_recommendation_v2_run");
   try {
-    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
-    if (!isDatabaseMode()) return;
     const db = getDb();
     if (!db) return;
     await db.insert(aiRecommendationsRuns).values({
       id: opts.id,
       runId: opts.runId,
-      workspaceId: opts.workspaceId ?? null,
+      workspaceId: opts.workspaceId,
       status: "running",
       trigger: opts.trigger,
       items: [],
@@ -510,6 +515,25 @@ const TOOL_WHITELIST = [
 export async function runAiRecommendationV2(
   opts: AiRecommendationRunOptions = {}
 ): Promise<AiRecommendationRunResult> {
+  if (!opts.workspaceId) {
+    const { isDatabaseMode } = await import("@iuf-trading-room/db");
+    if (isDatabaseMode()) {
+      const { listWorkspaceIds } = await import("../workspace-scope.js");
+      const workspaceIds = await listWorkspaceIds();
+      if (workspaceIds.length === 0) throw new Error("workspace_required_for_ai_recommendation_v2_run");
+      let latest: AiRecommendationRunResult | null = null;
+      let firstError: unknown;
+      for (const workspaceId of workspaceIds) {
+        try {
+          latest = await runAiRecommendationV2({ ...opts, workspaceId });
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+      if (firstError) throw firstError;
+      return latest!;
+    }
+  }
   const runId = opts.runId ?? randomUUID();
   const dbRowId = randomUUID();
   const trigger = opts.trigger ?? "manual_refresh";
@@ -564,8 +588,7 @@ export async function runAiRecommendationV2(
       totalTokens: 0,
       model,
     });
-    _latestRunCache = failed;
-    _latestRunCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    _latestRunCache.set(opts.workspaceId ?? MEMORY_CACHE_KEY, { run: failed, expiresAt: Date.now() + CACHE_TTL_MS });
     return failed;
   }
 
@@ -600,8 +623,7 @@ export async function runAiRecommendationV2(
   });
 
   // Update in-memory cache
-  _latestRunCache = result;
-  _latestRunCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+  _latestRunCache.set(opts.workspaceId ?? MEMORY_CACHE_KEY, { run: result, expiresAt: Date.now() + CACHE_TTL_MS });
 
   return result;
 }

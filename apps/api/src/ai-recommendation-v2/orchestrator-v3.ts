@@ -319,8 +319,8 @@ export interface AiRecommendationV3SourceState {
 
 // ── In-memory cache (latest v3 run) ──────────────────────────────────────────
 
-let _latestV3Cache: AiRecommendationV3RunResult | null = null;
-let _latestV3CacheExpiresAt = 0;
+const _latestV3Cache = new Map<string, { run: AiRecommendationV3RunResult; expiresAt: number }>();
+let _knownWorkspaceCount: number | null = null;
 const V3_CACHE_TTL_MS = 5 * 60 * 1000;
 // Yang PR-A product gate: v3 must surface at least 5 actionable backed cards
 // or remain non-complete. C bucket / high-risk-exclusion cards are useful as
@@ -468,7 +468,19 @@ export function isV3CronWindowAt(nowMs = Date.now()): boolean {
  * A run that crashes mid-loop (e.g. LLMBudgetExceeded) used to leave its row
  * "running" forever, which the read path then skipped for days.
  */
-export async function failStaleV3RunningRows(opts: { minAgeMs: number; reason: string }): Promise<number> {
+export async function failStaleV3RunningRows(opts: {
+  minAgeMs: number;
+  reason: string;
+  workspaceId?: string | null;
+}): Promise<number> {
+  if (!opts.workspaceId) {
+    const { listWorkspaceIds } = await import("../workspace-scope.js");
+    let total = 0;
+    for (const workspaceId of await listWorkspaceIds()) {
+      total += await failStaleV3RunningRows({ ...opts, workspaceId });
+    }
+    return total;
+  }
   try {
     const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return 0;
@@ -481,6 +493,7 @@ export async function failStaleV3RunningRows(opts: { minAgeMs: number; reason: s
       .set({ status: "failed", finalReportMarkdown: opts.reason, completedAt: new Date() })
       .where(and(
         sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        eq(aiRecommendationsRuns.workspaceId, opts.workspaceId),
         eq(aiRecommendationsRuns.status, "running"),
         lt(aiRecommendationsRuns.generatedAt, cutoff)
       ))
@@ -500,13 +513,20 @@ export async function failStaleV3RunningRows(opts: { minAgeMs: number; reason: s
  * Boot-fire guard: on 6/5 every deploy boot-fired a fresh v3 run, and a dozen
  * deploys in one day burned the whole LLM daily budget.
  */
-export async function hasV3RunForTaipeiDate(dateStr: string): Promise<boolean> {
+export async function hasV3RunForTaipeiDate(dateStr: string, workspaceId?: string | null): Promise<boolean> {
+  if (!workspaceId) {
+    const { listWorkspaceIds } = await import("../workspace-scope.js");
+    const workspaceIds = await listWorkspaceIds();
+    if (workspaceIds.length === 0) return false;
+    const existing = await Promise.all(workspaceIds.map((id) => hasV3RunForTaipeiDate(dateStr, id)));
+    return existing.every(Boolean);
+  }
   try {
     const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return false;
     const db = getDb();
     if (!db) return false;
-    const { sql, and, gte, lt } = await import("drizzle-orm");
+    const { sql, and, eq, gte, lt } = await import("drizzle-orm");
     const dayStart = new Date(`${dateStr}T00:00:00+08:00`);
     if (!Number.isFinite(dayStart.getTime())) return false;
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -515,6 +535,7 @@ export async function hasV3RunForTaipeiDate(dateStr: string): Promise<boolean> {
       .from(aiRecommendationsRuns)
       .where(and(
         sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`,
+        eq(aiRecommendationsRuns.workspaceId, workspaceId),
         gte(aiRecommendationsRuns.generatedAt, dayStart),
         lt(aiRecommendationsRuns.generatedAt, dayEnd)
       ))
@@ -548,11 +569,19 @@ export function pickAiRecommendationV3RunForRead<T extends V3RunReadCandidate>(r
     ?? latest;
 }
 
-export function getLatestAiRecommendationV3Run(): AiRecommendationV3RunResult | null {
-  if (_latestV3Cache && Date.now() < _latestV3CacheExpiresAt) {
-    return _latestV3Cache;
+export function getLatestAiRecommendationV3Run(workspaceId?: string | null): AiRecommendationV3RunResult | null {
+  const resolvedWorkspaceId = workspaceId
+    ?? (_knownWorkspaceCount === 1 && _latestV3Cache.size === 1
+      ? _latestV3Cache.keys().next().value
+      : undefined);
+  if (!resolvedWorkspaceId) return null;
+  const cached = _latestV3Cache.get(resolvedWorkspaceId);
+  if (!cached) return null;
+  if (Date.now() >= cached.expiresAt) {
+    _latestV3Cache.delete(resolvedWorkspaceId);
+    return null;
   }
-  return null;
+  return cached.run;
 }
 
 const V3_TRIGGER_SUFFIX = ":v3";
@@ -573,15 +602,16 @@ async function persistV3RunStart(opts: {
   trigger: AiRecTrigger;
   model: string;
 }): Promise<void> {
+  const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
+  if (!isDatabaseMode()) return;
+  if (!opts.workspaceId) throw new Error("workspace_required_for_ai_recommendation_v3_run");
   try {
-    const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
-    if (!isDatabaseMode()) return;
     const db = getDb();
     if (!db) return;
     await db.insert(aiRecommendationsRuns).values({
       id: opts.id,
       runId: opts.runId,
-      workspaceId: opts.workspaceId ?? null,
+      workspaceId: opts.workspaceId,
       status: "running",
       trigger: v3DbTrigger(opts.trigger),
       model: opts.model,
@@ -651,22 +681,26 @@ async function finalizeV3Run(
     },
   };
   await persistV3RunComplete(finalized, model);
-  _latestV3Cache = finalized;
-  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+  if (workspaceId) {
+    _latestV3Cache.set(workspaceId, { run: finalized, expiresAt: Date.now() + V3_CACHE_TTL_MS });
+  }
   return finalized;
 }
 
-export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecommendationV3RunResult | null> {
+export async function loadLatestAiRecommendationV3RunFromDb(workspaceId: string): Promise<AiRecommendationV3RunResult | null> {
   try {
     const { getDb, isDatabaseMode, aiRecommendationsRuns } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return null;
     const db = getDb();
     if (!db) return null;
-    const { desc, sql } = await import("drizzle-orm");
+    const { and, desc, eq, sql } = await import("drizzle-orm");
     const rows = await db
       .select()
       .from(aiRecommendationsRuns)
-      .where(sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`)
+      .where(and(
+        eq(aiRecommendationsRuns.workspaceId, workspaceId),
+        sql`${aiRecommendationsRuns.trigger} like ${`%${V3_TRIGGER_SUFFIX}`}`
+      ))
       .orderBy(desc(aiRecommendationsRuns.generatedAt))
       .limit(10);
     const row = pickAiRecommendationV3RunForRead(rows);
@@ -699,7 +733,7 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
     );
     return {
       ...result,
-      items: await canonicalizeAiRecommendationV3Items(result.items, row.workspaceId ?? null),
+      items: await canonicalizeAiRecommendationV3Items(result.items, workspaceId),
       sourceState: {
         state: result.status === "complete" ? "live" : result.items.length > 0 ? "degraded" : "pending",
         source: "ai_recommendations_runs",
@@ -724,19 +758,18 @@ export async function loadLatestAiRecommendationV3RunFromDb(): Promise<AiRecomme
   }
 }
 
-export async function getLatestAiRecommendationV3RunForRead(): Promise<AiRecommendationV3RunResult | null> {
-  const cached = getLatestAiRecommendationV3Run();
+export async function getLatestAiRecommendationV3RunForRead(workspaceId: string): Promise<AiRecommendationV3RunResult | null> {
+  const cached = getLatestAiRecommendationV3Run(workspaceId);
   if (cached) return cached;
-  const dbRun = await loadLatestAiRecommendationV3RunFromDb();
+  const dbRun = await loadLatestAiRecommendationV3RunFromDb(workspaceId);
   if (!dbRun) return null;
-  _latestV3Cache = dbRun;
-  _latestV3CacheExpiresAt = Date.now() + V3_CACHE_TTL_MS;
+  _latestV3Cache.set(workspaceId, { run: dbRun, expiresAt: Date.now() + V3_CACHE_TTL_MS });
   return dbRun;
 }
 
 export function _resetAiRecommendationV3Cache(): void {
-  _latestV3Cache = null;
-  _latestV3CacheExpiresAt = 0;
+  _latestV3Cache.clear();
+  _knownWorkspaceCount = null;
 }
 
 // ── Date helper ───────────────────────────────────────────────────────────────
@@ -2872,6 +2905,26 @@ interface V3ReActStep {
 export async function runAiRecommendationV3(
   opts: AiRecommendationV3RunOptions = {}
 ): Promise<AiRecommendationV3RunResult> {
+  if (!opts.workspaceId) {
+    const { isDatabaseMode } = await import("@iuf-trading-room/db");
+    if (isDatabaseMode()) {
+      const { listWorkspaceIds } = await import("../workspace-scope.js");
+      const workspaceIds = await listWorkspaceIds();
+      _knownWorkspaceCount = workspaceIds.length;
+      if (workspaceIds.length === 0) throw new Error("workspace_required_for_ai_recommendation_v3_run");
+      let latest: AiRecommendationV3RunResult | null = null;
+      let firstError: unknown;
+      for (const workspaceId of workspaceIds) {
+        try {
+          latest = await runAiRecommendationV3({ ...opts, workspaceId });
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+      if (firstError) throw firstError;
+      return latest!;
+    }
+  }
   const runId = opts.runId ?? randomUUID();
   const dbRowId = randomUUID();
   const trigger = opts.trigger ?? "manual_refresh";

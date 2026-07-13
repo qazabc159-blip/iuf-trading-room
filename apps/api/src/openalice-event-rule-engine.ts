@@ -569,8 +569,9 @@ const RULES: EventRule[] = [
     id: "R11_V3_REC_CRON_EXHAUSTED",
     name: "AI 推薦今日尚無成功結果",
     severity: "warning",
-    trigger: async () => {
+    trigger: async (_state, workspaceId) => {
       try {
+        if (!workspaceId) return [];
         const { isV3CronWindowAt, taipeiDateOf, getLatestAiRecommendationV3RunForRead } =
           await import("./ai-recommendation-v2/orchestrator-v3.js");
 
@@ -585,7 +586,7 @@ const RULES: EventRule[] = [
         if (hhmm < 915) return []; // before window opens — nothing to report yet
 
         const todayDate = taipeiDateOf(now);
-        const latest = await getLatestAiRecommendationV3RunForRead();
+        const latest = await getLatestAiRecommendationV3RunForRead(workspaceId);
         if (hasUsableV3RecommendationDelivery(latest, todayDate)) return [];
 
         return [{

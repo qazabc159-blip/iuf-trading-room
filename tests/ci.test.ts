@@ -8979,6 +8979,56 @@ test("migration 0055 scopes iuf_decisions with provenance-first backfill and DES
   );
 });
 
+test("migration 0056 makes AI recommendation v3 runs tenant-owned with DESC schema parity", () => {
+  const forward = readFileSync("packages/db/migrations/0056_ai_recommendations_runs_workspace.sql", "utf8");
+  const down = readFileSync("packages/db/migrations/0056_ai_recommendations_runs_workspace.down.sql", "utf8");
+  const schema = readFileSync("packages/db/src/schema.ts", "utf8");
+
+  assert.match(forward, /FROM ai_recommendations_runs[\s\S]*WHERE workspace_id IS NULL/i);
+  assert.match(forward, /workspace_count <> 1/i, "ambiguous legacy ownership must fail closed");
+  assert.match(forward, /SET workspace_id = sole_workspace_id[\s\S]*WHERE workspace_id IS NULL/i);
+  assert.match(forward, /ALTER COLUMN workspace_id SET NOT NULL/i);
+  assert.match(
+    forward,
+    /ai_rec_runs_workspace_generated_at_idx[\s\S]*workspace_id, generated_at DESC/i,
+  );
+  assert.match(down, /ALTER COLUMN workspace_id DROP NOT NULL/i);
+  assert.match(down, /ai_rec_runs_generated_at_idx[\s\S]*generated_at DESC/i);
+  assert.doesNotMatch(down, /DROP COLUMN[\s\S]*workspace_id/i, "0056 down must preserve the pre-existing column");
+  assert.match(
+    schema,
+    /export const aiRecommendationsRuns[\s\S]*workspaceId:\s+uuid\("workspace_id"\)\.notNull\(\)/,
+  );
+  assert.match(
+    schema,
+    /ai_rec_runs_workspace_generated_at_idx[\s\S]*table\.workspaceId[\s\S]*table\.generatedAt\.desc\(\)/,
+  );
+});
+
+test("AI recommendation v3 readers, cache, scheduler writes, and R11 are workspace-scoped", () => {
+  const v2Orchestrator = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator.ts", "utf8");
+  const orchestrator = readFileSync("apps/api/src/ai-recommendation-v2/orchestrator-v3.ts", "utf8");
+  const eventEngine = readFileSync("apps/api/src/openalice-event-rule-engine.ts", "utf8");
+  const server = readFileSync("apps/api/src/server.ts", "utf8");
+
+  assert.match(orchestrator, /new Map<string, \{ run: AiRecommendationV3RunResult; expiresAt: number \}>/);
+  assert.match(orchestrator, /loadLatestAiRecommendationV3RunFromDb\(workspaceId: string\)/);
+  assert.match(
+    orchestrator,
+    /eq\(aiRecommendationsRuns\.workspaceId, workspaceId\)[\s\S]*aiRecommendationsRuns\.trigger/,
+  );
+  assert.match(orchestrator, /getLatestAiRecommendationV3RunForRead\(workspaceId: string\)/);
+  assert.match(orchestrator, /workspace_required_for_ai_recommendation_v3_run/);
+  assert.match(orchestrator, /listWorkspaceIds\(\)[\s\S]*runAiRecommendationV3\(\{ \.\.\.opts, workspaceId \}\)/);
+  assert.match(v2Orchestrator, /loadLatestAiRecommendationRunFromDb\(workspaceId: string\)/);
+  assert.match(v2Orchestrator, /eq\(aiRecommendationsRuns\.workspaceId, workspaceId\)/);
+  assert.match(v2Orchestrator, /workspace_required_for_ai_recommendation_v2_run/);
+  assert.match(v2Orchestrator, /listWorkspaceIds\(\)[\s\S]*runAiRecommendationV2\(\{ \.\.\.opts, workspaceId \}\)/);
+  assert.match(eventEngine, /R11_V3_REC_CRON_EXHAUSTED[\s\S]*if \(!workspaceId\) return \[\][\s\S]*getLatestAiRecommendationV3RunForRead\(workspaceId\)/);
+  assert.match(server, /getLatestAiRecommendationRunForRead\(session\.workspace\.id\)/);
+  assert.match(server, /getLatestAiRecommendationV3RunForRead\(c\.get\("session"\)\?\.workspace\.id \?\? ""\)/);
+});
+
 test("OpenAlice decision SQL consumers enforce workspace scope", () => {
   const orchestrator = readFileSync("apps/api/src/openalice-orchestrator.ts", "utf8");
   const executor = readFileSync("apps/api/src/openalice-action-executor.ts", "utf8");
