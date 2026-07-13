@@ -17998,8 +17998,9 @@ test("UOF-D2/D3: kgi account routes through the SIM channel via /trading/orders,
   const now = new Date().toISOString();
   // Execution-mode gate (modeForBroker("kgi") === "execution") only treats
   // source="kgi" as liveUsable — upsertPaperQuotes forces sourceOverride:
-  // "paper" which is non_live_source for execution mode, so this must use
-  // upsertManualQuotes with an explicit source="kgi" quote row instead.
+  // "paper" which is non_live_source for execution mode, so this seeds a
+  // source="kgi" quote row, which seedQuotesBySource dispatches to
+  // upsertKgiQuotes (the canonical kgi-bucket writer).
   await seedQuotesBySource({
     session,
     quotes: [
