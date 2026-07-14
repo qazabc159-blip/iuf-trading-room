@@ -6,6 +6,7 @@ import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry
 import { MarketStateBanner } from "@/components/MarketStateBanner";
 import { HomeBriefColumn, type BriefSegmentView } from "./home-brief-column";
 import { HomeRecCtaRow } from "./home-rec-cta";
+import { HomeZoomController } from "./home-zoom-controller";
 import {
   getAiRecommendationsV3,
   getBriefs,
@@ -1671,6 +1672,7 @@ export default async function HomePage({
   return (
     <div className="home-ledger-shell">
       <style>{skeletonStyleTag()}</style>
+      <HomeZoomController />
       <MarketStateBanner />
       <div className="tac-ledger">
         <header className="mast">
