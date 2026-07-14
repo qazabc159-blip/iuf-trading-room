@@ -12404,7 +12404,11 @@ body:has(.tactical-dashboard) .app-sidebar {
    一個小 grid（比照原稿 .heroband/.leadband/.footband 字面結構），而非
    單一 maincol 大 grid 硬湊統一欄寬比例——因為三個 band 的欄寬比例互不
    相同（見下方），共用一組 grid-template-columns 無法同時滿足。 */
-.tac-ledger .heroband { display: grid; grid-template-columns: 454px minmax(0, 1fr); border-bottom: 1px solid var(--lg-line2); }
+/* heroband 固定 322px（2026-07-14 楊董糾正：原稿字面 style="height:322px"，
+   先前 TAIEX 折線圖塞在 idxanchor 欄內把它撐高到 429-475px，兩欄等高連帶
+   把熱力圖磚格拉成扁平橫條——折線圖已移到 IndexHistoryBand 全寬窄帶，這裡
+   固定回原稿高度；overflow:hidden 防任何極端文案換行把 grid row 撐爆）。 */
+.tac-ledger .heroband { display: grid; grid-template-columns: 454px minmax(0, 1fr); border-bottom: 1px solid var(--lg-line2); height: 322px; overflow: hidden; }
 .tac-ledger .leadband { display: grid; grid-template-columns: minmax(0, 1fr) 348px; border-bottom: 1px solid var(--lg-line2); }
 .tac-ledger .footband { display: grid; grid-template-columns: 392px minmax(0, 1fr); border-top: 1px solid var(--lg-line2); }
 
@@ -12466,8 +12470,8 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .tac-industry-heatmap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 .tac-ledger .heat-toolbar {
-  display: flex; align-items: center; gap: 10px; padding: 6px 10px 0;
-  border-bottom: 1px solid var(--lg-line); height: 30px;
+  display: flex; align-items: center; gap: 10px; padding: 0 10px 0 0;
+  border-bottom: 1px solid var(--lg-line); height: 24px;
 }
 .tac-ledger .heat-stats {
   margin-left: auto; display: flex; gap: 10px; align-items: center;
@@ -12505,7 +12509,7 @@ body:has(.tactical-dashboard) .app-sidebar {
    其餘=一般密磚（1x1，靠 grid 隱式排版自動填滿），非連續 treemap 座標。 */
 .tac-ledger .heatmapgrid {
   flex: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr; gap: 1px;
-  background: var(--lg-black); min-height: 260px;
+  background: var(--lg-black); min-height: 0;
 }
 .tac-ledger .tile {
   position: relative; padding: 3px 5px; overflow: hidden; text-decoration: none;
@@ -12685,6 +12689,11 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-ledger .leadband,
   .tac-ledger .footband { display: contents; }
   .tac-ledger .idxanchor { order: 1; }
+  /* idxhistband（2026-07-14 新增）不在 heroband 內、沒有 display:contents
+     可套用 order，用跟 idxanchor 同值 order:1 讓 flex 對同值 order 項目
+     照 DOM 順序排——idxanchor 在前，idxhistband 緊接在後，維持「大盤指數
+     錨點 → TAIEX 折線」的原稿動線，不落到最前面。 */
+  .tac-ledger .idxhistband { order: 1; border-bottom: 1px solid var(--lg-line2); padding: 12px 14px 14px; }
   .tac-ledger .recwrap { order: 2; }
   .tac-ledger .briefcol { order: 3; }
   .tac-ledger .heatzone { order: 4; }
@@ -12721,10 +12730,11 @@ body:has(.tactical-dashboard) .app-sidebar {
   padding: 16px 20px 40px;
 }
 
-/* TAIEX 日線走勢（.idxanchor 內，IndexOhlcChart 沿用既有 .tac-index-*
-   系列樣式，這裡只加標頭列＋固定最小高度防止非同步注入造成 layout
-   shift）。 */
-.tac-ledger .idxhist { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--lg-line); min-height: 96px; }
+/* TAIEX 日線走勢帶（2026-07-14 楊董糾正後：從 .idxanchor 內移出，改成
+   heroband 正下方全寬窄帶——IndexOhlcChart 沿用既有 .tac-index-* 系列樣式
+   （width:100% 自動撐滿），這裡只加標頭列＋固定最小高度防止非同步注入
+   造成 layout shift）。 */
+.tac-ledger .idxhistband { padding: 10px 24px 12px; border-bottom: 1px solid var(--lg-line2); min-height: 122px; }
 .tac-ledger .idxhist-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
   font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); letter-spacing: .06em; margin-bottom: 4px;
