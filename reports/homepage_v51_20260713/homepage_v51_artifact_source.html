@@ -1,0 +1,863 @@
+<!doctype html><html><head><!-- frame-runtime --><script>window.__FRAME_PREAMBLE={"capabilities":{"downloads":"downloads.DUzXFHNF.js","mcp":"mcp.Djj5DQjZ.js","self":"self.DqF_PxOe.js"},"transforms":"_transforms.DYk1Ltlh.js"}</script><script>(function(){"use strict";const X="modulepreload",Y=function(e){return"/"+e},Z={},U=function(t,n,u){let o=Promise.resolve();function i(f){const a=new Event("vite:preloadError",{cancelable:!0});if(a.payload=f,window.dispatchEvent(a),!a.defaultPrevented)throw f}return o.then(f=>{for(const a of f||[])a.status==="rejected"&&i(a.reason);return t().catch(i)})},D=["light","dark","system"];function $(e){if(e==null||typeof e!="object")return!1;const t=e.__frame_init;return t!=null&&typeof t=="object"}function q(e){if(e==null||typeof e!="object")return!1;const t=e.__frame_theme;if(t==null||typeof t!="object")return!1;const n=t.theme;return typeof n=="string"&&D.includes(n)}function M(e){if(window===top||e.type==="auxclick"&&e.button!==1)return;const t=e.composedPath?e.composedPath():[e.target];let n=null;for(let f=0;f<t.length;f++){const a=t[f];if(a&&a.matches&&a.matches("a[href],area[href]")){n=a;break}}if(!n&&e.target&&e.target.closest&&(n=e.target.closest("a[href],area[href]")),!n)return;const u=n.getAttribute("href");if(!u)return;let o,i;try{o=new URL(u,document.baseURI),i=new URL(document.baseURI).origin}catch{return}(o.protocol==="http:"||o.protocol==="https:")&&o.origin!==i&&(e.preventDefault(),parent.postMessage({__frame_nav:!0,url:o.href},"*"))}const L={};function y(e){if(window===top)return;const t=Date.now();t-(L[e]||0)<500||(L[e]=t,parent.postMessage({__frame_engaged:!0,kind:e},"*"))}const F=2e3,T=["wheel","touchstart","touchmove","keydown","pointerdown"];let k=0;function B(e){e.isTrusted&&(k=Date.now())}function z(){addEventListener("click",M,!0),addEventListener("auxclick",M,!0)}function W(){for(let e=0;e<T.length;e++)addEventListener(T[e],B,{capture:!0,passive:!0});addEventListener("scroll",e=>{e.isTrusted&&Date.now()-k<F&&y("scroll")},{capture:!0,passive:!0}),addEventListener("pointermove",e=>{e.isTrusted&&y("pointer")},{capture:!0,passive:!0}),addEventListener("click",e=>{e.isTrusted&&y("click")},{capture:!0,passive:!0})}function x(e,t,n){const u=[...t.values()].filter(o=>o.targets.some(i=>i.startsWith(e+".")));return{wrap(o,i){const f=`${e}.${o}`,a=u.filter(s=>s.targets.includes(f));return a.length===0?(...s)=>{try{return i(...s)}catch(d){return Promise.reject(d)}}:(...s)=>{let d=s;for(const c of a){const l=c.module.parameters;if(l)try{d=l(d)}catch{return Promise.reject({code:"transform_error",id:c.id,scope:e,message:"parameters transform failed"})}}let m;try{m=i(...d)}catch(c){m=Promise.reject(c)}return m.then(c=>{for(let l=a.length-1;l>=0;l--){const h=a[l],p=h.module.returns;if(p)try{c=p(c)}catch{return n({id:h.id,scope:e,leg:"returns"}),c}}return c},c=>{for(let l=a.length-1;l>=0;l--){const h=a[l],p=h.module.throws;if(p)try{c=p(c)}catch{return n({id:h.id,scope:e,leg:"throws"}),Promise.reject(c)}}return Promise.reject(c)})}}}}function H(e,t,n,u=()=>{}){const o=new Set(e.changes??[]),i=new Map;for(const f of o){const a=t[f];a&&i.set(f,a)}return{contract:e.contract,changes:o,flags:new Set(e.flags??[]),capabilities:e.capabilities??{},transforms:i,shellOrigin:n.shellOrigin,mount:n.mount,pipe:f=>x(f,i,u)}}(function(){const e=Object.defineProperty,t=globalThis,n=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let u=0;for(let o=0;o<n.length;o++){const i=n[o];try{e(t,i,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[i]}catch{}try{e(t,i,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[i]=="function"&&u++}if(u&&window!==top)try{parent.postMessage({__frame_rtc_lockdown_failed:u},"*")}catch{}})();const K=1e4,G=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function J(e){for(const t of G)if(t.endsWith(":*"))try{const n=new URL(e);if(`${n.protocol}//${n.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}const w=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities??{}}),E=window.__FRAME_PREAMBLE?.transforms,C=/^[\w.-]+\.js$/,V=/^[a-z][a-z0-9_-]{0,63}$/;let A=null,g=null;function P(e,t,n){try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!0,enumerable:!0})}catch{}}}let R=!1;function N(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,R=!0):R&&(delete t.dataset.theme,t.style.colorScheme="",R=!1)}const _=new Map;function Q(e,t){const n=_.get(e);if(!n)return;Object.assign(n.impl,t),n.impl.__settled=()=>Promise.reject({code:"capability_removed",message:`${e}: method not in this runtime`});const u=n.queue;n.queue=[];for(const o of u){const i=t[o.method];i?i(...o.args).then(o.resolve,o.reject):o.reject({code:"capability_removed",message:`${e}.${o.method} is not in this runtime`})}}function O(e,t){const n=_.get(e);if(!n)return;n.impl.__settled=()=>Promise.reject(t);const u=n.queue;n.queue=[];for(const o of u)o.reject(t)}const j=Object.getOwnPropertyDescriptor(window,"claude");if(window!==top&&!(j&&j.writable===!1)){z(),W();const e=j?.value??{};P(window,"claude",e);const t=s=>{const d={impl:Object.create(null),queue:[]};_.set(s,d);const m=new Proxy(d.impl,{get:(c,l)=>{if(typeof l=="string"&&!(l==="then"||l==="toJSON"||l==="valueOf"))return l==="toString"?Object.prototype.toString:(...h)=>{const p=c[l]??c.__settled;return p?p(...h):new Promise((b,S)=>{d.queue.push({method:l,args:h,resolve:b,reject:S})})}},set:()=>!1});P(e,s,m)};for(const s of Object.keys(w)){if(e[s]!==void 0){P(e,s,e[s]);continue}t(s)}let n=null,u=null,o=0;const i=s=>{s.source!==parent||!J(s.origin)||$(s.data)&&(n=s.data.__frame_init,g=s.origin,removeEventListener("message",i),clearTimeout(o),u?.())};addEventListener("message",i),parent.postMessage({__frame_connect:!0},"*");const f=new Promise(s=>{u=s,o=setTimeout(()=>{removeEventListener("message",i),s()},K)}),a=document.readyState==="loading"?new Promise(s=>document.addEventListener("DOMContentLoaded",()=>s(),{once:!0})):Promise.resolve();f.then(async()=>{if(!n||!g){for(const r of _.keys())O(r,{code:"not_granted",message:"frame initialization did not arrive - capability unavailable"});return}N(n.theme);const s=g;addEventListener("message",r=>{r.source!==parent||r.origin!==s||q(r.data)&&N(r.data.__frame_theme.theme)});const d=r=>U(()=>import("/_runtime/"+r),void 0),m=Object.keys(n.capabilities??{});for(const r of m)Object.hasOwn(w,r)||V.test(r)&&e[r]===void 0&&(t(r),O(r,{code:"capability_disabled",message:"capability not in this runtime generation"}));const c=m.filter(r=>Object.hasOwn(w,r)).map(r=>[r,w[r]]).filter(r=>typeof r[1]=="string"&&C.test(r[1])),[l,...h]=await Promise.allSettled([E&&C.test(E)?d(E):Promise.resolve({}),...c.map(([,r])=>d(r))]),p=g;A=H(n,l.status==="fulfilled"&&l.value?.TRANSFORMS||{},{shellOrigin:p,mount:Q},r=>parent.postMessage({__frame_cap_telemetry:r},p));const b=r=>parent.postMessage({__frame_cap_telemetry:{kind:"cap-load-error",cap:r}},p),S=A;h.forEach((r,v)=>{const I=c[v][0];if(r.status!=="fulfilled"){b(I);return}try{r.value?.install?.(S)}catch{b(I)}});for(const[r,v]of _)v.queue.length===0&&Object.keys(v.impl).length>0||O(r,{code:m.includes(r)?"capability_disabled":"not_granted",message:"capability not available in this session"});await a,parent.postMessage({__frame_ready:!0},g)})}})();</script><!-- /frame-runtime --><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+<title>IUF 戰情室首頁 v5.1 · 編輯版面</title>
+<style>
+html,body{background:#080b10;}
+
+  :root{
+    --black:#080b10; --panel:#0b0f16;
+    --line:#1b2432; --line2:#26324a;
+    --amber:#c8943f; --amber-hi:#e2b85c; --amber-dim:#6f5c37; --amber-ink:#0a0d12;
+    --ink:#aab4c2; --ink-dim:#5d6675; --ink-faint:#3f4a5a;
+    --up:#e63946; --down:#2ecc71;
+    --mono:"Cascadia Mono",ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --cjk:"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;
+  }
+  *{box-sizing:border-box;min-width:0;}
+  body{
+    margin:0;background:#04060a;color:var(--ink);
+    font-family:var(--mono);-webkit-font-smoothing:antialiased;
+    padding:26px 20px 60px;
+  }
+  .stage-head{max-width:1720px;margin:0 auto 22px;padding:0 6px;}
+  .stage-title{
+    font-family:var(--cjk);color:var(--amber-hi);font-size:15px;letter-spacing:.14em;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .stage-title b{font-weight:700;}
+  .vtag{
+    font-family:var(--mono);background:var(--amber);color:var(--amber-ink);
+    font-size:11px;font-weight:700;letter-spacing:.12em;padding:2px 8px 3px;
+  }
+  .stage-sub{color:var(--ink-dim);font-size:11.5px;letter-spacing:.05em;}
+  .stage-sub em{color:var(--amber-dim);font-style:normal;}
+  .frames{
+    display:flex;gap:34px;align-items:flex-start;justify-content:center;flex-wrap:wrap;
+    max-width:1720px;margin:0 auto;
+  }
+  .frame-wrap{display:flex;flex-direction:column;gap:10px;}
+  .frame-cap{
+    font-size:11px;letter-spacing:.16em;color:var(--ink-dim);text-transform:uppercase;
+    display:flex;justify-content:space-between;align-items:baseline;padding:0 2px;gap:20px;
+  }
+  .frame-cap b{color:var(--amber);font-weight:600;}
+  .device{
+    background:var(--black);border:1px solid #2a3446;
+    box-shadow:0 0 0 1px #05070b,0 22px 60px rgba(0,0,0,.6),inset 0 0 90px rgba(0,0,0,.55);
+    overflow:hidden;position:relative;
+  }
+  .device.desktop{width:1280px;height:760px;}
+  .device.mobile{width:390px;height:760px;}
+  .scroll{width:100%;height:100%;overflow-y:auto;position:relative;scrollbar-width:thin;scrollbar-color:#2a3547 transparent;}
+  .scroll::-webkit-scrollbar{width:8px;}
+  .scroll::-webkit-scrollbar-thumb{background:#26324a;}
+  /* CRT phosphor scanlines */
+  .device::after{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:40;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);
+    mix-blend-mode:multiply;opacity:.55;
+  }
+  .device::before{
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:41;
+    background:radial-gradient(120% 90% at 50% 0%,rgba(200,148,63,.05),transparent 60%);
+  }
+
+  /* ── masthead ─────────────────────────────── */
+  .mast{
+    display:flex;align-items:stretch;border-bottom:1px solid var(--line2);
+    background:#0a0f17;height:44px;position:relative;z-index:20;
+  }
+  .mast-brand{padding:8px 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:1px;justify-content:center;}
+  .mast-brand b{color:var(--amber-hi);font-size:12.5px;letter-spacing:.22em;font-weight:700;}
+  .mast-brand small{color:var(--ink-faint);font-size:9px;letter-spacing:.28em;}
+  .mast-mode{display:flex;align-items:center;gap:7px;padding:0 14px;border-right:1px solid var(--line);
+    color:var(--amber);font-size:11px;letter-spacing:.16em;}
+  .mast-mode i{width:6px;height:6px;background:var(--amber);border-radius:50%;box-shadow:0 0 7px var(--amber);}
+  .mast-slot{padding:0 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;gap:2px;}
+  .mast-slot small{color:var(--ink-faint);font-size:9px;letter-spacing:.2em;}
+  .mast-slot b{color:var(--ink);font-size:12px;font-weight:500;font-family:var(--cjk);white-space:nowrap;}
+  .mast-spacer{flex:1;}
+  .mast-clock{padding:0 16px;display:flex;flex-direction:column;justify-content:center;text-align:right;gap:2px;}
+  .mast-clock b{color:var(--amber-hi);font-size:16px;letter-spacing:.06em;font-weight:700;}
+  .mast-clock small{color:var(--ink-faint);font-size:9px;letter-spacing:.2em;}
+
+  /* ── ledger tab（區塊識別：突出頁籤，無編號） ── */
+  .tab{
+    display:inline-flex;align-items:center;gap:7px;height:21px;
+    background:var(--amber);color:var(--amber-ink);
+    font-family:var(--cjk);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+    padding:0 16px 0 10px;
+    clip-path:polygon(0 0,calc(100% - 9px) 0,100% 100%,0 100%);
+    white-space:nowrap;max-width:100%;flex:none;
+  }
+  .tab .en{font-family:var(--mono);font-size:8px;letter-spacing:.18em;color:rgba(10,13,18,.6);font-weight:700;}
+  .tab.dim{background:var(--amber-dim);}
+  .tabrow{display:flex;align-items:flex-end;gap:10px;min-width:0;}
+  .tabrow .aside{font-family:var(--cjk);font-size:9.5px;color:var(--ink-dim);letter-spacing:.05em;padding-bottom:4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+
+  .up{color:var(--up);} .down{color:var(--down);}
+  .sfoot{
+    font-family:var(--cjk);color:var(--ink-faint);font-size:9.5px;letter-spacing:.03em;
+    border-top:1px dashed var(--line2);margin-top:8px;padding-top:6px;line-height:1.4;
+  }
+  .sfoot code{font-family:var(--mono);color:var(--amber-dim);}
+
+  /* ── sheet: 主欄 + 右側紙帶 ────────────────── */
+  .sheet{display:grid;grid-template-columns:1fr 236px;}
+  .maincol{border-right:1px solid var(--line2);min-width:0;}
+
+  /* ── 大盤指數：頭版巨型錨點 ─────────────────── */
+  .heroband{display:grid;grid-template-columns:454px 1fr;border-bottom:1px solid var(--line2);}
+  .idxanchor{padding:20px 24px 16px;position:relative;border-right:1px solid var(--line);}
+  .idxanchor .eyebrow{
+    font-family:var(--cjk);font-size:11px;color:var(--amber);letter-spacing:.3em;font-weight:700;
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  }
+  .idxanchor .eyebrow small{font-family:var(--mono);color:var(--ink-faint);letter-spacing:.14em;font-size:9px;}
+  .idxanchor .giant{
+    font-size:82px;font-weight:700;line-height:.96;color:#cdd6e2;
+    font-variant-numeric:tabular-nums;letter-spacing:-0.02em;margin-top:14px;white-space:nowrap;
+  }
+  .idxanchor .giant sub{font-size:32px;vertical-align:baseline;color:var(--ink);}
+  .idxanchor .delta{display:flex;gap:20px;align-items:baseline;margin-top:10px;
+    font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;flex-wrap:wrap;}
+  .idxanchor .delta small{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);font-weight:400;}
+  .stamp{
+    position:absolute;top:18px;right:18px;transform:rotate(-5deg);
+    border:2px solid var(--amber);color:var(--amber);
+    font-family:var(--cjk);font-size:11px;font-weight:700;letter-spacing:.24em;
+    padding:4px 8px 4px 12px;opacity:.92;white-space:nowrap;
+    box-shadow:inset 0 0 8px rgba(200,148,63,.12);
+  }
+  .stamp small{display:block;font-family:var(--mono);font-size:7.5px;letter-spacing:.28em;text-align:center;opacity:.75;margin-top:1px;}
+  .breadthline{
+    display:flex;align-items:center;gap:14px;margin-top:18px;
+    font-variant-numeric:tabular-nums;flex-wrap:wrap;
+  }
+  .breadthline .k{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);letter-spacing:.1em;}
+  .breadthline .n{font-size:17px;font-weight:700;white-space:nowrap;}
+  .breadthline .n small{font-family:var(--cjk);font-size:9.5px;color:var(--ink-dim);font-weight:400;margin-left:3px;}
+  .bbar{flex:1 1 100%;display:flex;height:8px;border:1px solid var(--line2);margin-top:2px;}
+  .bbar i{display:block;height:100%;}
+  .bbar .u{background:var(--up);} .bbar .f{background:#3a4456;} .bbar .d{background:var(--down);}
+  .idxanchor .tot{margin-top:7px;font-family:var(--cjk);font-size:10px;color:var(--ink-dim);}
+  .idxanchor .honest{
+    margin-top:12px;font-family:var(--cjk);font-size:9.5px;color:var(--ink-faint);line-height:1.45;
+  }
+  .idxanchor .honest code{font-family:var(--mono);color:var(--amber-dim);}
+
+  /* ══ 熱力圖（資訊結構照現行 industry-heatmap.tsx，只換皮膚） ══ */
+  .heatzone{display:flex;flex-direction:column;min-width:0;}
+  .heat-toolbar{
+    display:flex;align-items:center;gap:10px;padding:0 10px 0 0;
+    border-bottom:1px solid var(--line);height:24px;
+  }
+  .heat-stats{
+    margin-left:auto;display:flex;gap:10px;align-items:center;
+    font-family:var(--cjk);font-size:9px;color:var(--ink-dim);letter-spacing:.04em;
+    white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums;
+  }
+  .heat-stats b{color:var(--ink);font-weight:600;}
+  .heat-stats b.up{color:var(--up);}
+  .heat-kicker{
+    display:flex;gap:10px;align-items:baseline;padding:4px 10px;
+    font-family:var(--cjk);font-size:9px;color:var(--ink-faint);letter-spacing:.05em;
+    border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .heat-kicker strong{color:var(--ink-dim);font-weight:600;}
+  .heat-chips{
+    display:flex;flex-wrap:wrap;gap:3px;padding:5px 10px 6px;
+    border-bottom:1px solid var(--line);
+  }
+  .heat-chips button{
+    font-family:var(--cjk);font-size:9px;letter-spacing:.03em;cursor:pointer;
+    background:#0a0e15;border:1px solid var(--line2);color:var(--ink-dim);
+    padding:2px 6px 3px;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;
+  }
+  .heat-chips button b{font-weight:700;color:var(--ink);}
+  .heat-chips button span{font-family:var(--mono);font-size:8.5px;color:var(--ink-faint);font-variant-numeric:tabular-nums;}
+  .heat-chips button.is-active{background:var(--amber);border-color:var(--amber);}
+  .heat-chips button.is-active b,.heat-chips button.is-active span{color:var(--amber-ink);}
+  .heatmapgrid{
+    flex:1;display:grid;grid-template-columns:repeat(8,1fr);grid-auto-rows:1fr;gap:1px;
+    background:var(--black);min-height:0;
+  }
+  .tile{
+    position:relative;padding:3px 5px;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:space-between;
+  }
+  .tile .tl{display:flex;gap:4px;align-items:baseline;min-width:0;}
+  .tile b{font-size:10px;font-weight:700;color:#f2f3f5;letter-spacing:.02em;flex:none;}
+  .tile .nm{font-family:var(--cjk);font-size:8.5px;color:rgba(255,255,255,.72);line-height:1.1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tile .pc{font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;align-self:flex-end;color:#fff;white-space:nowrap;}
+  .tile.wide b{font-size:11.5px;} .tile.wide .pc{font-size:12px;} .tile.wide .nm{font-size:9px;}
+  .tile.hero b{font-size:16px;} .tile.hero .pc{font-size:17px;} .tile.hero .nm{font-size:10px;}
+  .tile.hero .meta{font-family:var(--cjk);font-size:8.5px;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* 台股慣例：紅漲綠跌 */
+  .u5{background:#8f1f28;} .u4{background:#a5262f;} .u3{background:#7a2028;}
+  .u2{background:#5a1c22;} .u1{background:#3e191d;}
+  .d5{background:#166b3a;} .d4{background:#1a7d44;} .d3{background:#155a34;}
+  .d2{background:#124026;} .d1{background:#122c20;}
+  .z0{background:#1a222e;}
+  .heat-footer{
+    display:flex;align-items:center;gap:10px;padding:4px 10px;
+    border-top:1px solid var(--line);
+    font-family:var(--cjk);font-size:8.5px;color:var(--ink-faint);letter-spacing:.03em;
+    white-space:nowrap;overflow:hidden;
+  }
+  .heat-footer .lead{overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  .heat-scale{margin-left:auto;display:inline-flex;gap:5px;align-items:center;flex:none;font-variant-numeric:tabular-nums;}
+  .heat-scale .sw{display:inline-flex;gap:1px;}
+  .heat-scale .sw i{width:10px;height:8px;display:block;}
+  .heat-scale em{font-style:normal;}
+
+  /* ── AI 推薦：頭條主欄 ─────────────────────── */
+  .leadband{display:grid;grid-template-columns:1fr 348px;}
+  .recwrap{border-right:1px solid var(--line);padding:11px 18px 12px 24px;min-width:0;}
+  .rec .rrow{
+    display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:0 12px;
+    border-bottom:1px solid var(--line);padding:8px 0 9px;align-items:start;
+  }
+  .rec .rrow:last-of-type{border-bottom:none;}
+  .rec .tk{font-size:17px;font-weight:700;color:var(--amber-hi);letter-spacing:.03em;line-height:1.1;}
+  .rec .tk small{display:block;font-size:8.5px;color:var(--ink-dim);letter-spacing:.14em;margin-top:2px;}
+  .rec .mid{min-width:0;}
+  .rec .mid .co{font-family:var(--cjk);font-size:12.5px;color:var(--ink);font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rec .mid .rs{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);line-height:1.35;margin-top:2px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .rec .mid .plan{font-size:9.5px;color:var(--amber-dim);margin-top:4px;letter-spacing:.02em;font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rec .mid .plan b{color:var(--amber);font-weight:600;}
+  .rec .side{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none;}
+  .conf{font-size:9px;color:var(--ink-dim);font-family:var(--cjk);letter-spacing:.04em;text-align:right;white-space:nowrap;}
+  .conf b{color:var(--up);font-size:13px;font-family:var(--mono);font-weight:700;}
+  .actbtns{display:flex;gap:3px;}
+  .actbtns a{
+    font-family:var(--cjk);font-size:9px;text-decoration:none;cursor:pointer;
+    border:1px solid var(--line2);color:var(--ink-dim);padding:3px 5px;white-space:nowrap;
+    background:#0a0e15;
+  }
+  .actbtns a.prim{border-color:var(--amber);color:var(--amber-hi);background:rgba(200,148,63,.09);font-weight:600;}
+
+  /* ── 簡報：窄文字欄（純排印，無框卡） ───────── */
+  .briefcol{padding:11px 20px 12px 18px;min-width:0;}
+  .brief-meta{display:flex;gap:8px;align-items:center;margin:8px 0 6px;min-width:0;}
+  .pill{font-family:var(--cjk);font-size:9.5px;letter-spacing:.05em;padding:2px 7px;border:1px solid var(--amber);color:var(--amber-hi);white-space:nowrap;flex:none;}
+  .brief-meta .dt{font-family:var(--mono);font-size:10px;color:var(--ink-dim);letter-spacing:.06em;white-space:nowrap;}
+  .brief-meta a{margin-left:auto;font-family:var(--cjk);font-size:10px;color:var(--amber-dim);text-decoration:none;
+    border-bottom:1px dashed var(--amber-dim);cursor:pointer;white-space:nowrap;flex:none;}
+  .brief .seg{padding:6px 0 7px;border-bottom:1px solid var(--line);}
+  .brief .seg:last-of-type{border-bottom:none;}
+  .brief .sh{font-family:var(--cjk);font-size:10px;color:var(--amber);font-weight:700;letter-spacing:.14em;margin-bottom:2px;}
+  .brief .sx{font-family:var(--cjk);font-size:11px;color:var(--ink);line-height:1.55;overflow-wrap:anywhere;}
+  .brief .sx u{text-decoration:none;color:var(--amber-hi);}
+
+  /* ── 摺線 ─────────────────────────────────── */
+  .foldline{position:absolute;left:0;right:0;z-index:30;pointer-events:none;}
+  .foldline i{display:block;border-top:1px dashed rgba(226,184,92,.5);}
+  .foldline span{position:absolute;right:10px;top:-8px;font-size:8.5px;letter-spacing:.14em;color:var(--amber-dim);
+    background:var(--black);padding:0 6px;font-family:var(--cjk);white-space:nowrap;}
+
+  /* ── 摺下帶：S1 佈告 + 排行 ────────────────── */
+  .footband{display:grid;grid-template-columns:392px 1fr;border-top:1px solid var(--line2);}
+  .s1wrap{padding:14px 18px 16px 24px;border-right:1px solid var(--line);min-width:0;}
+  .s1notice{
+    border:1px solid var(--amber-dim);outline:1px solid var(--line2);outline-offset:3px;
+    padding:10px 12px;margin-top:10px;
+  }
+  .s1head{display:flex;align-items:baseline;gap:9px;margin-bottom:8px;flex-wrap:wrap;}
+  .s1head b{font-size:15px;color:var(--amber-hi);letter-spacing:.06em;}
+  .s1head span{font-family:var(--cjk);font-size:11px;color:var(--ink);}
+  .s1head em{margin-left:auto;font-style:normal;font-family:var(--cjk);font-size:9px;color:var(--ink-dim);
+    border:1px solid var(--line2);padding:2px 6px;white-space:nowrap;}
+  .s1grid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .s1cell{padding:8px 10px 9px;min-width:0;}
+  .s1cell+.s1cell{border-left:1px solid var(--line);}
+  .s1cell .lab{font-family:var(--cjk);font-size:9.5px;color:var(--ink-dim);letter-spacing:.04em;display:flex;align-items:center;gap:5px;margin-bottom:4px;}
+  .s1cell .lab .dot{width:6px;height:6px;flex:none;}
+  .s1cell .lab .dot.res{background:var(--amber-dim);} .s1cell .lab .dot.sim{background:var(--down);}
+  .s1cell .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;}
+  .s1cell .sub{font-family:var(--cjk);font-size:8.5px;color:var(--ink-faint);margin-top:4px;line-height:1.35;}
+  .s1-honest{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);line-height:1.5;margin-top:8px;
+    border-left:2px solid var(--amber-dim);padding:2px 0 2px 9px;}
+  .s1-honest b{color:var(--amber);}
+  .s1-row2{display:flex;gap:16px;margin-top:8px;font-variant-numeric:tabular-nums;flex-wrap:wrap;}
+  .s1-row2 .k{font-family:var(--cjk);font-size:9.5px;color:var(--ink-dim);}
+  .s1-row2 .k b{display:block;font-family:var(--mono);font-size:12.5px;color:var(--ink);margin-top:2px;font-weight:700;white-space:nowrap;}
+
+  .rkwrap{padding:14px 20px 16px 18px;min-width:0;}
+  .rk{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:10px;}
+  .rk .col{min-width:0;}
+  .rk .col h4{font-family:var(--cjk);font-size:10px;color:var(--amber);letter-spacing:.1em;margin:0 0 5px;font-weight:700;
+    display:flex;justify-content:space-between;gap:6px;}
+  .rk .col h4 span{color:var(--ink-faint);font-family:var(--mono);font-size:9px;font-weight:400;white-space:nowrap;}
+  .rk .r{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:baseline;
+    padding:4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+  .rk .r:last-child{border-bottom:none;}
+  .rk .r .tk{font-size:11px;color:var(--amber-hi);font-weight:600;}
+  .rk .r .nm{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rk .r .pc{font-size:11px;font-weight:700;white-space:nowrap;}
+
+  /* ── 新聞：右側電傳紙帶（全高，跨摺線） ─────── */
+  .tape{
+    position:relative;background:#090d14;
+    padding:12px 12px 16px 20px;min-width:0;
+  }
+  .tape::before{ /* 齒孔 */
+    content:"";position:absolute;left:5px;top:0;bottom:0;width:8px;
+    background:radial-gradient(circle at 4px 7px,#04060a 2px,transparent 2.4px);
+    background-size:8px 16px;background-repeat:repeat-y;
+  }
+  .tape-label{
+    font-family:var(--cjk);writing-mode:vertical-rl;letter-spacing:.34em;
+    font-size:10.5px;color:var(--amber);font-weight:700;
+    position:absolute;right:6px;top:14px;opacity:.9;
+  }
+  .tape-head{font-family:var(--mono);font-size:8.5px;color:var(--ink-faint);letter-spacing:.16em;
+    border-bottom:1px dashed var(--line2);padding-bottom:7px;margin-bottom:8px;padding-right:20px;}
+  .tape .feat{display:block;text-decoration:none;border-bottom:1px dashed var(--line2);padding-bottom:9px;margin-bottom:8px;cursor:pointer;padding-right:20px;}
+  .tape .feat .tag{display:inline-block;font-family:var(--cjk);font-size:9px;
+    background:var(--amber);color:var(--amber-ink);padding:1px 6px;font-weight:700;margin-bottom:5px;}
+  .tape .feat h3{font-family:var(--cjk);font-size:12px;color:var(--ink);margin:0 0 4px;line-height:1.45;font-weight:600;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  .tape .feat .meta{font-size:9px;color:var(--ink-dim);font-family:var(--cjk);}
+  .tape .trow{padding:7px 20px 8px 0;border-bottom:1px dashed var(--line2);}
+  .tape .trow:last-of-type{border-bottom:none;}
+  .tape .trow .tm{font-family:var(--mono);font-size:8.5px;color:var(--ink-faint);letter-spacing:.1em;display:flex;gap:8px;flex-wrap:wrap;}
+  .tape .trow .tm em{font-style:normal;font-family:var(--cjk);color:var(--amber-dim);}
+  .tape .trow .h{font-family:var(--cjk);font-size:10.5px;color:var(--ink);line-height:1.45;margin-top:2px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .tape .tfoot{font-family:var(--cjk);font-size:9px;color:var(--ink-faint);margin-top:10px;padding-right:20px;line-height:1.4;}
+  .tape .tfoot code{font-family:var(--mono);color:var(--amber-dim);}
+
+  /* ── mobile ───────────────────────────────── */
+  .m-body{padding:10px 14px 12px;}
+  .m-sec{border-bottom:1px solid var(--line2);}
+
+</style>
+
+
+  <div class="stage-head">
+    <div class="stage-title">
+      <b>IUF 台股 AI 戰情室 · 首頁總覽</b>
+      <span class="vtag">MOCK v5.1</span>
+      <span class="stage-sub">編輯版面 · 熱力圖結構照現行產品 · <em>IA 照楊董 7/12 定調</em> · 七塊固定不加不減 · 數字皆「示意」</span>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ══════════════ DESKTOP 1280×760 ══════════════ -->
+    <div class="frame-wrap">
+      <div class="frame-cap" style="width:1280px;"><span>桌面 <b>1280 × 760</b></span><span>主力：大盤錨點＋熱力圖＋推薦頭條　次層：簡報欄 · S1 佈告 · 排行 · 新聞紙帶</span></div>
+      <div class="device desktop">
+        <div class="scroll">
+
+          <div class="mast">
+            <div class="mast-brand"><b>IUF·TR</b><small>TRADING ROOM</small></div>
+            <div class="mast-mode"><i></i>OBSERVE</div>
+            <div class="mast-slot"><small>MODE</small><b>台股觀察</b></div>
+            <div class="mast-slot"><small>今日焦點</small><b>閱讀 07/11 AI 簡報</b></div>
+            <div class="mast-spacer"></div>
+            <div class="mast-slot"><small>市場</small><b>已收盤 · 07/11</b></div>
+            <div class="mast-clock"><b>13:42:08</b><small>UTC+8 · 示意</small></div>
+          </div>
+
+          <div class="sheet">
+
+            <!-- ════ 主欄 ════ -->
+            <div class="maincol">
+
+              <!-- 頭版帶：巨型指數 ＋ 熱力圖（結構照現行產品） -->
+              <div class="heroband" style="height:322px;">
+
+                <div class="idxanchor">
+                  <div class="eyebrow">大盤指數 <small>TAIEX · 加權指數</small></div>
+                  <div class="stamp">07/11 收盤<small>MARKET CLOSED</small></div>
+                  <div class="giant">22,845<sub>.60</sub></div>
+                  <div class="delta">
+                    <span class="up">▲ 138.24</span>
+                    <span class="up">+0.61%</span>
+                    <small>較前一交易日</small>
+                  </div>
+                  <div class="breadthline">
+                    <span class="k">漲跌家數</span>
+                    <span class="n up">612<small>漲</small></span>
+                    <span class="n" style="color:var(--ink)">88<small>平</small></span>
+                    <span class="n down">358<small>跌</small></span>
+                    <div class="bbar"><i class="u" style="width:58%"></i><i class="f" style="width:8%"></i><i class="d" style="width:34%"></i></div>
+                  </div>
+                  <div class="tot">共 1,058 檔 · 上漲 ▶ 57.8%</div>
+                  <div class="honest">休市時段顯示「MM/DD 收盤」誠實標記，非即時價。來源 <code>kgi/twse overview</code></div>
+                </div>
+
+                <!-- 熱力圖：toolbar / kicker / 產業 chips / treemap / footer 全照現行結構 -->
+                <div class="heatzone">
+                  <div class="heat-toolbar">
+                    <div class="tab dim">產業熱力圖 <span class="en">KGI CORE POOL</span></div>
+                    <div class="heat-stats">
+                      <span>更新 <b>07/11 13:45</b></span>
+                      <span><b>40</b> 檔代表池</span>
+                      <span><b>38</b> 檔有行情</span>
+                      <span>均幅 <b class="up">+0.18%</b></span>
+                    </div>
+                  </div>
+                  <div class="heat-kicker">
+                    <span>面積代表權重，顏色代表漲跌幅</span>
+                    <strong>40 檔核心權值與策略觀察股</strong>
+                  </div>
+                  <div class="heat-chips">
+                    <button class="is-active"><b>核心觀察池</b><span>38/40 檔</span></button>
+                    <button><b>半導體業</b><span>14/15 檔</span></button>
+                    <button><b>電子零組件</b><span>13/15 檔</span></button>
+                    <button><b>電腦及週邊設備</b><span>15/15 檔</span></button>
+                    <button><b>通信網路</b><span>12/15 檔</span></button>
+                    <button><b>金融保險</b><span>15/15 檔</span></button>
+                    <button><b>鋼鐵工業</b><span>13/15 檔</span></button>
+                    <button><b>航運業</b><span>14/15 檔</span></button>
+                  </div>
+                  <div class="heatmapgrid">
+                    <!-- 依成交值優先排序；38 檔有行情（2 檔缺行情不渲染灰塊） -->
+                    <div class="tile hero u4" style="grid-column:span 2;grid-row:span 2"><div class="tl"><b>2330</b><span class="nm">台積電</span></div><div class="meta">成交值 1,842 億</div><div class="pc">+1.24%</div></div>
+                    <div class="tile wide d3" style="grid-column:span 2"><div class="tl"><b>2317</b><span class="nm">鴻海</span></div><div class="pc">-0.82%</div></div>
+                    <div class="tile wide u2" style="grid-column:span 2"><div class="tl"><b>2454</b><span class="nm">聯發科</span></div><div class="pc">+0.51%</div></div>
+                    <div class="tile wide d2" style="grid-column:span 2"><div class="tl"><b>2881</b><span class="nm">富邦金</span></div><div class="pc">-0.36%</div></div>
+                    <div class="tile wide u3" style="grid-column:span 2"><div class="tl"><b>3711</b><span class="nm">日月光投控</span></div><div class="pc">+0.94%</div></div>
+                    <div class="tile wide d1" style="grid-column:span 2"><div class="tl"><b>2882</b><span class="nm">國泰金</span></div><div class="pc">-0.12%</div></div>
+                    <div class="tile wide u1" style="grid-column:span 2"><div class="tl"><b>2308</b><span class="nm">台達電</span></div><div class="pc">+0.22%</div></div>
+                    <div class="tile wide d2" style="grid-column:span 2"><div class="tl"><b>2382</b><span class="nm">廣達</span></div><div class="pc">-0.44%</div></div>
+                    <div class="tile z0"><div class="tl"><b>2412</b><span class="nm">中華電</span></div><div class="pc">0.00%</div></div>
+                    <div class="tile d3"><div class="tl"><b>2603</b><span class="nm">長榮</span></div><div class="pc">-0.71%</div></div>
+                    <div class="tile d4"><div class="tl"><b>2891</b><span class="nm">中信金</span></div><div class="pc">-1.05%</div></div>
+                    <div class="tile d1"><div class="tl"><b>2002</b><span class="nm">中鋼</span></div><div class="pc">-0.14%</div></div>
+                    <div class="tile u3"><div class="tl"><b>3231</b><span class="nm">緯創</span></div><div class="pc">+0.85%</div></div>
+                    <div class="tile u1"><div class="tl"><b>2886</b><span class="nm">兆豐金</span></div><div class="pc">+0.18%</div></div>
+                    <div class="tile u4"><div class="tl"><b>2379</b><span class="nm">瑞昱</span></div><div class="pc">+1.10%</div></div>
+                    <div class="tile d5"><div class="tl"><b>2609</b><span class="nm">陽明</span></div><div class="pc">-4.12%</div></div>
+                    <div class="tile u2"><div class="tl"><b>3034</b><span class="nm">聯詠</span></div><div class="pc">+0.55%</div></div>
+                    <div class="tile u1"><div class="tl"><b>3045</b><span class="nm">台灣大</span></div><div class="pc">+0.05%</div></div>
+                    <div class="tile u4"><div class="tl"><b>6669</b><span class="nm">緯穎</span></div><div class="pc">+1.42%</div></div>
+                    <div class="tile u1"><div class="tl"><b>2892</b><span class="nm">第一金</span></div><div class="pc">+0.09%</div></div>
+                    <div class="tile u2"><div class="tl"><b>2303</b><span class="nm">聯電</span></div><div class="pc">+0.63%</div></div>
+                    <div class="tile d1"><div class="tl"><b>2885</b><span class="nm">元大金</span></div><div class="pc">-0.25%</div></div>
+                    <div class="tile d2"><div class="tl"><b>2356</b><span class="nm">英業達</span></div><div class="pc">-0.51%</div></div>
+                    <div class="tile u1"><div class="tl"><b>5880</b><span class="nm">合庫金</span></div><div class="pc">+0.11%</div></div>
+                    <div class="tile u3"><div class="tl"><b>2327</b><span class="nm">國巨</span></div><div class="pc">+0.72%</div></div>
+                    <div class="tile u1"><div class="tl"><b>2395</b><span class="nm">研華</span></div><div class="pc">+0.31%</div></div>
+                    <div class="tile u1"><div class="tl"><b>2884</b><span class="nm">玉山金</span></div><div class="pc">+0.15%</div></div>
+                    <div class="tile u5"><div class="tl"><b>3017</b><span class="nm">奇鋐</span></div><div class="pc">+2.05%</div></div>
+                    <div class="tile d2"><div class="tl"><b>2377</b><span class="nm">微星</span></div><div class="pc">-0.60%</div></div>
+                    <div class="tile z0"><div class="tl"><b>5876</b><span class="nm">上海商銀</span></div><div class="pc">0.00%</div></div>
+                    <div class="tile d1"><div class="tl"><b>4938</b><span class="nm">和碩</span></div><div class="pc">-0.29%</div></div>
+                    <div class="tile u1"><div class="tl"><b>2801</b><span class="nm">彰銀</span></div><div class="pc">+0.06%</div></div>
+                    <div class="tile u4"><div class="tl"><b>3443</b><span class="nm">創意</span></div><div class="pc">+1.88%</div></div>
+                    <div class="tile u2"><div class="tl"><b>4958</b><span class="nm">臻鼎-KY</span></div><div class="pc">+0.44%</div></div>
+                    <div class="tile u3"><div class="tl"><b>2357</b><span class="nm">華碩</span></div><div class="pc">+0.95%</div></div>
+                    <div class="tile d4"><div class="tl"><b>2605</b><span class="nm">新興</span></div><div class="pc">-1.20%</div></div>
+                    <div class="tile u2"><div class="tl"><b>6488</b><span class="nm">環球晶</span></div><div class="pc">+0.66%</div></div>
+                    <div class="tile d3"><div class="tl"><b>8046</b><span class="nm">南電</span></div><div class="pc">-0.95%</div></div>
+                  </div>
+                  <div class="heat-footer">
+                    <span class="lead">固定代表股池完成 · 依成交值優先排序 · 07/11 收盤資料 · 100% 收盤 · 2 檔代表股缺可驗證行情，未渲染為灰塊</span>
+                    <span class="heat-scale">
+                      <em>≤ -3%</em>
+                      <span class="sw"><i class="d5"></i><i class="d3"></i><i class="d1"></i><i class="z0"></i><i class="u1"></i><i class="u3"></i><i class="u5"></i></span>
+                      <em>≥ +3%</em>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 頭條帶：AI 推薦（主）＋ 簡報文字欄（次） -->
+              <div class="leadband">
+
+                <div class="recwrap">
+                  <div class="tabrow">
+                    <div class="tab">AI 推薦個股 <span class="en">TODAY RECS</span></div>
+                    <div class="aside">正典 5 檔 · 生成 07/11 08:12 · 點「帶入模擬單」進交易室紙上預覽，不送真實委託</div>
+                  </div>
+                  <div class="rec" style="margin-top:5px;">
+
+                    <div class="rrow">
+                      <div class="tk">2330<small>SEMI</small></div>
+                      <div class="mid">
+                        <div class="co">台積電</div>
+                        <div class="rs">先進製程訂單能見度延伸，法人買超連三日。</div>
+                        <div class="plan"><b>進</b> 1,045–1,060 · <b>停</b> 1,012 · <b>TP1</b> 1,120</div>
+                      </div>
+                      <div class="side">
+                        <div class="conf">信心 <b>78%</b></div>
+                        <div class="actbtns"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                      </div>
+                    </div>
+
+                    <div class="rrow">
+                      <div class="tk">3661<small>ASIC</small></div>
+                      <div class="mid">
+                        <div class="co">世芯-KY</div>
+                        <div class="rs">AI ASIC 題材延燒，強勢突破前高盤整區。</div>
+                        <div class="plan"><b>進</b> 4,180–4,250 · <b>停</b> 3,990 · <b>TP1</b> 4,600</div>
+                      </div>
+                      <div class="side">
+                        <div class="conf">信心 <b>71%</b></div>
+                        <div class="actbtns"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                      </div>
+                    </div>
+
+                    <div class="rrow">
+                      <div class="tk">2382<small>ODM</small></div>
+                      <div class="mid">
+                        <div class="co">廣達</div>
+                        <div class="rs">AI 伺服器出貨動能，月營收優於市場預期。</div>
+                        <div class="plan"><b>進</b> 312–318 · <b>停</b> 298 · <b>TP1</b> 342</div>
+                      </div>
+                      <div class="side">
+                        <div class="conf">信心 <b>66%</b></div>
+                        <div class="actbtns"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                      </div>
+                    </div>
+
+                    <div class="rrow">
+                      <div class="tk">3035<small>IP</small></div>
+                      <div class="mid">
+                        <div class="co">智原</div>
+                        <div class="rs">矽智財接單回溫，量能連二日放大。</div>
+                        <div class="plan"><b>進</b> 452–460 · <b>停</b> 431 · <b>TP1</b> 498</div>
+                      </div>
+                      <div class="side">
+                        <div class="conf">信心 <b>63%</b></div>
+                        <div class="actbtns"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                      </div>
+                    </div>
+
+                    <div class="rrow">
+                      <div class="tk">6669<small>SERVER</small></div>
+                      <div class="mid">
+                        <div class="co">緯穎</div>
+                        <div class="rs">雲端資本支出上修，機櫃訂單能見度延長。</div>
+                        <div class="plan"><b>進</b> 2,340–2,380 · <b>停</b> 2,210 · <b>TP1</b> 2,600</div>
+                      </div>
+                      <div class="side">
+                        <div class="conf">信心 <b>60%</b></div>
+                        <div class="actbtns"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                      </div>
+                    </div>
+
+                  </div>
+                  <div class="sfoot">來源 <code>GET /recommendations/today</code> · 只顯示正式推薦 API 回傳，不以候選或假資料冒充。</div>
+                </div>
+
+                <!-- 簡報：純排印文字欄 -->
+                <div class="briefcol brief">
+                  <div class="tab dim">AI 每日簡報 <span class="en">BRIEF</span></div>
+                  <div class="brief-meta">
+                    <span class="pill">已發布</span>
+                    <span class="dt">07/11 08:05</span>
+                    <a>展開全文 ▸</a>
+                  </div>
+                  <div class="seg"><div class="sh">盤勢總覽</div><div class="sx">加權連二紅收在 22,845，半導體撐盤、金融走弱；量能溫和放大至 3,180 億。</div></div>
+                  <div class="seg"><div class="sh">題材摘要</div><div class="sx"><u>AI 伺服器</u>供應鏈續強，ASIC／矽智財接棒；<u>航運</u>受運價回落壓抑。</div></div>
+                  <div class="seg"><div class="sh">公司觀察</div><div class="sx">台積電外資買超連三；世芯放量突破整理區間上緣。</div></div>
+                  <div class="seg"><div class="sh">風險提示</div><div class="sx">留意美股費半夜盤波動與新台幣匯率走勢。</div></div>
+                  <div class="sfoot">只顯示「已發布／待確認／待產生」，不偽裝即時新聞。來源 <code>/briefs</code></div>
+                </div>
+              </div>
+
+              <!-- 摺下帶：S1 佈告 ＋ 排行 -->
+              <div class="footband">
+
+                <div class="s1wrap">
+                  <div class="tab dim">量化策略 <span class="en">S1 · SIM-ONLY</span></div>
+                  <div class="s1notice">
+                    <div class="s1head"><b>S1</b><span>連續動能流動性策略</span><em>KGI SIM-only</em></div>
+                    <div class="s1grid">
+                      <div class="s1cell">
+                        <div class="lab"><span class="dot res"></span>研究回測 · 累積報酬</div>
+                        <div class="v up">+6.42%</div>
+                        <div class="sub">歷史回測揭露 · 含成本 · 非未來保證</div>
+                      </div>
+                      <div class="s1cell">
+                        <div class="lab"><span class="dot sim"></span>實盤模擬 · 累積報酬</div>
+                        <div class="v down">−1.86%</div>
+                        <div class="sub">KGI SIM 前進觀察 · 真實市況</div>
+                      </div>
+                    </div>
+                    <div class="s1-honest"><b>研究 ≠ 實盤。</b>實盤模擬 −1.86% 為前進觀察真值，並列不弱化；策略經穩健度折扣後判定偏樂觀。</div>
+                    <div class="s1-row2">
+                      <div class="k">最大回撤<b class="down">−8.90%</b></div>
+                      <div class="k">觀察起日<b>06/02</b></div>
+                      <div class="k">狀態<b style="font-family:var(--cjk);color:var(--amber-hi)">前進觀察中</b></div>
+                    </div>
+                  </div>
+                  <div class="sfoot">唯一正式量化策略；研究快照與 KGI SIM 觀察分開呈現。來源 <code>/quant-strategies</code></div>
+                </div>
+
+                <div class="rkwrap">
+                  <div class="tabrow">
+                    <div class="tab dim">強勢個股排行 <span class="en">MOVERS</span></div>
+                    <div class="aside">漲跌幅 TOP 5 · 正式來源回傳；等待真資料時不顯示示意股票</div>
+                  </div>
+                  <div class="rk">
+                    <div class="col">
+                      <h4>漲幅排行 <span>%CHG ▲</span></h4>
+                      <div class="r"><span class="tk">3324</span><span class="nm">雙鴻</span><span class="pc up">+9.98%</span></div>
+                      <div class="r"><span class="tk">3035</span><span class="nm">智原</span><span class="pc up">+3.28%</span></div>
+                      <div class="r"><span class="tk">3017</span><span class="nm">奇鋐</span><span class="pc up">+2.05%</span></div>
+                      <div class="r"><span class="tk">3443</span><span class="nm">創意</span><span class="pc up">+1.88%</span></div>
+                      <div class="r"><span class="tk">6669</span><span class="nm">緯穎</span><span class="pc up">+1.42%</span></div>
+                    </div>
+                    <div class="col">
+                      <h4>跌幅排行 <span>%CHG ▼</span></h4>
+                      <div class="r"><span class="tk">2609</span><span class="nm">陽明</span><span class="pc down">−4.12%</span></div>
+                      <div class="r"><span class="tk">2618</span><span class="nm">長榮航</span><span class="pc down">−2.05%</span></div>
+                      <div class="r"><span class="tk">2605</span><span class="nm">新興</span><span class="pc down">−1.20%</span></div>
+                      <div class="r"><span class="tk">2891</span><span class="nm">中信金</span><span class="pc down">−1.05%</span></div>
+                      <div class="r"><span class="tk">8046</span><span class="nm">南電</span><span class="pc down">−0.95%</span></div>
+                    </div>
+                  </div>
+                  <div class="sfoot">來源 <code>market/leaders</code></div>
+                </div>
+              </div>
+
+            </div><!-- /maincol -->
+
+            <!-- ════ 右側：新聞電傳紙帶（全高，跨摺線續行） ════ -->
+            <div class="tape">
+              <div class="tape-label">每日精選新聞</div>
+              <div class="tape-head">MARKET INTEL WIRE · 6 AI / 4 公告</div>
+              <a class="feat">
+                <span class="tag">AI 精選</span>
+                <h3>台積電法說釋出資本支出上修訊號，先進封裝擴產加速</h3>
+                <div class="meta">2330 台積電 · 07/11 · 官方公告</div>
+              </a>
+              <div class="trow"><div class="tm">07/11 14:02 <em>重大訊息</em> · 3661</div><div class="h">世芯-KY 公告承接大型 AI ASIC 專案設計案</div></div>
+              <div class="trow"><div class="tm">07/11 11:40 <em>營收</em> · 2382</div><div class="h">廣達 6 月營收月增 12%，AI 伺服器出貨續強</div></div>
+              <div class="trow"><div class="tm">07/11 10:18 <em>產業</em> · 3324</div><div class="h">散熱族群受惠液冷滲透率提升，法人調升評等</div></div>
+              <div class="trow"><div class="tm">07/11 09:55 <em>AI 精選</em> · 2603</div><div class="h">航運運價指數連二週回落，貨櫃三雄短線承壓</div></div>
+              <div class="trow"><div class="tm">07/11 09:12 <em>財報</em> · 2454</div><div class="h">聯發科旗艦晶片放量，車用與 ASIC 布局受關注</div></div>
+              <div class="trow"><div class="tm">07/11 08:47 <em>重大訊息</em> · 2317</div><div class="h">鴻海公告子公司取得土地使用權，擴充中部產能</div></div>
+              <div class="trow"><div class="tm">07/11 08:30 <em>AI 精選</em> · 2881</div><div class="h">金融股受利率預期壓抑，外資連四日調節</div></div>
+              <div class="tfoot">AI 精選＋官方重大訊息合流；只顯示正式來源，不補示意新聞。來源 <code>market-intel</code></div>
+            </div>
+
+          </div><!-- /sheet -->
+
+          <!-- 摺線 760 -->
+          <div class="foldline" style="top:760px;"><i></i><span>↑ 一屏摺線 760px　↓ 捲動：S1 佈告 · 排行 · 紙帶續行</span></div>
+
+        </div><!-- /scroll -->
+      </div><!-- /device desktop -->
+    </div>
+
+    <!-- ══════════════ MOBILE 390×760 ══════════════ -->
+    <div class="frame-wrap">
+      <div class="frame-cap" style="width:390px;"><span>手機 <b>390 × 760</b></span><span>首屏：大盤錨點 · AI 推薦 · 簡報</span></div>
+      <div class="device mobile">
+        <div class="scroll">
+
+          <div class="mast">
+            <div class="mast-brand"><b>IUF·TR</b><small>觀察</small></div>
+            <div class="mast-mode"><i></i>OBS</div>
+            <div class="mast-spacer"></div>
+            <div class="mast-clock"><b>13:42</b><small>07/11 收盤</small></div>
+          </div>
+
+          <!-- 大盤錨點 -->
+          <div class="m-sec">
+            <div class="m-body idxanchor" style="border-right:none;padding:16px 14px 14px;">
+              <div class="eyebrow">大盤指數 <small>TAIEX</small></div>
+              <div class="stamp" style="top:12px;right:10px;">07/11 收盤<small>CLOSED</small></div>
+              <div class="giant" style="font-size:54px;margin-top:12px;">22,845<sub style="font-size:23px;">.60</sub></div>
+              <div class="delta" style="font-size:15px;">
+                <span class="up">▲ 138.24</span><span class="up">+0.61%</span>
+              </div>
+              <div class="breadthline" style="margin-top:12px;">
+                <span class="n up" style="font-size:15px;">612<small>漲</small></span>
+                <span class="n" style="color:var(--ink);font-size:15px;">88<small>平</small></span>
+                <span class="n down" style="font-size:15px;">358<small>跌</small></span>
+                <div class="bbar"><i class="u" style="width:58%"></i><i class="f" style="width:8%"></i><i class="d" style="width:34%"></i></div>
+              </div>
+              <div class="tot">共 1,058 檔 · 上漲 ▶ 57.8%</div>
+            </div>
+          </div>
+
+          <!-- AI 推薦 -->
+          <div class="m-sec">
+            <div class="m-body rec">
+              <div class="tab">AI 推薦個股 <span class="en">RECS</span></div>
+              <div class="rrow" style="grid-template-columns:56px minmax(0,1fr) auto;margin-top:4px;">
+                <div class="tk">2330<small>SEMI</small></div>
+                <div class="mid">
+                  <div class="co">台積電</div>
+                  <div class="rs">先進製程能見度延伸，法人買超連三。</div>
+                  <div class="plan"><b>進</b>1,045–1,060 · <b>停</b>1,012 · <b>TP1</b>1,120</div>
+                  <div class="actbtns" style="margin-top:5px"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                </div>
+                <div class="side"><div class="conf">信心<b>78%</b></div></div>
+              </div>
+              <div class="rrow" style="grid-template-columns:56px minmax(0,1fr) auto;">
+                <div class="tk">3661<small>ASIC</small></div>
+                <div class="mid">
+                  <div class="co">世芯-KY</div>
+                  <div class="rs">AI ASIC 題材延燒，突破整理上緣。</div>
+                  <div class="plan"><b>進</b>4,180–4,250 · <b>停</b>3,990 · <b>TP1</b>4,600</div>
+                  <div class="actbtns" style="margin-top:5px"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                </div>
+                <div class="side"><div class="conf">信心<b>71%</b></div></div>
+              </div>
+              <div class="rrow" style="grid-template-columns:56px minmax(0,1fr) auto;">
+                <div class="tk">2382<small>ODM</small></div>
+                <div class="mid">
+                  <div class="co">廣達</div>
+                  <div class="rs">AI 伺服器動能，月營收優於預期。</div>
+                  <div class="plan"><b>進</b>312–318 · <b>停</b>298 · <b>TP1</b>342</div>
+                  <div class="actbtns" style="margin-top:5px"><a>看公司</a><a>加觀察</a><a class="prim">帶入模擬單</a></div>
+                </div>
+                <div class="side"><div class="conf">信心<b>66%</b></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 簡報摘要 -->
+          <div class="m-sec">
+            <div class="m-body brief">
+              <div class="tab dim">AI 每日簡報 <span class="en">BRIEF</span></div>
+              <div class="brief-meta">
+                <span class="pill">已發布</span>
+                <span class="dt">07/11 08:05</span>
+                <a>全文 ▸</a>
+              </div>
+              <div class="seg"><div class="sh">盤勢總覽</div><div class="sx">連二紅收 22,845，半導體撐盤、金融走弱。</div></div>
+              <div class="seg"><div class="sh">題材摘要</div><div class="sx"><u>AI 伺服器</u>續強，航運受運價壓抑。</div></div>
+            </div>
+          </div>
+
+          <!-- 摺線 -->
+          <div style="position:relative;height:0;z-index:15;">
+            <i style="display:block;border-top:1px dashed rgba(226,184,92,.5);"></i>
+            <span style="position:absolute;right:8px;top:-8px;font-size:8.5px;letter-spacing:.14em;color:var(--amber-dim);background:var(--black);padding:0 6px;font-family:var(--cjk);white-space:nowrap;">↑ 首屏摺線　↓ 熱力圖 · S1 · 排行 · 新聞</span>
+          </div>
+
+          <!-- 熱力圖：結構照現行產品（toolbar / kicker / chips / treemap / footer） -->
+          <div class="m-sec">
+            <div class="heatzone">
+              <div class="heat-toolbar" style="padding-right:8px;">
+                <div class="tab dim">產業熱力圖 <span class="en">CORE POOL</span></div>
+                <div class="heat-stats"><span><b>38</b> 檔有行情</span><span>均幅 <b class="up">+0.18%</b></span></div>
+              </div>
+              <div class="heat-kicker">
+                <span>面積代表權重，顏色代表漲跌幅</span>
+                <strong>40 檔核心權值與策略觀察股</strong>
+              </div>
+              <div class="heat-chips">
+                <button class="is-active"><b>核心觀察池</b><span>38/40 檔</span></button>
+                <button><b>半導體業</b><span>14/15 檔</span></button>
+                <button><b>電子零組件</b><span>13/15 檔</span></button>
+                <button><b>電腦及週邊設備</b><span>15/15 檔</span></button>
+                <button><b>通信網路</b><span>12/15 檔</span></button>
+                <button><b>金融保險</b><span>15/15 檔</span></button>
+                <button><b>鋼鐵工業</b><span>13/15 檔</span></button>
+                <button><b>航運業</b><span>14/15 檔</span></button>
+              </div>
+              <div class="heatmapgrid" style="grid-template-columns:repeat(6,1fr);height:216px;flex:none;">
+                <div class="tile hero u4" style="grid-column:span 2;grid-row:span 2"><div class="tl"><b>2330</b><span class="nm">台積電</span></div><div class="pc">+1.24%</div></div>
+                <div class="tile wide d3" style="grid-column:span 2"><div class="tl"><b>2317</b><span class="nm">鴻海</span></div><div class="pc">-0.82%</div></div>
+                <div class="tile wide u2" style="grid-column:span 2"><div class="tl"><b>2454</b><span class="nm">聯發科</span></div><div class="pc">+0.51%</div></div>
+                <div class="tile wide d2" style="grid-column:span 2"><div class="tl"><b>2881</b><span class="nm">富邦金</span></div><div class="pc">-0.36%</div></div>
+                <div class="tile wide u3" style="grid-column:span 2"><div class="tl"><b>3711</b><span class="nm">日月光投控</span></div><div class="pc">+0.94%</div></div>
+                <div class="tile wide d1" style="grid-column:span 2"><div class="tl"><b>2882</b><span class="nm">國泰金</span></div><div class="pc">-0.12%</div></div>
+                <div class="tile wide u1" style="grid-column:span 2"><div class="tl"><b>2308</b><span class="nm">台達電</span></div><div class="pc">+0.22%</div></div>
+                <div class="tile wide d2" style="grid-column:span 2"><div class="tl"><b>2382</b><span class="nm">廣達</span></div><div class="pc">-0.44%</div></div>
+                <div class="tile z0"><div class="tl"><b>2412</b></div><div class="pc">0.00%</div></div>
+                <div class="tile d3"><div class="tl"><b>2603</b></div><div class="pc">-0.71%</div></div>
+                <div class="tile d4"><div class="tl"><b>2891</b></div><div class="pc">-1.05%</div></div>
+                <div class="tile d1"><div class="tl"><b>2002</b></div><div class="pc">-0.14%</div></div>
+                <div class="tile u3"><div class="tl"><b>3231</b></div><div class="pc">+0.85%</div></div>
+                <div class="tile u1"><div class="tl"><b>2886</b></div><div class="pc">+0.18%</div></div>
+                <div class="tile u4"><div class="tl"><b>2379</b></div><div class="pc">+1.10%</div></div>
+                <div class="tile d5"><div class="tl"><b>2609</b></div><div class="pc">-4.12%</div></div>
+                <div class="tile u2"><div class="tl"><b>3034</b></div><div class="pc">+0.55%</div></div>
+                <div class="tile u1"><div class="tl"><b>3045</b></div><div class="pc">+0.05%</div></div>
+                <div class="tile u4"><div class="tl"><b>6669</b></div><div class="pc">+1.42%</div></div>
+                <div class="tile u1"><div class="tl"><b>2892</b></div><div class="pc">+0.09%</div></div>
+                <div class="tile u2"><div class="tl"><b>2303</b></div><div class="pc">+0.63%</div></div>
+                <div class="tile d1"><div class="tl"><b>2885</b></div><div class="pc">-0.25%</div></div>
+                <div class="tile d2"><div class="tl"><b>2356</b></div><div class="pc">-0.51%</div></div>
+                <div class="tile u1"><div class="tl"><b>5880</b></div><div class="pc">+0.11%</div></div>
+                <div class="tile u3"><div class="tl"><b>2327</b></div><div class="pc">+0.72%</div></div>
+                <div class="tile u1"><div class="tl"><b>2395</b></div><div class="pc">+0.31%</div></div>
+                <div class="tile u1"><div class="tl"><b>2884</b></div><div class="pc">+0.15%</div></div>
+                <div class="tile u5"><div class="tl"><b>3017</b></div><div class="pc">+2.05%</div></div>
+                <div class="tile d2"><div class="tl"><b>2377</b></div><div class="pc">-0.60%</div></div>
+                <div class="tile z0"><div class="tl"><b>5876</b></div><div class="pc">0.00%</div></div>
+                <div class="tile d1"><div class="tl"><b>4938</b></div><div class="pc">-0.29%</div></div>
+                <div class="tile u1"><div class="tl"><b>2801</b></div><div class="pc">+0.06%</div></div>
+                <div class="tile u4"><div class="tl"><b>3443</b></div><div class="pc">+1.88%</div></div>
+                <div class="tile u2"><div class="tl"><b>4958</b></div><div class="pc">+0.44%</div></div>
+                <div class="tile u3"><div class="tl"><b>2357</b></div><div class="pc">+0.95%</div></div>
+                <div class="tile d4"><div class="tl"><b>2605</b></div><div class="pc">-1.20%</div></div>
+                <div class="tile u2"><div class="tl"><b>6488</b></div><div class="pc">+0.66%</div></div>
+                <div class="tile d3"><div class="tl"><b>8046</b></div><div class="pc">-0.95%</div></div>
+              </div>
+              <div class="heat-footer">
+                <span class="lead">固定代表股池完成 · 依成交值優先排序 · 07/11 收盤資料 · 2 檔缺行情未渲染</span>
+                <span class="heat-scale">
+                  <span class="sw"><i class="d5"></i><i class="d1"></i><i class="z0"></i><i class="u1"></i><i class="u5"></i></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- S1 佈告 -->
+          <div class="m-sec">
+            <div class="m-body" style="padding:12px 14px 14px;">
+              <div class="tab dim">量化策略 <span class="en">S1 · SIM-ONLY</span></div>
+              <div class="s1notice">
+                <div class="s1grid">
+                  <div class="s1cell"><div class="lab"><span class="dot res"></span>研究回測</div><div class="v up" style="font-size:19px">+6.42%</div></div>
+                  <div class="s1cell"><div class="lab"><span class="dot sim"></span>實盤模擬</div><div class="v down" style="font-size:19px">−1.86%</div></div>
+                </div>
+                <div class="s1-honest"><b>研究 ≠ 實盤，並列不弱化。</b>KGI SIM 前進觀察真值。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 排行 -->
+          <div class="m-sec">
+            <div class="m-body">
+              <div class="tab dim">強勢個股排行 <span class="en">MOVERS</span></div>
+              <div class="rk" style="grid-template-columns:1fr;margin-top:8px;">
+                <div class="col">
+                  <h4>漲幅排行 <span>%CHG ▲</span></h4>
+                  <div class="r"><span class="tk">3324</span><span class="nm">雙鴻</span><span class="pc up">+9.98%</span></div>
+                  <div class="r"><span class="tk">3035</span><span class="nm">智原</span><span class="pc up">+3.28%</span></div>
+                  <div class="r"><span class="tk">3017</span><span class="nm">奇鋐</span><span class="pc up">+2.05%</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 新聞紙帶 -->
+          <div class="m-sec">
+            <div class="tape" style="padding:12px 14px 16px 22px;">
+              <div class="tape-head">MARKET INTEL WIRE · 每日精選新聞</div>
+              <a class="feat" style="padding-right:0;">
+                <span class="tag">AI 精選</span>
+                <h3>台積電釋出資本支出上修訊號，先進封裝擴產</h3>
+                <div class="meta">2330 台積電 · 07/11</div>
+              </a>
+              <div class="trow" style="padding-right:0;"><div class="tm">14:02 <em>重大訊息</em> · 3661</div><div class="h">世芯承接大型 AI ASIC 專案</div></div>
+              <div class="trow" style="padding-right:0;"><div class="tm">11:40 <em>營收</em> · 2382</div><div class="h">廣達 6 月營收月增 12%</div></div>
+            </div>
+          </div>
+
+        </div><!-- /scroll -->
+      </div><!-- /device mobile -->
+    </div>
+
+  </div><!-- /frames -->
+
+
+</body></html>

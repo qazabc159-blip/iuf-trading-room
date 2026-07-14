@@ -18,6 +18,16 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/market-intel\/(?:news-top10|announcements)(?:\?|$)/,
   /^\/api\/v1\/data-sources\/finmind\/status(?:\?|$)/,
   /^\/api\/v1\/market\/(?:heatmap\/twse|institutional-summary\/finmind)(?:\?|$)/,
+  // /home-exact preview homepage (2026-07-14): masthead index anchor + heatmap
+  // read the same live/close-fallback pair the existing "/" server component
+  // already consumes via lib/api.ts (getKgiMarketOverview/getTwseMarketOverview/
+  // getKgiCoreHeatmap). Additive only — no existing pattern touched.
+  /^\/api\/v1\/market\/(?:overview\/kgi|overview\/twse|heatmap\/kgi-core)(?:\?|$)/,
+  /^\/api\/v1\/ai-recommendations\/v3(?:\?|$)/,
+  /^\/api\/v1\/briefs(?:\?|$)/,
+  /^\/api\/v1\/lab\/strategy\/[^/]+\/snapshot(?:\?|$)/,
+  /^\/api\/v1\/track-record\/nav(?:\?|$)/,
+  /^\/api\/v1\/market-data\/overview(?:\?|$)/,
   /^\/api\/v1\/strategy\/ideas(?:\?|$)/,
   /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio|positions|funds)(?:\?|$|\/)/,
   /^\/api\/v1\/portfolio\/kgi\/positions(?:\?|$)/,
