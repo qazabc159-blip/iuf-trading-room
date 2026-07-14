@@ -12465,13 +12465,21 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .idxanchor .honest { margin-top: 12px; font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); line-height: 1.45; }
 .tac-ledger .idxanchor .honest code { font-family: var(--mono); color: var(--lg-amber-dim); }
 
-/* ── 熱力圖頭版（industry-heatmap.tsx 內部分組/treemap/tile 邏輯楊董 7/13
-   鎖定不動，這裡只重新設色/排版讓視覺語彙貼近原稿 .heat-* 系列） ─────── */
-.tac-ledger .heatzone { padding: 10px 14px 12px; min-width: 0; display: flex; flex-direction: column; }
-.tac-ledger .heat-kicker {
+/* ── 熱力圖頭版：原稿磚格視覺 byte-exact 還原（2026-07-14 楊董定案 — 逐輪
+   打槍的病灶是這裡先前用 industry-heatmap.tsx 的連續漸層 treemap 元件視覺，
+   跟原稿固定 8 欄 CSS Grid + 10 階色階磚格不一致）。資料引擎（prepareTiles/
+   buildOptions/rowsForSector/sortByHeatmapPriority）完全未動，只換呈現層
+   class 名稱與排版為原稿逐字 .heat-toolbar/.heat-stats/.heat-kicker/
+   .heat-chips/.heatmapgrid/.tile 系列。 ─────────────────────────────── */
+.tac-ledger .heatzone { padding: 0; min-width: 0; display: flex; flex-direction: column; }
+
+/* 核心/全市場模式切換（既有產品功能，原稿沒有——原稿只有固定核心觀察池）；
+   獨立 class 名稱，跟下面 IndustryHeatmap 內部逐字還原的原稿 .heat-kicker
+   分開，避免語意衝突。 */
+.tac-ledger .heat-mode-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); letter-spacing: .04em;
-  padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--lg-line);
+  padding: 6px 10px 0;
 }
 .tac-ledger .heat-mode-tabs { display: flex; gap: 6px; }
 .tac-ledger .heat-mode-tabs a {
@@ -12479,24 +12487,102 @@ body:has(.tactical-dashboard) .app-sidebar {
   color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 8px; background: #0a0e15;
 }
 .tac-ledger .heat-mode-tabs a.is-active { background: var(--lg-amber); border-color: var(--lg-amber); color: var(--lg-amber-ink); font-weight: 700; }
-.tac-ledger .heatzone .tac-heat-toolbar { border-bottom-color: var(--lg-line); }
-.tac-ledger .heatzone .tac-heat-kicker { color: var(--lg-ink-faint); }
-.tac-ledger .heatzone .tac-heat-stats { color: var(--lg-ink-dim); }
-.tac-ledger .heatzone .tac-heat-stats b { color: var(--lg-ink); }
-.tac-ledger .heatzone .tac-heat-sector-tabs button {
-  font-family: var(--sans-tc); background: #0a0e15; border: 1px solid var(--lg-line2); color: var(--lg-ink-dim);
+
+.tac-ledger .tac-industry-heatmap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.tac-ledger .heat-toolbar {
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px 0;
+  border-bottom: 1px solid var(--lg-line); height: 30px;
 }
-.tac-ledger .heatzone .tac-heat-sector-tabs button b { font-weight: 700; color: var(--lg-ink); }
-.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active { background: var(--lg-amber); border-color: var(--lg-amber); }
-.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active b,
-.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active span { color: var(--lg-amber-ink); }
-.tac-ledger .heatzone .tac-heatmap { min-height: 260px; }
-/* 磚格底色刻意不覆寫：真元件用 --heat 變數依實際漲跌幅算漸層強度（見
-   industry-heatmap.tsx HeatmapTile），比原稿固定 10 階色階更真實，覆寫
-   成原稿的死色階等於砍掉一個真資料維度——只調邊框/圓角貼近原稿的「磚」
-   語彙，色彩強度邏輯完全不動。 */
-.tac-ledger .heatzone .tac-heat-tile { border-radius: 1px; border-width: 1px; }
-.tac-ledger .heatzone .tac-heat-footer { color: var(--lg-ink-faint); border-top-color: var(--lg-line); }
+.tac-ledger .heat-stats {
+  margin-left: auto; display: flex; gap: 10px; align-items: center;
+  font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); letter-spacing: .04em;
+  white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums;
+}
+.tac-ledger .heat-stats b { color: var(--lg-ink); font-weight: 600; }
+.tac-ledger .heat-stats b.up { color: var(--lg-up); }
+.tac-ledger .heat-stats b.down { color: var(--lg-down); }
+
+.tac-ledger .heat-kicker {
+  display: flex; gap: 10px; align-items: baseline; padding: 4px 10px;
+  font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); letter-spacing: .05em;
+  border-bottom: 1px solid var(--lg-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tac-ledger .heat-kicker strong { color: var(--lg-ink-dim); font-weight: 600; }
+
+.tac-ledger .heat-chips {
+  display: flex; flex-wrap: wrap; gap: 3px; padding: 5px 10px 6px;
+  border-bottom: 1px solid var(--lg-line);
+}
+.tac-ledger .heat-chips button {
+  font-family: var(--sans-tc); font-size: 9px; letter-spacing: .03em; cursor: pointer;
+  background: #0a0e15; border: 1px solid var(--lg-line2); color: var(--lg-ink-dim);
+  padding: 2px 6px 3px; display: inline-flex; gap: 5px; align-items: baseline; white-space: nowrap;
+}
+.tac-ledger .heat-chips button b { font-weight: 700; color: var(--lg-ink); }
+.tac-ledger .heat-chips button span { font-family: var(--mono); font-size: 8.5px; color: var(--lg-ink-faint); font-variant-numeric: tabular-nums; }
+.tac-ledger .heat-chips button.is-active { background: var(--lg-amber); border-color: var(--lg-amber); }
+.tac-ledger .heat-chips button.is-active b,
+.tac-ledger .heat-chips button.is-active span { color: var(--lg-amber-ink); }
+.tac-ledger .heat-chips button.is-muted { opacity: .5; }
+
+/* ── 磚格：原稿固定 8 欄 CSS Grid，rank1=hero(2x2)／rank2-8=wide(2x1)／
+   其餘=一般密磚（1x1，靠 grid 隱式排版自動填滿），非連續 treemap 座標。 */
+.tac-ledger .heatmapgrid {
+  flex: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr; gap: 1px;
+  background: var(--lg-black); min-height: 260px;
+}
+.tac-ledger .tile {
+  position: relative; padding: 3px 5px; overflow: hidden; text-decoration: none;
+  display: flex; flex-direction: column; justify-content: space-between;
+  container-type: size;
+}
+.tac-ledger .tile .tl { display: flex; gap: 4px; align-items: baseline; min-width: 0; }
+.tac-ledger .tile b { font-size: 10px; font-weight: 700; color: #f2f3f5; letter-spacing: .02em; flex: none; }
+.tac-ledger .tile .nm { font-family: var(--sans-tc); font-size: 8.5px; color: rgba(255,255,255,.72); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .tile .pc { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; align-self: flex-end; color: #fff; white-space: nowrap; }
+.tac-ledger .tile.wide b { font-size: 11.5px; }
+.tac-ledger .tile.wide .pc { font-size: 12px; }
+.tac-ledger .tile.wide .nm { font-size: 9px; }
+.tac-ledger .tile.hero b { font-size: 16px; }
+.tac-ledger .tile.hero .pc { font-size: 17px; }
+.tac-ledger .tile.hero .nm { font-size: 10px; }
+.tac-ledger .tile.hero .meta { font-family: var(--sans-tc); font-size: 8.5px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tac-ledger .tile:hover,
+.tac-ledger .tile:focus-visible { outline: 2px solid var(--lg-amber-hi); outline-offset: -2px; z-index: 2; }
+.tac-ledger .tile:hover .tac-heat-tooltip,
+.tac-ledger .tile:focus-visible .tac-heat-tooltip { opacity: 1; transform: translateY(0); }
+@container (max-width: 58px) { .tac-ledger .tile .nm { display: none; } }
+@container (max-height: 34px) { .tac-ledger .tile .nm { display: none; } }
+
+/* 台股慣例：紅漲綠跌，10 階固定色階（原稿逐值） */
+.tac-ledger .tile.u5 { background: #8f1f28; }
+.tac-ledger .tile.u4 { background: #a5262f; }
+.tac-ledger .tile.u3 { background: #7a2028; }
+.tac-ledger .tile.u2 { background: #5a1c22; }
+.tac-ledger .tile.u1 { background: #3e191d; }
+.tac-ledger .tile.d5 { background: #166b3a; }
+.tac-ledger .tile.d4 { background: #1a7d44; }
+.tac-ledger .tile.d3 { background: #155a34; }
+.tac-ledger .tile.d2 { background: #124026; }
+.tac-ledger .tile.d1 { background: #122c20; }
+.tac-ledger .tile.z0 { background: #1a222e; }
+
+.tac-ledger .heat-footer {
+  display: flex; align-items: center; gap: 10px; padding: 4px 10px;
+  border-top: 1px solid var(--lg-line);
+  font-family: var(--sans-tc); font-size: 8.5px; color: var(--lg-ink-faint); letter-spacing: .03em;
+  white-space: nowrap; overflow: hidden;
+}
+.tac-ledger .heat-footer .lead { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tac-ledger .heat-scale { margin-left: auto; display: inline-flex; gap: 5px; align-items: center; flex: none; font-variant-numeric: tabular-nums; }
+.tac-ledger .heat-scale .sw { display: inline-flex; gap: 1px; }
+.tac-ledger .heat-scale .sw i { width: 10px; height: 8px; display: block; }
+.tac-ledger .heat-scale em { font-style: normal; }
+
+@media (max-width: 480px) {
+  .tac-ledger .heatmapgrid { grid-template-columns: repeat(6, 1fr); min-height: 216px; }
+}
 
 /* ── AI 推薦頭條：rrow tk/mid/side 三欄 ──────────────────────────────── */
 .tac-ledger .recwrap { border-right: 1px solid var(--lg-line); padding-bottom: 6px; min-width: 0; }

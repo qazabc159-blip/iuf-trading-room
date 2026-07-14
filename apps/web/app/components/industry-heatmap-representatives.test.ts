@@ -59,10 +59,9 @@ describe("industry heatmap representative pool source gate", () => {
     expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
     expect(source).toContain("未渲染為灰塊");
   });
-  it("keeps compact tiles readable with both ticker and company name", () => {
-    expect(source).toContain('|| tile.labelMode === "small"');
-    expect(source).not.toContain('tile.labelMode === "small" ? null');
-    expect(source).toContain('<small className="tile-name">{tile.name}</small>');
+  it("keeps every tile readable with both ticker and company name (2026-07-14 discrete artifact-grid tiles: name is always in markup, only CSS container-query hides it on the tiniest cells)", () => {
+    expect(source).toContain('<span className="nm">{tile.name}</span>');
+    expect(source).not.toContain("tile.labelMode");
   });
 
   // P1-3 (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md): each sector
