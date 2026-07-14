@@ -80,9 +80,13 @@ test.describe("/desk-exact preview", () => {
     testInfo.annotations.push({ type: "scroll-1920", description: JSON.stringify(scroll) });
     expect(scroll.scrollWidth, "no horizontal overflow at 1920").toBeLessThanOrEqual(scroll.clientWidth + 1);
 
+    // 楊董 7/14 三連退修正：1280 密度設計直接拉滿 1920 比例失衡，改成
+    // max-width:1520px 置中（同色背景延伸）——deskWidth 應貼齊 1520，不再是
+    // 1280（原稿密度）也不是滿版 1920（比例失衡）。
     const deskWidth = await frame.locator(".screen.desk").first().evaluate((el) => el.getBoundingClientRect().width);
     testInfo.annotations.push({ type: "screen-desk-width-1920", description: String(deskWidth) });
-    expect(deskWidth, "desktop cockpit fills full width at 1920 (no 1280 centered box)").toBeGreaterThan(1800);
+    expect(deskWidth, "desktop cockpit caps at ~1520px centered (楊董 7/14 比例控制 fix), not a 1280 box nor full 1920 bleed").toBeGreaterThan(1450);
+    expect(deskWidth, "desktop cockpit caps at ~1520px centered, not full-bleed 1920").toBeLessThanOrEqual(1520);
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-1920");
   });
@@ -162,5 +166,115 @@ test.describe("/desk-exact preview", () => {
     }
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-submit-outcome");
+  });
+
+  // Round 3 (2026-07-14 深夜) — 互動接活驗收：K 線真資料、自選清單點擊切標的、
+  // query prefill、分頁真切換。楊董退件「交易台也沒真的做好」，本輪把假 K 線
+  // 換真 OHLCV、把死操作換真互動。
+  test("K-line renders real OHLCV candles (not the static demo SVG)", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="chart-status"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000); // OHLCV fetch (2000+ daily bars) + candle build
+
+    const chartStatus = await frame.locator('[data-slot="chart-status"]').first().textContent();
+    const candleRectCount = await frame.locator('[data-slot="chart-main-svg"] rect').count();
+    const macdVal = await frame.locator('[data-slot="chart-macd-val"]').first().textContent();
+
+    testInfo.annotations.push({ type: "chart-status", description: String(chartStatus) });
+    testInfo.annotations.push({ type: "candle-rect-count", description: String(candleRectCount) });
+    testInfo.annotations.push({ type: "macd-val", description: String(macdVal) });
+
+    // Real data: status line must cite a real bar count + "真實" wording, and
+    // there must be enough <rect> candle bodies to prove real bars were
+    // drawn (the old static demo had exactly 16 hardcoded candles).
+    expect(chartStatus, "chart status must report a real bar count").toMatch(/\d+\s*筆真實/);
+    expect(candleRectCount, "chart must render more than the old 16-candle static demo").toBeGreaterThan(16);
+    expect(macdVal, "MACD must show a real DIF/MACD/OSC readout given 2000+ daily bars").toMatch(/DIF .*MACD .*OSC/);
+
+    // Target/entry/stop dashed S1 lines must be gone (no real per-symbol
+    // source) — the old demo's fixed "目標/建倉/停損" text must not appear.
+    const chartText = await frame.locator(".chart-body").first().textContent();
+    expect(chartText || "", "no fabricated S1 target/entry/stop lines mixed into the real chart").not.toContain("目標");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-realchart");
+  });
+
+  test("clicking a watchlist row switches the symbol across header/depth/chart/ticket", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    await frame.locator('.wrow[data-wl-sym="2454"]').click();
+    await page.waitForTimeout(4000); // re-fetch quote/depth/chart for the new symbol
+
+    const symCode = await frame.locator('[data-slot="sym-code"]').first().textContent();
+    const symName = await frame.locator('[data-slot="sym-name"]').first().textContent();
+    const depthMeta = await frame.locator('[data-slot="depth-meta"]').first().textContent();
+    const ticketLabel = await frame.locator('[data-slot="t-symbol-label"]').first().inputValue();
+    const rowOnSym = await frame.locator(".wrow.on").first().getAttribute("data-wl-sym");
+    const chartStatus = await frame.locator('[data-slot="chart-status"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-code-after-click", description: String(symCode) });
+    testInfo.annotations.push({ type: "sym-name-after-click", description: String(symName) });
+    testInfo.annotations.push({ type: "depth-meta-after-click", description: String(depthMeta) });
+    testInfo.annotations.push({ type: "ticket-label-after-click", description: String(ticketLabel) });
+    testInfo.annotations.push({ type: "watchlist-on-row-after-click", description: String(rowOnSym) });
+    testInfo.annotations.push({ type: "chart-status-after-click", description: String(chartStatus) });
+
+    expect(symCode, "symbol header switches to the clicked row's ticker").toBe("2454");
+    expect(symName, "symbol header shows the matching company name").toContain("聯發科");
+    expect(depthMeta, "depth panel re-fetches for the new symbol").toContain("2454");
+    expect(ticketLabel, "order ticket's 標的 field follows the symbol switch").toContain("2454");
+    expect(rowOnSym, "watchlist highlight moves to the clicked row").toBe("2454");
+    expect(chartStatus, "chart re-fetches real bars for the new symbol").toMatch(/\d+\s*筆真實/);
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-symbol-switch");
+  });
+
+  test("query prefill (?symbol=X&side=buy) selects the symbol and ticket side on load", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact?symbol=2382&side=sell", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-code"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symCode = await frame.locator('[data-slot="sym-code"]').first().textContent();
+    const sellOn = await frame.locator('[data-slot="t-side"] button[data-side="sell"]').first().evaluate((el) => el.classList.contains("on"));
+    const buyOn = await frame.locator('[data-slot="t-side"] button[data-side="buy"]').first().evaluate((el) => el.classList.contains("on"));
+
+    testInfo.annotations.push({ type: "prefill-sym-code", description: String(symCode) });
+    testInfo.annotations.push({ type: "prefill-sell-on", description: String(sellOn) });
+    testInfo.annotations.push({ type: "prefill-buy-on", description: String(buyOn) });
+
+    expect(symCode, "query prefill selects the requested symbol").toBe("2382");
+    expect(sellOn, "query prefill flips the ticket to the requested side").toBe(true);
+    expect(buyOn, "buy toggle is no longer 'on' once sell is prefilled").toBe(false);
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-query-prefill");
+  });
+
+  test("ledger tab click really swaps table content (成交紀錄 differs from 今日委託)", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="ledger-thead"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const ordersHead = await frame.locator('[data-slot="ledger-thead"]').first().textContent();
+    await frame.locator('button[data-lt="fills"]').click();
+    await page.waitForTimeout(2000);
+    const fillsHead = await frame.locator('[data-slot="ledger-thead"]').first().textContent();
+
+    testInfo.annotations.push({ type: "orders-thead", description: String(ordersHead) });
+    testInfo.annotations.push({ type: "fills-thead", description: String(fillsHead) });
+
+    expect(fillsHead, "clicking 成交紀錄 tab must change the table header, not stay on 今日委託's columns").not.toBe(ordersHead);
+    expect(fillsHead, "成交紀錄 tab header should mention 成交").toMatch(/成交/);
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-ledger-tab-switch");
   });
 });
