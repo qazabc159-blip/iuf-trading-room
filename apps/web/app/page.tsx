@@ -1133,9 +1133,6 @@ function IdxAnchorPanel({
   const [giantInt, giantDec] = formatIndexGiant(twii.price);
   const upPct = breadth.total > 0 ? Math.round((breadth.up / breadth.total) * 1000) / 10 : null;
   const chgTone = (twii.chg ?? 0) > 0 ? "up" : (twii.chg ?? 0) < 0 ? "down" : "";
-  const historyRows = (market.data?.marketContext?.index?.history ?? []).filter((row) => typeof row.close === "number" && Number.isFinite(row.close));
-  const histFirst = historyRows[0];
-  const histLast = historyRows[historyRows.length - 1];
   return (
     <section className="idxanchor">
       <div className="eyebrow">大盤指數 <small>{twii.sym} · {twii.name}</small></div>
@@ -1159,16 +1156,30 @@ function IdxAnchorPanel({
           <i className="d" style={{ width: `${breadth.total ? (breadth.down / breadth.total) * 100 : 0}%` }} />
         </div>
       </div>
-      <div className="idxhist">
-        <div className="idxhist-head">
-          <span>TAIEX 日線 · 近 {historyRows.length} 交易日</span>
-          {histFirst && histLast && <b>{formatDate(histFirst.date)} – {formatDate(histLast.date)}</b>}
-        </div>
-        <IndexOhlcChart history={historyRows} />
-      </div>
       <div className="tot">共 {formatNumber(breadth.total)} 檔{upPct !== null ? ` · 上漲 ▶ ${upPct}%` : ""}</div>
       <div className="honest">休市時段顯示「MM/DD 收盤」誠實標記，非即時價。來源 <code>kgi/twse overview</code></div>
     </section>
+  );
+}
+
+// TAIEX 日線走勢帶（2026-07-14 楊董糾正：折線圖先前塞在 454px 寬的 idxanchor
+// 欄內，把 idxanchor 從原稿緊湊的 322px 撐高到 429-475px，heroband 兩欄等高
+// 連帶把熱力圖磚格也拉高成扁平橫條——量測見 heroband 322px 原稿基準 vs 現行
+// 454x429 對照。移出來自成一條 heroband 正下方的全寬窄帶，heroband/idxanchor
+// 才能回原稿固定 322px 緊湊配置，折線圖本身改吃 maincol 全寬（既有
+// .tac-index-* 系列樣式 width:100% 自動撐滿，無需改元件本身）。
+function IndexHistoryBand({ market }: { market: LoadState<MarketDataOverview | null> }) {
+  const historyRows = (market.data?.marketContext?.index?.history ?? []).filter((row) => typeof row.close === "number" && Number.isFinite(row.close));
+  const histFirst = historyRows[0];
+  const histLast = historyRows[historyRows.length - 1];
+  return (
+    <div className="idxhistband">
+      <div className="idxhist-head">
+        <span>TAIEX 日線 · 近 {historyRows.length} 交易日</span>
+        {histFirst && histLast && <b>{formatDate(histFirst.date)} – {formatDate(histLast.date)}</b>}
+      </div>
+      <IndexOhlcChart history={historyRows} />
+    </div>
   );
 }
 
@@ -1551,10 +1562,15 @@ function skeletonStyleTag() {
 
 function HeroBandSkeleton() {
   return (
-    <div className="_tac-skel-row" style={{ height: 410 }}>
-      <div className="_tac-skel" style={{ flex: "0 0 454px" }} />
-      <div className="_tac-skel" style={{ flex: 1 }} />
-    </div>
+    <>
+      <div className="_tac-skel-row" style={{ height: 322 }}>
+        <div className="_tac-skel" style={{ flex: "0 0 454px" }} />
+        <div className="_tac-skel" style={{ flex: 1 }} />
+      </div>
+      <div className="_tac-skel-row" style={{ height: 122, marginTop: 1 }}>
+        <div className="_tac-skel" style={{ flex: 1 }} />
+      </div>
+    </>
   );
 }
 
@@ -1599,10 +1615,13 @@ async function HeroBandSection({
   const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
   const heatmap = coreHeatmap.length > 0 && hasRepresentativeFeed ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap) : marketHeatmap;
   return (
-    <div className="heroband">
-      <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
-      <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-    </div>
+    <>
+      <div className="heroband">
+        <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
+        <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+      </div>
+      <IndexHistoryBand market={market} />
+    </>
   );
 }
 
