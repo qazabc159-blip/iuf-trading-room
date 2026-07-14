@@ -19,20 +19,24 @@ test.describe("/ homepage LEDGER RSC", () => {
     await saveRouteScreenshot(page, testInfo, "home-ledger-1920");
   });
 
+  // 2026-07-14 修正：原本斷言用 .tac-heat-sector-tabs/.tac-heatmap-canvas
+  // .tac-heat-tile/.idxhist，這些 class 從未出現在實際 markup（現行是
+  // .heat-chips/.heatmapgrid .tile/.idxhistband），從這支 spec 建立起就是
+  // 假綠斷言、從未真的驗過任何東西——順手修正選擇器對齊真實 DOM。
   test("desktop 1280 renders heatmap sector chips + tiles + breadth real values + TAIEX chart", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
     await page.locator(".tac-ledger .heatzone").first().waitFor({ state: "attached", timeout: 15000 });
-    await page.locator(".tac-heat-sector-tabs button").first().waitFor({ state: "attached", timeout: 15000 });
+    await page.locator(".heat-chips button").first().waitFor({ state: "attached", timeout: 15000 });
     await page.waitForTimeout(1500);
 
-    const sectorChipCount = await page.locator(".tac-heat-sector-tabs button").count();
-    const semiconductorChip = page.locator(".tac-heat-sector-tabs button", { hasText: "半導體業" });
-    const heatTileCount = await page.locator(".tac-heatmap-canvas .tac-heat-tile").count();
+    const sectorChipCount = await page.locator(".heat-chips button").count();
+    const semiconductorChip = page.locator('.heat-chips button[aria-label="半導體業"]');
+    const heatTileCount = await page.locator(".heatmapgrid .tile").count();
     const breadthUp = await page.locator(".breadthline .n.up").first().textContent();
     const breadthDown = await page.locator(".breadthline .n.down").first().textContent();
-    const idxHistPresent = await page.locator(".idxhist").count();
+    const idxHistPresent = await page.locator(".idxhistband").count();
 
     testInfo.annotations.push({ type: "sector-chip-count", description: String(sectorChipCount) });
     testInfo.annotations.push({ type: "heat-tile-count", description: String(heatTileCount) });
@@ -129,6 +133,33 @@ test.describe("/ homepage LEDGER RSC", () => {
     expect(emptyPctCount).toBe(0);
 
     await saveRouteScreenshot(page, testInfo, "home-heatmap-40-tiles");
+  });
+
+  // 2026-07-14 楊董二次糾正：heroband 被 TAIEX 折線圖撐高到 429-475px（原稿
+  // 字面 style="height:322px"），連帶把熱力圖磚格拉成扁平橫條；折線圖已
+  // 移出成 IndexHistoryBand 全寬窄帶，這裡鎖死 heroband 固定 322px 的回歸，
+  // 兩個桌面斷點都驗（1920 因側欄常駐+repeat(8,1fr)欄寬隨視窗變寬，磚格會
+  // 比 1280 扁一些——這是揭露過的既有側欄空間限制，不是本輪修的範圍，但
+  // 高度鎖死本身兩個斷點都必須成立）。
+  test("heroband stays fixed at 322px on both 1280 and 1920 (TAIEX chart moved out, no longer stretches the band)", async ({ page }, testInfo) => {
+    for (const width of [1280, 1920]) {
+      await page.setViewportSize({ width, height: 1400 });
+      await page.goto("/?sector=all", { waitUntil: "domcontentloaded" });
+      await page.locator(".heroband").first().waitFor({ state: "attached", timeout: 15000 });
+      await page.waitForTimeout(1000);
+
+      const heroband = await page.locator(".heroband").first().boundingBox();
+      testInfo.annotations.push({ type: `heroband-height-${width}`, description: String(heroband?.height) });
+      expect(heroband?.height).toBe(322);
+
+      // 磚型分配精算填滿：hero(1)+wide(5)+standard(N-6) 在 8 欄 grid 必須
+      // 整除成完整列，不能有孤行（最後一列 <8 顆但 >0 顆一樣算孤行，只有
+      // 「剛好整除」或「不到一列」兩種狀態合法）。
+      const tileCount = await page.locator(".heatmapgrid .tile").count();
+      const remainder = (4 + 2 * Math.min(5, Math.max(0, tileCount - 1)) + Math.max(0, tileCount - 6)) % 8;
+      testInfo.annotations.push({ type: `heatmap-grid-remainder-${width}`, description: String(remainder) });
+      expect(remainder).toBe(0);
+    }
   });
 
   // 楊董點名頁尾「EC2 排程 14:10 關機（正常）」是工程語意洩漏，違反 UI 禁

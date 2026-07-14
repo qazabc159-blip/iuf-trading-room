@@ -714,9 +714,15 @@ function chooseInitialSector(options: SectorOption[], requested?: string | null)
 //    取代先前版本的連續漸層 squarified treemap。 */
 type TileVariant = "hero" | "wide" | "";
 
+// 磚型分配精算填滿（2026-07-14 楊董二次糾正：舊版 hero(1)+wide(7)+standard(32)
+// 在 8 欄 grid 吃掉 4+14+32=50 格，50/8=6.25 列→第 7 列孤懸只填 2 磚、右側
+// 大片空洞。改 hero(1)+wide(5)+standard(N-6) — 40 檔核心觀察池時
+// 4+10+34=48 格＝8 欄×6 列整除，grid 永遠無孤行無空洞；產業 tab（15 檔
+// 目標）用同一規則算出 23 格/8=3 列（最後一列僅缺 1 格），同樣遠比舊版
+// 整齊。）
 function tileVariantForRank(index: number): TileVariant {
   if (index === 0) return "hero";
-  if (index >= 1 && index <= 7) return "wide";
+  if (index >= 1 && index <= 5) return "wide";
   return "";
 }
 
@@ -928,10 +934,17 @@ export function IndustryHeatmap({
             type="button"
             className={`${option.key === activeKey ? "is-active" : ""} ${option.hasData ? "" : "is-muted"}`}
             aria-pressed={option.key === activeKey}
+            aria-label={option.label}
+            title={option.label}
             onClick={() => handleSectorChange(option.key)}
             key={option.key}
           >
-            <b>{option.label}</b>
+            {/* 側欄常駐後 heatzone 實際可用寬度遠窄於原稿 mock（見
+                globals.css .home-ledger-shell 註解），8 個產業 chip 用全名
+                在窄欄下會裹成 4-5 行、把磚格擠成扁條——shortLabel 欄位本來
+                就是為這個場景準備、先前未接上，這裡改用縮寫，chip 列縮到
+                1-2 行還給 heatmapgrid 高度（楊董 2026-07-14 二次糾正）。 */}
+            <b>{option.shortLabel}</b>
             <span>{formatSectorChipCount(option.availableCount, option.target)}</span>
           </button>
         ))}

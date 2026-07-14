@@ -627,10 +627,11 @@ describe("final-v031 paper ticket price gate", () => {
     expect(apiServerSource).toContain('key: "TAIEX"');
     expect(apiServerSource).toContain("history: mergeOverviewIndexHistory");
     expect(apiServerSource).not.toContain('history: (enrichedIndex["history"] as unknown[]) ?? []');
-    // 首頁真的把這份歷史畫成折線圖（IdxAnchorPanel 的 .idxhist 區塊），不是
-    // 只有後端資料存在但前端沒有消費的死資料。
+    // 首頁真的把這份歷史畫成折線圖（IndexHistoryBand 的 .idxhistband 區塊，
+    // 2026-07-14 楊董糾正後從 IdxAnchorPanel 移出成 heroband 正下方全寬窄帶），
+    // 不是只有後端資料存在但前端沒有消費的死資料。
     expect(homePageSource).toContain("marketContext?.index?.history");
-    expect(homePageSource).toContain('className="idxhist"');
+    expect(homePageSource).toContain('className="idxhistband"');
     expect(homePageSource).toContain("function IndexOhlcChart");
   });
 
