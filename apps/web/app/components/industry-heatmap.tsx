@@ -882,16 +882,24 @@ function HeatmapTile({ tile }: { tile: LayoutTile }) {
       aria-label={title}
     >
       {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
-      <span className="tile-symbol">{tile.symbol}</span>
-      {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium" || tile.labelMode === "small") && (
-        <small className="tile-name">{tile.name}</small>
-      )}
-      {isNoData ? (
-        <b className="tile-pct tile-pct-nodata">--</b>
-      ) : (
-        <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
-      )}
-      {tile.labelMode === "hero" && !isNoData && <em className="tile-meta">{tile.weightLabel}</em>}
+      {/* tile-body: clips text to the tile's own actual rendered box so a long name/pct
+          on a physically small tile (narrow parent column, e.g. homepage side-by-side
+          layout) never bleeds into a neighboring tile. TileTooltip stays a sibling
+          outside this wrapper so hover escape above the tile is unaffected. Font sizes
+          are set via container query units in CSS so text scales to the tile's real
+          pixel size, not just its labelMode classification. */}
+      <span className="tile-body">
+        <span className="tile-symbol">{tile.symbol}</span>
+        {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium" || tile.labelMode === "small") && (
+          <small className="tile-name">{tile.name}</small>
+        )}
+        {isNoData ? (
+          <b className="tile-pct tile-pct-nodata">--</b>
+        ) : (
+          <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
+        )}
+        {tile.labelMode === "hero" && !isNoData && <em className="tile-meta">{tile.weightLabel}</em>}
+      </span>
       <TileTooltip tile={tile} />
     </Link>
   );

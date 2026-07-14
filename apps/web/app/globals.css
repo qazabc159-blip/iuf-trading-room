@@ -11755,8 +11755,10 @@ body:has(.tactical-dashboard) .app-sidebar {
 }
 
 .tactical-dashboard {
+  /* Round 3（2026-07-13 晚，楊董定案）：首頁拿掉左側導航欄（TacticalSidebar
+     已刪除，見 page.tsx），改全寬比照原稿——不再保留 240px 側欄軌道。 */
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
   min-height: 100vh;
   overflow-x: clip;
@@ -12279,8 +12281,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-hero-grid,
 .tac-two-grid,
-.tac-heatmap-wide,
-.tac-single-panel {
+.tac-heatmap-wide {
   display: grid;
   gap: 16px;
   align-items: stretch;
@@ -12299,8 +12300,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.tac-heatmap-wide,
-.tac-single-panel {
+.tac-heatmap-wide {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -12343,13 +12343,316 @@ body:has(.tactical-dashboard) .app-sidebar {
   margin-left: auto;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   首頁 v5.1 LEDGER 版面（2026-07-13）— 逐塊移植楊董核定 artifact 41de1bc9
+   「編輯版面」真原稿 markup/CSS class（masthead 五欄／巨型指數錨點／熱力
+   圖頭版／AI 推薦頭條 rrow／簡報純排印 seg／S1 佈告 outline／排行雙欄／
+   右側新聞電傳紙帶）。scope 全部掛在 .tac-ledger 之下（只在首頁掛載），
+   token 用 --lg 開頭前綴，避免與既有 --tac 系列、--tw 系列全站色階衝突。
+   ══════════════════════════════════════════════════════════════════════ */
+.tac-ledger {
+  --lg-black: #080b10;
+  --lg-panel: #0b0f16;
+  --lg-line: #1b2432;
+  --lg-line2: #26324a;
+  --lg-amber: #c8943f;
+  --lg-amber-hi: #e2b85c;
+  --lg-amber-dim: #6f5c37;
+  --lg-amber-ink: #0a0d12;
+  --lg-ink: #aab4c2;
+  --lg-ink-dim: #5d6675;
+  --lg-ink-faint: #3f4a5a;
+  --lg-up: #e63946;
+  --lg-down: #2ecc71;
+  margin-top: 16px;
+  color: var(--lg-ink);
+  font-family: var(--mono);
+  border: 1px solid var(--lg-line2);
+  background: var(--lg-black);
+}
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+.tac-ledger .mast {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lg-line2);
+  background: #0a0f17;
+  height: 44px;
+}
+.tac-ledger .mast-brand { padding: 8px 14px; border-right: 1px solid var(--lg-line); display: flex; flex-direction: column; gap: 1px; justify-content: center; }
+.tac-ledger .mast-brand b { color: var(--lg-amber-hi); font-size: 12.5px; letter-spacing: .22em; font-weight: 700; }
+.tac-ledger .mast-brand small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .28em; }
+.tac-ledger .mast-mode { display: flex; align-items: center; gap: 7px; padding: 0 14px; border-right: 1px solid var(--lg-line); color: var(--lg-amber); font-size: 11px; letter-spacing: .16em; white-space: nowrap; }
+.tac-ledger .mast-mode i { width: 6px; height: 6px; background: var(--lg-amber); border-radius: 50%; box-shadow: 0 0 7px var(--lg-amber); }
+.tac-ledger .mast-slot { padding: 0 14px; border-right: 1px solid var(--lg-line); display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.tac-ledger .mast-slot small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .2em; }
+.tac-ledger .mast-slot b { color: var(--lg-ink); font-size: 12px; font-weight: 500; font-family: var(--sans-tc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tac-ledger .mast-spacer { flex: 1; }
+.tac-ledger .mast-clock { padding: 0 16px; display: flex; flex-direction: column; justify-content: center; text-align: right; gap: 2px; }
+.tac-ledger .mast-clock b { color: var(--lg-amber-hi); font-size: 16px; letter-spacing: .06em; font-weight: 700; }
+.tac-ledger .mast-clock small { color: var(--lg-ink-faint); font-size: 9px; letter-spacing: .2em; }
+
+/* ── shared vocab: tab / up / down / sfoot ───────────────────────────── */
+.tac-ledger .tab {
+  display: inline-flex; align-items: center; gap: 7px; height: 21px;
+  background: var(--lg-amber); color: var(--lg-amber-ink);
+  font-family: var(--sans-tc); font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+  padding: 0 16px 0 10px;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 100%, 0 100%);
+  white-space: nowrap; max-width: 100%; flex: none;
+}
+.tac-ledger .tab .en { font-family: var(--mono); font-size: 8px; letter-spacing: .18em; color: rgba(10,13,18,.6); font-weight: 700; }
+.tac-ledger .tab.dim { background: var(--lg-amber-dim); }
+.tac-ledger .tabrow { display: flex; align-items: flex-end; gap: 10px; min-width: 0; flex-wrap: wrap; padding: 10px 14px 0; }
+.tac-ledger .tabrow .aside { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .05em; padding-bottom: 4px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tac-ledger .up { color: var(--lg-up); }
+.tac-ledger .down { color: var(--lg-down); }
+.tac-ledger .sfoot {
+  font-family: var(--sans-tc); color: var(--lg-ink-faint); font-size: 9.5px; letter-spacing: .03em;
+  border-top: 1px dashed var(--lg-line2); margin: 8px 14px 0; padding: 6px 0 12px; line-height: 1.4;
+}
+.tac-ledger .sfoot code { font-family: var(--mono); color: var(--lg-amber-dim); }
+.tac-ledger .tac-empty-line { padding: 10px 14px 12px; color: var(--lg-ink-dim); font-family: var(--sans-tc); font-size: 11.5px; }
+
+/* ── sheet: 主欄 + 右側電傳紙帶 ───────────────────────────────────── */
+.tac-ledger .sheet { display: grid; grid-template-columns: minmax(0, 1fr) 236px; }
+.tac-ledger .maincol {
+  border-right: 1px solid var(--lg-line2);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Round 3（2026-07-13 晚，楊董定案「拿掉側欄+全寬」）：首頁不再保留固定
+   240px 側欄（見 .tactical-dashboard），.maincol 可用寬度回到接近原稿
+   1280px 假設，因此三個橫向配對改回原稿逐值 px 比例（454/1fr、1fr/348、
+   392/1fr），不再套用 Round 2 的等寬雙欄安全折衷。三個 band 各自獨立成
+   一個小 grid（比照原稿 .heroband/.leadband/.footband 字面結構），而非
+   單一 maincol 大 grid 硬湊統一欄寬比例——因為三個 band 的欄寬比例互不
+   相同（見下方），共用一組 grid-template-columns 無法同時滿足。 */
+.tac-ledger .heroband { display: grid; grid-template-columns: 454px minmax(0, 1fr); border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .leadband { display: grid; grid-template-columns: minmax(0, 1fr) 348px; border-bottom: 1px solid var(--lg-line2); }
+.tac-ledger .footband { display: grid; grid-template-columns: 392px minmax(0, 1fr); border-top: 1px solid var(--lg-line2); }
+
+/* ── 大盤指數：頭版巨型錨點 ───────────────────────────────────────── */
+.tac-ledger .idxanchor { padding: 20px 24px 16px; position: relative; border-right: 1px solid var(--lg-line); }
+.tac-ledger .idxanchor .eyebrow { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-amber); letter-spacing: .3em; font-weight: 700; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tac-ledger .idxanchor .eyebrow small { font-family: var(--mono); color: var(--lg-ink-faint); letter-spacing: .14em; font-size: 9px; }
+.tac-ledger .idxanchor .giant {
+  font-size: 82px; font-weight: 700; line-height: .96; color: #cdd6e2;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 14px; white-space: nowrap;
+}
+.tac-ledger .idxanchor .giant sub { font-size: 32px; vertical-align: baseline; color: var(--lg-ink); }
+.tac-ledger .idxanchor .delta { display: flex; gap: 20px; align-items: baseline; margin-top: 10px; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .idxanchor .delta small { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); font-weight: 400; }
+.tac-ledger .stamp {
+  position: absolute; top: 18px; right: 18px; transform: rotate(-5deg);
+  border: 2px solid var(--lg-amber); color: var(--lg-amber);
+  font-family: var(--sans-tc); font-size: 11px; font-weight: 700; letter-spacing: .24em;
+  padding: 4px 8px 4px 12px; opacity: .92; white-space: nowrap;
+  box-shadow: inset 0 0 8px rgba(200,148,63,.12);
+}
+.tac-ledger .stamp small { display: block; font-family: var(--mono); font-size: 7.5px; letter-spacing: .28em; text-align: center; opacity: .75; margin-top: 1px; }
+.tac-ledger .breadthline { display: flex; align-items: center; gap: 14px; margin-top: 18px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .breadthline .k { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); letter-spacing: .1em; }
+.tac-ledger .breadthline .n { font-size: 17px; font-weight: 700; white-space: nowrap; color: var(--lg-ink); }
+.tac-ledger .breadthline .n small { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); font-weight: 400; margin-left: 3px; }
+.tac-ledger .bbar { flex: 1 1 100%; display: flex; height: 8px; border: 1px solid var(--lg-line2); margin-top: 2px; }
+.tac-ledger .bbar i { display: block; height: 100%; }
+.tac-ledger .bbar .u { background: var(--lg-up); }
+.tac-ledger .bbar .f { background: #3a4456; }
+.tac-ledger .bbar .d { background: var(--lg-down); }
+.tac-ledger .idxanchor .tot { margin-top: 7px; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); }
+.tac-ledger .idxanchor .honest { margin-top: 12px; font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); line-height: 1.45; }
+.tac-ledger .idxanchor .honest code { font-family: var(--mono); color: var(--lg-amber-dim); }
+
+/* ── 熱力圖頭版（industry-heatmap.tsx 內部分組/treemap/tile 邏輯楊董 7/13
+   鎖定不動，這裡只重新設色/排版讓視覺語彙貼近原稿 .heat-* 系列） ─────── */
+.tac-ledger .heatzone { padding: 10px 14px 12px; min-width: 0; display: flex; flex-direction: column; }
+.tac-ledger .heat-kicker {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-faint); letter-spacing: .04em;
+  padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--lg-line);
+}
+.tac-ledger .heat-mode-tabs { display: flex; gap: 6px; }
+.tac-ledger .heat-mode-tabs a {
+  font-family: var(--sans-tc); font-size: 9px; letter-spacing: .04em; text-decoration: none;
+  color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 8px; background: #0a0e15;
+}
+.tac-ledger .heat-mode-tabs a.is-active { background: var(--lg-amber); border-color: var(--lg-amber); color: var(--lg-amber-ink); font-weight: 700; }
+.tac-ledger .heatzone .tac-heat-toolbar { border-bottom-color: var(--lg-line); }
+.tac-ledger .heatzone .tac-heat-kicker { color: var(--lg-ink-faint); }
+.tac-ledger .heatzone .tac-heat-stats { color: var(--lg-ink-dim); }
+.tac-ledger .heatzone .tac-heat-stats b { color: var(--lg-ink); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button {
+  font-family: var(--sans-tc); background: #0a0e15; border: 1px solid var(--lg-line2); color: var(--lg-ink-dim);
+}
+.tac-ledger .heatzone .tac-heat-sector-tabs button b { font-weight: 700; color: var(--lg-ink); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active { background: var(--lg-amber); border-color: var(--lg-amber); }
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active b,
+.tac-ledger .heatzone .tac-heat-sector-tabs button.is-active span { color: var(--lg-amber-ink); }
+.tac-ledger .heatzone .tac-heatmap { min-height: 260px; }
+/* 磚格底色刻意不覆寫：真元件用 --heat 變數依實際漲跌幅算漸層強度（見
+   industry-heatmap.tsx HeatmapTile），比原稿固定 10 階色階更真實，覆寫
+   成原稿的死色階等於砍掉一個真資料維度——只調邊框/圓角貼近原稿的「磚」
+   語彙，色彩強度邏輯完全不動。 */
+.tac-ledger .heatzone .tac-heat-tile { border-radius: 1px; border-width: 1px; }
+.tac-ledger .heatzone .tac-heat-footer { color: var(--lg-ink-faint); border-top-color: var(--lg-line); }
+
+/* ── AI 推薦頭條：rrow tk/mid/side 三欄 ──────────────────────────────── */
+.tac-ledger .recwrap { border-right: 1px solid var(--lg-line); padding-bottom: 6px; min-width: 0; }
+.tac-ledger .rec { padding: 5px 14px 0; }
+.tac-ledger .rrow {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0 12px;
+  border-bottom: 1px solid var(--lg-line); padding: 8px 0 9px; align-items: start;
+}
+.tac-ledger .rrow:last-of-type { border-bottom: none; }
+.tac-ledger .rrow .tk { font-size: 17px; font-weight: 700; color: var(--lg-amber-hi); letter-spacing: .03em; line-height: 1.1; }
+.tac-ledger .rrow .tk small { display: block; font-size: 8.5px; color: var(--lg-ink-dim); letter-spacing: .08em; margin-top: 2px; }
+.tac-ledger .rrow .mid { min-width: 0; }
+.tac-ledger .rrow .mid .co { font-family: var(--sans-tc); font-size: 12.5px; color: var(--lg-ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rrow .mid .rs { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.35; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .rrow .mid .plan { font-size: 9.5px; color: var(--lg-amber-dim); margin-top: 4px; letter-spacing: .02em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rrow .side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+.tac-ledger .rrow .conf { font-size: 9px; color: var(--lg-ink-dim); font-family: var(--sans-tc); letter-spacing: .04em; text-align: right; white-space: nowrap; }
+.tac-ledger .rrow .conf b { color: var(--lg-up); font-size: 13px; font-family: var(--mono); font-weight: 700; }
+.tac-ledger .rrow .actbtns { display: flex; }
+.tac-ledger .rrow .actbtns ._src-cta-row { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.tac-ledger .rrow .actbtns ._src-cta-btn {
+  font-family: var(--sans-tc); font-size: 9px; text-decoration: none; cursor: pointer;
+  border: 1px solid var(--lg-line2); color: var(--lg-ink-dim); padding: 3px 5px; white-space: nowrap;
+  background: #0a0e15;
+}
+.tac-ledger .rrow .actbtns a._src-cta-btn:last-of-type {
+  border-color: var(--lg-amber); color: var(--lg-amber-hi); background: rgba(200,148,63,.09); font-weight: 600;
+}
+.tac-ledger .rrow .actbtns ._src-cta-unavailable { font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); }
+
+/* ── AI 簡報：純排印文字欄 ───────────────────────────────────────────── */
+.tac-ledger .briefcol { padding: 0 14px 6px; min-width: 0; }
+.tac-ledger .brief-meta { display: flex; gap: 8px; align-items: center; margin: 8px 0 6px; min-width: 0; flex-wrap: wrap; }
+.tac-ledger .pill { font-family: var(--sans-tc); font-size: 9.5px; letter-spacing: .05em; padding: 2px 7px; border: 1px solid var(--lg-amber); color: var(--lg-amber-hi); white-space: nowrap; flex: none; }
+.tac-ledger .brief-meta .dt { font-family: var(--mono); font-size: 10px; color: var(--lg-ink-dim); letter-spacing: .06em; white-space: nowrap; }
+.tac-ledger .brief-meta a { margin-left: auto; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber-dim); text-decoration: none; border-bottom: 1px dashed var(--lg-amber-dim); white-space: nowrap; flex: none; }
+.tac-ledger .seg { padding: 6px 0 7px; border-bottom: 1px solid var(--lg-line); }
+.tac-ledger .seg:last-of-type { border-bottom: none; }
+.tac-ledger .seg .sh { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber); font-weight: 700; letter-spacing: .14em; margin-bottom: 2px; }
+.tac-ledger .seg .sx { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); line-height: 1.55; overflow-wrap: anywhere; }
+
+/* ── S1 佈告 + 排行（footband） ───────────────────────────────────── */
+.tac-ledger .s1wrap { padding: 14px 14px 16px; border-right: 1px solid var(--lg-line); min-width: 0; }
+.tac-ledger .s1notice { border: 1px solid var(--lg-amber-dim); outline: 1px solid var(--lg-line2); outline-offset: 3px; padding: 10px 12px; margin-top: 10px; }
+.tac-ledger .s1head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+.tac-ledger .s1head b { font-size: 15px; color: var(--lg-amber-hi); letter-spacing: .06em; }
+.tac-ledger .s1head span { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); }
+.tac-ledger .s1head em { margin-left: auto; font-style: normal; font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 6px; white-space: nowrap; }
+.tac-ledger .s1grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--lg-line); border-bottom: 1px solid var(--lg-line); }
+.tac-ledger .s1cell { padding: 8px 10px 9px; min-width: 0; }
+.tac-ledger .s1cell + .s1cell { border-left: 1px solid var(--lg-line); }
+.tac-ledger .s1cell .lab { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .04em; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+.tac-ledger .s1cell .lab .dot { width: 6px; height: 6px; flex: none; display: inline-block; }
+.tac-ledger .s1cell .lab .dot.res { background: var(--lg-amber-dim); }
+.tac-ledger .s1cell .lab .dot.sim { background: var(--lg-down); }
+.tac-ledger .s1cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: var(--lg-ink); }
+.tac-ledger .s1cell .sub { font-family: var(--sans-tc); font-size: 8.5px; color: var(--lg-ink-faint); margin-top: 4px; line-height: 1.35; }
+.tac-ledger .s1-honest { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.5; margin-top: 8px; border-left: 2px solid var(--lg-amber-dim); padding: 2px 0 2px 9px; }
+.tac-ledger .s1-honest b { color: var(--lg-amber); }
+.tac-ledger .s1-row2 { display: flex; gap: 16px; margin-top: 8px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.tac-ledger .s1-row2 .k { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); }
+.tac-ledger .s1-row2 .k b { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--lg-ink); margin-top: 2px; font-weight: 700; white-space: nowrap; }
+
+.tac-ledger .rkwrap { padding: 14px 14px 16px; min-width: 0; }
+.tac-ledger .rk { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-top: 10px; }
+.tac-ledger .rk .col { min-width: 0; }
+.tac-ledger .rk .col h4 { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber); letter-spacing: .1em; margin: 0 0 5px; font-weight: 700; display: flex; justify-content: space-between; gap: 6px; }
+.tac-ledger .rk .col h4 span { color: var(--lg-ink-faint); font-family: var(--mono); font-size: 9px; font-weight: 400; white-space: nowrap; }
+.tac-ledger .rk .r { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--lg-line); font-variant-numeric: tabular-nums; }
+.tac-ledger .rk .r:last-child { border-bottom: none; }
+.tac-ledger .rk .r .tk { font-size: 11px; color: var(--lg-amber-hi); font-weight: 600; }
+.tac-ledger .rk .r .nm { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tac-ledger .rk .r .pc { font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+/* ── 新聞：右側電傳紙帶（全高） ───────────────────────────────────── */
+.tac-ledger .tape { position: relative; background: #090d14; padding: 12px 12px 16px 20px; min-width: 0; }
+.tac-ledger .tape::before {
+  content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 8px;
+  background: radial-gradient(circle at 4px 7px, var(--lg-black) 2px, transparent 2.4px);
+  background-size: 8px 16px; background-repeat: repeat-y;
+}
+.tac-ledger .tape-label {
+  font-family: var(--sans-tc); writing-mode: vertical-rl; letter-spacing: .34em;
+  font-size: 10.5px; color: var(--lg-amber); font-weight: 700;
+  position: absolute; right: 6px; top: 14px; opacity: .9;
+}
+.tac-ledger .tape-head { font-family: var(--mono); font-size: 8.5px; color: var(--lg-ink-faint); letter-spacing: .16em; border-bottom: 1px dashed var(--lg-line2); padding-bottom: 7px; margin-bottom: 8px; padding-right: 20px; }
+.tac-ledger .tape .feat { display: block; text-decoration: none; border-bottom: 1px dashed var(--lg-line2); padding-bottom: 9px; margin-bottom: 8px; cursor: pointer; padding-right: 20px; }
+.tac-ledger .tape .feat .tag { display: inline-block; font-family: var(--sans-tc); font-size: 9px; background: var(--lg-amber); color: var(--lg-amber-ink); padding: 1px 6px; font-weight: 700; margin-bottom: 5px; }
+.tac-ledger .tape .feat h3 { font-family: var(--sans-tc); font-size: 12px; color: var(--lg-ink); margin: 0 0 4px; line-height: 1.45; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .tape .feat .meta { font-size: 9px; color: var(--lg-ink-dim); font-family: var(--sans-tc); }
+.tac-ledger .tape .trow { display: block; text-decoration: none; padding: 7px 20px 8px 0; border-bottom: 1px dashed var(--lg-line2); color: inherit; }
+.tac-ledger .tape .trow:last-of-type { border-bottom: none; }
+.tac-ledger .tape .trow .tm { font-family: var(--mono); font-size: 8.5px; color: var(--lg-ink-faint); letter-spacing: .1em; display: flex; gap: 8px; flex-wrap: wrap; }
+.tac-ledger .tape .trow .tm em { font-style: normal; font-family: var(--sans-tc); color: var(--lg-amber-dim); }
+.tac-ledger .tape .trow .h { font-family: var(--sans-tc); font-size: 10.5px; color: var(--lg-ink); line-height: 1.45; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tac-ledger .tape .tfoot { font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-faint); margin-top: 10px; padding-right: 20px; line-height: 1.4; }
+.tac-ledger .tape .tfoot code { font-family: var(--mono); color: var(--lg-amber-dim); }
+.tac-ledger .tape .tac-empty-line { padding: 0 20px 10px 0; }
+
+/* ── mobile（<=480px，比照全站既有卡片化斷點慣例）─────────────────────
+   原稿手機版是獨立截斷內容的 device-frame mock（推薦只顯 3 檔、熱力圖
+   6 欄、排行只顯漲幅、新聞只 2 則），因為那是固定 760px 高的預覽框裁切
+   結果，不是真正的行動版資訊架構決策。真站點是可捲動的長頁，沿用同一份
+   真實資料（不因螢幕窄而砍資料），只重排順序對齊原稿手機版的視覺動線
+   （大盤→推薦→簡報→熱力圖→S1→排行→新聞），其餘樣式/密度/色階/字級
+   完全比照原稿 .m-body 系列。 */
+@media (max-width: 480px) {
+  .tac-ledger .mast { height: auto; flex-wrap: wrap; }
+  .tac-ledger .mast-slot,
+  .tac-ledger .mast-mode { display: none; }
+  .tac-ledger .mast-clock { margin-left: auto; }
+  .tac-ledger .sheet { grid-template-columns: 1fr; }
+  .tac-ledger .maincol { border-right: none; }
+  /* Round 5（2026-07-14，楊董定案，收掉 Round 3 遺留的已知落差）：三個
+     band（heroband/leadband/footband）是桌面專用的並列 grid 容器，行動版
+     改 display:contents 讓子項直接變成 .maincol 的 flex 子項（.maincol
+     本身桌面/行動版皆 flex-direction:column，見上方非 media 規則），再用
+     order 排出原稿手機動線 hero→rec→brief→heat→s1→rank（news tape 是
+     .sheet 底下獨立於 .maincol 的 sibling，DOM 順序本來就已經最後，不
+     需要 order）。band 本身的 border-bottom/top 隨 display:contents 失效，
+     改在 6 個葉節點各自補一條 border-bottom 分隔線，比照原稿 .m-sec。
+     桌面版 heroband/leadband/footband 規則完全未動（見上方桌面 CSS）。 */
+  .tac-ledger .heroband,
+  .tac-ledger .leadband,
+  .tac-ledger .footband { display: contents; }
+  .tac-ledger .idxanchor { order: 1; }
+  .tac-ledger .recwrap { order: 2; }
+  .tac-ledger .briefcol { order: 3; }
+  .tac-ledger .heatzone { order: 4; }
+  .tac-ledger .s1wrap { order: 5; }
+  .tac-ledger .rkwrap { order: 6; }
+  .tac-ledger .idxanchor,
+  .tac-ledger .recwrap,
+  .tac-ledger .briefcol,
+  .tac-ledger .heatzone,
+  .tac-ledger .s1wrap,
+  .tac-ledger .rkwrap { border-bottom: 1px solid var(--lg-line2); }
+  .tac-ledger .idxanchor { padding: 16px 14px 14px; border-right: none; }
+  .tac-ledger .idxanchor .giant { font-size: 54px; margin-top: 12px; }
+  .tac-ledger .idxanchor .giant sub { font-size: 23px; }
+  .tac-ledger .s1wrap,
+  .tac-ledger .recwrap { border-right: none; }
+  .tac-ledger .rk { grid-template-columns: 1fr; }
+}
+
 .tac-panel {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--tac-line);
-  border-radius: 8px;
+  /* v5.1（2026-07-13）：卡片圓角/大陰影降密度為交易終端感（見 memory
+     desktop-terminal-density-no-ai-look）——原 8px 圓角 + 大 box-shadow
+     的「浮動卡片」味道退回細框 + 極淺內陰影。 */
+  border-radius: 2px;
   background: rgba(11, 16, 23, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 16px 42px rgba(0, 0, 0, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
   animation: tac-card-in 520ms cubic-bezier(.2,.8,.2,1) both;
 }
 
@@ -13559,10 +13862,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-industry-heatmap .tac-heat-tile {
   position: absolute;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  align-content: stretch;
-  gap: 6px;
+  display: block;
   min-width: 0;
   min-height: 0;
   padding: clamp(7px, 0.7rem, 12px);
@@ -13576,6 +13876,16 @@ body:has(.tactical-dashboard) .app-sidebar {
   overflow: visible;
   transform-origin: center;
   transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+  /* F4 (2026-07-13, Round 4): container query context so .tile-body's text can
+     size itself off THIS tile's actual rendered box, not just its labelMode
+     bucket. Fixes symbol/name/pct overlapping when the same labelMode renders
+     inside a physically narrow column (e.g. homepage heatzone squeezed to
+     ~523px beside the index anchor after the Round 3 full-width relayout) where
+     the old fixed rem/px sizes no longer fit. overflow stays visible here so
+     TileTooltip (a sibling of .tile-body, see below) keeps escaping upward on
+     hover exactly as before. */
+  container-type: size;
+  container-name: heat-tile;
 }
 
 .tac-industry-heatmap .tac-heat-tile:hover,
@@ -13607,10 +13917,87 @@ body:has(.tactical-dashboard) .app-sidebar {
     #141b26;
 }
 
+/* tile-body: clips label text to the tile's real rendered box so it can never
+   bleed into a neighboring tile (previously .tac-heat-tile itself hosted this
+   grid with overflow: visible, so an oversized line just spilled onto whatever
+   sat next to/below it). TileTooltip stays a sibling outside this wrapper, so
+   its hover-escape-upward behaviour is untouched.
+   Flexbox (not CSS Grid) on purpose: with grid-template-rows, an "auto" row
+   whose item has overflow != visible resolves its automatic minimum size to 0
+   (per spec) — when tile-name is display:none on the tiniest cells, tile-pct
+   auto-placed into the vacated row could compute to a full 9px track while
+   tile-symbol's own row collapsed to a *measured* 0px, i.e. the ticker vanished
+   entirely even though there was room. flex-shrink:0 flex items don't have that
+   collapse-to-zero failure mode — they keep their natural size and only clip at
+   the .tile-body edge in the (rare) case content still doesn't fit. */
+.tac-industry-heatmap .tile-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tac-industry-heatmap .tile-symbol,
+.tac-industry-heatmap .tile-name,
+.tac-industry-heatmap .tile-meta {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium {
+  padding: 7px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.medium .tile-body {
+  gap: 3px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small {
+  padding: 6px;
+}
+
+.tac-industry-heatmap .tac-heat-tile.small .tile-body {
+  gap: 2px;
+}
+
+/* Cells too short even for a single-line symbol+pct pair at the font floor
+   (see the two @container blocks further down that already drop tile-name
+   here) also give back their padding overhead so ticker+pct keep fitting
+   instead of pct getting clipped off the bottom by .tile-body's overflow.
+   Note: this targets .tile-body, not .tac-heat-tile itself — a size query
+   container can never restyle its own box off its own size (that would be
+   circular), only descendants can respond to it. .tile-body is the
+   container's child, so it can "reach back" into the parent's padding via
+   a matching negative margin + oversized box instead. */
+@container heat-tile (max-height: 36px) {
+  .tac-industry-heatmap .tile-body {
+    width: calc(100% + 6px);
+    height: calc(100% + 6px);
+    margin: -3px;
+    gap: 1px;
+  }
+}
+
+/* Font sizes scale off the tile's OWN container-query box (set on .tac-heat-tile
+   above) rather than a fixed rem/px per labelMode class. min(Ncqi, Mcqb) picks
+   whichever of the tile's real width or height is more constraining, so a wide-
+   but-short tile and a narrow-but-tall tile both get text that actually fits —
+   this is what the old static-per-labelMode sizes couldn't do, since the same
+   labelMode class can render at very different physical pixel sizes depending
+   on how narrow its parent column is (e.g. homepage heatzone ~523px vs a full-
+   width /market-intel-style column). */
 .tac-industry-heatmap .tile-symbol {
   min-width: 0;
   color: rgba(255, 255, 255, 0.92);
-  font: 950 1rem/1 var(--mono);
+  font-family: var(--mono);
+  font-weight: 950;
+  line-height: 1;
+  font-size: clamp(9px, min(15cqi, 26cqb), 17px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13618,17 +14005,25 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-industry-heatmap .tile-name {
   color: rgba(255, 255, 255, 0.84);
-  font: 850 0.88rem/1.16 var(--sans-tc);
+  font-family: var(--sans-tc);
+  font-weight: 850;
+  line-height: 1.16;
+  font-size: clamp(8px, min(10cqi, 15cqb), 14px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tac-industry-heatmap .tile-pct {
-  align-self: end;
-  justify-self: end;
+  align-self: flex-end;
+  margin-top: auto;
+  flex: 0 0 auto;
+  max-width: 100%;
   color: rgba(255, 255, 255, 0.96);
-  font: 950 1.35rem/1 var(--mono);
+  font-family: var(--mono);
+  font-weight: 950;
+  line-height: 1;
+  font-size: clamp(9px, min(13cqi, 24cqb), 22px);
   text-shadow: 0 1px 18px rgba(0, 0, 0, 0.28);
   white-space: nowrap;
 }
@@ -13641,60 +14036,23 @@ body:has(.tactical-dashboard) .app-sidebar {
   text-overflow: ellipsis;
 }
 
-.tac-industry-heatmap .tac-heat-tile.large .tile-symbol {
-  font-size: 0.95rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.large .tile-pct {
-  font-size: 1.18rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium {
-  gap: 3px;
-  padding: 7px;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium .tile-symbol {
-  font-size: 0.82rem;
-}
-
-.tac-industry-heatmap .tac-heat-tile.medium .tile-name {
-  font-size: 0.68rem;
-}
-
 .tac-industry-heatmap .tac-heat-tile.medium .tile-pct {
-  justify-self: start;
-  font-size: 0.85rem;
+  align-self: flex-start;
 }
 
-.tac-industry-heatmap .tac-heat-tile.small {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  align-content: stretch;
-  gap: 2px;
-  padding: 6px;
+/* Below a physical width/height floor there is no room left for a company-name
+   line at all (any font small enough to fit would be unreadable) — drop to
+   ticker + pct only, same "smallest cell" behaviour as the artifact reference. */
+@container heat-tile (max-width: 58px) {
+  .tac-industry-heatmap .tile-name {
+    display: none;
+  }
 }
 
-.tac-industry-heatmap .tac-heat-tile.small .tile-symbol {
-  font-size: 11px;
-  line-height: 1;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-name {
-  display: block;
-  font-size: 10px;
-  line-height: 1.08;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-meta {
-  display: none;
-}
-
-.tac-industry-heatmap .tac-heat-tile.small .tile-pct {
-  align-self: end;
-  justify-self: end;
-  font-size: 11px;
-  line-height: 1;
+@container heat-tile (max-height: 34px) {
+  .tac-industry-heatmap .tile-name {
+    display: none;
+  }
 }
 
 .tac-heat-tooltip {
@@ -14030,13 +14388,19 @@ body:has(.tactical-dashboard) .app-sidebar {
   border-top: 1px solid var(--tac-line);
 }
 
-.tac-intel-list a {
+/* v5.1（2026-07-13）：MarketIntelPanel 搬入右側新聞電傳紙帶窄欄，原本
+   58px/1fr/60px/70px 四欄橫排在窄欄位下會擠壓成一行看不下——改兩欄兩列
+   （代號+標題一行 / 日期+分類第二行），JSX 出的 4 個子節點依 DOM 順序
+   auto-flow 剛好落成 2x2，不需改 page.tsx。窄欄本就是電傳紙帶語彙（逐行
+   窄條），此排版對右軌是常態，非退化。 */
+.tac-intel-list a,
+.tac-intel-list-row--no-link {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 60px 70px;
-  gap: 10px;
-  align-items: center;
-  min-height: 46px;
-  padding: 10px 0;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: baseline;
+  min-height: 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--tac-line);
 }
 
@@ -14046,13 +14410,6 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 /* official_announcement with url=null — no external link affordance */
 .tac-intel-list-row--no-link {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 60px 70px;
-  gap: 10px;
-  align-items: center;
-  min-height: 46px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--tac-line);
   cursor: default;
   opacity: 0.78;
 }
@@ -14080,9 +14437,11 @@ body:has(.tactical-dashboard) .app-sidebar {
   white-space: nowrap;
 }
 
+/* v5.1：em（分類標籤）現與 span（標題）同欄寬（見上方 2x2 電傳紙帶排版），
+   靠左對齊才會跟第一行標題視覺對齊；右對齊在窄欄下會浮到與標題脫節。 */
 .tac-intel-list em {
   color: var(--tac-fg-3);
-  text-align: right;
+  text-align: left;
 }
 
 .tac-intel-foot {

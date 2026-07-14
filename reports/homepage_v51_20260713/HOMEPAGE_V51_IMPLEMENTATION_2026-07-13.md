@@ -1,0 +1,341 @@
+# 首頁 v5.1 LEDGER 揭示板改版 — 實作報告（2026-07-13, Jim）
+
+## ⭐⭐⭐ ROUND 4 更新 — 修熱力圖磚格文字互蓋（Round 3 遺留的唯一已知缺陷）
+
+Round 3 全寬並列後熱力圖欄寬從整行 ~980px 降到 ~523px（1280px 桌機），
+`industry-heatmap.tsx` 磚格內 ticker/股名/漲跌幅在窄欄下互相疊印糊成一團
+（2317/2891/3443/3017/3034 等磚格皆受影響）。更正先前措辭：「industry-heatmap
+7/13 鎖定不動」是過度保守的說法，查無楊董硬鎖——本輪只動磚格**文字呈現/字級自適應**，
+不動資料來源/分組/面積=成交值 的治理邏輯。
+
+### 根因
+1. **字級與 labelMode 分類脫鉤於實際像素**：`buildTreemapLayout()` 用抽象 100×100
+   百分比座標系決定 `labelMode`（hero/large/medium/small），CSS 再依 labelMode 給
+   固定 rem/px 字級——同一個 labelMode 在寬版（~980px）和窄版（~523px）容器下會渲染
+   出天差地遠的實際像素尺寸，窄版時固定字級明顯放不下。
+2. **CSS Grid「auto 列＋overflow:hidden 子項＝自動最小尺寸視為 0」的規格陷阱**：
+   第一次修法（改用 CSS Grid `auto auto minmax(0,1fr) auto` 四列＋`overflow:hidden`）
+   在最極端的磚格（股名因太窄被隱藏後，pct 遞補進 row2）會讓 tile-symbol 那一列的
+   `grid-template-rows` 解出 `0px`——ticker 完全消失但 pct 正常顯示（比原本疊字更隱蔽
+   的新 bug，靠 `getComputedStyle`+`getBoundingClientRect` 逐磚檢查才抓到，肉眼截圖
+   看起來像是「乾淨」的）。
+
+### 修法
+1. **`.tac-heat-tile` 加 `container-type: size; container-name: heat-tile`**：讓
+   `tile-symbol`/`tile-name`/`tile-pct` 的字級改用 `clamp(floor, min(Ncqi, Mcqb), ceil)`
+   ——同時參考磚格「自己」的實際寬與高（cqi=容器寬度%，cqb=容器高度%，取兩者較小值），
+   而非磚格所在頁面的整體版寬。大磚自動大字、小磚自動小字，任何欄寬都成立（不是只修
+   首頁 523px 這一個特例）。
+2. **新增 `.tile-body` 內層 wrapper**（`industry-heatmap.tsx` markup 改動）：文字內容
+   （ticker/股名/漲跌幅/成交值）包進這個新 `<span>`，只有它自己 `overflow:hidden`，
+   確保任何殘餘溢出只會被裁在磚格自己的框內、不會糊到隔壁磚格；`TileTooltip` 維持
+   `.tile-body` 的 sibling（在 wrapper 外面），hover 上飄仍正常（已用
+   `getComputedStyle(tooltip).opacity` 驗證 hover 後 =1）。
+3. **改用 Flexbox（不用 CSS Grid）排列 `.tile-body` 內部**：`flex-direction:column`
+   + `flex:0 0 auto`（不收縮）取代具名 grid-template-rows——這是修掉「ticker 消失」
+   bug 的關鍵，Grid 的「auto 列 + overflow:hidden 子項 = 自動最小尺寸視為 0」規格
+   陷阱在 Flexbox `flex-shrink:0` 下不存在（子項一律保持自身內容尺寸，容器裝不下就在
+   `.tile-body` 邊緣裁切，不會有子項整個測量出 0px 高度消失的狀況）。
+4. **`@container heat-tile (max-width/max-height)` 顯式砍股名**：磚格窄於 58px 或矮於
+   34px 時直接 `.tile-name{display:none}`，只留 ticker+pct（原稿最小磚格就是這樣，
+   不是字級硬擠到看不清）。
+5. **最極端磚格（≤36px 高）額外用負 margin 找回 padding 空間**：`@container` 不能
+   對「自己」這個 container 元素本身生效（circular，spec 明文禁止 container 用自己的
+   尺寸改自己的樣式）——所以改對 `.tile-body`（container 的子元素，合法查詢對象）套
+   `width:calc(100% + 6px); height:calc(100% + 6px); margin:-3px`，向外借回 padding
+   讓 ticker+pct 在最小的磚格也不再被底部裁掉半個字。
+6. `@media (max-width:620px)` 既有手機版覆寫規則**完全沒動**（真手機驗證過的既有
+   行為原樣保留）——新的 `@container` 規則跟它 selector 特異度打平時，源碼順序上手機
+   媒體查詢在後面，等權時手機版覆寫贏，本輪新增規則只在「桌機版視窗但欄本身窄」這個
+   舊媒體查詢管不到的新場景才生效，兩者互不打架。
+
+### 驗證
+- **合成資料 harness**（因收工時剛好非台股交易時段，首頁核心熱力圖走 TWSE 收盤/
+  代表股暖機備援分支，暫時看不到即時逐股磚格）：暫時新增 `apps/web/app/
+  jim-heatmap-preview-temp/page.tsx`（未 commit，驗證完即刪）直接掛
+  `<IndustryHeatmap>` 灌 40 檔 `CORE_REPRESENTATIVES` 全集的假資料，523px/980px 兩種
+  欄寬皆截圖比對；用 `git stash` 暫時還原成修復前程式碼，同一組假資料重新截圖，
+  取得真正的 before/after 對照（`round4/heatmap_BEFORE_repro_523px.png` vs
+  之後的即時真資料截圖）。
+- **真 prod 資料驗證**（更強的證據）：收工前時區推進到台股盤前時段，首頁核心熱力圖
+  自然切回即時代表股磚格，直接對 prod API 截圖 `round4/heatmap_AFTER_prod_523px.png`
+  ——磚格內容剛好就是原始 bug 回報點名的 2317/2891/3443/3017/3034 等 ticker，全部
+  清楚不疊字，跟原稿一致。
+- **980px 寬版無回歸**：`round4/heatmap_wide_980px_no_regression.png`，同一批假資料
+  在寬欄下 ticker+股名+漲跌幅+成交值全部完整顯示（字級隨磚格變大自動放大），沒有因為
+  改成容器查詢而在非首頁窄欄場景變差；`IndustryHeatmap` 目前唯一真掛載點是首頁
+  `HeatZonePanel`（grep 全 app 目錄確認），但本輪 CSS 改動全部 scope 在元件自己的
+  `.tac-industry-heatmap`/`.tac-heat-tile` class 下，不是首頁 hack，未來任何頁面
+  掛這個元件都會直接受益。
+- **全頁無回歸**：`round4/homepage_full_1280_after_no_regression.png`，masthead／
+  AI 推薦／簡報／S1 佈告／排行／新聞電傳紙帶／資料健康全部正常，`scrollWidth` 維持
+  1280（零水平溢出），console 零錯誤。
+- typecheck 15/15、`pnpm --filter web test` 681/681（零測試改動——沒有任何既有測試
+  斷言磚格內部 markup 結構，`industry-heatmap-representatives.test.ts` 唯一相關斷言
+  是 `.toContain('<small className="tile-name">{tile.name}</small>')` 子字串比對，
+  縮排改變不影響）、`build:web` 全綠 31 routes、`mobile-390.spec.ts` 13/13 PASS
+  （對 prod API 真 owner session，含首頁 `/`）。
+
+## ⭐⭐ ROUND 3 更新（同日深夜）— 拿掉左側導航欄，首頁全寬，比例照原稿逐值還原
+
+楊董看了 Round 2 截圖後親口定案：「首頁全寬、拿掉左側導航欄、完全照原稿」。這是達成
+「一模一樣」的關鍵決定——Round 2 為了避免熱力圖被 240px 固定側欄擠壓成 <370px 而把
+巨型指數錨點/熱力圖改成上下堆疊，這輪拿掉側欄後這個折衷不再必要，改回原稿逐值 px 比例。
+
+### 改動
+1. **首頁拿掉左側導航欄**：刪除 `page.tsx` 內建的 `TacticalSidebar()` 函式與其掛載
+   （原本渲染 `.tac-sidebar`，含 6 個導航連結 + 版本號 + Paper/SIM 模式提示）。全站共用
+   `Sidebar.tsx`（root layout 掛載）本來就已經被既有 CSS
+   `body:has(.tactical-dashboard) .app-sidebar { display:none }` 在首頁隱藏（這條規則
+   本輪沒有動，其他頁的側欄完全不受影響——已用真瀏覽器驗證 `/companies`
+   `appSidebarDisplay:"flex"`、`mainLeft:240` 確認）。`.tactical-dashboard` 的
+   `grid-template-columns` 從 `240px minmax(0,1fr)` 改成單欄 `minmax(0,1fr)`
+   （這個 class 只在首頁掛載，改動零跨頁風險）。導航能力改由：masthead（brand/
+   OBSERVE/模式/今日焦點/clock）+ 內容中既有連結（看公司/加觀察/帶入模擬單/
+   展開全文/熱力圖磚格連結）+ 全站既有 `Cmd/Ctrl+K` CommandPalette（`root layout.tsx`
+   常駐，不受側欄有無影響）承接。移除的舊 `TacticalSidebar` 有一行「Paper / SIM 模式 ·
+   Real Order 停用」安全提示文字——這則訊息本頁底部 `BrokerConnectionLine` 已有等效
+   內容（「下單入口關閉 · 只提供只讀與紙上預覽」），未遺漏。
+2. **全寬後三個橫向配對照原稿逐值 px 比例還原**：`.heroband`（idxanchor 454px +
+   heatzone `1fr`）、`.leadband`（recwrap `1fr` + briefcol 348px）、`.footband`
+   （s1wrap 392px + rkwrap `1fr`），取代 Round 2 的等寬雙欄安全折衷。三個 band 改回
+   各自獨立的 2 欄 grid（比照原稿字面 `.heroband`/`.leadband`/`.footband` 結構），
+   `.maincol` 從「單一大 grid + grid-template-areas」改成 `display:flex;
+   flex-direction:column` 的三個 band 直向堆疊容器（三個 band 各自比例互不相同，
+   無法共用一組 grid-template-columns）。
+3. **熱力圖尺寸呈現**：全寬後熱力圖從 Round 2 的整行 ~980px 降到並列後的 ~523px（1280px
+   桌面實測 `heatWidth:523`），比 Round 2 窄，但比楊董 7/13 已鎖定 treemap/分組邏輯不能
+   改變的前提下，這是唯一能同時滿足「跟原稿並列」與「不改動元件內部邏輯」的結果。
+   **誠實揭露**：523px 寬度下磚格文字互蓋（既有 prod 缺陷）比 Round 2 全寬單行時更明顯
+   （見 `round3/desktop_1280_heatzone.png`），這是本輪拿掉側欄+並列化的直接後果，未
+   修改 `industry-heatmap.tsx` 任何內部邏輯（遵守鎖定指示），如實揭露待裁決。
+4. **行動版排序**：三個 band 各自獨立 grid，行動版收合為 DOM 順序（hero→heat→rec→
+   brief→s1→rank→news），與原稿手機版把 heat 挪到 brief 之後的順序（hero→rec→brief→
+   heat→s1→rank→news）不完全一致——Round 3 指示聚焦桌面全寬比例還原，未要求行動版
+   重排，此為已知、刻意的簡化（CSS 註解已標註原因），非遺漏。
+
+### 測試調整
+`components/sidebar-owner-boundary.test.ts` 原本斷言首頁 source 含
+`"IUF Trading Room"`／`"v3.0 · Tactical"`／`"Paper / SIM 模式 · Real Order 停用"`
+（都是舊 `TacticalSidebar` 的內容），這些字串隨側欄刪除而消失，測試改寫為驗證「首頁不再
+定義 `TacticalSidebar` 函式、且不含任何 `/admin/` 路徑」——保留原測試真正要守的安全性質
+（首頁不洩漏管理員專用連結），只是把驗證方式從「檢查特定側欄字串存在」改成「檢查側欄已刪除
+且新架構下仍無 admin 連結」，不弱化原意圖。
+
+### 驗證（Round 3）
+- `pnpm typecheck`：15/15 綠
+- `pnpm --filter @iuf-trading-room/web test`：681/681 綠（含上述測試改寫後的
+  `sidebar-owner-boundary.test.ts`）
+- `pnpm run build:web`：全綠 31 routes
+- 真瀏覽器驗證（本機 `next start` 打 `https://api.eycvector.com` + 真 owner session）：
+  `mobile-390.spec.ts` 13/13 PASS；ad-hoc 檢查確認桌面 1280px 下 `.idxanchor` 寬度
+  454px、`.heatzone` 寬度 523px、兩者同一列（`sameRow:true`）；`.app-sidebar`
+  在首頁 `display:none`、在 `/companies` 仍 `display:flex`（其他頁不受影響的直接證據）；
+  兩斷點皆零水平溢出、零 console error
+
+### 截圖（`reports/homepage_v51_20260713/round3/`）
+- `desktop_1280_full.png` — 桌面 1280 全寬全頁
+- `desktop_1280_heroband.png` / `desktop_1280_leadband.png` / `desktop_1280_footband.png` /
+  `desktop_1280_heatzone.png` — 三個橫向配對 + 熱力圖局部裁圖
+- `mobile_390_full.png` — 手機 390 全頁
+
+### 待 Elva/楊董裁決（Round 3 新增）
+1. 熱力圖 523px 下磚格文字互蓋比 Round 2 更明顯——是否接受這個代價換取跟原稿一致的
+   並列比例，或要求進一步犧牲真資料維度（固定色階換取排版好讀）。
+2. 行動版順序未跟進原稿「heat 挪到 brief 之後」的重排（本輪范圍聚焦桌面），是否需要
+   另立小任務補上。
+
+---
+
+## ⭐ ROUND 2 更新（同日晚間）— 已取得真 artifact 原稿，逐塊移植
+
+Round 1（下方原始報告）誠實揭露當時工具集沒有 WebFetch，只能依文字規格近似重建。
+Elva 本輪把真 artifact 原稿（`homepage_v51_artifact_source.html`，862 行完整桌面
+1280 + 手機 390 markup/CSS）存檔提供，楊董同時下達「跟原稿一模一樣」的像素級標準。
+本節記錄 Round 2 逐塊移植的落地情形，取代 Round 1「近似版」的定性。
+
+### 對齊程度（逐塊自評）
+| 區塊 | 對齊程度 | 說明 |
+|---|---|---|
+| masthead 五欄 | 高 | brand/mode/今日焦點/spacer/市場+clock 五欄結構、字級、字距逐值搬（12.5px/9px/11px/16px…），手機版依原稿簡化（隱藏 mode/slot，只留 brand+clock，比原稿再收斂一點，避免手機窄版擁擠） |
+| 巨型指數錨點 | 高 | `.giant` 82px/手機54px、`.stamp` 收盤章旋轉徽章、`.breadthline`+`.bbar` 三色比例條、CSS 變數（`--lg-amber` #c8943f／`--lg-up` #e63946／`--lg-down` #2ecc71 等）逐值照搬 |
+| 熱力圖 | **中（唯一結構性偏離，已揭露）** | `industry-heatmap.tsx` 內部分組/治理/treemap 排版邏輯楊董 7/13 鎖定不動，未改成原稿 `repeat(8,1fr)` 均分網格；只重新著色 toolbar/chips/footer 視覺語彙貼近原稿，磚格本身沿用真產品的 treemap 面積演算法（比原稿寫死的 10 階固定色階更真實，覆寫掉等於砍真資料維度）。磚格文字互蓋是既有 prod 缺陷（已用相同欄寬對 prod 現況截圖佐證非本輪引入），維持不修 |
+| AI 推薦頭條 rrow | 高 | tk/mid/side 三欄、`bucket 推薦級`／進場計畫／信心分數、看公司／加觀察／帶入模擬單三鍵（直接重用 `/ai-recommendations` 頁既有 `LinkageCtaRow`，非重造） |
+| AI 簡報純排印 | 高 | `.seg`/`.sh`/`.sx` 段落結構、pill 已發布徽章、展開全文連結 |
+| S1 佈告 | 高（少一項） | `.s1notice`/`.s1grid` 研究 vs 實盤並列、dot 顏色語彙、s1-honest 免責宣告；**缺「觀察起日」**——`TrackRecordNavSummary` 沒有回傳起始日期欄位，寧可誠實省略也不猜測編造 |
+| 排行雙欄 | 中 | 漲幅/跌幅兩欄結構、字級、色彩完全比照；**只留兩欄**（原本產品有第三欄「成交活躍」，原稿只有兩欄，故捨棄第三欄以貼合原稿版面，非資料遺失） |
+| 新聞電傳紙帶 | 高 | 齒孔 `radial-gradient` 紋理、直書 `.tape-label`、feat 頭條卡+tag、trow 逐行 dashed 分隔全部搬；驗證過與 header-dock 通知圖示無真實重疊（fullPage 截圖偽影，`getBoundingClientRect` 交叉驗證證實） |
+| 版面比例（頭版 454px/1fr、頭條帶 1fr/348px、摺下帶 392px/1fr） | **低（已揭露的唯一非數字類偏離）** | 真站點多 252px 固定側欄，1280px 下 `.maincol` 只剩 ~728px 可用寬度，若按原稿 454px/1fr 並列會把熱力圖壓到 <370px（比 Round 1 已踩過的 <420px 截斷坑更窄）。改為：巨型指數錨點與熱力圖各自整行（拿到全部 ~728px 寬度，避免新增比既有更嚴重的截斷）；AI 推薦/簡報維持並列；S1/排行維持並列 |
+| 摺線 760 + device-frame 外殼 | **不還原（判斷性排除，非遺漏）** | 原稿的 `.stage-head`/`.frames`/`.device` 邊框陰影/`.scroll` 固定760px高度內捲/摺線標註是給人審稿用的「設計稿展示外殼」語彙，不是真網站會出現的 UI（真網站是可自由捲動的長頁，不會有一條寫著「↑一屏摺線」的裝飾線穿過內容）。CRT scanline 效果本身**已經是既有真產品的 `.tac-scanline`**（沿用不重造）。此判斷未經 Elva/楊董事先確認，明確列出待裁決 |
+
+### 修改檔案（Round 2）
+- `apps/web/app/page.tsx` — 新增 `Masthead`／`IdxAnchorPanel`／`HeatZonePanel`／
+  `RecHeadline`／`BriefColumn`／`S1Bulletin`／`RankColumns`／`NewsTape` 8 個組件，
+  render tree 全面改用這組新結構；`DashboardContent` 回傳區塊改寫。舊版
+  Panel-based 組件（`HeroPanel`／`TopCommandBar`／`RealtimeHeatmapPanel`／
+  `AiRecommendationActionPanel`／`DailyBriefPanel`／`StrategyPanel`／
+  `MarketMoversPanel`／`MarketIntelPanel`）比照本檔既有慣例（`FreshnessPanel`/
+  `DataReadinessPanel`/`DataGapPanel` 已有先例）**保留不刪、不再掛載**——避免
+  牽動 `page-p0-visual-copy.test.ts`/`page-p1-home-cluster.test.ts` 既有
+  source-grep 回歸鎖字串。零新 fetch、零新資料層。
+- `apps/web/app/ai-recommendations/StockRecCard.tsx` — `LinkageCtaRow` 加
+  `export`（原本是檔案內部函式），供首頁直接重用「看公司／加觀察／帶入模擬單」
+  三鍵邏輯，不重造第二套 watchlist 呼叫。
+- `apps/web/app/globals.css` — 移除 Round 1 遺留的 `.tac-frontpage`／
+  `.tac-editorial-grid`／`.tac-editorial-main`／`.tac-news-rail`／
+  `.tac-headline-panel`／`.tac-bulletin-panel`（已不再被 JSX 引用，同分支內
+  同日尚未上線的 WIP，直接清乾淨不留死碼）；`.tac-index-card`/`.tac-index-main
+  strong` 兩處 Round 1 調整字級還原（元件已不掛載）；新增 `.tac-ledger` 為
+  scope 根的完整新 CSS 區塊（masthead/idxanchor/heatzone/recwrap/briefcol/
+  s1wrap/rkwrap/tape 全套 class，含 `--lg-*` 前綴的原稿色票變數）+ 480px
+  mobile media query（用 `grid-template-areas` 重排區塊順序貼合原稿手機版視覺
+  動線，不用兩套 DOM）。
+
+### 驗證（Round 2）
+- `pnpm typecheck`：15/15 綠
+- `pnpm --filter @iuf-trading-room/web test`：681/681 綠（零新增/修改測試，全部
+  既有測試原樣通過，含首頁 source-grep 回歸鎖）
+- `pnpm run build:web`：全綠，31 routes 含 `/`（中途踩到並修正一次 CSS 註解裡的
+  字面 `*/` 提前結束 comment 導致 cssnano 解析失敗——`--tac-*/--tw-*` 這種寫法
+  在 CSS block comment 裡會被解析成註解結尾，已改寫措辭，這是本檔既有 memory
+  記錄過的同款陷阱）
+- 真瀏覽器驗證（本機 `next start` 打 `https://api.eycvector.com` + 真 owner
+  session，railway CLI 取得 `SEED_OWNER_*`）：`mobile-390.spec.ts` 13/13 PASS
+  （含首頁 `/` 390px 無水平溢出）；ad-hoc Playwright 桌面 1280×1400 +
+  手機 390×1400 全頁截圖，`document.documentElement.scrollWidth` 兩斷點皆
+  `CLEAN`、零 console error
+- 熱力圖磚格文字互蓋：本輪未改動 `industry-heatmap.tsx`，維持 Round 1 已佐證
+  的「既有 prod 缺陷，非本輪引入」結論不變
+
+### 截圖（`reports/homepage_v51_20260713/round2/`）
+- `desktop_1280_full.png` — 桌面 1280 全頁
+- `desktop_1280_top.png` / `desktop_1280_heatzone.png` / `desktop_1280_s1.png` /
+  `desktop_1280_tape.png` — 桌面局部細節裁圖
+- `mobile_390_full.png` — 手機 390 全頁
+- `mobile_390_mast.png` / `mobile_390_rank.png` — 手機局部細節裁圖
+
+### 待 Elva/楊董裁決
+1. 熱力圖是否接受「治理邏輯鎖定 + 視覺語彙貼近」的中間路線，或要求進一步犧牲
+   真資料維度換取原稿的均分網格外觀（不建議，但列出讓楊董知道有這個選項）。
+2. 摺線/device-frame 外殼判斷為「設計稿專用不還原」是否正確——如果楊董認為
+   摺線本身有實際產品意義（例如標示「首屏可見範圍」的操作提示），需要重新
+   設計成真正的 UI 元件而非原樣搬運裝飾線。
+3. 版面比例從原稿的不對稱 px 改成等寬雙欄（見上表），是否可接受，或要求另尋
+   方法逼近原稿比例（例如縮小側欄、或熱力圖另開全螢幕模式）。
+
+---
+
+## Round 1（原始報告，2026-07-13 稍早）
+
+## 範圍與定位
+楊董動員令：「首頁還是舊版的，你給我全部搞好弄好」——把線上舊 A 案（#1215）換成 v5.1
+定稿方向。派工訊息指定設計權威來源為 artifact
+`https://claude.ai/code/artifact/41de1bc9-45b6-454a-842a-87127fbc496d`。
+
+## 誠實揭露：未能讀取 artifact 原始 HTML/CSS
+本次任務環境中**沒有 WebFetch 或任何瀏覽器/網頁擷取工具**可用（我的工具集僅有
+Read/Grep/Glob/Bash/Edit/Write）。嘗試以 `curl` 直接抓取 artifact URL，回傳
+Cloudflare Turnstile 的 JS challenge 頁（HTTP 200 但內容是 `Just a moment...` 挑戰頁，
+需要瀏覽器執行 JS 才能過關），非該 artifact 的實際內容。查閱團隊 memory 與既有
+worktree（`project_cockpit_desktop_terminal_density_v2_2026_07_12.md` 等）確認：過去
+所有 session 也都未曾成功把這個 artifact 的原始碼落地存檔（楊董都是直接在自己瀏覽器
+上用登入態看 artifact 拍板，工程 session 端只留下文字描述 + 反饋紀錄）。
+
+**因此本輪 v5.1 並非逐 pixel 複製 artifact**，而是依：
+1. 派工訊息裡的文字規格（LEDGER 揭示板風格：巨型大盤指數錨點＋產業熱力圖頭版、AI 推薦
+   頭條、右側新聞電傳紙帶、S1 佈告、排行）
+2. 團隊 memory 已定案的設計語彙（`feedback_desktop_terminal_density_no_ai_look`：交易
+   終端高密度、去卡片化、去圓角大陰影；`feedback_homepage_is_info_overview`：七塊 IA
+   清單鎖定；v5 反饋「去編號、非對稱編排」）
+3. 現有已 shipped 的 terminal-density CSS 慣例（`.tac-*` 系列，僅供首頁使用）
+
+重建版面。**這是一個已知落差，需要楊董/Elva 拿實際截圖跟 artifact 原稿肉眼比對定案是否
+接受**，不是「已驗證與 artifact 一致」。若不接受，下一輪需要有人用能開瀏覽器的環境把
+artifact 內容轉存成可讀檔案（例如楊董自己複製 HTML 原始碼貼給工程 session），才能做到
+逐 pixel 還原。
+
+## 實作內容
+
+### IA 七塊鎖定（不加不減，見 memory `feedback_homepage_is_info_overview`）
+現有 A 案（#1215）在資料層面其實已經完整覆蓋七塊，本輪**未新增任何資料源**，純粹重排
+版面：
+1. 大盤總覽 → `HeroPanel`（TAIEX 指數 + 漲跌家數 breadth + 日K折線）
+2. 產業熱力圖 → `RealtimeHeatmapPanel`（`IndustryHeatmap` 元件，內部分組/配置**完全未
+   動**，遵守楊董 7/13「產業跟配置不要亂改」鐵律）
+3. AI 推薦個股 → `AiRecommendationActionPanel`（consume `/ai-recommendations` v3 canonical
+   endpoint，與 `/ai-recommendations` 正式頁同一份資料）
+4. AI 每日簡報 → `DailyBriefPanel`（consume `/briefs`）
+5. 量化策略 S1 → `StrategyPanel`（consume lab strategy snapshot + F-AUTO SIM 實盤績效，
+   研究回測與實盤數字並列不混淆，維持既有揭露元件 `TrackRecordDisclosure`）
+6. 強勢個股排行 → `MarketMoversPanel`（consume `market/leaders` 漲幅/跌幅/成交活躍）
+7. 每日精選新聞 → `MarketIntelPanel`（consume `market-intel/news-top10` +
+   `market-intel/announcements`）
+
+`DataHealthPanel`／`BrokerConnectionLine` 為工程遙測小計，非七塊之一，沿用舊排序放頁尾
+（沒有更動）。
+
+### 版面重排（LEDGER 頭版語彙）
+- **頭版**：新 `.tac-frontpage`（等寬雙欄，`align-items:start` 讓兩欄依內容自然高度，
+  不強制拉伸出空白——這就是「非對稱編排」的實際落地方式：欄寬對稱但高度自然不對稱，
+  比起硬拉伸出空白區塊更符合「報紙頭版張力」）＝ Hero（巨型指數錨點，數字從 28px 放大
+  到 36px）+ 熱力圖並列。
+- **AI 推薦頭條**：從原本半寬 `.tac-two-grid` 移到全寬 promoted 位置（緊接頭版之下），
+  新增 `.tac-headline-panel` 樣式（品牌色頂線 + 標題放大到 20px + 首檔標的字級加大），
+  比照報紙頭條的視覺優先序。
+- **編輯正文兩欄**：新 `.tac-editorial-grid`（主欄 1fr / 右軌 300-340px）：
+  - 主欄 `.tac-editorial-main`：S1 佈告（`.tac-bulletin-panel`，左側品牌色條，公告欄
+    語彙）→ 排行 → AI 簡報，直向堆疊。
+  - 右軌 `.tac-news-rail`：`position:sticky`，容納 AI 精選新聞與重大訊息，改造原本
+    58px/1fr/60px/70px 橫向四欄表格為兩欄兩列（代號+標題一行／日期+分類第二行）—— 窄
+    欄「電傳紙帶」逐行語彙，寬螢幕不再擠壓。
+- **去卡片化**：`.tac-panel` 圓角從 8px 收到 2px，移除大型 `box-shadow`（原本
+  `0 16px 42px` 的浮動卡片陰影），符合「桌面版=交易終端密度，禁 AI 卡片 dashboard 味」
+  鐵律。這個 class 只有首頁使用（已 grep 確認），零跨頁風險。
+
+### 已知、未修的預存問題（非本輪引入）
+真瀏覽器對照 prod（`app.eycvector.com`）發現：熱力圖磚格在跟排行/其他面板並列的
+~500px 欄寬下，部分磚格文字本來就會互相截斷重疊（例如「3034」「2382」數字被鄰格蓋
+住）。**用完全相同的欄寬對 prod 現況截圖比對確認：這個截斷在目前線上 A 案就已存在**
+（見 `prod_heatmap_movers_pair.png`），不是本輪重排引入的迴歸。楊董 7/13 明確要求
+「產業跟配置那些不要亂改」，本輪未修改 `industry-heatmap.tsx` 任何邏輯或磚格排版，
+故此問題原樣保留、如實在此揭露，建議另立小任務處理磚格文字自適應。
+
+## 驗證
+- `pnpm typecheck`：15/15 綠
+- `pnpm --filter @iuf-trading-room/web test`：681/681 綠（含既有 `page-p1-home-cluster.test.ts`
+  等首頁 source-grep 測試，本輪未新增/修改任何 test）
+- `pnpm run build:web`：全綠，31 routes 含 `/`
+- 真瀏覽器驗證（本機 `next start` 打 `https://api.eycvector.com` + 真 owner session，
+  `packages/qa-playwright/tests/mobile-390.spec.ts` 現有 13 條回歸鎖）：**13/13 PASS**
+  （含 `/` 首頁 390px 無 page-level 水平溢出）
+- Ad-hoc 桌面 1280px + 手機 390px 截圖 + document-level overflow 檢查（非 fullPage 逐
+  元素誤報，改用 `document.documentElement.scrollWidth` 真溢出判定）：兩個斷點皆
+  `RESULT: CLEAN`，零 JS console error
+- 右軌 sticky news rail 曾在 **fullPage** 截圖中看似與 header-dock 通知圖示重疊 ——
+  改用真實 viewport（非 fullPage）+ scrollIntoViewIfNeeded 截圖與 `getBoundingClientRect`
+  交叉檢查，證實為 Playwright fullPage 對 `position:fixed` 元素的拼接偽影，實際渲染
+  無重疊（`intersectsRail:false`，僅 `.tac-scanline` 這種 `pointer-events:none` 的全螢幕
+  裝飾層相交，非真內容碰撞）
+
+## 截圖清單（本目錄）
+- `before_prod_A_full.png` — 改版前（線上 A 案，1280px fullPage）
+- `desktop_1280_full.png` / `desktop_1280_frontpage.png` / `desktop_1280_headline.png` /
+  `desktop_1280_editorial.png` / `desktop_1280_rail_viewport_scrolled.png` — 改版後桌面
+- `mobile_390_full.png` / `mobile_390_frontpage.png` / `mobile_390_headline.png` /
+  `mobile_390_editorial.png` — 改版後手機
+- `prod_heatmap_movers_pair.png` — 熱力圖磚格截斷問題的 prod 現況佐證（證明非本輪引入）
+
+## 修改檔案
+- `apps/web/app/page.tsx` — DashboardContent 版面重排（`.tac-frontpage` /
+  `.tac-editorial-grid` / `.tac-editorial-main` / `.tac-news-rail`），AI 推薦與 S1
+  Panel 各加一個修飾 className；**零資料層改動**（所有 fetch/state 邏輯原封不動）。
+- `apps/web/app/globals.css` — 新增/調整僅供首頁使用的 `.tac-*` class（`.tac-frontpage`、
+  `.tac-editorial-grid`、`.tac-editorial-main`、`.tac-news-rail`、`.tac-headline-panel`、
+  `.tac-bulletin-panel`）；`.tac-panel` 圓角/陰影降密度；`.tac-index-main strong` 放大；
+  `.tac-intel-list` 改兩欄兩列；1180px 響應式收合清單追加新 class。
+
+## 下一步建議
+1. 楊董/Elva 拿本報告截圖跟 artifact 41de1bc9 原稿肉眼比對，若有具體落差（顏色/字級/
+   間距/構圖），請直接標註要調整的點——不需要重新整個猜；有落差就是精修，不是重做。
+2. 熱力圖磚格文字截斷（pre-existing、已佐證非本輪引入）建議另立小任務，範圍限定在
+   `industry-heatmap.tsx` 的磚格內文字自適應/縮寫策略，不涉及分組或資料配置本身。
