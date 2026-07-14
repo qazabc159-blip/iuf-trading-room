@@ -12643,6 +12643,43 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-ledger .rk { grid-template-columns: 1fr; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   首頁 React server component 版新增（2026-07-14 楊董終令：重做，重掛
+   .tac-ledger 到真 "/" route，不再走 iframe/inline script）。
+
+   .home-ledger-shell 是全新 root class——刻意不沿用舊 .tactical-dashboard
+   （那個 class 掛了 `body:has(.tactical-dashboard) .app-sidebar
+   {display:none}`，是 7/14 楊董抓到「側欄呢？」的根因之一，見上面
+   .tactical-dashboard 區塊）。這裡沒有任何 :has() 規則指到
+   .home-ledger-shell，本頁只是 app 殼內的一般 route 內容區塊，側欄/
+   HeaderDock 完全不受影響。
+   ══════════════════════════════════════════════════════════════════════ */
+.home-ledger-shell {
+  max-width: 1520px;
+  margin: 0 auto;
+  padding: 16px 20px 40px;
+}
+
+/* TAIEX 日線走勢（.idxanchor 內，IndexOhlcChart 沿用既有 .tac-index-*
+   系列樣式，這裡只加標頭列＋固定最小高度防止非同步注入造成 layout
+   shift）。 */
+.tac-ledger .idxhist { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--lg-line); min-height: 96px; }
+.tac-ledger .idxhist-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); letter-spacing: .06em; margin-bottom: 4px;
+}
+.tac-ledger .idxhist-head b { font-family: var(--mono); color: var(--lg-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* AI 每日簡報「展開全文」toggle 按鈕（HomeBriefColumn）。 */
+.tac-ledger .brief-toggle-btn {
+  margin-left: auto; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber-dim);
+  background: none; border: none; border-bottom: 1px dashed var(--lg-amber-dim); cursor: pointer; padding: 0; white-space: nowrap; flex: none;
+}
+
+/* S1 佈告整塊改為可點擊 <Link>（帶去 /quant-strategies），錨點預設
+   display:inline 會讓 block 子元素排版跑掉，這裡明確設回 block。 */
+.tac-ledger a.s1wrap { display: block; }
+
 .tac-panel {
   position: relative;
   overflow: hidden;
