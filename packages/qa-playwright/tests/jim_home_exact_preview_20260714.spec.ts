@@ -90,4 +90,41 @@ test.describe("/home-exact preview", () => {
 
     await saveRouteScreenshot(page, testInfo, "home-exact-mobile-390");
   });
+
+  // P2 follow-up fix (2026-07-14): masthead market-state must reflect the
+  // actual Taipei trading session (09:00-13:30 weekdays), not just whether
+  // the KGI feed technically still returns a (possibly frozen post-close)
+  // tick. This spec is only meaningful when actually run outside that
+  // window — it self-skips during real market hours so it isn't a flaky
+  // CI gate on trading days.
+  test("masthead market-state says 已收盤 outside 09:00-13:30 Taipei trading hours, not 盤中即時", async ({ page }, testInfo) => {
+    const nowParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Taipei", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit",
+    }).formatToParts(new Date());
+    let weekday = "", hour = 0, minute = 0;
+    nowParts.forEach((p) => {
+      if (p.type === "weekday") weekday = p.value;
+      if (p.type === "hour") hour = Number(p.value) % 24;
+      if (p.type === "minute") minute = Number(p.value);
+    });
+    const mins = hour * 60 + minute;
+    const isTradingHours = weekday !== "Sat" && weekday !== "Sun" && mins >= 9 * 60 && mins <= 13 * 60 + 30;
+    testInfo.annotations.push({ type: "taipei-weekday", description: weekday });
+    testInfo.annotations.push({ type: "taipei-hour-minute", description: `${hour}:${minute}` });
+    test.skip(isTradingHours, "currently inside 09:00-13:30 Taipei trading hours — this assertion only applies post-close/weekend");
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/home-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="mkt-state"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(1500);
+
+    const mktState = await frame.locator('[data-slot="mkt-state"]').first().textContent();
+    testInfo.annotations.push({ type: "mkt-state", description: String(mktState) });
+
+    expect(mktState, "outside trading hours the masthead must say 已收盤, never 盤中即時").toContain("已收盤");
+    expect(mktState, "must not read 盤中即時 outside trading hours").not.toContain("盤中即時");
+
+    await saveRouteScreenshot(page, testInfo, "home-exact-desktop-mkt-state-closed");
+  });
 });

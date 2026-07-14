@@ -245,14 +245,23 @@ test.describe("/desk-exact preview", () => {
     const symCode = await frame.locator('[data-slot="sym-code"]').first().textContent();
     const sellOn = await frame.locator('[data-slot="t-side"] button[data-side="sell"]').first().evaluate((el) => el.classList.contains("on"));
     const buyOn = await frame.locator('[data-slot="t-side"] button[data-side="buy"]').first().evaluate((el) => el.classList.contains("on"));
+    // P1 fix (2026-07-14 Elva prod repro): submit button label must follow the
+    // side, not stay frozen at the markup's default "買進" once ?side=sell
+    // prefill flips the tab — applySidePrefill() previously toggled the "on"
+    // class directly instead of going through wireTicket()'s click handler,
+    // so refreshPreviewNumbers() (which recomputes this label) never re-ran.
+    const submitLabel = await frame.locator('[data-slot="t-submit-label"]').first().textContent();
 
     testInfo.annotations.push({ type: "prefill-sym-code", description: String(symCode) });
     testInfo.annotations.push({ type: "prefill-sell-on", description: String(sellOn) });
     testInfo.annotations.push({ type: "prefill-buy-on", description: String(buyOn) });
+    testInfo.annotations.push({ type: "prefill-submit-label", description: String(submitLabel) });
 
     expect(symCode, "query prefill selects the requested symbol").toBe("2382");
     expect(sellOn, "query prefill flips the ticket to the requested side").toBe(true);
     expect(buyOn, "buy toggle is no longer 'on' once sell is prefilled").toBe(false);
+    expect(submitLabel, "submit button label must say 賣出 once ?side=sell prefill is applied, not stay stuck on 買進").toContain("賣出");
+    expect(submitLabel, "submit button label must not still say 買進 once side flips to sell").not.toContain("買進");
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-query-prefill");
   });
