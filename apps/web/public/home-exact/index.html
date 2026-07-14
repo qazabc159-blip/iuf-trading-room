@@ -147,6 +147,22 @@ html,body{background:#080b10;}
   }
   .idxanchor .honest code{font-family:var(--mono);color:var(--amber-dim);}
 
+  /* ── TAIEX 日線走勢（每日收盤折線 + 量柱 + 日期）2026-07-14 楊董追加 ──
+     min-height 固定住這個非同步注入區塊的高度（無論走「走勢資料接入中」
+     佔位態或真圖表態，容器高度都一樣）——踩到並修掉一個真 layout-shift
+     bug：一開始只用短佔位文字，圖表 fetch 回來後高度暴增 ~60px，把下面
+     AI推薦/熱力圖整段往下推，導致既有互動測試在非同步這段時間點擊時，
+     座標已經對不上原本元素（Playwright 對元素定位後、實際派發點擊前若
+     發生 reflow，點擊會落空）。固定高度後兩態切換零位移。 */
+  .idxhist{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);min-height:96px;}
+  .idxhist .idxhist-head{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    font-family:var(--cjk);font-size:9px;color:var(--ink-dim);letter-spacing:.06em;margin-bottom:4px;
+  }
+  .idxhist .idxhist-head b{font-family:var(--mono);color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;}
+  .idxhist-chart{display:block;width:100%;height:78px;}
+  .idxhist-empty{font-family:var(--cjk);font-size:10px;color:var(--ink-faint);height:78px;display:flex;align-items:center;}
+
   /* ══ 熱力圖（資訊結構照現行 industry-heatmap.tsx，只換皮膚） ══ */
   .heatzone{display:flex;flex-direction:column;min-width:0;}
   .heat-toolbar{
@@ -288,14 +304,24 @@ html,body{background:#080b10;}
   .s1-row2 .k{font-family:var(--cjk);font-size:9.5px;color:var(--ink-dim);}
   .s1-row2 .k b{display:block;font-family:var(--mono);font-size:12.5px;color:var(--ink);margin-top:2px;font-weight:700;white-space:nowrap;}
 
-  .rkwrap{padding:14px 20px 16px 18px;min-width:0;}
-  .rk{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:10px;}
-  .rk .col{min-width:0;}
+  .rkwrap{padding:14px 20px 16px 18px;min-width:0;display:flex;flex-direction:column;}
+  /* 2026-07-14 楊董退件：desktop 版強勢個股排行跟左側量化策略卡同一個
+     .footband grid row，預設 align-items:stretch 讓 .rkwrap 被拉到跟量化
+     策略卡一樣高，但 5 列排行本身內容只佔一小截，底下留一大塊死白空間比例
+     很怪。修法：.rk 用 flex:1 吃滿 .rkwrap 分到的高度，.col/.r-list 一路
+     往下用 flex column 把高度分給每一列，5 列 flex:1 平均撐滿，不再是頂部
+     擠在一起、底部大留白——字級/字距完全不動（原稿本來就是這個密度，這裡
+     只調「列高怎麼分配剩餘空間」，不是把字放大）。mobile 版 .rk 沒有
+     .rkwrap 祖先（見 429 行行動版 markup），且其 grid 容器本身沒有外部
+     stretch 高度可分，這裡的 flex 屬性在那邊是 no-op，不影響手機版。*/
+  .rk{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:10px;flex:1;min-height:0;}
+  .rk .col{min-width:0;display:flex;flex-direction:column;}
   .rk .col h4{font-family:var(--cjk);font-size:10px;color:var(--amber);letter-spacing:.1em;margin:0 0 5px;font-weight:700;
-    display:flex;justify-content:space-between;gap:6px;}
+    display:flex;justify-content:space-between;gap:6px;flex:none;}
   .rk .col h4 span{color:var(--ink-faint);font-family:var(--mono);font-size:9px;font-weight:400;white-space:nowrap;}
-  .rk .r{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:baseline;
-    padding:4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+  .rk .r-list{flex:1;display:flex;flex-direction:column;min-height:0;}
+  .rk .r{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:center;
+    padding:4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;flex:1 1 0;}
   .rk .r:last-child{border-bottom:none;}
   .rk .r .tk{font-size:11px;color:var(--amber-hi);font-weight:600;}
   .rk .r .nm{font-family:var(--cjk);font-size:10px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -380,7 +406,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
             <div class="maincol">
 
               <!-- 頭版帶：巨型指數 ＋ 熱力圖（結構照現行產品） -->
-              <div class="heroband" style="height:322px;">
+              <div class="heroband" style="height:410px;">
 
                 <div class="idxanchor">
                   <div class="eyebrow">大盤指數 <small>TAIEX · 加權指數</small></div>
@@ -398,6 +424,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
                     <span class="n down"><span data-slot="breadth-down">--</span><small>跌</small></span>
                     <div class="bbar"><i class="u" data-slot="bbar-u" style="width:0%"></i><i class="f" data-slot="bbar-f" style="width:0%"></i><i class="d" data-slot="bbar-d" style="width:0%"></i></div>
                   </div>
+                  <div class="idxhist" data-slot="idx-hist"><div class="idxhist-empty">走勢資料接入中…</div></div>
                   <div class="tot" data-slot="idx-tot">載入中…</div>
                   <div class="honest">休市時段顯示「MM/DD 收盤」誠實標記，非即時價。來源 <code data-slot="idx-source">kgi/twse overview</code></div>
                 </div>
@@ -556,6 +583,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
                 <span class="n down" style="font-size:15px;"><span data-slot="breadth-down">--</span><small>跌</small></span>
                 <div class="bbar"><i class="u" data-slot="bbar-u" style="width:0%"></i><i class="f" data-slot="bbar-f" style="width:0%"></i><i class="d" data-slot="bbar-d" style="width:0%"></i></div>
               </div>
+              <div class="idxhist" data-slot="idx-hist"><div class="idxhist-empty">走勢資料接入中…</div></div>
               <div class="tot" data-slot="idx-tot">載入中…</div>
             </div>
           </div>
@@ -744,6 +772,19 @@ body{margin:0;padding:0;overflow-x:hidden;}
     if (n <= -0.15) return "d2";
     if (n < 0) return "d1";
     return "z0";
+  }
+  // 台股個股單日漲跌停 ±10% — 任何個股 |pct|>11%（留 1% 緩衝給極少數除權息類
+  // 特殊情形）都不是合法值，代表上游來源在盤後空窗回傳了 stale/殘值或壞掉的
+  // changePct（2026-07-14 楊董抓到 2330 顯示 -90.91%/2454 顯示 -98.21% 這類
+  // 垃圾值）。寧可顯示「無行情」也不顯示錯誤數字——沿用 pctBucketClass 對
+  // null 已經有的 "z0" 中性灰階＋既有「無行情」文案（原稿本來就有這個態，
+  // 如核心池裡缺行情的個股）。
+  var TAIWAN_STOCK_DAILY_LIMIT_PCT = 11;
+  function saneStockPct(pct) {
+    var n = num(pct);
+    if (n == null) return null;
+    if (Math.abs(n) > TAIWAN_STOCK_DAILY_LIMIT_PCT) return null;
+    return n;
   }
 
   // ── 文字密度壓縮（2026-07-14 楊董標準：跟原稿一句話密度看齊，真截斷非 CSS clamp）──
@@ -936,7 +977,142 @@ body{margin:0;padding:0;overflow-x:hidden;}
       });
   }
 
+  // ── TAIEX 日線走勢（每日收盤折線＋量柱＋日期）2026-07-14 楊董追加：舊版
+  // 首頁本來就有這塊（每日收盤點數/漲跌/成交量），原封搬原稿時原稿沒有這個
+  // 元件所以被漏掉，這裡補回來。資料源：同一顆既有 /api/v1/market-data/overview
+  // 端點（強勢個股排行也在用），marketContext.index.history 是最近 70 個
+  // 交易日的官方日 K（FinMind 為主、TWSE MI_5MINS_HIST 補齊近況，apps/api/src
+  // /market-data.ts loadFinMindTaiexIndexContext() 既有邏輯，未動 backend）。
+  // 沒有 ≥2 個真收盤點就誠實顯示「走勢資料接入中」，不畫假線。
+  function buildIndexHistorySvg(history) {
+    var rows = (history || []).filter(function (h) {
+      return h && typeof h.date === "string" && num(h.close) != null;
+    });
+    if (rows.length < 2) return null;
+
+    var vw = 400, vh = 78;
+    var padL = 2, padR = 2, padT = 4, padBottomLabels = 12;
+    var volH = 20;
+    var lineTop = padT;
+    var lineH = vh - padBottomLabels - volH - padT - 3;
+
+    var closes = rows.map(function (h) { return h.close; });
+    var minC = Math.min.apply(null, closes);
+    var maxC = Math.max.apply(null, closes);
+    var rangeC = (maxC - minC) || Math.max(1, Math.abs(maxC) * 0.01);
+
+    var vols = rows.map(function (h) { return num(h.volume) || 0; });
+    var maxV = Math.max.apply(null, vols) || 1;
+
+    var n = rows.length;
+    var stepX = n > 1 ? (vw - padL - padR) / (n - 1) : 0;
+
+    var points = rows.map(function (h, i) {
+      var x = padL + i * stepX;
+      var y = lineTop + (1 - (h.close - minC) / rangeC) * lineH;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+
+    var volTop = lineTop + lineH + 3;
+    var barW = Math.max(1, stepX * 0.62);
+    var volBars = rows.map(function (h, i) {
+      var x = padL + i * stepX - barW / 2;
+      var v = num(h.volume) || 0;
+      var barH = Math.max(0.5, (v / maxV) * volH);
+      var y = volTop + (volH - barH);
+      var prevClose = i > 0 ? rows[i - 1].close : h.close;
+      var upDay = h.close >= prevClose;
+      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + barH.toFixed(1) + '" style="fill:' + (upDay ? "var(--up)" : "var(--down)") + ';opacity:.78"></rect>';
+    }).join("");
+
+    var first = rows[0], last = rows[n - 1];
+    var dateLabel = function (d) { return d ? d.slice(5).replace("-", "/") : "--"; };
+
+    return '<svg viewBox="0 0 ' + vw + ' ' + vh + '" class="idxhist-chart" preserveAspectRatio="none" role="img" aria-label="TAIEX 日線走勢">' +
+      '<g>' + volBars + '</g>' +
+      '<polyline points="' + points + '" style="fill:none;stroke:var(--amber);stroke-width:1.4;vector-effect:non-scaling-stroke"></polyline>' +
+      '<text x="' + padL + '" y="' + (vh - 2) + '" style="font-family:var(--mono);font-size:8px;fill:var(--ink-faint)">' + escapeHtml(dateLabel(first.date)) + '</text>' +
+      '<text x="' + (vw - padR) + '" y="' + (vh - 2) + '" text-anchor="end" style="font-family:var(--mono);font-size:8px;fill:var(--ink-faint)">' + escapeHtml(dateLabel(last.date)) + '</text>' +
+      '</svg>';
+  }
+
+  function renderIndexHistoryChart() {
+    return apiFetch("/api/v1/market-data/overview").then(function (res) {
+      var data = unwrap(res.ok ? res.body : null);
+      var index = data && data.marketContext ? data.marketContext.index : null;
+      var history = index && Array.isArray(index.history) ? index.history : [];
+      var svg = buildIndexHistorySvg(history);
+      var last = history.length ? history[history.length - 1] : null;
+      var headHtml = last
+        ? '<span>日線走勢 · 近 ' + fmtInt(history.length) + ' 交易日</span><b>' + escapeHtml(dateLabelShort(last.date)) + ' 量 ' + fmtVolume(last.volume) + '</b>'
+        : '<span>日線走勢</span><b>--</b>';
+      qsa("idx-hist").forEach(function (root) {
+        if (svg) {
+          root.innerHTML = '<div class="idxhist-head">' + headHtml + '</div>' + svg;
+        } else {
+          root.innerHTML = '<div class="idxhist-empty">走勢資料接入中</div>';
+        }
+      });
+    }).catch(function () {
+      qsa("idx-hist").forEach(function (root) { root.innerHTML = '<div class="idxhist-empty">走勢資料接入中</div>'; });
+    });
+  }
+  function dateLabelShort(d) { return d ? d.slice(5).replace("-", "/") : "--"; }
+  function fmtVolume(v) {
+    var n = num(v);
+    if (n == null) return "--";
+    if (n >= 1e8) return (n / 1e8).toFixed(1) + "億";
+    if (n >= 1e4) return (n / 1e4).toFixed(0) + "萬";
+    return fmtInt(n);
+  }
+
   // ── 產業熱力圖（kgi-core 個股磚格 → twse 產業彙總 fallback）────────────
+  // heatStockPool: 儲存最近一次抓到的完整 40 檔（含 sector 分組），供 sector
+  // chip 點擊時就地重繪磚格用，不用重新打 API。切 chip 只換「顯示哪個子集」，
+  // 同一時間只會有一組磚格內容（no dead "all groups render at once" state）。
+  var heatStockPool = { tiles: [], bySector: {}, order: [] };
+
+  function renderHeatTilesForSector(sectorKey) {
+    var all = heatStockPool.tiles;
+    var subset = !sectorKey || sectorKey === "__all__"
+      ? all
+      : all.filter(function (t) { return (t.sector || "其他") === sectorKey; });
+    qsa("heat-grid").forEach(function (root) {
+      var mobile = isMobileEl(root);
+      var html = subset.map(function (t, rank) {
+        var pct = saneStockPct(t.changePct != null ? t.changePct : t.pct);
+        var bucket = pctBucketClass(pct);
+        var sizeClass = rank === 0 ? "hero" : (rank < 8 ? "wide" : "");
+        var span = rank === 0 ? ' style="grid-column:span 2;grid-row:span 2"' : (rank < 8 ? ' style="grid-column:span 2"' : "");
+        var showName = !mobile || rank < 8;
+        var nameHtml = showName && t.name ? '<span class="nm">' + escapeHtml(t.name) + "</span>" : "";
+        var pcText = pct == null ? "無行情" : fmtPct(pct);
+        var tileTitle = escapeHtml((t.name || t.symbol) + " " + pcText);
+        return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + ' data-symbol="' + escapeHtml(t.symbol) + '" title="' + tileTitle + '"><div class="tl"><b>' + escapeHtml(t.symbol) + "</b>" + nameHtml + '</div><div class="pc">' + pcText + "</div></div>";
+      }).join("");
+      root.innerHTML = html || '<div class="tile z0"><div class="tl"><b>--</b></div><div class="pc">等待真實行情</div></div>';
+    });
+  }
+
+  // Re-wired every time chipsHtml is rebuilt (fresh buttons each refresh
+  // cycle) — clicking a chip only ever shows one subset at a time, and both
+  // the desktop and mobile chip rows (and grids) stay in sync.
+  function wireHeatChips() {
+    qsa("heat-chips").forEach(function (root) {
+      root.querySelectorAll("button[data-sector-key]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var key = btn.dataset.sectorKey;
+          qsa("heat-chips").forEach(function (anyRoot) {
+            anyRoot.querySelectorAll("button[data-sector-key]").forEach(function (b) {
+              b.classList.toggle("is-active", b.dataset.sectorKey === key);
+            });
+          });
+          renderHeatTilesForSector(key);
+        });
+      });
+    });
+  }
+
   function renderHeatmap() {
     return Promise.all([apiFetch("/api/v1/market/heatmap/kgi-core"), apiFetch("/api/v1/market/heatmap/twse")])
       .then(function (results) {
@@ -952,8 +1128,12 @@ body{margin:0;padding:0;overflow-x:hidden;}
         setText("heat-updated", fmtTimeTaipei(new Date().toISOString(), true));
 
         if (useStock) {
-          var live = tiles.filter(function (t) { return num(t.changePct != null ? t.changePct : t.pct) != null; });
-          var avgPct = live.length ? live.reduce(function (s, t) { return s + (num(t.changePct != null ? t.changePct : t.pct) || 0); }, 0) / live.length : null;
+          // 台股個股單日漲跌停 ±10% — sanity-gate before averaging so one
+          // upstream garbage/stale changePct (盤後空窗曾見過 2330 顯示
+          // -90.91%、2454 顯示 -98.21% 這類不可能值) doesn't drag the whole
+          // "均幅" figure along with it.
+          var live = tiles.filter(function (t) { return saneStockPct(t.changePct != null ? t.changePct : t.pct) != null; });
+          var avgPct = live.length ? live.reduce(function (s, t) { return s + saneStockPct(t.changePct != null ? t.changePct : t.pct); }, 0) / live.length : null;
           setText("heat-pool-total", fmtInt(tiles.length));
           setText("heat-pool-live", fmtInt(live.length));
           setText("heat-avg", avgPct == null ? "--" : fmtPct(avgPct));
@@ -968,29 +1148,20 @@ body{margin:0;padding:0;overflow-x:hidden;}
             if (!(sector in bySector)) { bySector[sector] = 0; order.push(sector); }
             bySector[sector] += 1;
           });
-          var chipsHtml = '<button class="is-active"><b>核心觀察池</b><span>' + fmtInt(tiles.length) + ' 檔</span></button>' +
+          heatStockPool = { tiles: tiles, bySector: bySector, order: order };
+
+          var chipsHtml = '<button class="is-active" data-sector-key="__all__"><b>核心觀察池</b><span>' + fmtInt(tiles.length) + ' 檔</span></button>' +
             order.slice(0, 7).map(function (s) {
-              return "<button><b>" + escapeHtml(s) + "</b><span>" + fmtInt(bySector[s]) + " 檔</span></button>";
+              return "<button data-sector-key=\"" + escapeHtml(s) + "\"><b>" + escapeHtml(s) + "</b><span>" + fmtInt(bySector[s]) + " 檔</span></button>";
             }).join("");
           qsa("heat-chips").forEach(function (el) { el.innerHTML = chipsHtml; });
+          wireHeatChips();
 
-          // tiles
-          qsa("heat-grid").forEach(function (root) {
-            var mobile = isMobileEl(root);
-            var html = tiles.map(function (t, rank) {
-              var pct = num(t.changePct != null ? t.changePct : t.pct);
-              var bucket = pctBucketClass(pct);
-              var sizeClass = rank === 0 ? "hero" : (rank < 8 ? "wide" : "");
-              var span = rank === 0 ? ' style="grid-column:span 2;grid-row:span 2"' : (rank < 8 ? ' style="grid-column:span 2"' : "");
-              var showName = !mobile || rank < 8;
-              var nameHtml = showName && t.name ? '<span class="nm">' + escapeHtml(t.name) + "</span>" : "";
-              var pcText = pct == null ? "無行情" : fmtPct(pct);
-              var tileTitle = escapeHtml((t.name || t.symbol) + " " + pcText);
-              return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + ' data-symbol="' + escapeHtml(t.symbol) + '" title="' + tileTitle + '"><div class="tl"><b>' + escapeHtml(t.symbol) + "</b>" + nameHtml + '</div><div class="pc">' + pcText + "</div></div>";
-            }).join("");
-            root.innerHTML = html || '<div class="tile z0"><div class="tl"><b>--</b></div><div class="pc">等待真實行情</div></div>';
-          });
+          // tiles — default view is the full pool (__all__); a chip click
+          // (wireHeatChips above) is the only thing that ever narrows this.
+          renderHeatTilesForSector("__all__");
         } else if (tiles.length > 0) {
+          heatStockPool = { tiles: [], bySector: {}, order: [] }; // no stock-level pool while on the industry fallback
           var avgPct2 = tiles.reduce(function (s, t) { return s + (num(t.avgChangePct) || 0); }, 0) / tiles.length;
           setText("heat-pool-total", fmtInt(tiles.length));
           setText("heat-pool-live", fmtInt(tiles.length));
@@ -1016,6 +1187,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
             root.innerHTML = html;
           });
         } else {
+          heatStockPool = { tiles: [], bySector: {}, order: [] };
           setText("heat-pool-total", "--");
           setText("heat-pool-live", "--");
           setText("heat-avg", "--");
@@ -1262,6 +1434,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
   }
 
   safeRun(renderMarketOverview, "market-overview");
+  safeRun(renderIndexHistoryChart, "index-history-chart");
   safeRun(renderHeatmap, "heatmap");
   safeRun(renderRecommendations, "recommendations");
   safeRun(renderBrief, "brief");
