@@ -856,14 +856,33 @@ body{margin:0;padding:0;overflow-x:hidden;}
   tickClock();
   setInterval(tickClock, 1000);
 
+  // 台股交易時段（wall-clock 判斷）：平日 09:00-13:30。單看 kgi.sourceState
+  // 是否 "unavailable" 不夠——13:30 收盤到 gateway 排程真正關閉前那段空窗，
+  // MIS tick 常常還在回傳收盤前最後一筆凍結報價，sourceState 仍是 "live"，
+  // 會誤判成「盤中即時」。週末一律視為休市。
+  function isTaiwanMarketSessionNow() {
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: TZ, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+    }).formatToParts(new Date());
+    var weekday = "", hour = 0, minute = 0;
+    parts.forEach(function (p) {
+      if (p.type === "weekday") weekday = p.value;
+      if (p.type === "hour") hour = Number(p.value) % 24; // Intl 可能回 "24" 代表 00 時
+      if (p.type === "minute") minute = Number(p.value);
+    });
+    if (weekday === "Sat" || weekday === "Sun") return false;
+    var mins = hour * 60 + minute;
+    return mins >= 9 * 60 && mins <= 13 * 60 + 30;
+  }
+
   // ── 大盤指數錨點 ─────────────────────────────────────────────────────
   function renderMarketOverview() {
     return Promise.all([apiFetch("/api/v1/market/overview/kgi"), apiFetch("/api/v1/market/overview/twse")])
       .then(function (results) {
         var kgi = unwrap(results[0].ok ? results[0].body : null);
         var twse = unwrap(results[1].ok ? results[1].body : null);
-        var kgiLive = !!(kgi && kgi.taiex && kgi.sourceState !== "unavailable");
-        var taiex = kgiLive ? kgi.taiex : (twse && twse.taiex ? twse.taiex : null);
+        var kgiLive = !!(kgi && kgi.taiex && kgi.sourceState !== "unavailable") && isTaiwanMarketSessionNow();
+        var taiex = kgiLive ? kgi.taiex : (twse && twse.taiex ? twse.taiex : (kgi ? kgi.taiex : null));
         var breadth = kgiLive ? kgi.breadth : null;
 
         setText("idx-source", kgiLive ? "market/overview/kgi" : "market/overview/twse");

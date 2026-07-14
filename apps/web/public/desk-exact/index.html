@@ -1075,12 +1075,21 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
 
   function applySidePrefill(side) {
     var wantSide = side === "sell" ? "sell" : "buy";
+    // Dispatch a real click on the matching buy/sell button instead of just
+    // toggling the "on" class directly — wireTicket()'s own click handler is
+    // the single source of truth for recomputing every state-dependent
+    // ticket string (submit button label, qty-conversion line, notional
+    // preview, available-cash-after preview). Bypassing it here was the bug:
+    // the side tab visually flipped to "賣出" but the submit button still
+    // read "買進" because nothing re-ran refreshPreviewNumbers().
     ["t-side", "m2t-side"].forEach(function (slotName) {
       var root = document.querySelector('[data-slot="' + slotName + '"]');
       if (!root) return;
+      var target = null;
       root.querySelectorAll("button").forEach(function (b) {
-        b.classList.toggle("on", b.dataset.side === wantSide);
+        if (b.dataset.side === wantSide) target = b;
       });
+      if (target && !target.classList.contains("on")) target.click();
     });
   }
 
