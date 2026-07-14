@@ -1027,12 +1027,87 @@ interface TaiexHistMonthCacheEntry {
 const TAIEX_HIST_CACHE_TTL_MS = 30 * 60 * 1000;
 const _taiexHistMonthCache = new Map<string, TaiexHistMonthCacheEntry>();
 
+/** Index symbol used for the index_history DB persistence tier (migration 0057). */
+const TAIEX_INDEX_HISTORY_SYMBOL = "^TWII";
+const TAIEX_INDEX_HISTORY_SOURCE = "twse:MI_5MINS_HIST";
+
 /** For test cleanup */
 export function _resetTaiexHistCache(): void {
   _taiexHistMonthCache.clear();
 }
 
-/** Fetch one month of official TAIEX daily closes. monthYYYYMM e.g. "202606". Fail-open []. */
+/** [fromDate, toDate] ISO bounds (inclusive) covering a full "YYYYMM" calendar month.
+ *  Exported for direct testing (handles the December year-rollover case). */
+export function _monthRangeIso(monthYYYYMM: string): { fromDate: string; toDate: string } {
+  const y = parseInt(monthYYYYMM.slice(0, 4), 10);
+  const m = parseInt(monthYYYYMM.slice(4, 6), 10);
+  const fromDate = `${monthYYYYMM.slice(0, 4)}-${monthYYYYMM.slice(4, 6)}-01`;
+  const nextMonthFirst = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1));
+  const toDateObj = new Date(nextMonthFirst.getTime() - 24 * 60 * 60 * 1000);
+  const toDate = toDateObj.toISOString().slice(0, 10);
+  return { fromDate, toDate };
+}
+
+/**
+ * Best-effort persistence of a successful month fetch to index_history
+ * (migration 0057) — never throws, never blocks the caller. See
+ * index-history-store.ts module doc for the deploy-restart problem this
+ * solves (2026-07-14).
+ */
+async function _persistTaiexHistMonthBestEffort(rows: TaiexDailyClose[]): Promise<void> {
+  if (!rows.length) return;
+  try {
+    const { isDatabaseMode, getDb } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return;
+    const db = getDb();
+    if (!db) return;
+    const { upsertIndexHistoryRows } = await import("../index-history-store.js");
+    await upsertIndexHistoryRows(
+      db,
+      rows.map((r) => ({
+        indexSymbol: TAIEX_INDEX_HISTORY_SYMBOL,
+        date: r.date,
+        close: r.close,
+        source: TAIEX_INDEX_HISTORY_SOURCE,
+      }))
+    );
+  } catch (err) {
+    console.warn("[twse-openapi-client] index_history persist failed (non-fatal):", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * DB fallback for a month whose live fetch failed/was empty. Fail-open to []
+ * on any DB error or if DB is unavailable — this is a best-effort tier, not
+ * a hard dependency.
+ */
+async function _readTaiexHistMonthFromDbBestEffort(monthYYYYMM: string): Promise<TaiexDailyClose[]> {
+  try {
+    const { isDatabaseMode, getDb } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return [];
+    const db = getDb();
+    if (!db) return [];
+    const { getIndexHistoryRows } = await import("../index-history-store.js");
+    const { fromDate, toDate } = _monthRangeIso(monthYYYYMM);
+    return await getIndexHistoryRows(db, TAIEX_INDEX_HISTORY_SYMBOL, fromDate, toDate);
+  } catch (err) {
+    console.warn("[twse-openapi-client] index_history DB fallback read failed (non-fatal):", err instanceof Error ? err.message : String(err));
+    return [];
+  }
+}
+
+/**
+ * Fetch one month of official TAIEX daily closes. monthYYYYMM e.g. "202606".
+ * Fail-open []. 2026-07-14: on a live-fetch miss (HTTP error, bad stat, or
+ * network exception), fall back to the persisted index_history table
+ * (migration 0057) before giving up — the in-memory cache above is wiped on
+ * every deploy restart, and a transient TWSE failure right after a fresh
+ * restart used to leave callers with a genuinely empty result for that
+ * month (2026-07-14: 12 same-day deploys left the homepage TAIEX line chart
+ * empty for stretches of that day). A successful live fetch is persisted
+ * back to the same table (best-effort) so future restarts have fresher data
+ * to fall back to.
+ */
 async function fetchTaiexMonthDailyCloses(
   monthYYYYMM: string,
   doFetch: typeof fetch
@@ -1052,10 +1127,12 @@ async function fetchTaiexMonthDailyCloses(
     });
     if (!resp.ok) {
       console.warn(`[twse-openapi-client] MI_5MINS_HIST HTTP ${resp.status} for ${monthYYYYMM}`);
-      return [];
+      return await _readTaiexHistMonthFromDbBestEffort(monthYYYYMM);
     }
     const body = await resp.json() as { stat?: string; data?: string[][] };
-    if (body.stat !== "OK" || !Array.isArray(body.data)) return [];
+    if (body.stat !== "OK" || !Array.isArray(body.data)) {
+      return await _readTaiexHistMonthFromDbBestEffort(monthYYYYMM);
+    }
 
     const rows: TaiexDailyClose[] = [];
     for (const row of body.data) {
@@ -1073,10 +1150,11 @@ async function fetchTaiexMonthDailyCloses(
     }
     rows.sort((a, b) => a.date.localeCompare(b.date));
     _taiexHistMonthCache.set(monthYYYYMM, { rows, expiresAt: Date.now() + TAIEX_HIST_CACHE_TTL_MS });
+    if (rows.length > 0) await _persistTaiexHistMonthBestEffort(rows);
     return rows;
   } catch (err) {
     console.warn("[twse-openapi-client] MI_5MINS_HIST fetch failed:", err instanceof Error ? err.message : String(err));
-    return [];
+    return await _readTaiexHistMonthFromDbBestEffort(monthYYYYMM);
   }
 }
 

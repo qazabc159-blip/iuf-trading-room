@@ -12952,9 +12952,29 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const twseRows = await getStockDayAllRows().catch(() => []);
 
+    // Sector/industry lookup (companies.chain_position) for the frontend's
+    // industry grouping — 2026-07-14: this endpoint previously carried no
+    // sector at all. Fail-open to an empty map (tiles still render, just
+    // without a sector label) on any DB error — never blocks the heatmap.
+    let sectorMap = new Map<string, string | null>();
+    try {
+      const db = isDatabaseMode() ? getDb() : null;
+      if (db) {
+        const workspaceId = c.get("session").workspace.id;
+        const symbols = kgiResult.tiles.map((t) => t.symbol);
+        const rows = await db
+          .select({ ticker: companies.ticker, chainPosition: companies.chainPosition })
+          .from(companies)
+          .where(and(eq(companies.workspaceId, workspaceId), inArray(companies.ticker, symbols)));
+        sectorMap = new Map(rows.map((r) => [r.ticker, r.chainPosition || null]));
+      }
+    } catch (err) {
+      console.warn("[market/heatmap/kgi-core] sector lookup failed (non-fatal):", err instanceof Error ? err.message : String(err));
+    }
+
     // 4-tier enrichment: live → mis_intraday → twse_eod → cache → no_data (never drops tiles)
     const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
-    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache);
+    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache, sectorMap);
 
     return c.json(enriched);
   } catch (err) {
@@ -18449,6 +18469,14 @@ function startSchedulers(workspaceSlug: string): void {
     async function _runTwseMisQuoteCron(): Promise<void> {
       if (!isTwseMisQuoteCronWindow()) return;
       try {
+        // Shared plausibility clamp (2026-07-14) — see kgi-heatmap-enricher.ts's
+        // isPlausibleChangePct doc for why: Taiwan's ±10% daily price-limit band
+        // means any larger changePct for these 40 established large-caps is a
+        // corrupted upstream tick, never a real move. Fixing at this cron's own
+        // computation site (not just the enricher's read side) stops a garbage
+        // value from ever entering _misTileCache or the manual-quote table.
+        const { isPlausibleChangePct } = await import("./kgi-heatmap-enricher.js");
+
         // Build minimal cron session for upsertManualQuotes
         const cronSession = {
           workspace: { id: "00000000-0000-0000-0000-000000000000", name: workspaceSlug, slug: workspaceSlug },
@@ -18576,11 +18604,15 @@ function startSchedulers(workspaceSlug: string): void {
               const bid = bidNum;
               const ask = askNum;
 
-              // Calculate changePct vs prevClose
-              const changePct =
+              // Calculate changePct vs prevClose — clamped via the shared
+              // isPlausibleChangePct guard (see import doc above): a corrupted
+              // "y" (prevClose) or "z" (last) field from MIS must never
+              // propagate as e.g. -90% into _misTileCache/manual quotes.
+              const changePctRaw =
                 prevClose && prevClose > 0
                   ? ((last - prevClose) / prevClose) * 100
                   : null;
+              const changePct = isPlausibleChangePct(changePctRaw) ? changePctRaw : null;
 
               allQuotes.push({
                 symbol: ticker,

@@ -35,6 +35,11 @@ export interface MisTileEntry {
 export interface EnrichedHeatmapTile {
   symbol: string;
   name?: string;
+  /** Industry/sector label (companies.chain_position), null if unavailable
+   * (DB unreachable, or symbol not found in companies table). 2026-07-14:
+   * previously always undefined — this endpoint carried no sector at all,
+   * so the frontend could not group the 40 heatmap tiles by industry. */
+  sector: string | null;
   /** null only when sourceState="no_data" */
   price: number | null;
   change: number | null;
@@ -80,6 +85,26 @@ export function _resetLastCloseCache(): void {
   _lastCloseCache.clear();
 }
 
+/**
+ * Taiwan equities have a regulatory daily price-limit band of ±10% (with a
+ * small tolerance for rounding). HEATMAP_CORE_SYMBOLS is a fixed universe of
+ * 40 established large-caps (2330, 2317, ...) — none are newly-listed or
+ * disposition-category stocks, which are the only categories with a
+ * different/no limit — so any |changePct| beyond this bound for one of these
+ * 40 symbols is definitionally a corrupted upstream tick, never a real price
+ * move. 2026-07-14: a batch read at 16:41 (well after the 14:35 MIS cron
+ * cutoff) served -90.91%/-98.21% for some tiles — impossible under the daily
+ * limit, so the source data itself must have been garbage (not merely
+ * stale). This guard is the single choke point applied at every write AND
+ * every read of a changePct value in this module, so a bad value can never
+ * enter the cache in the first place, and any that pre-dates this fix
+ * (already sitting in a live process's cache) is also filtered on read.
+ */
+export function isPlausibleChangePct(pct: number | null): boolean {
+  if (pct === null) return true;
+  return Number.isFinite(pct) && Math.abs(pct) <= 10.5;
+}
+
 /** Update last-known-close from a live KGI tick (Tier 1 write-through). */
 export function updateLastCloseFromTick(
   symbol: string,
@@ -89,7 +114,8 @@ export function updateLastCloseFromTick(
   ts: string
 ): void {
   const dateTag = ts.slice(0, 10); // "YYYY-MM-DD"
-  _lastCloseCache.set(symbol, { price, change, changePct, ts, dateTag });
+  const safePct = isPlausibleChangePct(changePct) ? changePct : null;
+  _lastCloseCache.set(symbol, { price, change, changePct: safePct, ts, dateTag });
 }
 
 /** Update last-known-close entries from a TWSE STOCK_DAY_ALL batch. */
@@ -103,7 +129,8 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
 
     const changeVal = isFinite(chg) ? chg : null;
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
-    const pct = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    const pct = isPlausibleChangePct(pctRaw) ? pctRaw : null;
 
     // Derive ISO date from TWSE ROC date "114/05/18" → "2026-05-18"
     const dateTag = parseTwseDate(row.Date ?? "");
@@ -153,6 +180,19 @@ function buildSourceLabel(sourceState: TileSourceState, ts: string | null): stri
 // ── Core enrichment function ───────────────────────────────────────────────────
 
 /**
+ * A same-calendar-day MIS entry can still be hours stale once the intraday
+ * cron stops feeding for the day (cron window 08:55-14:35 TST) — a read at
+ * e.g. 16:41 would otherwise keep echoing whatever tick happened to be last
+ * captured near the 14:35 cutoff. Bound on the entry's OWN age (not a
+ * wall-clock window check) so this stays deterministic in tests regardless
+ * of what time of day they run: once an entry is older than this, Tier 1.5
+ * is treated as unavailable and enrichment falls through to Tier 2 (TWSE
+ * EOD, the authoritative close) — "盤後應 fallback 收盤價", not continue
+ * serving a stale intraday snapshot.
+ */
+const MIS_ENTRY_MAX_AGE_MS = 30 * 60 * 1000; // 30 min — MIS cron refreshes every 15-45s while running
+
+/**
  * Enrich KGI heatmap tiles using 4-tier fallback.
  *
  * Tier 1  (live):              KGI gateway tick — market hours, EC2 running
@@ -163,12 +203,15 @@ function buildSourceLabel(sourceState: TileSourceState, ts: string | null): stri
  * @param kgiTiles     Raw tiles from getKgiCoreHeatmap() — may have null price
  * @param twseRows     TWSE STOCK_DAY_ALL rows (may be empty if TWSE unreachable)
  * @param misCache     TWSE MIS intraday cache from _runTwseMisQuoteCron (may be undefined)
+ * @param sectorMap    ticker -> industry/sector label (companies.chain_position),
+ *                     built by the route handler (may be undefined if DB unavailable)
  * @returns            Fully enriched tiles with sourceState for every tile
  */
 export function enrichHeatmapTiles(
   kgiTiles: KgiHeatmapTile[],
   twseRows: StockDayAllRow[],
-  misCache?: Map<string, MisTileEntry>
+  misCache?: Map<string, MisTileEntry>,
+  sectorMap?: Map<string, string | null>
 ): EnrichedHeatmapResult {
   // Update last-close cache from TWSE data (write-through for future requests)
   if (twseRows.length > 0) {
@@ -185,7 +228,8 @@ export function enrichHeatmapTiles(
     const chg = parseFloat(row.Change?.trim() ?? "");
     const changeVal = isFinite(chg) ? chg : null;
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
-    const pct = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    const pct = isPlausibleChangePct(pctRaw) ? pctRaw : null;
     const dateTag = parseTwseDate(row.Date ?? "");
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
     twseMap.set(code, { price: close, change: changeVal, changePct: pct, ts });
@@ -204,9 +248,10 @@ export function enrichHeatmapTiles(
 
   const tiles: EnrichedHeatmapTile[] = kgiTiles.map((kgiTile) => {
     const { symbol, tier } = kgiTile;
+    const sector = sectorMap?.get(symbol) ?? null;
 
     // ── Tier 1: KGI live tick ───────────────────────────────────────────────
-    if (kgiTile.price !== null && kgiTile.changePct !== null) {
+    if (kgiTile.price !== null && kgiTile.changePct !== null && isPlausibleChangePct(kgiTile.changePct)) {
       // Write-through to last-close cache
       updateLastCloseFromTick(
         symbol,
@@ -219,6 +264,7 @@ export function enrichHeatmapTiles(
       return {
         symbol,
         name: kgiTile.name,
+        sector,
         price: kgiTile.price,
         change: kgiTile.change,
         changePct: kgiTile.changePct,
@@ -230,10 +276,21 @@ export function enrichHeatmapTiles(
     }
 
     // ── Tier 1.5: TWSE MIS intraday (盤中即時, 5-20s delay) ────────────────
-    // Only used when MIS cache is available and contains today's trade data.
-    // Honest: only fires during 08:55-14:35 window when MIS cron is running.
+    // Only used when MIS cache is available, contains today's trade data,
+    // is not stale (see MIS_ENTRY_MAX_AGE_MS doc — the cron itself stops
+    // feeding at 14:35 TST, so a same-day entry can still be hours old), and
+    // carries a plausible changePct (see isPlausibleChangePct doc — a
+    // corrupted upstream tick must never be served, freshness alone is not
+    // sufficient).
     const misEntry = misCache?.get(symbol);
-    if (misEntry && misEntry.tradeDateYmd === todayYmd) {
+    const misEntryAgeMs = misEntry ? Date.now() - Date.parse(misEntry.ts) : NaN;
+    const misEntryFresh = Number.isFinite(misEntryAgeMs) && misEntryAgeMs <= MIS_ENTRY_MAX_AGE_MS;
+    if (
+      misEntry &&
+      misEntry.tradeDateYmd === todayYmd &&
+      misEntryFresh &&
+      isPlausibleChangePct(misEntry.changePct)
+    ) {
       // Derive change from MIS's OWN changePct so change/changePct can never mix
       // trading days. Deriving prevClose from the TWSE EOD row produced
       // sign-contradicting tiles on 6/10 (change=+85 vs changePct=-7.15) because
@@ -247,6 +304,7 @@ export function enrichHeatmapTiles(
       return {
         symbol,
         name: kgiTile.name,
+        sector,
         price: misEntry.last,
         change,
         changePct: misEntry.changePct,
@@ -264,6 +322,7 @@ export function enrichHeatmapTiles(
       return {
         symbol,
         name: kgiTile.name,
+        sector,
         price: twse.price,
         change: twse.change,
         changePct: twse.changePct,
@@ -284,9 +343,10 @@ export function enrichHeatmapTiles(
         return {
           symbol,
           name: kgiTile.name,
+          sector,
           price: cached.price,
           change: cached.change,
-          changePct: cached.changePct,
+          changePct: isPlausibleChangePct(cached.changePct) ? cached.changePct : null,
           tier,
           ts: cached.ts,
           sourceState: "cache" as TileSourceState,
@@ -299,6 +359,7 @@ export function enrichHeatmapTiles(
     return {
       symbol,
       name: kgiTile.name,
+      sector,
       price: null,
       change: null,
       changePct: null,
