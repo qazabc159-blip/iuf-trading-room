@@ -12344,6 +12344,24 @@ body:has(.tactical-dashboard) .app-sidebar {
   font-family: var(--mono);
   border: 1px solid var(--lg-line2);
   background: var(--lg-black);
+  /* 手機/平板（側欄變頂列的既有斷點 <=1000px，見 .app-sidebar 1000px
+     media query）：沿用目前 fluid 單欄/雙欄 responsive，不套 zoom。 */
+  width: 100%;
+  zoom: 1;
+}
+
+/* 桌機（側欄常駐 >1000px）：鎖回原稿固定 1280px 版面寬，用 CSS zoom 依
+   .home-ledger-shell 實際可用寬度等比縮放到填滿——idxanchor 454px／
+   heatzone／tape 236px／磚形／字級／巨數字 82px 等所有原稿逐值 px 比例
+   在任何斷點都維持與原稿一致，不再是「彈性寬安全折衷」。--home-zoom
+   由 home-zoom-controller.tsx 的 ResizeObserver 寫在 .home-ledger-shell
+   上（自訂屬性會往下繼承）；JS 尚未執行前的 SSR 首屏先用 1.3 當合理
+   預設，避免無樣式跳動。 */
+@media (min-width: 1001px) {
+  .tac-ledger {
+    width: 1280px;
+    zoom: var(--home-zoom, 1.3);
+  }
 }
 
 /* ── masthead ─────────────────────────────────────────────────────── */
@@ -12742,10 +12760,14 @@ body:has(.tactical-dashboard) .app-sidebar {
    .home-ledger-shell，本頁只是 app 殼內的一般 route 內容區塊，側欄/
    HeaderDock 完全不受影響。
    ══════════════════════════════════════════════════════════════════════ */
+/* 2026-07-15（楊董更正："左右留白是要幹嘛"）：拔掉 max-width 1520 cap 與
+   置中 margin——鋪滿側欄右緣到視窗右緣，零留白。.tac-ledger 改採固定
+   1280px（原稿設計寬）+ CSS zoom 依可用寬度等比縮放，見下方 .tac-ledger
+   規則與 home-zoom-controller.tsx（量測本容器寬度寫回 --home-zoom）。 */
 .home-ledger-shell {
-  max-width: 1520px;
-  margin: 0 auto;
-  padding: 16px 20px 40px;
+  width: 100%;
+  padding: 16px 0 40px;
+  overflow-x: hidden; /* zoom 捨入誤差安全網（±1-2px），非常態遮蓋 */
 }
 
 /* TAIEX 日線走勢帶（2026-07-14 楊董糾正後：從 .idxanchor 內移出，改成

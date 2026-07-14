@@ -137,20 +137,31 @@ test.describe("/ homepage LEDGER RSC", () => {
 
   // 2026-07-14 楊董二次糾正：heroband 被 TAIEX 折線圖撐高到 429-475px（原稿
   // 字面 style="height:322px"），連帶把熱力圖磚格拉成扁平橫條；折線圖已
-  // 移出成 IndexHistoryBand 全寬窄帶，這裡鎖死 heroband 固定 322px 的回歸，
-  // 兩個桌面斷點都驗（1920 因側欄常駐+repeat(8,1fr)欄寬隨視窗變寬，磚格會
-  // 比 1280 扁一些——這是揭露過的既有側欄空間限制，不是本輪修的範圍，但
-  // 高度鎖死本身兩個斷點都必須成立）。
-  test("heroband stays fixed at 322px on both 1280 and 1920 (TAIEX chart moved out, no longer stretches the band)", async ({ page }, testInfo) => {
-    for (const width of [1280, 1920]) {
+  // 移出成 IndexHistoryBand 全寬窄帶，這裡鎖死 heroband 固定 322px 的回歸。
+  //
+  // 2026-07-15 更新（全寬 zoom 縮放，見 globals.css .home-ledger-shell／
+  // .tac-ledger）：`.tac-ledger` 現在固定 1280px 設計寬 + `zoom:
+  // var(--home-zoom)` 依可用寬度縮放，heroband 的「渲染後」boundingBox
+  // 高度會是 `322 * zoomFactor`，不再是字面 322px——這是預期行為（整版
+  // 等比縮放，不只鎖單一 band 高度）。原本的 px 斷言改成 zoom 不變量：
+  // heroband 高度 / tac-ledger 寬度的比例，在任何斷點都必須貼近原稿的
+  // 322/1280 設計比例（zoom 對兩者套用同一個縮放係數，比例應完全抵消）。
+  test("heroband height stays at the 322/1280 design ratio across zoom levels (1280/1440/1920/2560)", async ({ page }, testInfo) => {
+    for (const width of [1280, 1440, 1920, 2560]) {
       await page.setViewportSize({ width, height: 1400 });
       await page.goto("/?sector=all", { waitUntil: "domcontentloaded" });
       await page.locator(".heroband").first().waitFor({ state: "attached", timeout: 15000 });
       await page.waitForTimeout(1000);
 
       const heroband = await page.locator(".heroband").first().boundingBox();
+      const tacLedger = await page.locator(".tac-ledger").first().boundingBox();
+      const ratio = heroband && tacLedger ? heroband.height / tacLedger.width : null;
       testInfo.annotations.push({ type: `heroband-height-${width}`, description: String(heroband?.height) });
-      expect(heroband?.height).toBe(322);
+      testInfo.annotations.push({ type: `tac-ledger-width-${width}`, description: String(tacLedger?.width) });
+      testInfo.annotations.push({ type: `heroband-ratio-${width}`, description: String(ratio) });
+      // 原稿設計比例 322/1280 = 0.25156；容忍 zoom 捨入誤差 ±1.5%。
+      expect(ratio, `heroband/tac-ledger height:width ratio must stay ~322:1280 at ${width}px`).toBeGreaterThan(0.2391);
+      expect(ratio, `heroband/tac-ledger height:width ratio must stay ~322:1280 at ${width}px`).toBeLessThan(0.2641);
 
       // 磚型分配精算填滿：hero(1)+wide(5)+standard(N-6) 在 8 欄 grid 必須
       // 整除成完整列，不能有孤行（最後一列 <8 顆但 >0 顆一樣算孤行，只有
