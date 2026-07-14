@@ -3,7 +3,7 @@ import { extractFrame, saveRouteScreenshot } from "./helpers";
 
 // 首頁「原封搬原稿」預覽 /home-exact 資料接線驗收（2026-07-14，Jim）。
 // 這支測試檔是本輪任務的驗收 harness，非長駐 CI spec；驗收後可視需要保留或移除。
-test.describe("@smoke /home-exact preview", () => {
+test.describe("/home-exact preview", () => {
   test("desktop 1280 renders hydrated data with no console errors or horizontal overflow", async ({ page }, testInfo) => {
     const consoleErrors: string[] = [];
     const failedRequests: string[] = [];
