@@ -452,7 +452,9 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-image:none!important;}
 .bezel,.bezel.mob{border:0!important;padding:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;}
 .screen{border-radius:0!important;}
-.screen.desk{width:100%!important;height:100vh!important;height:100dvh!important;}
+/* 比例控制（楊董 7/14 退件）：1280 密度設計直接拉滿大螢幕比例失衡，
+   內容上限 1520 置中，左右同色背景延伸。 */
+.screen.desk{width:100%!important;max-width:1520px;margin:0 auto;height:100vh!important;height:100dvh!important;}
 .screen.mob{width:100%!important;height:100vh!important;height:100dvh!important;margin:0 auto;}
 @media(min-width:721px){.screen.mob{display:none!important;}}
 @media(max-width:720px){.screen.desk{display:none!important;}}
@@ -684,11 +686,11 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
 
               <!-- ③ ticket + ★修正① 張/股閘門 -->
               <div class="panel ticket">
-                <div class="ph"><h4>下單票</h4><span class="cnt">凱基 SIM</span></div>
+                <div class="ph"><h4>下單票</h4><span class="cnt">紙上單 Paper</span></div>
                 <div class="tform">
-                  <div class="seg2">
-                    <button class="buy on">買進<span class="t">BUY</span></button>
-                    <button class="sell">賣出<span class="t">SELL</span></button>
+                  <div class="seg2" data-slot="t-side">
+                    <button class="buy on" data-side="buy">買進<span class="t">BUY</span></button>
+                    <button class="sell" data-side="sell">賣出<span class="t">SELL</span></button>
                   </div>
                   <div class="fld">
                     <div class="l">標的<span class="hlp">沿用左側自選</span></div>
@@ -699,49 +701,46 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                       <select><option>限價</option></select>
                     </div>
                     <div class="fld"><div class="l">委託價<span class="hlp">升降 0.50</span></div>
-                      <div class="step"><button class="sb">−</button><input value="1,085.00" /><button class="sb">＋</button></div>
+                      <div class="step" data-slot="t-price-step"><button class="sb" data-act="minus">−</button><input data-slot="t-price" value="1085.00" /><button class="sb" data-act="plus">＋</button></div>
                     </div>
                   </div>
                   <!-- ★ 張/股閘門：LOT/SHARE 緊貼數量，單位徽章＋換算跟著切換 -->
                   <div class="fld qty-fld">
                     <div class="l"><b>數量</b><span class="hlp">單位切換 = 1000× 風險閘門</span></div>
                     <div class="qty-inline">
-                      <div class="qty-step">
-                        <button class="sb">−</button><input value="2" /><button class="sb">＋</button><span class="unit-badge">張</span>
+                      <div class="qty-step" data-slot="t-qty-step">
+                        <button class="sb" data-act="minus">−</button><input data-slot="t-qty" value="2" /><button class="sb" data-act="plus">＋</button><span class="unit-badge" data-slot="t-unit-badge">張</span>
                       </div>
-                      <div class="lotsw">
-                        <button class="on">張<span class="u">LOT</span></button>
-                        <button>股<span class="u">SHARE</span></button>
+                      <div class="lotsw" data-slot="t-unit">
+                        <button class="on" data-unit="LOT">張<span class="u">LOT</span></button>
+                        <button data-unit="SHARE">股<span class="u">SHARE</span></button>
                       </div>
                     </div>
-                    <div class="qty-conv">目前 <b>張</b> 模式 · 1 張 = 1,000 股 · 本單 <b>2 張 → 2,000 股</b></div>
+                    <div class="qty-conv" data-slot="t-qty-conv">目前 <b>張</b> 模式 · 1 張 = 1,000 股 · 本單 <b>2 張 → 2,000 股</b></div>
                   </div>
                   <div class="pv">
-                    <div class="it"><span class="l">預估金額</span><span class="v brand">2,170,000<small>元</small></span></div>
-                    <div class="it"><span class="l">手續費(估)</span><span class="v">3,092<small>元</small></span></div>
-                    <div class="it"><span class="l">執行後可用</span><span class="v">6,973,816</span></div>
-                    <div class="it"><span class="l">執行後部位</span><span class="v">4 張 · 均 1,081.25</span></div>
+                    <div class="it"><span class="l">預估金額</span><span class="v brand" data-slot="t-pv-notional">--</span></div>
+                    <div class="it"><span class="l">手續費(估)</span><span class="v" data-slot="t-pv-fee">示意</span></div>
+                    <div class="it"><span class="l">執行後可用</span><span class="v" data-slot="t-pv-avail">--</span></div>
+                    <div class="it"><span class="l">執行後部位</span><span class="v" data-slot="t-pv-position">示意</span></div>
                   </div>
                 </div>
               </div>
 
-              <!-- ⑧ risk preview（示意 — 本頁下單票為唯讀版面示意，未接風控引擎即時判定） -->
+              <!-- ⑧ risk preview（真送出前的 riskCheck 結果，送出後由後端 guards 真填） -->
               <div class="panel risk">
-                <div class="rh"><span class="l">風控預覽 · 送出前 riskCheck</span><span class="v">示意</span></div>
-                <div class="rlist">
-                  <div class="ri pass"><i></i><span>單筆金額 ≤ 上限</span></div>
-                  <div class="ri pass"><i></i><span>可用資金充足</span></div>
-                  <div class="ri pass"><i></i><span>漲跌停區間內</span></div>
-                  <div class="ri warn"><i></i><span>集中度 21%（已持 2 張）</span></div>
+                <div class="rh"><span class="l">風控預覽 · 送出前 riskCheck</span><span class="v" data-slot="t-risk-summary">尚未送出</span></div>
+                <div class="rlist" data-slot="t-risk-list">
+                  <div class="ri"><i></i><span>送出後顯示真實 riskCheck 結果</span></div>
                 </div>
               </div>
 
-              <!-- submit（唯讀預覽版面：本頁未接下單送出，紅線見報告） -->
+              <!-- submit（真送出：僅 paper 通道，見報告紅線處置） -->
               <div class="submit-wrap">
-                <button class="submit" disabled aria-disabled="true">
-                  <b>唯讀預覽 · 尚未接上送單</b><span class="sub">下單流待另行實作</span>
+                <button class="submit" data-slot="t-submit">
+                  <b data-slot="t-submit-label">送出模擬單 · 買進 2 張</b><span class="sub">紙上單 Paper</span>
                 </button>
-                <div class="oneclick">本頁為版面預覽 <b>暫不接受送出</b> · 送單流程待實作後另行開通</div>
+                <div class="oneclick" data-slot="t-submit-msg">Paper 通道 <b>一鍵送出，無確認視窗</b> · 送出即進撮合</div>
                 <div class="liveex"><b>實盤通道</b> 停用 · 解鎖須另行授權<span class="lk">已鎖定</span></div>
               </div>
 
@@ -851,51 +850,48 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
 
           <!-- sticky order dock -->
           <div class="m2-dock">
-            <div class="m2-side">
-              <button class="buy on">買進<span class="t">BUY</span></button>
-              <button class="sell">賣出<span class="t">SELL</span></button>
+            <div class="m2-side" data-slot="m2t-side">
+              <button class="buy on" data-side="buy">買進<span class="t">BUY</span></button>
+              <button class="sell" data-side="sell">賣出<span class="t">SELL</span></button>
             </div>
 
             <!-- ★ 手機張/股閘門：全寬 segmented governs 數量 -->
             <div class="m2-lotrow">
               <div class="ll"><b>數量單位</b><span class="gate">1000× 風險閘門 · 必選</span></div>
-              <div class="lotsw big">
-                <button class="on">張<span class="u">LOT</span></button>
-                <button>股<span class="u">SHARE</span></button>
+              <div class="lotsw big" data-slot="m2t-unit">
+                <button class="on" data-unit="LOT">張<span class="u">LOT</span></button>
+                <button data-unit="SHARE">股<span class="u">SHARE</span></button>
               </div>
             </div>
 
             <div class="m2-qp">
               <div class="m2-fld">
-                <div class="l">數量 · 張<span>本單 2,000 股</span></div>
-                <div class="m2-step hasunit">
-                  <button class="sb">−</button><input value="2" /><button class="sb">＋</button><span class="unit-badge">張</span>
+                <div class="l">數量 · <span data-slot="m2t-qty-conv">本單 2,000 股</span></div>
+                <div class="m2-step hasunit" data-slot="m2t-qty-step">
+                  <button class="sb" data-act="minus">−</button><input data-slot="m2t-qty" value="2" /><button class="sb" data-act="plus">＋</button><span class="unit-badge" data-slot="m2t-unit-badge">張</span>
                 </div>
               </div>
               <div class="m2-fld">
                 <div class="l">委託價 · 限價<span>升降 0.50</span></div>
-                <div class="m2-step">
-                  <button class="sb">−</button><input value="1,085.00" /><button class="sb">＋</button>
+                <div class="m2-step" data-slot="m2t-price-step">
+                  <button class="sb" data-act="minus">−</button><input data-slot="m2t-price" value="1085.00" /><button class="sb" data-act="plus">＋</button>
                 </div>
               </div>
             </div>
 
-            <div class="m2-risk">
-              <div class="ri"><i></i>金額 ≤ 上限</div>
-              <div class="ri"><i></i>資金充足</div>
-              <div class="ri"><i></i>漲跌停內</div>
-              <div class="ri warn"><i></i>集中度 21%</div>
+            <div class="m2-risk" data-slot="m2t-risk-list">
+              <div class="ri"><i></i>送出後顯示真實 riskCheck 結果</div>
             </div>
 
             <div class="m2-money">
               <div class="mi"><div class="l">可用資金</div><div class="v avail" data-slot="m2-cap-avail">--</div></div>
-              <div class="mi"><div class="l">預估金額</div><div class="v est">2,170,000</div></div>
+              <div class="mi"><div class="l">預估金額</div><div class="v est" data-slot="m2t-pv-notional">--</div></div>
               <span class="honest">未經券商<br>回報對帳</span>
             </div>
 
-            <button class="m2-submit" disabled aria-disabled="true">
-              <b>唯讀預覽 · 尚未接上送單</b>
-              <span class="sub">下單流待另行實作</span>
+            <button class="m2-submit" data-slot="m2t-submit">
+              <b data-slot="m2t-submit-label">送出模擬單 · 買進 2 張</b>
+              <span class="sub" data-slot="m2t-submit-msg">紙上單 Paper · 一鍵送出無確認視窗</span>
             </button>
           </div>
 
@@ -910,6 +906,12 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   var HERO_SYMBOL = "2330";
   var WL_SYMBOLS = ["2330", "2454", "2382", "2317", "3661", "2881", "3035", "2618", "3443", "2308"];
   var M2_CHIP_SYMBOLS = ["2330", "2454", "2382", "2317"];
+  var latestAvailableCashTWD = null; // set by renderCapital(), read by the ticket controller
+  // TWSE odd-lot bound (packages/contracts/src/paper.ts TWSE_ODD_LOT_MAX_SHARES =
+  // TWSE_BOARD_LOT_SHARES-1). Fixed exchange rule, not business logic — safe to
+  // mirror as a constant instead of importing the contracts package into this
+  // static page.
+  var TWSE_ODD_LOT_MAX_SHARES = 999;
 
   function qsa(name) {
     return Array.prototype.slice.call(document.querySelectorAll('[data-slot="' + name + '"]'));
@@ -953,11 +955,16 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     });
   }
 
-  function apiFetch(path) {
+  function apiFetch(path, opts) {
+    var method = (opts && opts.method) || "GET";
+    var headers = { "x-workspace-slug": WORKSPACE_SLUG };
+    if (opts && opts.body != null) headers["Content-Type"] = "application/json";
     return fetch("/api/ui-final-v031/backend?path=" + encodeURIComponent(path), {
+      method: method,
       credentials: "include",
       cache: "no-store",
-      headers: { "x-workspace-slug": WORKSPACE_SLUG }
+      headers: headers,
+      body: opts && opts.body != null ? opts.body : undefined
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (body) {
         return { ok: res.ok, status: res.status, body: body };
@@ -1144,6 +1151,10 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       }
       setText("cap-note-txt", "動用資金 " + fmtInt(invested) + " 為報酬分母 · 缺價部位另標不計 0");
       setText("m2-cap-avail", fmtInt(avail));
+      // Ticket controller (下單票) reads this for the honest "執行後可用"
+      // preview line — real number from the same paper/portfolio fetch, not
+      // a second guess.
+      latestAvailableCashTWD = avail;
 
       return { positionCount: summary.positionCount };
     });
@@ -1213,6 +1224,294 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     });
     return Promise.all([fills, kgi]);
   }
+
+  // ── 下單票（真送出，僅 paper 通道 — 見交付報告紅線處置）──────────────────
+  // 只接 paper 通道：實盤/KGI SIM 完全不呼叫。orderCond/session/timeInForce
+  // 固定為此原稿票面唯一支援的組合（現股 · 整股 · ROD——原稿委託類型欄位本來
+  // 就只有「限價」一個 option，沒有零股/融資融券/當沖選擇器，不無中生有加控件）；
+  // quantity_unit 必填無 default，跟著 UI 的張/股切換走。
+  var RISK_GUARD_LABELS = {
+    max_per_trade: "單筆金額 ≤ 上限",
+    max_daily_loss: "單日虧損 ≤ 上限",
+    max_single_position: "單一標的集中度",
+    max_theme_correlated: "同主題曝險",
+    max_gross_exposure: "總曝險 ≤ 上限",
+    max_open_orders: "未平倉委託數",
+    max_orders_per_minute: "每分鐘委託頻率",
+    max_absolute_notional: "單筆金額 ≤ 上限",
+    symbol_whitelist: "白名單限制",
+    symbol_blacklist: "黑名單限制",
+    duplicate_order: "重複委託防呆",
+    stale_quote: "報價過舊",
+    trading_hours: "交易時段",
+    broker_disconnected: "券商連線中斷",
+    reconcile_mismatch: "對帳不一致",
+    kill_switch: "停止交易開關",
+    manual_disable: "人工停用"
+  };
+  var ORDER_RULE_REASON_LABELS = {
+    MARKET_ORDER_TIF_INVALID: "市價單僅允許 IOC 或 FOK",
+    ODD_LOT_SESSION_TIF_INVALID: "零股／盤後委託效期不合法",
+    PRICE_TICK_INVALID: "限價不在合法升降單位上",
+    PRICE_LIMIT_EXCEEDED: "限價超出漲跌停區間",
+    ODD_LOT_CASH_ONLY: "零股／盤後定價僅支援現股",
+    LOT_QUANTITY_INVALID: "整股委託數量須為整張倍數",
+    ODD_LOT_QUANTITY_INVALID: "零股委託股數須介於 1–999 股"
+  };
+
+  var accountsCache = null;
+  function loadPaperAccountId() {
+    var ready = accountsCache ? Promise.resolve(accountsCache) : apiFetch("/api/v1/uta/accounts").then(function (res) {
+      accountsCache = res.ok ? (unwrap(res.body) || []) : [];
+      return accountsCache;
+    });
+    return ready.then(function (accounts) {
+      var match = (accounts || []).find(function (a) { return a && a.adapterKey === "paper"; });
+      return match ? String(match.id) : "";
+    });
+  }
+
+  function renderRiskGuards(scopePrefix, riskCheck) {
+    var listEl = document.querySelector('[data-slot="' + scopePrefix + '-risk-list"]');
+    var summaryEl = document.querySelector('[data-slot="' + scopePrefix + '-risk-summary"]');
+    if (summaryEl) {
+      summaryEl.textContent = riskCheck.decision === "allow" ? "通過" : riskCheck.decision === "warn" ? "警示" : "攔截";
+    }
+    if (!listEl) return;
+    var guards = Array.isArray(riskCheck.guards) ? riskCheck.guards : [];
+    if (!guards.length) {
+      listEl.innerHTML = '<div class="ri pass"><i></i><span>本單無觸發任何風控條件</span></div>';
+      return;
+    }
+    listEl.innerHTML = guards.map(function (g) {
+      // CSS only ships .ri.pass (green ✓) / .ri.warn (amber !) — no dedicated
+      // "block/danger" variant to invent (byte-exact CSS, no new classes).
+      // Reuse .warn for both "block" and "warn" decisions so a real block is
+      // at least visually distinct from a passing guard, instead of falling
+      // through to unstyled plain text.
+      var cls = g.decision === "allow" ? "pass" : "warn";
+      var label = RISK_GUARD_LABELS[g.guard] || g.guard;
+      var msg = g.message ? (label + "：" + g.message) : label;
+      return '<div class="ri ' + cls + '"><i></i><span>' + escapeHtml(msg) + '</span></div>';
+    }).join("");
+  }
+
+  function unifiedBlockedMessage(data) {
+    var guards = data && data.riskCheck && Array.isArray(data.riskCheck.guards) ? data.riskCheck.guards : [];
+    var blocked = guards.filter(function (g) { return g && g.decision === "block"; }).map(function (g) { return RISK_GUARD_LABELS[g.guard] || g.guard; });
+    if (blocked.length) return "未通過：" + blocked.join("、");
+    var gate = data && data.quoteGate;
+    if (gate && gate.blocked) {
+      if (gate.freshnessStatus === "stale") return "報價過舊，暫不能送出委託";
+      if (gate.readiness === "blocked") return "報價資料目前不可用";
+      return "報價檢查未通過，暫不能送出委託";
+    }
+    return "委託未通過風控檢查";
+  }
+
+  // scopePrefix: "t" (desktop) | "m2t" (mobile). Each ticket is an
+  // independently-wired DOM subtree (both exist in the DOM at once; only one
+  // is visible per breakpoint via the iso-override media queries), so each
+  // gets its own controller instance rather than sharing mutable state.
+  function wireTicket(scopePrefix) {
+    var slot = function (name) { return document.querySelector('[data-slot="' + scopePrefix + name + '"]'); };
+    var sideRoot = slot("-side"); // "t-side" (desktop) or "m2t-side" (mobile)
+    var qtyInput = slot("-qty");
+    var priceInput = slot("-price");
+    var unitRoot = slot("-unit");
+    var unitBadge = slot("-unit-badge");
+    var qtyConvEl = slot("-qty-conv");
+    var pvNotionalEl = slot("-pv-notional");
+    var pvAvailEl = slot("-pv-avail"); // desktop only
+    var submitBtn = slot("-submit");
+    var submitLabelEl = slot("-submit-label");
+    var submitMsgEl = slot("-submit-msg");
+    if (!sideRoot || !qtyInput || !priceInput || !unitRoot || !submitBtn) return; // markup not present for this scope
+
+    function currentSide() {
+      var on = sideRoot.querySelector(".on");
+      return on && on.dataset.side === "sell" ? "sell" : "buy";
+    }
+    function currentUnit() {
+      var on = unitRoot.querySelector(".on");
+      return on && on.dataset.unit === "SHARE" ? "SHARE" : "LOT";
+    }
+    function currentQty() { return Math.max(0, Math.round(Number(qtyInput.value) || 0)); }
+    function currentPrice() { return Math.max(0, Number(priceInput.value) || 0); }
+
+    function refreshPreviewNumbers() {
+      var unit = currentUnit();
+      var qty = currentQty();
+      var price = currentPrice();
+      var shares = unit === "LOT" ? qty * 1000 : qty;
+      var notional = shares * price;
+      if (qtyConvEl) {
+        // Desktop's .qty-conv line has room for the full explanation; mobile's
+        // .m2-fld .l inline slot is a short label (original design intent:
+        // "本單 2,000 股"), so keep it to just the converted share count there.
+        var isCompact = scopePrefix.indexOf("m2") === 0;
+        qtyConvEl.innerHTML = isCompact
+          ? "本單 <b>" + fmtInt(shares) + " 股</b>"
+          : (unit === "LOT"
+            ? "目前 <b>張</b> 模式 · 1 張 = 1,000 股 · 本單 <b>" + qty + " 張 → " + fmtInt(shares) + " 股</b>"
+            : "目前 <b>股</b> 模式 · 零股 1–999 股 · 本單 <b>" + fmtInt(shares) + " 股</b>");
+      }
+      if (unitBadge) unitBadge.textContent = unit === "LOT" ? "張" : "股";
+      if (pvNotionalEl) pvNotionalEl.textContent = notional > 0 ? fmtInt(notional) + "元" : "--";
+      if (pvAvailEl) {
+        pvAvailEl.textContent = latestAvailableCashTWD != null && notional > 0
+          ? fmtInt(latestAvailableCashTWD - notional)
+          : "--";
+      }
+      var side = currentSide();
+      var sideLabel = side === "buy" ? "買進" : "賣出";
+      var qtyLabel = qty + (unit === "LOT" ? " 張" : " 股");
+      if (submitLabelEl) submitLabelEl.textContent = "送出模擬單 · " + sideLabel + " " + qtyLabel;
+    }
+
+    function validate() {
+      var qty = currentQty();
+      var price = currentPrice();
+      var unit = currentUnit();
+      if (!(qty > 0)) return "請輸入有效數量";
+      if (unit === "SHARE" && qty > TWSE_ODD_LOT_MAX_SHARES) return "零股股數須介於 1–" + TWSE_ODD_LOT_MAX_SHARES + " 股";
+      if (!(price > 0)) return "請輸入有效委託價";
+      return null;
+    }
+
+    function setSubmitBusy(disabled) {
+      submitBtn.disabled = disabled;
+      if (disabled) submitBtn.setAttribute("aria-disabled", "true"); else submitBtn.removeAttribute("aria-disabled");
+    }
+
+    sideRoot.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        sideRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+        btn.classList.add("on");
+        refreshPreviewNumbers();
+      });
+    });
+    unitRoot.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        unitRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+        btn.classList.add("on");
+        refreshPreviewNumbers();
+      });
+    });
+    [
+      { input: qtyInput, step: 1, min: 1 },
+      { input: priceInput, step: 0.5, min: 0.5 }
+    ].forEach(function (cfg) {
+      var wrap = cfg.input.parentElement;
+      if (!wrap) return;
+      var minus = wrap.querySelector('[data-act="minus"]');
+      var plus = wrap.querySelector('[data-act="plus"]');
+      if (minus) minus.addEventListener("click", function () {
+        var v = Number(cfg.input.value) || 0;
+        cfg.input.value = String(Math.max(cfg.min, v - cfg.step));
+        refreshPreviewNumbers();
+      });
+      if (plus) plus.addEventListener("click", function () {
+        var v = Number(cfg.input.value) || 0;
+        cfg.input.value = String(v + cfg.step);
+        refreshPreviewNumbers();
+      });
+      cfg.input.addEventListener("input", refreshPreviewNumbers);
+    });
+
+    submitBtn.addEventListener("click", function () {
+      var invalidReason = validate();
+      if (invalidReason) {
+        if (submitMsgEl) submitMsgEl.textContent = invalidReason;
+        return;
+      }
+      var side = currentSide();
+      var unit = currentUnit();
+      var qty = currentQty();
+      var price = currentPrice();
+      setSubmitBusy(true);
+      if (submitMsgEl) submitMsgEl.textContent = "送單中…";
+
+      var basePayload = {
+        symbol: HERO_SYMBOL,
+        side: side,
+        orderType: "limit",
+        qty: qty,
+        quantity_unit: unit,
+        price: price
+      };
+
+      // Step 1: dry-run preview (existing /api/v1/paper/preview) for a real
+      // riskCheck read-out before the real submit.
+      apiFetch("/api/v1/paper/preview", {
+        method: "POST",
+        body: JSON.stringify(Object.assign({ idempotencyKey: "desk_exact_preview_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2) }, basePayload))
+      }).then(function (previewRes) {
+        var previewData = previewRes.ok ? unwrap(previewRes.body) : null;
+        if (previewData && previewData.riskCheck) renderRiskGuards(scopePrefix, previewData.riskCheck);
+        return loadPaperAccountId();
+      }).then(function (accountId) {
+        if (!accountId) {
+          if (submitMsgEl) submitMsgEl.textContent = "找不到模擬帳號，請重新整理後再試";
+          setSubmitBusy(false);
+          return null;
+        }
+        var orderPayload = {
+          accountId: accountId,
+          symbol: basePayload.symbol,
+          side: basePayload.side,
+          type: basePayload.orderType,
+          quantity: basePayload.qty,
+          quantity_unit: basePayload.quantity_unit,
+          price: basePayload.price,
+          // Fixed to this ticket's only supported combination (現股 · 整股 ·
+          // ROD) — 原稿委託類型欄位只有「限價」一個 option，沒有零股/融資
+          // 融券/當沖/session 選擇器，不無中生有加控件（見交付報告）。
+          orderCond: "cash",
+          session: "regular",
+          timeInForce: "rod"
+        };
+        return apiFetch("/api/v1/trading/orders", { method: "POST", body: JSON.stringify(orderPayload) });
+      }).then(function (result) {
+        if (!result) return;
+        if (result.status === 409) {
+          var body409 = result.body || {};
+          if (submitMsgEl) submitMsgEl.textContent = body409.error === "channel_coming_soon" ? "此券商通道即將開放，敬請期待" : "券商通道暫不可用";
+          setSubmitBusy(false);
+          return;
+        }
+        if (!result.ok) {
+          var data = result.body && result.body.data;
+          if (submitMsgEl) submitMsgEl.textContent = data ? unifiedBlockedMessage(data) : "紙上單未通過";
+          setSubmitBusy(false);
+          return;
+        }
+        var order = result.body && result.body.data && result.body.data.order;
+        if (order && order.status === "rejected") {
+          if (submitMsgEl) submitMsgEl.textContent = ORDER_RULE_REASON_LABELS[order.reason] || "委託未通過（不合法的買法組合）";
+          setSubmitBusy(false);
+          return;
+        }
+        var orderId = order && order.id ? String(order.id) : "";
+        if (submitMsgEl) submitMsgEl.textContent = orderId ? "紙上單 #" + orderId.slice(-8) + " 已送出" : "紙上單已送出";
+        setSubmitBusy(false);
+        // Refresh the ledger table + capital summary so the new order/updated
+        // cash shows up without a full page reload.
+        renderLedger();
+        renderCapital();
+      }).catch(function () {
+        if (submitMsgEl) submitMsgEl.textContent = "送單時發生連線錯誤，請稍後再試";
+        setSubmitBusy(false);
+      });
+    });
+
+    refreshPreviewNumbers();
+  }
+
+  // Ticket wiring is pure DOM/event-listener setup — runs immediately, not
+  // gated on the network hydration below.
+  wireTicket("t");
+  wireTicket("m2t");
 
   Promise.all([
     renderGateway(),
