@@ -12517,22 +12517,40 @@ body:has(.tactical-dashboard) .app-sidebar {
   container-type: size;
 }
 .tac-ledger .tile .tl { display: flex; gap: 4px; align-items: baseline; min-width: 0; }
-.tac-ledger .tile b { font-size: 10px; font-weight: 700; color: #f2f3f5; letter-spacing: .02em; flex: none; }
+/* line-height fix (2026-07-15): body 全站 mono 字型的瀏覽器預設 line-height 在
+   JetBrains Mono 下實測 ~1.68（跟原稿 artifact 站台字型 Cascadia Mono 的預設值不同），
+   單純逐值搬字級數字不夠——同樣的 font-size 在不同字型 line-height 下佔用的實際
+   行高差很多，會讓 tl（代碼）+ pc（漲跌%）兩行擠在 31px/22px 磚高時真的溢出磚界、
+   疊到下一列磚（Elva prod 1920 實測 2327/2408 疊字案例根源）。明確鎖 line-height，
+   不依賴繼承，磚格文字大小才是唯一可靠的高度預算依據。 */
+.tac-ledger .tile b { font-size: 10px; font-weight: 700; color: #f2f3f5; letter-spacing: .02em; flex: none; line-height: 1.1; }
 .tac-ledger .tile .nm { font-family: var(--sans-tc); font-size: 8.5px; color: rgba(255,255,255,.72); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tac-ledger .tile .pc { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; align-self: flex-end; color: #fff; white-space: nowrap; }
+.tac-ledger .tile .pc { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; align-self: flex-end; color: #fff; white-space: nowrap; line-height: 1.1; }
 .tac-ledger .tile.wide b { font-size: 11.5px; }
 .tac-ledger .tile.wide .pc { font-size: 12px; }
 .tac-ledger .tile.wide .nm { font-size: 9px; }
 .tac-ledger .tile.hero b { font-size: 16px; }
 .tac-ledger .tile.hero .pc { font-size: 17px; }
 .tac-ledger .tile.hero .nm { font-size: 10px; }
-.tac-ledger .tile.hero .meta { font-family: var(--sans-tc); font-size: 8.5px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tac-ledger .tile.hero .meta { font-family: var(--sans-tc); font-size: 8.5px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
 .tac-ledger .tile:hover,
 .tac-ledger .tile:focus-visible { outline: 2px solid var(--lg-amber-hi); outline-offset: -2px; z-index: 2; }
 .tac-ledger .tile:hover .tac-heat-tooltip,
 .tac-ledger .tile:focus-visible .tac-heat-tooltip { opacity: 1; transform: translateY(0); }
 @container (max-width: 58px) { .tac-ledger .tile .nm { display: none; } }
 @container (max-height: 34px) { .tac-ledger .tile .nm { display: none; } }
+/* 窄磚自適應第二層（2026-07-15，1280 斷點磚型精算後仍實測需要）：1280 下一般密磚
+   縮到 38×22px，即使 .nm 已被上面兩條規則藏起，代碼+漲跌%兩行在 line-height:1.1
+   仍塞不進 22px 磚高，且 .pc 本身字寬（如 "-6.23%"）在 38px 磚寬下也貼著邊界。
+   縮字級（非改版面/非砍內容）讓兩行都留出安全邊界，磚格 overflow:hidden 保底兜住
+   極端情況，不靠它當第一道防線。 */
+@container (max-height: 26px) {
+  .tac-ledger .tile { padding: 2px 3px; }
+  .tac-ledger .tile b,
+  .tac-ledger .tile.wide b { font-size: 8px; }
+  .tac-ledger .tile .pc,
+  .tac-ledger .tile.wide .pc { font-size: 8px; }
+}
 
 /* 台股慣例：紅漲綠跌，10 階固定色階（原稿逐值） */
 .tac-ledger .tile.u5 { background: #8f1f28; }
