@@ -55,6 +55,11 @@ type PreparedTile = IndustryHeatmapTile & {
   weightLabel: string;
   displayPct: number;
   displayChange: number | null;
+  /** true = 這檔不在固定代表名單內，是缺角遞補進來的候選股（2026-07-14
+   * 楊董定案：市面熱力圖標準做法——永遠是有行情的真公司，缺誰就從候選
+   * 序列遞補真公司，不留洞、不用灰塊佔位）。同一支股票在不同分頁
+   * （全部 vs 個別產業）可能一邊是固定代表、一邊是遞補，此旗標只對單次
+   * primaryRowsForSector() 呼叫的回傳結果有意義，不寫回 prepared 原始物件。 */
   isSupplemental?: boolean;
 };
 
@@ -576,10 +581,13 @@ function preparedWeight(tile: IndustryHeatmapTile, fallbackRank: number) {
   };
 }
 
+// 產出「全宇宙候選池」——不限於固定代表名單，任何回傳可驗證行情且能
+// 判斷所屬產業的個股都留著，給 primaryRowsForSector() 在代表股缺角時
+// 當真公司遞補候選（2026-07-14 楊董定案：缺角要遞補真公司，不是灰塊）。
 function prepareTiles(heatmap: IndustryHeatmapTile[]) {
   const rowsBySymbol = new Map<string, PreparedTile>();
 
-  function addTile(tile: IndustryHeatmapTile, index: number, sectorOverride?: RepresentativeSectorKey, supplemental = false) {
+  function addTile(tile: IndustryHeatmapTile, index: number) {
     const symbol = tile.symbol.trim();
     if (!symbol) return;
     const normalizedTile = {
@@ -588,7 +596,7 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
       name: representativeCompanyName(symbol, tile.name),
     };
     if (!isUsableTile(normalizedTile)) return;
-    const sectorKey = sectorOverride ?? normalizeSector(normalizedTile);
+    const sectorKey = normalizeSector(normalizedTile);
     if (!sectorKey) return;
 
     const move = deriveMove(normalizedTile);
@@ -606,11 +614,9 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
       rank,
       displayPct,
       displayChange,
-      isSupplemental: supplemental,
       ...weight,
     };
-    const existing = rowsBySymbol.get(symbol);
-    if (!existing || (existing.isSupplemental && !supplemental)) {
+    if (!rowsBySymbol.has(symbol)) {
       rowsBySymbol.set(symbol, prepared);
     }
   }
@@ -623,9 +629,6 @@ function prepareTiles(heatmap: IndustryHeatmapTile[]) {
 }
 
 function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
-  const leftHasData = left.sourceState !== "no_data";
-  const rightHasData = right.sourceState !== "no_data";
-  if (leftHasData !== rightHasData) return leftHasData ? -1 : 1;
   const tradingDelta = (right.tradingValue ?? 0) - (left.tradingValue ?? 0);
   if (Math.abs(tradingDelta) > 0.001) return tradingDelta;
   const weightDelta = right.areaWeight - left.areaWeight;
@@ -635,6 +638,14 @@ function sortByHeatmapPriority(left: PreparedTile, right: PreparedTile) {
   return left.rank - right.rank;
 }
 
+// 市面熱力圖標準做法（2026-07-14 楊董定案，糾正先前的灰磚佔位方案）：
+// 固定代表名單裡缺可驗證行情的幾檔，不留洞、不畫灰塊，而是從「候選序列」
+// 遞補等量的其他真公司真行情進來——候選序列＝同一分類池（sectorKey 相同，
+// "全部" 則不限分類）裡尚未被選進來、且已通過 sanity gate 的個股，依成交值
+// /權重排序遞補（sortByHeatmapPriority 跟固定代表股用同一套排序，遞補股
+// 插入後重新排序決定 hero/wide/密磚 slot，語意跟原稿「依成交值優先排序」
+// 一致）。遞補股標記 isSupplemental=true，只給這次呼叫的回傳陣列使用，不
+// 寫回 prepared 共用物件（同一支股票在別的分頁可能是固定代表）。
 function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
   const bySymbol = new Map(prepared.map((tile) => [tile.symbol, tile] as const));
   const fixedSymbols = representativeSymbolsForSector(sectorKey);
@@ -642,15 +653,20 @@ function primaryRowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
     .map((symbol) => bySymbol.get(symbol))
     .filter((tile): tile is PreparedTile => Boolean(tile));
 
-  if (sectorKey === "all") {
-    return fixedRows
-      .sort(sortByHeatmapPriority)
-      .slice(0, MAX_TILES_ALL);
+  const target = sectorKey === "all" ? MAX_TILES_ALL : MAX_TILES_PER_SECTOR;
+  if (fixedRows.length >= target) {
+    return fixedRows.sort(sortByHeatmapPriority).slice(0, target);
   }
 
-  return fixedRows
+  const pickedSymbols = new Set(fixedRows.map((tile) => tile.symbol));
+  const candidatePool = sectorKey === "all" ? prepared : prepared.filter((tile) => tile.sectorKey === sectorKey);
+  const backfill = candidatePool
+    .filter((tile) => !pickedSymbols.has(tile.symbol))
     .sort(sortByHeatmapPriority)
-    .slice(0, MAX_TILES_PER_SECTOR);
+    .slice(0, target - fixedRows.length)
+    .map((tile) => ({ ...tile, isSupplemental: true }));
+
+  return [...fixedRows, ...backfill].sort(sortByHeatmapPriority).slice(0, target);
 }
 
 function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
@@ -660,16 +676,17 @@ function rowsForSector(prepared: PreparedTile[], sectorKey: SectorKey) {
 function buildOptions(prepared: PreparedTile[]): SectorOption[] {
   return SECTORS.map((sector) => {
     const primaryRows = primaryRowsForSector(prepared, sector.key);
-    const rowsWithData = primaryRows.filter((tile) => tile.sourceState !== "no_data");
-    const avgPct = rowsWithData.length > 0
-      ? rowsWithData.reduce((sum, tile) => sum + tile.displayPct, 0) / rowsWithData.length
+    const avgPct = primaryRows.length > 0
+      ? primaryRows.reduce((sum, tile) => sum + tile.displayPct, 0) / primaryRows.length
       : null;
     return {
       ...sector,
       count: primaryRows.length,
-      availableCount: rowsWithData.length,
+      availableCount: primaryRows.length,
       target: representativeSymbolsForSector(sector.key).length,
       avgPct,
+      // primaryRows 現在只會有真的有行情的公司（固定代表或遞補候選都一樣
+      // 是通過 sanity gate 的真報價），hasData 看陣列長度即可。
       hasData: primaryRows.length > 0,
     };
   });
@@ -706,7 +723,8 @@ function tileVariantForRank(index: number): TileVariant {
 // 原稿固定 10 階色階（u1-5 漲／d1-5 跌／z0 平盤），依 |pct| 相對於 3%（既有
 // 熱力圖飽和度基準，見 heat-scale「≤-3% / ≥+3%」）切 5 個等距桶：
 // 0.6/1.2/1.8/2.4% 為桶界，對應 3% 的 20/40/60/80%。
-function pctBucketClass(pct: number): string {
+function pctBucketClass(pct: number | null): string {
+  if (pct === null || !Number.isFinite(pct)) return "z0";
   const abs = Math.abs(pct);
   if (abs < 0.01) return "z0";
   const sign = pct > 0 ? "u" : "d";
@@ -792,8 +810,10 @@ function TileTooltip({ tile }: { tile: PreparedTile }) {
 }
 
 // 原稿磚：離散 CSS Grid 磚（.tile/.tile.hero/.tile.wide），固定 10 階色階，
-// 不再是連續 --heat 漸層。isNoData 磚在 prepareTiles 階段已被濾掉（原稿「未
-// 渲染為灰塊」規則），這裡不需要再處理灰塊分支。
+// 不再是連續 --heat 漸層。缺可驗證行情的代表股不再渲染成灰塊佔位——
+// primaryRowsForSector() 已經用候選序列遞補了等量真公司真行情進來，這裡
+// 收到的 tile 一律是有效報價（2026-07-14 楊董定案：市面熱力圖標準做法，
+// grid 永遠是有行情的真公司，缺誰就遞補誰，不留洞也不畫灰塊）。
 function HeatmapTile({ tile, variant }: { tile: PreparedTile; variant: TileVariant }) {
   const isStale = tile.sourceState === "twse_eod" || tile.sourceState === "cache";
   const bucket = pctBucketClass(tile.displayPct);
@@ -856,12 +876,16 @@ export function IndustryHeatmap({
   const activeOption = options.find((option) => option.key === activeKey) ?? options[0];
   const selectedRows = useMemo(() => rowsForSector(prepared, activeKey), [prepared, activeKey]);
   const selectedAvg = activeOption?.avgPct ?? null;
-  const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
-  const availableRows = selectedRows.filter((tile) => tile.sourceState !== "no_data").length;
+  const availableRows = selectedRows.length;
+  const hasEnoughForProduct = availableRows >= MIN_PRODUCT_COUNT;
   const representativeTarget = representativeSymbolsForSector(activeKey).length;
-  const missingRepresentativeCount = Math.max(0, representativeTarget - availableRows);
-  const missingRepresentativeNote = missingRepresentativeCount > 0
-    ? `${missingRepresentativeCount} 檔代表股缺可驗證行情，未渲染為灰塊`
+  // 缺角遞補揭露（2026-07-14 楊董定案）：固定代表股缺可驗證行情時改遞補
+  // 其他真公司真行情，不再是「缺 N 檔」的負面措辭，而是誠實標示「核心＋
+  // 遞補」的組成，讓操作員知道這是真公司只是不在原本固定代表名單內。
+  const backfillCount = selectedRows.filter((tile) => tile.isSupplemental).length;
+  const coreCount = availableRows - backfillCount;
+  const missingRepresentativeNote = backfillCount > 0
+    ? `${availableRows} 檔代表池 · ${coreCount} 核心＋${backfillCount} 遞補`
     : null;
   const sourceBreakdown = useMemo(() => buildSourceBreakdown(selectedRows), [selectedRows]);
 

@@ -53,11 +53,16 @@ describe("industry heatmap representative pool source gate", () => {
     }
   });
 
-  it("does not render missing representative quotes as gray tiles", () => {
+  // 2026-07-14 楊董抓到「哪一家的熱力圖會缺角??」，糾正版：市面熱力圖標準
+  // 做法——不留洞、不畫灰塊，固定代表股缺可驗證行情時從候選序列遞補等量
+  // 真公司真行情進來（isSupplemental 標記），grid 永遠是有行情的真公司。
+  it("backfills missing representative quotes with real substitute companies instead of gray placeholder tiles", () => {
     expect(source).toContain('if (tile.sourceState === "no_data") return false;');
-    expect(source).not.toContain("representativeNoDataTile");
-    expect(source).not.toContain("固定代表股池；此檔暫無可驗證行情");
-    expect(source).toContain("未渲染為灰塊");
+    expect(source).not.toContain("placeholder?: boolean");
+    expect(source).not.toContain("無行情");
+    expect(source).toContain("isSupplemental?: boolean");
+    expect(source).toContain("const candidatePool = sectorKey === \"all\" ? prepared : prepared.filter((tile) => tile.sectorKey === sectorKey);");
+    expect(source).toContain("核心＋${backfillCount} 遞補");
   });
   it("keeps every tile readable with both ticker and company name (2026-07-14 discrete artifact-grid tiles: name is always in markup, only CSS container-query hides it on the tiniest cells)", () => {
     expect(source).toContain('<span className="nm">{tile.name}</span>');

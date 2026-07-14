@@ -12318,31 +12318,6 @@ body:has(.tactical-dashboard) .app-sidebar {
   margin-top: 16px;
 }
 
-/* 首頁 IA 審計 A 案（2026-07-10）：BrokerConnectionLine — 取代 PaperPanel 的
-   6 步管線＋4 張底卡，只留「券商連線狀態」一行。 */
-.tac-broker-line {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-  padding: 10px 16px;
-  border: 1px solid var(--tac-line);
-  border-radius: 6px;
-  background: rgba(11, 16, 23, 0.88);
-}
-
-.tac-broker-line span {
-  color: var(--tac-fg-1);
-  font: 760 12px/1.35 var(--sans-tc);
-}
-
-.tac-broker-line small {
-  color: var(--tac-fg-3);
-  font: 700 11px/1.3 var(--sans-tc);
-  margin-left: auto;
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    首頁 v5.1 LEDGER 版面（2026-07-13）— 逐塊移植楊董核定 artifact 41de1bc9
    「編輯版面」真原稿 markup/CSS class（masthead 五欄／巨型指數錨點／熱力
