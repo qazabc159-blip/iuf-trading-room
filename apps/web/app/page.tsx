@@ -16,7 +16,6 @@ import {
   getMarketDataOverview,
   getMarketIntelAnnouncements,
   getNewsTop10,
-  getKgiQuoteStatus,
   getTwseMarketHeatmap,
   getTwseMarketOverview,
   type AiRecommendationV3Response,
@@ -24,7 +23,6 @@ import {
   type KgiCoreHeatmap,
   type KgiCoreHeatmapTile,
   type KgiMarketOverview,
-  type KgiQuoteStatus,
   type LabStrategySnapshot,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
@@ -40,7 +38,6 @@ import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
 import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-rows";
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
-import { getPaperHealth, type PaperHealthState } from "@/lib/paper-orders-api";
 import { getTrackRecordNav, type TrackRecordNavSummary } from "@/lib/fauto-sim-api";
 import { MISSING_COMPANY_NAME_LABEL } from "@/lib/ui-vocab";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
@@ -123,14 +120,6 @@ type MarketIntelDashboard = {
     owner: string;
     nextAction: string;
   };
-};
-
-type BrokerAccessDashboard = {
-  formalReadOnlyConnected: boolean;
-  quoteDisabled: boolean;
-  tickSubscriptions: number;
-  bidAskSubscriptions: number;
-  note: string;
 };
 
 type RealtimeMarketDashboard = {
@@ -222,7 +211,6 @@ async function load<T>(
 }
 
 // ── Per-fetch timeout wrapper ─────────────────────────────────────────────────
-const FETCH_SOFT_MS = 8000;
 const FETCH_MARKET_MS = 15000; // TWSE EOD can be slow on cold cache; backend 3s internal timeout + 5min cache
 const KGI_MARKET_ENDPOINT_MS = 3500;
 const FETCH_PRODUCT_MS = 12000; // brief/recommendations/S1 product truth
@@ -538,34 +526,6 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
     (value) => value.state === "MISSING",
     "今天尚未產生每日簡報。",
   );
-}
-
-async function loadPaperHealthState(): Promise<LoadState<PaperHealthState | null>> {
-  return load("Paper Health", null, async () => getPaperHealth(), (value) => value === null, "紙上交易健康檢查目前沒有回傳資料。");
-}
-
-function brokerAccessFromStatus(status: KgiQuoteStatus): BrokerAccessDashboard {
-  const tickSubscriptions = status.subscribed_symbols?.tick?.length ?? 0;
-  const bidAskSubscriptions = status.subscribed_symbols?.bidask?.length ?? 0;
-  return {
-    formalReadOnlyConnected: Boolean(status.kgi_logged_in),
-    quoteDisabled: Boolean(status.quote_disabled_flag),
-    tickSubscriptions,
-    bidAskSubscriptions,
-    note: status.kgi_logged_in ? "正式券商環境已登入；首頁維持只讀，不提供真實委託入口。" : "正式券商環境尚未回報登入狀態；首頁只顯示紙上交易與風控。",
-  };
-}
-
-async function loadBrokerAccessState(): Promise<LoadState<BrokerAccessDashboard | null>> {
-  const updatedAt = nowIso();
-  try {
-    const data = brokerAccessFromStatus(await getKgiQuoteStatus());
-    return { state: "LIVE", data, updatedAt, source: "正式券商只讀狀態" };
-  } catch {
-    const offHours = isKgiGatewayScheduledOff(new Date());
-    const reason = offHours ? "EC2 排程 14:10 關機（正常）；明日 09:00 自動開機。" : "正式券商只讀狀態暫時無法確認；首頁仍維持紙上交易與風控流程。";
-    return { state: "EMPTY", data: null, updatedAt, source: "正式券商只讀狀態", reason };
-  }
 }
 
 async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDashboard | null>> {
@@ -1504,24 +1464,6 @@ function NewsTape({ intel }: { intel: LoadState<MarketIntelDashboard> }) {
   );
 }
 
-function BrokerConnectionLine({
-  paper,
-  broker,
-}: {
-  paper: LoadState<PaperHealthState | null>;
-  broker: LoadState<BrokerAccessDashboard | null>;
-}) {
-  const brokerReady = Boolean(broker.data?.formalReadOnlyConnected);
-  const label = brokerReady ? "正式只讀已連線" : paper.data?.previewReady ? "紙上可預覽" : "等待連線";
-  const note = broker.data?.note ?? (broker.state === "LIVE" ? "等待只讀狀態回報" : broker.reason) ?? "下單入口關閉 · 只提供只讀與紙上預覽";
-  return (
-    <div className="tac-broker-line">
-      <span>{label}</span>
-      <small>{note}</small>
-    </div>
-  );
-}
-
 // ══════════════════════════════════════════════════════════════════════════
 // 冷啟動加速（2026-07-14 楊董標準：首頁還是太慢）：拿掉單一大 Promise.
 // allSettled 卡整頁的舊架構，改每個資料來源各自一個 React `cache()`（同一次
@@ -1567,8 +1509,6 @@ const cachedMarket = cache((): Promise<LoadState<MarketDataOverview | null>> =>
   load("Market data overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data, (value) => !hasMarketOverviewData(value), "市場資料總覽目前沒有可用正式資料。"));
 const cachedRealtimeMarket = cache((): Promise<LoadState<RealtimeMarketDashboard | null>> => loadRealtimeMarketDashboard());
 const cachedBrief = cache((): Promise<LoadState<DailyBriefDashboard>> => loadDailyBriefDashboard());
-const cachedPaper = cache((): Promise<LoadState<PaperHealthState | null>> => loadPaperHealthState());
-const cachedBroker = cache((): Promise<LoadState<BrokerAccessDashboard | null>> => loadBrokerAccessState());
 const cachedRecommendations = cache((): Promise<LoadState<AiRecommendationV3Response>> =>
   load(
     "AI recommendations v3 (canonical, shared with /ai-recommendations)",
@@ -1698,14 +1638,6 @@ async function NewsTapeSection() {
   return <NewsTape intel={intel} />;
 }
 
-async function BrokerLineSection() {
-  const [paper, broker] = await Promise.all([
-    timedLoad("paper", FETCH_SOFT_MS, cachedPaper, null),
-    timedLoad("broker", FETCH_SOFT_MS, cachedBroker, null),
-  ]);
-  return <BrokerConnectionLine paper={paper} broker={broker} />;
-}
-
 // ── Page entry point — 靜態殼同步輸出，各版面各自 Suspense stream ──────────
 export default async function HomePage({
   searchParams,
@@ -1745,9 +1677,6 @@ export default async function HomePage({
           </Suspense>
         </div>
       </div>
-      <Suspense fallback={null}>
-        <BrokerLineSection />
-      </Suspense>
     </div>
   );
 }

@@ -102,6 +102,49 @@ test.describe("/ homepage LEDGER RSC", () => {
     expect(after).not.toBe(before);
   });
 
+  // 2026-07-14 楊董點名「哪一家的熱力圖會缺角??」，糾正版方案：市面熱力圖
+  // 標準做法——核心觀察池 40 檔中缺可驗證行情/被 sanity gate 擋掉的個股，
+  // 從候選序列遞補等量真公司真行情進來，不留洞也不畫灰塊。grid 永遠是
+  // 40 家「有行情」的真公司，每磚 pct 都非空。用 ?sector=all 鎖定核心觀察
+  // 池分頁，排除 TWSE 全市場模式（?heatmap=all，不同元件）的干擾。
+  test("core heatmap (全部/核心觀察池) always renders exactly 40 real-quote tiles via backfill, never a gray placeholder or grid hole", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.goto("/?sector=all", { waitUntil: "domcontentloaded" });
+
+    await page.locator(".heatmapgrid").first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(1500);
+
+    const tiles = page.locator(".heatmapgrid .tile");
+    const tileCount = await tiles.count();
+    const placeholderCount = await page.locator(".heatmapgrid .tile.placeholder").count();
+    const pctTexts = await tiles.locator(".pc").allTextContents();
+    const emptyPctCount = pctTexts.filter((text) => text.trim().length === 0 || text.includes("無行情")).length;
+
+    testInfo.annotations.push({ type: "heatmap-tile-count", description: String(tileCount) });
+    testInfo.annotations.push({ type: "heatmap-placeholder-count", description: String(placeholderCount) });
+    testInfo.annotations.push({ type: "heatmap-empty-pct-count", description: String(emptyPctCount) });
+
+    expect(tileCount).toBe(40);
+    expect(placeholderCount).toBe(0);
+    expect(emptyPctCount).toBe(0);
+
+    await saveRouteScreenshot(page, testInfo, "home-heatmap-40-tiles");
+  });
+
+  // 楊董點名頁尾「EC2 排程 14:10 關機（正常）」是工程語意洩漏，違反 UI 禁
+  // 工程語意鐵律。BrokerConnectionLine footer 整行已從首頁移除；這裡鎖死
+  // 回歸——首頁全頁文字不得再出現 EC2 / gateway / cron 字樣。
+  test("homepage text contains no engineering-semantics leak (no EC2/gateway wording in footer)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.locator(".tac-ledger .mast").first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(1500);
+
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText).not.toContain("EC2");
+    expect(bodyText).not.toContain("gateway");
+  });
+
   test("mobile 390 renders responsive single-column layout", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
