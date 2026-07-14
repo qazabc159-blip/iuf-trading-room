@@ -1217,6 +1217,37 @@ export const quoteLastClose = pgTable(
   })
 );
 
+// -- index_history -- migration 0057_index_history.sql
+// Persisted daily-close history per index symbol (currently only TAIEX
+// "^TWII") — the DB-backed fallback tier for marketContext.index.history
+// (the homepage TAIEX line chart), so a deploy-restart-timed transient TWSE
+// fetch failure no longer produces an empty chart window.
+// Write path: data-sources/twse-openapi-client.ts fetchTaiexMonthDailyCloses()
+//             after each successful live TWSE MI_5MINS_HIST fetch.
+// Read path:  same function, fallback when both the in-memory cache and a
+//             live fetch attempt fail/return empty for a given month.
+// PRIMARY KEY (index_symbol, trade_date): one authoritative row per index per day.
+// close CHECK: must be positive (mirrors quote_last_close's close_price CHECK).
+export const indexHistory = pgTable(
+  "index_history",
+  {
+    indexSymbol: text("index_symbol").notNull(),
+    tradeDate:   date("trade_date").notNull(),
+    open:        numeric("open", { precision: 12, scale: 2 }),
+    high:        numeric("high", { precision: 12, scale: 2 }),
+    low:         numeric("low", { precision: 12, scale: 2 }),
+    close:       numeric("close", { precision: 12, scale: 2 }).notNull(),
+    volume:      numeric("volume", { precision: 20, scale: 0 }),
+    source:      text("source").notNull(),
+    updatedAt:   timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    indexSymbolTradeDatePk: primaryKey({ columns: [table.indexSymbol, table.tradeDate] }),
+    tradeDateIdx:           index("index_history_trade_date_idx").on(table.tradeDate.desc()),
+    symbolDateIdx:          index("index_history_symbol_date_idx").on(table.indexSymbol, table.tradeDate.desc()),
+  })
+);
+
 // -- sim_ledger_weeks / sim_ledger_holdings / sim_ledger_nav —————————————————
 // migration 0049_sim_ledger.sql
 //

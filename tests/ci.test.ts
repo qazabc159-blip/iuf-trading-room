@@ -13324,6 +13324,128 @@ test("HEATMAP-FALLBACK-3: enrichHeatmapTiles uses cache when KGI null + TWSE mis
   assert.equal(result.dataFreshness, "cache", "HEATMAP-FALLBACK-3: dataFreshness must be cache");
 });
 
+// ── HEATMAP-SECTOR tests (2026-07-14) ────────────────────────────────────────
+// kgi-core heatmap previously carried no sector/industry field at all — the
+// frontend could not group the 40 heatmap tiles by industry. enrichHeatmapTiles
+// now accepts an optional sectorMap (built by the route handler from
+// companies.chain_position) and populates it on every tile, regardless of tier.
+
+test("HEATMAP-SECTOR-1: enrichHeatmapTiles populates sector from sectorMap on every tier", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: 980.0, change: 10.0, changePct: 1.03, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+  ];
+  const sectorMap = new Map([["2330", "半導體"]]);
+  const result = enrichHeatmapTiles(kgiTiles as any, [], undefined, sectorMap);
+
+  assert.equal(result.tiles[0]!.sector, "半導體", "HEATMAP-SECTOR-1: sector must come from sectorMap");
+});
+
+test("HEATMAP-SECTOR-2: enrichHeatmapTiles sector is null when sectorMap omitted or has no entry", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: 980.0, change: 10.0, changePct: 1.03, tier: "core", ts: "2026-05-18T10:00:00+08:00", source: "kgi_tick" as const },
+  ];
+
+  // No sectorMap arg at all
+  const noMap = enrichHeatmapTiles(kgiTiles as any, []);
+  assert.equal(noMap.tiles[0]!.sector, null, "HEATMAP-SECTOR-2: sector must be null when sectorMap is not passed");
+
+  // sectorMap passed but symbol missing from it
+  const emptyMap = enrichHeatmapTiles(kgiTiles as any, [], undefined, new Map());
+  assert.equal(emptyMap.tiles[0]!.sector, null, "HEATMAP-SECTOR-2: sector must be null when symbol absent from sectorMap");
+});
+
+// ── HEATMAP-GARBAGE tests (2026-07-14) ───────────────────────────────────────
+// 2026-07-14 16:41 batch read served -90.91%/-98.21% changePct for some
+// heatmap tiles — impossible under Taiwan's ±10% daily price-limit band for
+// these 40 established large-caps. isPlausibleChangePct is the shared choke
+// point applied at every write (updateLastCloseFromTick/Twse, the TWSE Tier2
+// map, the server.ts MIS cron) AND every read (Tier1/1.5/2/3 selection) so a
+// corrupted upstream value can never be cached or served, regardless of tier.
+
+test("HEATMAP-GARBAGE-1: isPlausibleChangePct rejects impossible daily swings, accepts null and normal moves", async () => {
+  const { isPlausibleChangePct } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  assert.equal(isPlausibleChangePct(null), true, "HEATMAP-GARBAGE-1: null (unknown) is plausible");
+  assert.equal(isPlausibleChangePct(1.03), true, "HEATMAP-GARBAGE-1: a normal +1.03% move is plausible");
+  assert.equal(isPlausibleChangePct(-9.5), true, "HEATMAP-GARBAGE-1: near the daily limit is still plausible");
+  assert.equal(isPlausibleChangePct(-90.91), false, "HEATMAP-GARBAGE-1: -90.91% is impossible (observed garbage value)");
+  assert.equal(isPlausibleChangePct(-98.21), false, "HEATMAP-GARBAGE-1: -98.21% is impossible (observed garbage value)");
+  assert.equal(isPlausibleChangePct(NaN), false, "HEATMAP-GARBAGE-1: NaN is never plausible");
+});
+
+test("HEATMAP-GARBAGE-2: updateLastCloseFromTwse nulls an implausible computed pct instead of caching garbage", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  // ClosingPrice=10, Change=-95 → computed pct would be -95/(10-(-95))*100 = -90.48% (impossible)
+  const twseRows = [
+    { Code: "2330", Name: "台積電", Date: "115/07/14", ClosingPrice: "10", Change: "-95", TradeVolume: "1000", TradeValue: "1000", OpeningPrice: "10", HighestPrice: "10", LowestPrice: "10", Transaction: "1" },
+  ];
+  const kgiTiles = [
+    { symbol: "2330", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" as const },
+  ];
+  const result = enrichHeatmapTiles(kgiTiles as any, twseRows as any);
+
+  assert.equal(result.tiles[0]!.sourceState, "twse_eod", "HEATMAP-GARBAGE-2: tile still served from Tier2 (price is real)");
+  assert.equal(result.tiles[0]!.changePct, null, "HEATMAP-GARBAGE-2: implausible pct must be nulled, never served as garbage");
+});
+
+test("HEATMAP-GARBAGE-3: Tier1 (KGI live) with an implausible changePct falls through instead of being served", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const kgiTiles = [
+    { symbol: "2330", price: 10.0, change: -95.0, changePct: -90.48, tier: "core", ts: "2026-07-14T16:41:00+08:00", source: "kgi_tick" as const },
+  ];
+  const result = enrichHeatmapTiles(kgiTiles as any, []);
+
+  assert.notEqual(result.tiles[0]!.sourceState, "live", "HEATMAP-GARBAGE-3: implausible KGI tick must NOT be served as live");
+  assert.equal(result.liveTileCount, 0, "HEATMAP-GARBAGE-3: liveTileCount must be 0 for a rejected garbage tick");
+});
+
+test("MIS-HEATMAP-5: enrichHeatmapTiles skips MIS Tier 1.5 when entry.ts is stale (>30min) even if tradeDateYmd matches today", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  // Simulates a 16:41 read of a tick last captured near the 14:35 cron cutoff (~2h old)
+  const staleTs = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const misCache = new Map([
+    ["2330", { last: 945.0, changePct: 1.5, ts: staleTs, tradeDateYmd: todayYmd }],
+  ]);
+
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const result = enrichHeatmapTiles(kgiTiles as any, [], misCache);
+
+  assert.notEqual(result.tiles[0]!.sourceState, "twse_mis_intraday", "MIS-HEATMAP-5: a stale (>30min) same-day MIS entry must NOT be used");
+  assert.equal(result.misIntradayTileCount, 0, "MIS-HEATMAP-5: misIntradayTileCount must be 0 for a stale entry");
+});
+
+test("MIS-HEATMAP-6: enrichHeatmapTiles skips MIS Tier 1.5 when changePct is implausible even if fresh + today", async () => {
+  const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
+  _resetLastCloseCache();
+
+  const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, "");
+
+  const misCache = new Map([
+    ["2330", { last: 10.0, changePct: -90.91, ts: new Date().toISOString(), tradeDateYmd: todayYmd }],
+  ]);
+
+  const kgiTiles = [{ symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "CORE", ts: null }];
+  const result = enrichHeatmapTiles(kgiTiles as any, [], misCache);
+
+  assert.notEqual(result.tiles[0]!.sourceState, "twse_mis_intraday", "MIS-HEATMAP-6: an implausible changePct must NOT be served even when fresh");
+  assert.equal(result.misIntradayTileCount, 0, "MIS-HEATMAP-6: misIntradayTileCount must be 0 for an implausible-pct entry");
+});
+
 
 // =============================================================================
 // HEATMAP-INDUSTRY-ZH-1..5: backend normalizeTwseIndustryZhTw (#700 follow-up)
@@ -17217,6 +17339,33 @@ test("TWSE-MIS-9: MIS cron uses HEATMAP_CORE_SYMBOLS (40 tickers) not DB compani
   // Within the cron function, HEATMAP_CORE_SYMBOLS reference should appear
   const cronBody = source.slice(misCronIdx, misCronIdx + 2000);
   assert.ok(cronBody.includes('HEATMAP_CORE_SYMBOLS'), 'TWSE-MIS-9: cron must use HEATMAP_CORE_SYMBOLS');
+});
+
+test("TWSE-MIS-10: MIS cron clamps changePct through the shared isPlausibleChangePct guard", () => {
+  // 2026-07-14: the MIS cron itself computes changePct from raw msg["y"]/msg["z"]
+  // fields — a corrupted upstream value must be clamped at this, its actual
+  // computation site, not only at the enricher's read side (kgi-heatmap-enricher.ts).
+  const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
+  assert.match(source, /const \{ isPlausibleChangePct \} = await import\("\.\/kgi-heatmap-enricher\.js"\)/);
+  assert.match(source, /const changePct = isPlausibleChangePct\(changePctRaw\) \? changePctRaw : null;/);
+});
+
+// ── INDEX-HISTORY tests (2026-07-14) ─────────────────────────────────────────
+// _monthRangeIso is the pure date-range helper backing the index_history DB
+// fallback tier in fetchTaiexMonthDailyCloses (migration 0057). Pure-logic,
+// no DB — the DB round-trip itself is covered separately in
+// apps/api/src/data-sources/twse-openapi-client-index-history.test.ts (test:db).
+
+test("INDEX-HISTORY-1: _monthRangeIso covers a full calendar month, inclusive bounds", async () => {
+  const { _monthRangeIso } = await import("../apps/api/src/data-sources/twse-openapi-client.js");
+  assert.deepEqual(_monthRangeIso("202606"), { fromDate: "2026-06-01", toDate: "2026-06-30" });
+  // 31-day month
+  assert.deepEqual(_monthRangeIso("202607"), { fromDate: "2026-07-01", toDate: "2026-07-31" });
+});
+
+test("INDEX-HISTORY-2: _monthRangeIso handles the December -> January year rollover", async () => {
+  const { _monthRangeIso } = await import("../apps/api/src/data-sources/twse-openapi-client.js");
+  assert.deepEqual(_monthRangeIso("202612"), { fromDate: "2026-12-01", toDate: "2026-12-31" });
 });
 
 // =============================================================================
