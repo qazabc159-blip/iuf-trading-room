@@ -22,7 +22,8 @@ test.describe("@smoke /home-exact preview", () => {
     const frame = extractFrame(page);
     await frame.locator('[data-slot="idx-int"]').first().waitFor({ state: "attached", timeout: 15000 });
     // give the inline hydration script time to finish its fetch waterfall
-    await page.waitForTimeout(4000);
+    await frame.locator('[data-slot="heat-grid"]').first().locator(".tile").nth(1).waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(1000);
 
     const idxInt = await frame.locator('[data-slot="idx-int"]').first().textContent();
     const heatGridTiles = await frame.locator('[data-slot="heat-grid"]').first().locator(".tile").count();
@@ -77,7 +78,8 @@ test.describe("@smoke /home-exact preview", () => {
     await page.goto("/home-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
     await frame.locator('[data-slot="idx-int"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(4000);
+    await frame.locator('[data-slot="heat-grid"]').first().locator(".tile").nth(1).waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(1000);
 
     const scroll = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
