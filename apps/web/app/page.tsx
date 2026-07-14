@@ -83,6 +83,10 @@ type DailyBriefDashboard = {
 
 type S1StrategyData = LabStrategySnapshot;
 
+// v5.1 verbatim（2026-07-14）：原稿 s1-row2 有「觀察起日」欄位，navCurve[0].date
+// 是 F-AUTO SIM 帳本真正第一筆記錄日期，非寫死常數。
+type S1RealSimData = { summary: TrackRecordNavSummary; observedSince: string | null };
+
 type IntelItem = CompanyAnnouncement & {
   companyId?: string;
   ticker: string;
@@ -1068,6 +1072,64 @@ type HeatmapSectorOption = {
   down: number;
   weight: number;
 };
+
+// v5.1 verbatim heatzone (2026-07-14)：原稿 .heatmapgrid/.tile 是離散色階
+// CSS Grid（非百分比 treemap），色階固定 10 階（u1-5/d1-5/z0）。這裡的
+// bucket 邊界是示意值域校準（原稿本身沒給公式，只給示意數字），純呈現層
+// 判斷，不影響底層 pct 真值。
+type HeatChipOption = { key: string; label: string; total: number; withQuote: number; weight: number };
+
+function heatBucketClass(pct: number | null): string {
+  if (pct === null || Math.abs(pct) < 0.05) return "z0";
+  const dir = pct > 0 ? "u" : "d";
+  const abs = Math.abs(pct);
+  if (abs < 0.35) return `${dir}1`;
+  if (abs < 0.7) return `${dir}2`;
+  if (abs < 1.0) return `${dir}3`;
+  if (abs < 2.0) return `${dir}4`;
+  return `${dir}5`;
+}
+
+function heatmapAvgPct(tiles: HeatTile[]): number | null {
+  const values = tiles.filter((t) => !t.placeholder).map((t) => t.pct).filter((v): v is number => v !== null);
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function buildHeatChips(heatmap: HeatTile[]): HeatChipOption[] {
+  const bySector = new Map<string, HeatChipOption>();
+  for (const tile of heatmap) {
+    const key = heatmapSectorName(tile);
+    const current = bySector.get(key) ?? { key, label: heatmapSectorLabel(key), total: 0, withQuote: 0, weight: 0 };
+    current.total += 1;
+    if (!tile.placeholder) {
+      current.withQuote += 1;
+      current.weight += Math.max(0.1, tile.weight);
+    }
+    bySector.set(key, current);
+  }
+  const sectors = [...bySector.values()]
+    .filter((sector) => sector.total > 0)
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, HEATMAP_SECTOR_OPTION_LIMIT - 1);
+  const allChip: HeatChipOption = {
+    key: "ALL",
+    label: "核心觀察池",
+    total: heatmap.length,
+    withQuote: heatmap.filter((tile) => !tile.placeholder).length,
+    weight: 0,
+  };
+  return [allChip, ...sectors];
+}
+
+function rankedHeatTiles(heatmap: HeatTile[], sectorKey: string | null): HeatTile[] {
+  const filtered = heatmap.filter((tile) => {
+    if (tile.placeholder) return false;
+    if (!sectorKey || sectorKey === "ALL") return true;
+    return heatmapSectorName(tile) === sectorKey;
+  });
+  return [...filtered].sort((left, right) => Math.max(0.1, right.weight) - Math.max(0.1, left.weight));
+}
 
 function buildKgiCoreHeatmap(feed: LoadState<RealtimeMarketDashboard | null>): HeatTile[] {
   const rows = loadStateData(feed)?.kgiCoreHeatmap;
@@ -2926,82 +2988,130 @@ function IdxAnchorPanel({
   );
 }
 
+// v5.1 verbatim（2026-07-14，推倒重來）：原稿熱力圖是離散 CSS Grid 色塊
+// （.heat-toolbar/.heat-chips/.heatmapgrid/.tile 10 階色階），不是先前
+// round 委派給 <IndustryHeatmap> 的連續漸層元件——那是造成「跟原稿不像」
+// 的主因之一，本輪改直接用 heatmap tile 陣列自己排字面 grid，不再委派。
+// 拿掉先前的「核心/全市場」模式切換 UI（.heat-mode-tabs，原稿沒有這塊，
+// 楊董「不加不減」鐵律下視為非原稿裝飾移除，非資料層砍除——資料源仍固定
+// 核心代表池，跟原稿「KGI CORE POOL」語意一致）。
 function HeatZonePanel({
   heatmap,
   market,
   realtimeMarket,
   selectedSectorParam,
-  heatmapMode,
 }: {
   heatmap: HeatTile[];
   market: LoadState<MarketDataOverview | null>;
   realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
   selectedSectorParam?: string | null;
-  heatmapMode: "core" | "all";
 }) {
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
-  const fullMarketRows = buildTwseIndustryRows(realtimeMarket);
   const coreLastTs = loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? null;
   const now = new Date();
   const kgiOffHours = !isKgiTradingHours(now);
   const kgiTilesAllNull = kgiCoreTilesAreNull(coreHeatmap);
   const showKgiFallback = kgiTilesAllNull && kgiOffHours;
-  const activeMode = heatmapMode === "all" ? "all" : "core";
   const hasRepresentativeFeed = hasProductHeatmapCoverage(heatmap);
-  const showCoverageFallback = activeMode === "core" && !showKgiFallback && !hasRepresentativeFeed;
+  const showCoverageFallback = !showKgiFallback && !hasRepresentativeFeed;
   const hasCore = coreHeatmap.length > 0 && !showKgiFallback && hasRepresentativeFeed;
   const displayHeatmap = hasCore ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, heatmap) : heatmap;
-  const derivedFullMarketRows = fullMarketRows.length > 0
-    ? fullMarketRows
-    : buildMarketWideRowsFromHeatmap(displayHeatmap.length > 0 ? displayHeatmap : heatmap);
-  const sourceLabel = showKgiFallback
+  const sourceLead = showKgiFallback
     ? `TWSE 收盤 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`
-    : activeMode === "core"
-      ? (hasCore ? "即時" : coreLastTs ? `核心 · ${freshnessText(coreLastTs, "STALE")}前` : "核心 · 資料更新中")
-      : `全市場 · ${closeLabel(loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts)}`;
-  const updatedAt = activeMode === "core"
-    ? (loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null)
-    : (loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null);
-  const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
-  const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
+    : hasCore
+      ? "即時"
+      : coreLastTs
+        ? `核心 · ${freshnessText(coreLastTs, "STALE")}前`
+        : "核心 · 資料更新中";
+  // heat-stats「更新」時鐘：kgiCoreHeatmap 容器本身無可靠 updatedAt（實測
+  // 只在磚格層帶 ts，跟型別宣告的 date/updatedAt 欄位名不對齊——backend
+  // 型別契約落差，非本 lane 可修，見報告揭露）；breadth.updatedAt 是每日
+  // 彙總統計的時間戳（常落在收盤日 00:00），拿來當「更新」鐘面會誤導成
+  // 午夜——改用這次請求本身的 generatedAt，保證是近期真實時間。
+  const updatedAt = market.data?.generatedAt ?? null;
+
+  const chips = buildHeatChips(displayHeatmap);
+  const activeChip = chips.find((chip) => chip.key === selectedSectorParam) ?? chips[0];
+  const tiles = rankedHeatTiles(displayHeatmap, activeChip.key);
+  const withQuoteCount = displayHeatmap.filter((tile) => !tile.placeholder).length;
+  const totalCount = displayHeatmap.length;
+  const avgPct = heatmapAvgPct(displayHeatmap);
+  const avgTone = avgPct === null ? "" : avgPct > 0 ? "up" : avgPct < 0 ? "down" : "";
+  const missingQuoteCount = totalCount - withQuoteCount;
 
   return (
     <section className="heatzone">
-      <div className="heat-kicker">
-        <span>{effectiveMode === "core" ? "核心觀察池" : "全市場"} · {displaySourceLabel}</span>
-        <div className="heat-mode-tabs">
-          <Link className={effectiveMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
-          <Link className={effectiveMode === "all" ? "is-active" : ""} href="/?heatmap=all">全市場熱力圖</Link>
+      <div className="heat-toolbar">
+        <div className="tab dim">產業熱力圖 <span className="en">KGI CORE POOL</span></div>
+        <div className="heat-stats">
+          <span>更新 <b>{updatedAt ? formatClock(updatedAt) : "--"}</b></span>
+          <span><b>{formatNumber(totalCount)}</b> 檔代表池</span>
+          <span><b>{formatNumber(withQuoteCount)}</b> 檔有行情</span>
+          <span>均幅 <b className={avgTone}>{avgPct === null ? "--" : formatPercent(avgPct)}</b></span>
+          {sourceLead !== "即時" && <span>{sourceLead}</span>}
         </div>
       </div>
-      {showKgiFallback && (
-        <div className="tac-kgi-offhours-banner">
-          <span>KGI 即時資料時段 09:00-14:10・現非交易時段，暫顯 TWSE 收盤資料</span>
+      <div className="heat-kicker">
+        <span>面積代表權重，顏色代表漲跌幅</span>
+        <strong>{formatNumber(totalCount)} 檔核心權值與策略觀察股</strong>
+      </div>
+      {(showKgiFallback || showCoverageFallback) && (
+        <div className="heat-banner">
+          {showKgiFallback
+            ? "KGI 即時資料時段 09:00-14:10・現非交易時段，暫顯 TWSE 收盤資料"
+            : "核心代表股資料仍在暖機，暫顯目前可驗證行情，未渲染為色塊。"}
         </div>
       )}
-      {showCoverageFallback && (
-        <div className="tac-kgi-offhours-banner">
-          <span>核心代表股資料仍在暖機，暫以全市場產業熱力圖顯示，避免呈現不完整代表池。</span>
+      <div className="heat-chips">
+        {chips.map((chip) =>
+          chip.key === "ALL" ? (
+            <span key={chip.key} className={chip.key === activeChip.key ? "is-active" : ""}>
+              <b>{chip.label}</b><span>{formatNumber(chip.withQuote)}/{formatNumber(chip.total)} 檔</span>
+            </span>
+          ) : (
+            <Link key={chip.key} href={`/?sector=${encodeURIComponent(chip.key)}`} className={chip.key === activeChip.key ? "is-active" : ""}>
+              <b>{chip.label}</b><span>{formatNumber(chip.withQuote)}/{formatNumber(chip.total)} 檔</span>
+            </Link>
+          )
+        )}
+      </div>
+      {tiles.length > 0 ? (
+        <div className="heatmapgrid">
+          {tiles.map((tile, index) => {
+            const isHero = index === 0;
+            const isWide = index >= 1 && index <= 7;
+            const bucket = heatBucketClass(tile.pct);
+            const className = ["tile", isHero ? "hero" : isWide ? "wide" : "", bucket].filter(Boolean).join(" ");
+            const style: CSSProperties | undefined = isHero
+              ? { gridColumn: "span 2", gridRow: "span 2" }
+              : isWide
+                ? { gridColumn: "span 2" }
+                : undefined;
+            return (
+              <Link href={`/companies/${encodeURIComponent(tile.symbol)}`} key={tile.symbol} className={className} style={style}>
+                <div className="tl"><b>{tile.symbol}</b><span className="nm">{tile.name}</span></div>
+                <div className="pc">{formatPercent(tile.pct)}</div>
+              </Link>
+            );
+          })}
         </div>
-      )}
-      {effectiveMode === "all" ? (
-        <MarketWideHeatmap
-          rows={derivedFullMarketRows}
-          updatedAt={updatedAt}
-          sourceLabel={displaySourceLabel}
-          marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}
-          reason={realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : undefined}
-        />
       ) : (
-        <IndustryHeatmap
-          heatmap={displayHeatmap}
-          initialSector={selectedSectorParam}
-          updatedAt={updatedAt}
-          sourceLabel={displaySourceLabel}
-          marketState={hasCore ? "LIVE" : stateFromLoad(market)}
-          reason={!hasCore && market.state === "BLOCKED" ? market.reason : undefined}
-        />
+        <div className="tac-empty-line">
+          {realtimeMarket.state === "BLOCKED" ? realtimeMarket.reason : "熱力圖目前沒有可用正式資料。"}
+        </div>
       )}
+      <div className="heat-footer">
+        <span className="lead">
+          固定代表股池 · 依成交值優先排序 · {sourceLead}
+          {withQuoteCount > 0 ? ` · ${formatNumber(withQuoteCount)} 檔有行情` : ""}
+          {missingQuoteCount > 0 ? ` · ${formatNumber(missingQuoteCount)} 檔代表股缺可驗證行情，未渲染為色塊` : ""}
+        </span>
+        <span className="heat-scale">
+          <em>≤ -3%</em>
+          <span className="sw"><i className="d5" /><i className="d3" /><i className="d1" /><i className="z0" /><i className="u1" /><i className="u3" /><i className="u5" /></span>
+          <em>≥ +3%</em>
+        </span>
+      </div>
     </section>
   );
 }
@@ -3083,12 +3193,13 @@ function S1Bulletin({
   realSim,
 }: {
   strategy: LoadState<S1StrategyData | null>;
-  realSim: LoadState<TrackRecordNavSummary | null>;
+  realSim: LoadState<S1RealSimData | null>;
 }) {
   const snapshot = strategy.data;
   const netReturn = snapshot?.headlineMetrics.strategyNetAbsoluteReturnPct ?? null;
   const maxDrawdown = snapshot?.headlineMetrics.maxDrawdownNetPct ?? snapshot?.headlineMetrics.maxDrawdown ?? null;
-  const realSimReturnPct = realSim.data?.cumulativeReturnPct ?? null;
+  const realSimReturnPct = realSim.data?.summary.cumulativeReturnPct ?? null;
+  const observedSince = realSim.data?.observedSince ?? null;
   const isLiveVerifiedTrackRecord = snapshot?.isLiveVerifiedTrackRecord ?? false;
   return (
     <section className="s1wrap">
@@ -3116,7 +3227,8 @@ function S1Bulletin({
           </div>
           <div className="s1-row2">
             <div className="k">最大回撤<b className="down">{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</b></div>
-            <div className="k">狀態<b style={{ fontFamily: "var(--cjk)", color: "var(--amber-hi)" }}>{snapshot.orderState === "paper_allowed" ? "前進觀察中" : "待確認"}</b></div>
+            <div className="k">觀察起日<b>{observedSince ? formatDate(observedSince) : "--"}</b></div>
+            <div className="k">狀態<b style={{ fontFamily: "var(--lg-cjk)", color: "var(--lg-amber-hi)" }}>{snapshot.orderState === "paper_allowed" ? "前進觀察中" : "待確認"}</b></div>
           </div>
         </div>
       ) : (
@@ -3272,10 +3384,8 @@ function DashboardSkeleton() {
 // ── All data fetching lives here — streamed behind Suspense ──────────────────
 async function DashboardContent({
   selectedSectorParam,
-  heatmapMode,
 }: {
   selectedSectorParam: string | null;
-  heatmapMode: "core" | "all";
 }) {
   const now = nowIso();
 
@@ -3346,12 +3456,16 @@ async function DashboardContent({
     // (含成本) for side-by-side display next to the S1 research backtest
     // headline number above — the site's actual current track record, not the
     // research window's backtest return.
-    timedFetch("s1_real_sim", FETCH_PRODUCT_MS, load(
+    timedFetch("s1_real_sim", FETCH_PRODUCT_MS, load<S1RealSimData | null>(
       "S1 F-AUTO SIM 實盤績效",
       null,
       async () => {
         const result = await getTrackRecordNav();
-        return result.ok ? result.data.summary : null;
+        if (!result.ok || !result.data.summary) return null;
+        return {
+          summary: result.data.summary,
+          observedSince: result.data.navCurve[0]?.date ?? null,
+        };
       },
       (value) => value === null,
       "S1 F-AUTO SIM 實盤績效目前無法讀取。",
@@ -3524,7 +3638,7 @@ async function DashboardContent({
               <div className="maincol">
                 <div className="heroband">
                   <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
-                  <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+                  <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} />
                 </div>
                 <div className="leadband">
                   <RecHeadline recommendations={recommendations} />
@@ -3550,15 +3664,14 @@ async function DashboardContent({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ sector?: string; heatmap?: string }>;
+  searchParams?: Promise<{ sector?: string }>;
 }) {
   const params = await searchParams;
   const selectedSectorParam = params?.sector ?? null;
-  const heatmapMode = params?.heatmap === "all" ? "all" : "core";
 
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardContent selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+      <DashboardContent selectedSectorParam={selectedSectorParam} />
     </Suspense>
   );
 }
