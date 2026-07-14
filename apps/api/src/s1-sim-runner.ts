@@ -23,7 +23,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 import { extractKgiTradeId, reconcileKgiOrder } from "./broker/kgi-order-reconciliation.js";
-import { upsertLastCloses, getLastCloses, type LastCloseEntry } from "./quote-last-close-store.js";
+import { upsertLastCloses, getLastCloses, getLatestOhlcvCloseForTickers, type LastCloseEntry } from "./quote-last-close-store.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
 
 // ---------------------------------------------------------------------------
@@ -1026,8 +1026,9 @@ export interface S1PositionsSnapshot {
    * price from EITHER the official TWSE/TPEX EOD source (tier 1b) OR the
    * MIS post-session close fallback (tier 1c) — both validate the price's
    * date against today before use. Deliberately excludes tier 1d (DB
-   * persisted-close fallback), which can replay a STALE prior-day close and
-   * must never be mistaken for "today's price is in".
+   * persisted-close fallback) and tier 1e (companies_ohlcv vendor-OHLCV
+   * fallback, added 2026-07-14), both of which can replay a STALE prior-day
+   * close and must never be mistaken for "today's price is in".
    *
    * Weaker than `pricingComplete` (which additionally requires the official
    * TWSE/TPEX source specifically, per YELLOW-1's stale-date guard) — added
@@ -1444,13 +1445,70 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     }
   }
 
+  // 1e. companies_ohlcv (vendor OHLCV, e.g. FinMind — labeled "tej" in that
+  // table) last-resort fallback: for symbols with NO coverage anywhere —
+  // not TWSE/TPEX official (1b), not MIS same-day (1c), not even a prior
+  // persisted-close in quote_last_close (1d). 2026-07-14 incident (symbol
+  // 2071 / 震南鐵): verified via direct curl that TWSE's own STOCK_DAY_ALL
+  // and www rwd afterTrading endpoints genuinely never list this ticker at
+  // all — not a parser/filter bug in tier 1b, likely a disposition/
+  // restricted-trading category excluded from the standard board-lot daily
+  // report. companies_ohlcv still has a genuine, actively-updating price
+  // history for it. On success, persists into quote_last_close so future
+  // ticks/days get this via the (much cheaper) tier 1d read instead of
+  // re-querying companies_ohlcv every time. Excluded from officialClose/
+  // misToday counts — same treatment as tier 1d — so `fullyPriced` still
+  // requires a genuinely same-day source for the OTHER positions.
+  {
+    const stillNullAfterOhlcv = positions.filter((p) => p.last_price === null);
+    if (stillNullAfterOhlcv.length > 0) {
+      const dbForOhlcv = getDb();
+      if (dbForOhlcv) {
+        try {
+          const stored = await getLatestOhlcvCloseForTickers(
+            dbForOhlcv,
+            stillNullAfterOhlcv.map((p) => p.symbol),
+            todayTst
+          );
+          const ohlcvEntries: LastCloseEntry[] = [];
+          for (const p of stillNullAfterOhlcv) {
+            const entry = stored.get(p.symbol);
+            if (!entry) continue;
+            p.last_price = entry.closePrice;
+            p.market_value_twd = Math.round(p.shares * entry.closePrice);
+            if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((entry.closePrice - p.avg_cost) * p.shares);
+            notes.push(
+              `ohlcv_fallback: ${p.symbol} priced ${entry.closePrice} from companies_ohlcv` +
+              ` (dt=${entry.dt}, source=${entry.source}) — official/MIS/persisted-close all miss this symbol`
+            );
+            ohlcvEntries.push({
+              symbol:     p.symbol,
+              closePrice: entry.closePrice,
+              tradeDate:  entry.dt,
+              source:     "ohlcv_fallback" as const,
+            });
+          }
+          if (ohlcvEntries.length > 0) {
+            upsertLastCloses(dbForOhlcv, ohlcvEntries).catch((e: unknown) => {
+              console.warn("[s1-eod] ohlcv_fallback persisted_close write failed:", e instanceof Error ? e.message : String(e));
+            });
+          }
+        } catch {
+          notes.push("ohlcv_fallback_failed: companies_ohlcv read error — position remains null");
+        }
+      }
+    }
+  }
+
   // Totals: partial-sum over priced positions rather than requiring full
   // coverage — an OTC symbol with no price for the day no longer nulls out
   // the whole portfolio's market value / unrealized P&L.
   const pricedPositions = positions.filter((p) => p.last_price !== null);
   // Completion: every holding has a valid closing price from any authoritative
-  // source (TWSE+TPEX official closes or MIS post-session close). The shifted
-  // window (14:45+) ensures all three are equivalent representations of the
+  // source (TWSE+TPEX official closes, MIS post-session close, prior
+  // persisted-close, or the 2026-07-14 companies_ohlcv last-resort fallback
+  // for symbols absent from official/MIS entirely). The shifted window
+  // (14:45+) ensures the same-day tiers are equivalent representations of the
   // 13:30 session close. For retries driven by stale TWSE data (YELLOW-1 guard
   // above), officialCloseMarkedCount=0 even if MIS prices all positions, keeping
   // pricingComplete=false until TWSE publishes fresh data.
@@ -1459,8 +1517,9 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
     pricedPositions.length === positions.length;
   // fullyPriced: every position priced via a same-day date-validated source
   // (TWSE/TPEX tier 1b OR MIS tier 1c), excluding the tier 1d DB persisted
-  // fallback (which can replay a stale prior-day close). Used by the ledger
-  // write path only — see S1PositionsSnapshot.fullyPriced doc comment.
+  // fallback and tier 1e companies_ohlcv fallback (both can replay a stale
+  // prior-day close). Used by the ledger write path only — see
+  // S1PositionsSnapshot.fullyPriced doc comment.
   const fullyPriced = positions.length > 0 &&
     (officialCloseMarkedCount + misTodayMarkedCount) === positions.length;
   const unrealizedKnownPositions = positions.filter((p) => p.unrealized_pnl_twd !== null);

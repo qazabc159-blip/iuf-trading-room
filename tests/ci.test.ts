@@ -19833,6 +19833,158 @@ test("S1-PERSIST-CLOSE-5: server.ts TWSE-EOD-QUOTE-CRON also persists to quote_l
   );
 });
 
+// ── QUOTE-OHLCV-FALLBACK: companies_ohlcv last-resort tier 1e (2026-07-14
+// F-AUTO week7 stall — symbol 2071 / 震南鐵 has NO coverage anywhere in
+// quote_last_close: absent from TWSE's own STOCK_DAY_ALL / rwd afterTrading
+// daily-quote reports (live-verified via direct curl, not a parser/filter
+// bug), while companies_ohlcv has a genuine actively-updating FinMind-sourced
+// history for it). See reports/epic_fauto_ledger_20260701/. ──────────────────
+
+test("QUOTE-OHLCV-FALLBACK-1: migration 0056 widens quote_last_close.source CHECK to include ohlcv_fallback, additive only", () => {
+  const migSrc = readFileSync(
+    new URL("../packages/db/migrations/0056_quote_last_close_ohlcv_fallback_source.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    migSrc.includes("DROP CONSTRAINT quote_last_close_source_check"),
+    "QUOTE-OHLCV-FALLBACK-1: must drop the existing named CHECK constraint"
+  );
+  assert.ok(
+    migSrc.includes("CHECK (source IN ('twse_eod', 'tpex_eod', 'mis_close', 'ohlcv_fallback'))"),
+    "QUOTE-OHLCV-FALLBACK-1: must re-add the CHECK constraint widened to include ohlcv_fallback, preserving all 3 existing values"
+  );
+  assert.ok(
+    migSrc.includes("ADDITIVE ONLY"),
+    "QUOTE-OHLCV-FALLBACK-1: must be documented as additive-only (widens allowed values, no data/column changes)"
+  );
+
+  const downSrc = readFileSync(
+    new URL("../packages/db/migrations/0056_quote_last_close_ohlcv_fallback_source.down.sql", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    downSrc.includes("RAISE EXCEPTION") && downSrc.includes("source = 'ohlcv_fallback'"),
+    "QUOTE-OHLCV-FALLBACK-1: down migration must refuse to narrow the CHECK constraint while ohlcv_fallback rows exist"
+  );
+  assert.ok(
+    downSrc.includes("CHECK (source IN ('twse_eod', 'tpex_eod', 'mis_close'))"),
+    "QUOTE-OHLCV-FALLBACK-1: down migration must restore the exact original 3-value CHECK constraint"
+  );
+});
+
+test("QUOTE-OHLCV-FALLBACK-2: _mapOhlcvRowsToEntries maps valid rows and drops non-positive/invalid closes (real behavior, no DB mock)", async () => {
+  const { _mapOhlcvRowsToEntries } = await import("../apps/api/src/quote-last-close-store.ts");
+
+  const result = _mapOhlcvRowsToEntries([
+    { ticker: "2071", dt: "2026-07-13", close_price: 36, source: "tej" },
+    { ticker: "9999", dt: "2026-07-13", close_price: 0, source: "tej" },       // non-positive — dropped
+    { ticker: "8888", dt: "2026-07-13", close_price: -5, source: "tej" },      // negative — dropped
+    { ticker: "7777", dt: "2026-07-13", close_price: NaN, source: "tej" },     // NaN — dropped
+  ]);
+
+  assert.deepEqual(result.get("2071"), { closePrice: 36, dt: "2026-07-13", source: "tej" });
+  assert.equal(result.has("9999"), false, "non-positive close must be dropped");
+  assert.equal(result.has("8888"), false, "negative close must be dropped");
+  assert.equal(result.has("7777"), false, "NaN close must be dropped");
+  assert.equal(result.size, 1);
+});
+
+test("QUOTE-OHLCV-FALLBACK-3: getLatestOhlcvCloseForTickers is PIT-correct (dt <= asOfDateIso) and guards malformed input", async () => {
+  const { getLatestOhlcvCloseForTickers } = await import("../apps/api/src/quote-last-close-store.ts");
+
+  // Empty ticker list / malformed date must short-circuit — never reach db.execute.
+  const throwingDb = { execute: () => { throw new Error("must not be called"); } } as unknown as Parameters<typeof getLatestOhlcvCloseForTickers>[0];
+  assert.deepEqual(await getLatestOhlcvCloseForTickers(throwingDb, [], "2026-07-14"), new Map());
+  assert.deepEqual(await getLatestOhlcvCloseForTickers(throwingDb, ["2071"], "not-a-date"), new Map());
+
+  // Real query must filter on dt <= asOfDateIso (PIT: never a future-dated bar).
+  const src = readFileSync(
+    new URL("../apps/api/src/quote-last-close-store.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    src.includes("o.dt <= '${asOfDateIso}'"),
+    "QUOTE-OHLCV-FALLBACK-3: query must bound dt <= asOfDateIso (PIT-correct, never look-ahead)"
+  );
+  assert.ok(
+    src.includes("DISTINCT ON (c.ticker)") && src.includes("ORDER BY c.ticker, o.dt DESC"),
+    "QUOTE-OHLCV-FALLBACK-3: must return the most-recent bar per ticker (DISTINCT ON + dt DESC)"
+  );
+  assert.ok(
+    src.includes("o.interval = '1d'"),
+    "QUOTE-OHLCV-FALLBACK-3: must restrict to daily bars (not weekly/monthly aggregates)"
+  );
+});
+
+test("QUOTE-OHLCV-FALLBACK-4: LastCloseSource / _SOURCES_FOR_TEST include the new ohlcv_fallback value alongside all 3 existing ones", async () => {
+  const { _SOURCES_FOR_TEST } = await import("../apps/api/src/quote-last-close-store.ts");
+  assert.deepEqual(
+    [...(_SOURCES_FOR_TEST as readonly string[])].sort(),
+    ["mis_close", "ohlcv_fallback", "tpex_eod", "twse_eod"]
+  );
+});
+
+test("QUOTE-OHLCV-FALLBACK-5: s1-sim-runner tier 1e only fires for positions still null after tiers 1b/1c/1d, is honestly noted, and persists back to quote_last_close", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    runnerSrc.includes("1e. companies_ohlcv"),
+    "QUOTE-OHLCV-FALLBACK-5: must have a step 1e companies_ohlcv fallback comment"
+  );
+  assert.ok(
+    runnerSrc.includes("stillNullAfterOhlcv"),
+    "QUOTE-OHLCV-FALLBACK-5: must only call getLatestOhlcvCloseForTickers for positions still null after tiers 1b/1c/1d"
+  );
+  assert.ok(
+    runnerSrc.includes("ohlcv_fallback: ") && runnerSrc.includes("official/MIS/persisted-close all miss this symbol"),
+    "QUOTE-OHLCV-FALLBACK-5: must emit an honest ohlcv_fallback note naming symbol, price, dt, and source"
+  );
+  assert.ok(
+    runnerSrc.includes("ohlcv_fallback_failed"),
+    "QUOTE-OHLCV-FALLBACK-5: must catch DB read errors and emit ohlcv_fallback_failed note (fail-open)"
+  );
+  assert.ok(
+    runnerSrc.includes('source:     "ohlcv_fallback" as const'),
+    "QUOTE-OHLCV-FALLBACK-5: must persist the fallback price back to quote_last_close tagged source=ohlcv_fallback (so future ticks get it via cheaper tier 1d)"
+  );
+  assert.ok(
+    runnerSrc.includes("tradeDate:  entry.dt,"),
+    "QUOTE-OHLCV-FALLBACK-5: persisted trade_date must be the OHLCV bar's own dt, never relabeled as today — the honest-STALE convention"
+  );
+});
+
+test("QUOTE-OHLCV-FALLBACK-6: tier 1e is excluded from both pricingComplete's officialCloseMarkedCount and fullyPriced's same-day sum (documented + structurally verified)", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  // Tier 1e's block must not touch officialCloseMarkedCount / misTodayMarkedCount.
+  const tier1eStart = runnerSrc.indexOf("1e. companies_ohlcv");
+  const tier1eEnd = runnerSrc.indexOf("Totals: partial-sum over priced positions");
+  assert.ok(tier1eStart > 0 && tier1eEnd > tier1eStart, "QUOTE-OHLCV-FALLBACK-6: could not locate tier 1e block bounds");
+  const tier1eBlock = runnerSrc.slice(tier1eStart, tier1eEnd);
+  assert.ok(
+    !tier1eBlock.includes("officialCloseMarkedCount++") && !tier1eBlock.includes("officialCloseMarkedCount =") && !tier1eBlock.includes("officialCloseMarkedCount +="),
+    "QUOTE-OHLCV-FALLBACK-6: tier 1e must never increment officialCloseMarkedCount"
+  );
+  assert.ok(
+    !tier1eBlock.includes("misTodayMarkedCount++") && !tier1eBlock.includes("misTodayMarkedCount =") && !tier1eBlock.includes("misTodayMarkedCount +="),
+    "QUOTE-OHLCV-FALLBACK-6: tier 1e must never increment misTodayMarkedCount"
+  );
+  // Doc comments must reflect tier 1e's exclusion from fullyPriced (avoid
+  // matching across a literal line break — CRLF vs LF checkout differs).
+  assert.ok(
+    runnerSrc.includes("persisted-close fallback) and tier 1e (companies_ohlcv vendor-OHLCV"),
+    "QUOTE-OHLCV-FALLBACK-6: fullyPriced doc comment must document tier 1e's exclusion alongside tier 1d"
+  );
+  assert.ok(
+    runnerSrc.includes("fallback, added 2026-07-14), both of which can replay a STALE prior-day"),
+    "QUOTE-OHLCV-FALLBACK-6: doc comment must explain why tier 1e (like tier 1d) is excluded — can replay a stale prior-day close"
+  );
+});
+
 // ── SIM-LEDGER — F-AUTO Continuous Ledger Schema + Backfill Engine ───────────
 
 test("SIM-LEDGER-1: migration 0049 creates all three sim_ledger tables", () => {
