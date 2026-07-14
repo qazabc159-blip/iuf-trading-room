@@ -17,7 +17,7 @@ const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "
 const apiClientSource = readFileSync(new URL("./api.ts", import.meta.url), "utf8");
 const apiOhlcvSource = readFileSync(new URL("../../api/src/companies-ohlcv.ts", import.meta.url), "utf8");
 const apiServerSource = readFileSync(new URL("../../api/src/server.ts", import.meta.url), "utf8");
-const homePageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+const homeExactSource = readFileSync(new URL("../public/home-exact/index.html", import.meta.url), "utf8");
 
 describe("final-v031 paper ticket price gate", () => {
   it("renders company KGI quote panels as closed during off-hours instead of product-broken blocked", () => {
@@ -610,13 +610,13 @@ describe("final-v031 paper ticket price gate", () => {
     expect(klineChartSource).toContain("renderInsufficientAsCard = tradingRoomDailyDepthShort");
   });
 
-  it("keeps the full-market heatmap visible from verified representative tiles when TWSE industry rows are cold", () => {
-    expect(homePageSource).toContain("function buildMarketWideRowsFromHeatmap");
-    expect(homePageSource).toContain("owned_representative_aggregate");
-    expect(homePageSource).toContain("const derivedFullMarketRows = fullMarketRows.length > 0");
-    expect(homePageSource).toContain("wideRowsUseRepresentativeAggregate");
-    expect(homePageSource).toContain("rows={derivedFullMarketRows}");
-    expect(homePageSource).toContain('marketState={derivedFullMarketRows.length > 0 ? "LIVE" : stateFromLoad(realtimeMarket)}');
+  it("keeps the homepage heatmap on a two-source fallback chain (kgi-core tiles, twse industry aggregate)", () => {
+    // 2026-07-14 載體轉移：正式首頁改為 public/home-exact/index.html（原封搬原稿），
+    // 舊 page.tsx 的 representative-aggregate fallback 隨舊版面退役。等價意圖鎖：
+    // 新載體熱力圖必須同時打 kgi-core（個股磚格）與 twse（產業彙總）兩源 fallback，
+    // 單源冷掉不得讓熱力圖整塊消失。
+    expect(homeExactSource).toContain("/api/v1/market/heatmap/kgi-core");
+    expect(homeExactSource).toContain("/api/v1/market/heatmap/twse");
   });
 
   it("keeps the homepage TAIEX mini-chart backed by owned intraday index history instead of an empty line", () => {

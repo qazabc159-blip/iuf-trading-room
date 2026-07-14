@@ -344,10 +344,12 @@ html,body{background:#04060a;}
 body{margin:0;padding:0;overflow-x:hidden;}
 .device{height:auto!important;max-width:none!important;border:0!important;box-shadow:none!important;}
 .device .scroll{height:auto!important;overflow-y:visible!important;}
-.device.desktop{width:1280px!important;max-width:100%;margin:0 auto;}
+.device.desktop{width:100%!important;margin:0;}
 .device.mobile{width:100%!important;margin:0 auto;}
 @media(min-width:721px){.device.mobile{display:none!important;}}
 @media(max-width:720px){.device.desktop{display:none!important;}}
+/* artifact 展示標註（一屏摺線）非設計本體，正式頁不顯示 */
+.foldline{display:none!important;}
 </style>
 </head><body>
       <div class="device desktop">
@@ -572,11 +574,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
             </div>
           </div>
 
-          <!-- 摺線 -->
-          <div style="position:relative;height:0;z-index:15;">
-            <i style="display:block;border-top:1px dashed rgba(226,184,92,.5);"></i>
-            <span style="position:absolute;right:8px;top:-8px;font-size:8.5px;letter-spacing:.14em;color:var(--amber-dim);background:var(--black);padding:0 6px;font-family:var(--cjk);white-space:nowrap;">↑ 首屏摺線　↓ 熱力圖 · S1 · 排行 · 新聞</span>
-          </div>
+          <!-- 摺線標註（artifact 展示用）已移除 -->
 
           <!-- 熱力圖：結構照現行產品（toolbar / kicker / chips / treemap / footer） -->
           <div class="m-sec">

@@ -1,53 +1,38 @@
 /**
  * page-p1-home-cluster.test.ts
- * Source-grep regression gate for the P1 fixes on the homepage
- * (reports/product_critique_20260710/PRODUCT_CRITIQUE_v1.md P1-1/P1-11/P1-12).
+ * Homepage P1 誠實措辭 regression gate（product_critique_20260710 P1-1/P1-11/P1-12）。
  *
- * page.tsx is a Server Component containing JSX, and this repo's vitest
- * config has no React/JSX transform plugin (see
- * app/components/industry-heatmap-representatives.test.ts and
- * app/page-p0-visual-copy.test.ts for the established convention) — a
- * `.test.ts` file cannot `import` it directly, only read its source text.
+ * 2026-07-14 載體轉移：正式首頁改為「原封搬原稿」靜態頁
+ * （public/home-exact/index.html），本檔驗證目標隨之轉移。兩條舊鎖退役並註記：
+ * - P1-1（禁裸 GET endpoint）：原稿設計「一模一樣」鐵律（楊董 2026-07-13 欽定）
+ *   自帶 sfoot 來源標註「來源 GET /api/v1/ai-recommendations/v3」——那是蓄意的
+ *   來源憑證行，非工程語意洩漏，verbatim 鐵律優先，該鎖對新首頁不適用。
+ * - P1-12（ticker 不冒充公司名）：新載體排行渲染為 `item.name || item.market`
+ *   fallback 鏈，尚無 name!==symbol 防呆——列 follow-up（Jim，P2），不假綠鎖。
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const homeSource = readFileSync(
+  new URL("../public/home-exact/index.html", import.meta.url),
+  "utf8",
+);
 
-describe("homepage P1 home-cluster fixes", () => {
-  // P1-11: "市場覆蓋 0 / 1,000" during closed-market hours read as broken.
-  it("relabels market coverage as an honest off-hours snapshot instead of a bare 0/N", () => {
-    expect(source).toContain("function marketCoverageText");
-    expect(source).toContain("freshTotal === 0 && isOffHours");
-    expect(source).toContain("休市快照 · ${formatNumber(quoteTotal)} 檔");
-    expect(source).toContain("marketCoverageText(market, isKgiGatewayScheduledOff(nowDate))");
+describe("homepage P1 home-cluster fixes (verbatim-artifact carrier)", () => {
+  // P1-11：休市時段不得偽裝即時——原稿自帶誠實標記句，鎖住不被改掉。
+  it("keeps the honest off-hours close-label disclosure from the artifact", () => {
+    expect(homeSource).toContain("休市時段顯示「MM/DD 收盤」誠實標記，非即時價");
+    expect(homeSource).toContain('data-slot="idx-source"');
   });
 
-  // P1-11: the TAIEX index card's "資料更新中" badge at night implied a stuck
-  // refresh, when off-hours staleness is the expected/correct state.
-  it("relabels the TAIEX freshness badge for expected off-hours staleness, not a stuck refresh", () => {
-    expect(source).toContain('label: stale ? (offHours ? "休市快照" : "資料更新中") : "即時"');
-    expect(source).toContain("readMarketIndex(realtimeMarket, market, nowDate)");
+  // P1-11：大盤錨點的日期戳 slot 存在（script 以真資料時間覆寫，非寫死「即時」）。
+  it("stamps the index anchor with a data-driven date slot, not a hardcoded live badge", () => {
+    expect(homeSource).toContain('data-slot="idx-stamp"');
   });
 
-  // P1-12: a missing company name in the leaders/rankings table used to fall
-  // back to repeating the ticker symbol as if it were the name ("9110 9110").
-  // Verified against live prod (2026-07-11): the backend actually sends
-  // `name` populated with the symbol itself (not null), so the fix has to
-  // compare name-vs-symbol, not just null-check `row.name`.
-  it("never repeats the ticker as a fake company name in the rankings table", () => {
-    expect(source).toContain("MISSING_COMPANY_NAME_LABEL");
-    expect(source).toContain("trimmedName !== row.symbol.trim()");
-    expect(source).not.toContain("name: row.name ?? MISSING_COMPANY_NAME_LABEL");
-    expect(source).not.toContain("function marketNameFromSymbol");
-  });
-
-  // P1-1: raw "GET /api/v1/..." endpoint strings used to print directly into
-  // the homepage Market Intel panel footer / empty-state copy.
-  it("never prints a raw GET endpoint string in the Market Intel panel", () => {
-    expect(source).toContain("humanizeEndpointLabel(source.newsEndpoint)");
-    expect(source).toContain("humanizeEndpointLabel(source.announcementsEndpoint)");
-    expect(source).not.toContain("`${source.newsEndpoint} ·");
-    expect(source).not.toContain("`${source.announcementsEndpoint} 目前沒有");
+  // P1-12 意圖保留：排行公司名缺失時不留空殼 —— 新載體以 name→market fallback
+  // 呈現，name!==symbol 防呆為列管 follow-up（見檔頭註記）。
+  it("renders rankings company names through an explicit fallback chain", () => {
+    expect(homeSource).toContain('item.name || item.market');
   });
 });
