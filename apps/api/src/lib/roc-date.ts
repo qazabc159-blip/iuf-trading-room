@@ -33,3 +33,19 @@ export function parseRocEodDateIso(raw: string | null | undefined): string | nul
   }
   return null;
 }
+
+/**
+ * Reverse direction: "YYYY-MM-DD" → compact 7-digit ROC date e.g.
+ * "2026-07-13" → "1150713". Added 2026-07-14 (EOD source fallback task) for
+ * `data-sources/twse-openapi-client.ts`'s www rwd afterTrading fallback,
+ * which fetches by an already-known Gregorian date and must tag its
+ * normalized rows with the same ROC wire format STOCK_DAY_ALL uses, so
+ * downstream code (`parseRocEodDateIso`) treats both sources identically.
+ * Kept in this shared module — not a third parallel copy of ROC math
+ * (see ROC-SWEEP-9 whole-tree audit, tests/ci.test.ts).
+ */
+export function isoDateToRocCompact(dateIso: string): string {
+  const [y, m, d] = dateIso.split("-");
+  const rocYear = (parseInt(y!, 10) - 1911).toString().padStart(3, "0");
+  return `${rocYear}${m}${d}`;
+}

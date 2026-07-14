@@ -30,7 +30,7 @@
  */
 
 import { createClient } from "redis";
-import { parseRocEodDateIso } from "../lib/roc-date.js";
+import { parseRocEodDateIso, isoDateToRocCompact } from "../lib/roc-date.js";
 
 // ── Base URLs ─────────────────────────────────────────────────────────────────
 
@@ -205,6 +205,118 @@ export async function getStockDayAllRows(
   })();
 
   return _stockDayAllInflight;
+}
+
+// ── www rwd afterTrading fallback (2026-07-14 EOD source fallback) ──────────
+// openapi.twse.com.tw's STOCK_DAY_ALL publish pipeline stalled on 2026-07-13:
+// it kept serving 7/9's close data 5 hours after 7/13's official close, while
+// the main-site `rwd/zh/afterTrading/MI_INDEX` endpoint already had 7/13's
+// official close for the same stocks (verified via curl: 2330 close=2,440).
+// Same official TWSE body, a separate publish pipeline from OpenAPI — used
+// as a fallback only, gated by the caller (server.ts _runTwseEodCron) on
+// "primary is behind AND today is a real trading day".
+
+const TWSE_AFTERTRADING_MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX";
+const AFTER_TRADING_TIMEOUT_MS = 8000;
+const AFTER_TRADING_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/**
+ * Parses one row of the rwd afterTrading MI_INDEX "每日收盤行情" table into
+ * the same `StockDayAllRow` shape as the primary STOCK_DAY_ALL endpoint, so
+ * callers can treat both sources identically. Field order (live-verified
+ * 2026-07-14 via curl against date=20260713):
+ *   [0]證券代號 [1]證券名稱 [2]成交股數 [3]成交筆數 [4]成交金額 [5]開盤價
+ *   [6]最高價 [7]最低價 [8]收盤價 [9]漲跌(+/-) (HTML span, sign only)
+ *   [10]漲跌價差 (unsigned magnitude) [11..15] bid/ask/PE — unused here.
+ * `Change` is reconstructed as a signed decimal string (matching STOCK_DAY_ALL's
+ * own convention: "20.0000" for up, "-0.0500" for down — no leading "+") by
+ * combining field [10]'s magnitude with the +/- sign extracted from field [9]'s
+ * HTML (`>+<` or `>-<`; Taiwan convention: red=+/up, green=-/down). Rows with a
+ * non-4-to-6-digit code or empty closing price are dropped (matches
+ * STOCK_DAY_ALL's own downstream filtering in server.ts).
+ */
+export function _parseAfterTradingCloseRow(
+  row: string[] | null | undefined,
+  rocDateCompact: string
+): StockDayAllRow | null {
+  if (!Array.isArray(row) || row.length < 11) return null;
+  const code = row[0]?.trim();
+  if (!code || !/^\d{4,6}$/.test(code)) return null;
+  const closingPrice = row[8]?.trim();
+  if (!closingPrice) return null;
+
+  const signMatch = String(row[9] ?? "").match(/>([+-])</);
+  const magnitude = Number((row[10] ?? "0").trim().replace(/,/g, ""));
+  const change = Number.isFinite(magnitude)
+    ? (signMatch?.[1] === "-" ? -magnitude : magnitude)
+    : 0;
+
+  return {
+    Date: rocDateCompact,
+    Code: code,
+    Name: row[1]?.trim() ?? "",
+    TradeVolume: row[2]?.trim() ?? "",
+    TradeValue: row[4]?.trim() ?? "",
+    OpeningPrice: row[5]?.trim() ?? "",
+    HighestPrice: row[6]?.trim() ?? "",
+    LowestPrice: row[7]?.trim() ?? "",
+    ClosingPrice: closingPrice,
+    Change: String(change),
+    Transaction: row[3]?.trim() ?? "",
+  };
+}
+
+/**
+ * Fallback source for TWSE all-market EOD closes — see module comment above.
+ * `dateIso` is the expected Taipei trading date ("YYYY-MM-DD"), NOT parsed
+ * from the response (the caller already knows which trading day it wants).
+ * Fail-open to `[]` on any error, non-"OK" `stat` (non-trading day / not yet
+ * published), or missing per-stock table — callers decide STALE/EMPTY
+ * handling. Never throws.
+ */
+export async function getTwseAfterTradingAllRows(
+  dateIso: string,
+  fetchOverride?: typeof fetch
+): Promise<StockDayAllRow[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) return [];
+  const doFetch = fetchOverride ?? globalThis.fetch;
+  const dateYYYYMMDD = dateIso.replace(/-/g, "");
+
+  try {
+    const url = `${TWSE_AFTERTRADING_MI_INDEX_URL}?date=${dateYYYYMMDD}&type=ALLBUT0999&response=json`;
+    const resp = await doFetch(url, {
+      headers: { "Accept": "application/json", "User-Agent": AFTER_TRADING_USER_AGENT },
+      signal: AbortSignal.timeout(AFTER_TRADING_TIMEOUT_MS),
+      redirect: "follow"
+    });
+    if (!resp.ok) {
+      console.warn(`[twse-openapi-client] afterTrading MI_INDEX HTTP ${resp.status} for ${dateIso}`);
+      return [];
+    }
+    const body = await resp.json() as { stat?: string; tables?: Array<{ fields?: string[]; data?: string[][] }> };
+    if (body.stat !== "OK" || !Array.isArray(body.tables)) {
+      console.info(`[twse-openapi-client] afterTrading MI_INDEX stat=${body.stat ?? "undefined"} for ${dateIso} (non-trading day or not yet published)`);
+      return [];
+    }
+    const table = body.tables.find(
+      (t) => Array.isArray(t.fields) && t.fields[0] === "證券代號" && t.fields[1] === "證券名稱"
+    );
+    if (!table || !Array.isArray(table.data)) {
+      console.warn(`[twse-openapi-client] afterTrading MI_INDEX: per-stock close table not found for ${dateIso}`);
+      return [];
+    }
+    const rocDateCompact = isoDateToRocCompact(dateIso);
+    const rows: StockDayAllRow[] = [];
+    for (const raw of table.data) {
+      const parsed = _parseAfterTradingCloseRow(raw, rocDateCompact);
+      if (parsed) rows.push(parsed);
+    }
+    return rows;
+  } catch (err) {
+    console.warn("[twse-openapi-client] afterTrading MI_INDEX fetch failed:", err instanceof Error ? err.message : String(err));
+    return [];
+  }
 }
 
 // ── Shared TPEX daily-close dedup cache ──────────────────────────────────────

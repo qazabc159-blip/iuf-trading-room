@@ -368,8 +368,14 @@ function visibleDailyBriefCondition() {
  * Returns true if today is a Taiwan Stock Exchange trading day.
  * Uses tw_trading_calendar DB table if available (Athena spec dataset #9).
  * Falls back to weekend-only check when table is absent (DEGRADED mode).
+ *
+ * Exported 2026-07-14 (EOD source fallback task) so server.ts's TWSE-EOD-
+ * QUOTE-CRON can reuse this same calendar check to gate its www rwd
+ * afterTrading fallback trigger, rather than maintaining a second
+ * independent trading-day check (same duplicate-implementation bug class
+ * as the ROC date parser sweep — reports/ledger_stall_20260709/).
  */
-async function isTwTradingDay(tradingDate: string): Promise<boolean> {
+export async function isTwTradingDay(tradingDate: string): Promise<boolean> {
   // Weekend fast-path (Taipei local DOW)
   const parts = tradingDate.split("-").map(Number);
   const d = new Date(Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!));

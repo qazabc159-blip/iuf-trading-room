@@ -22336,6 +22336,197 @@ test("EOD-CALENDAR-GATE-2: _runTwseEodCron checks the dedup gate before injectin
   );
 });
 
+// ── EOD-FALLBACK: TWSE OpenAPI STOCK_DAY_ALL upstream-stuck fallback to www
+// rwd afterTrading (2026-07-14, 2026-07-13 quote-chain incident follow-up).
+// STOCK_DAY_ALL kept serving 7/9's close 5h after 7/13's official close while
+// the main-site rwd endpoint already had 7/13's close for the same stocks.
+// ────────────────────────────────────────────────────────────────────────
+
+test("EOD-FALLBACK-1: _isTwseEodPrimaryDateBehindExpected flags a lagging or unparseable primary date, not a fresh one", async () => {
+  const { _isTwseEodPrimaryDateBehindExpected } = await import("../apps/api/src/server.ts");
+
+  assert.equal(
+    _isTwseEodPrimaryDateBehindExpected("2026-07-09T13:30:00+08:00", "2026-07-13"),
+    true,
+    "primary behind expected = flagged"
+  );
+  assert.equal(
+    _isTwseEodPrimaryDateBehindExpected("2026-07-13T13:30:00+08:00", "2026-07-13"),
+    false,
+    "primary matches expected = not behind"
+  );
+  assert.equal(
+    _isTwseEodPrimaryDateBehindExpected("2026-07-14T13:30:00+08:00", "2026-07-13"),
+    false,
+    "primary ahead of expected (shouldn't normally happen) = not behind"
+  );
+  assert.equal(
+    _isTwseEodPrimaryDateBehindExpected("", "2026-07-13"),
+    true,
+    "unparseable primary date = treated as behind (candidate for fallback)"
+  );
+});
+
+test("EOD-FALLBACK-2: _shouldUseTwseEodFallback only fires when primary is behind AND today is a real trading day", async () => {
+  const { _shouldUseTwseEodFallback } = await import("../apps/api/src/server.ts");
+
+  assert.equal(
+    _shouldUseTwseEodFallback("2026-07-09T13:30:00+08:00", "2026-07-13", true),
+    true,
+    "primary stuck + confirmed trading day = fallback triggers"
+  );
+  assert.equal(
+    _shouldUseTwseEodFallback("2026-07-09T13:30:00+08:00", "2026-07-13", false),
+    false,
+    "primary lags but today is NOT a trading day (holiday/weekend) = no fallback — the lag is expected"
+  );
+  assert.equal(
+    _shouldUseTwseEodFallback("2026-07-13T13:30:00+08:00", "2026-07-13", true),
+    false,
+    "primary is fresh = no fallback needed even on a trading day"
+  );
+  assert.equal(
+    _shouldUseTwseEodFallback("", "2026-07-13", true),
+    true,
+    "unparseable primary + confirmed trading day = fallback triggers"
+  );
+});
+
+test("EOD-FALLBACK-3: _runTwseEodCron wires the fallback gate to the shared tw_trading_calendar check (isTwTradingDay), not a wall-clock guess", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    serverSrc,
+    /if \(_isTwseEodPrimaryDateBehindExpected\(primaryTradingDateIsoPreview, expectedTradeDateIso\)\) \{/,
+    "EOD-FALLBACK-3: the EOD cron must check _isTwseEodPrimaryDateBehindExpected before ever querying the trading calendar"
+  );
+  assert.match(
+    serverSrc,
+    /const isTradingToday = await isTwTradingDay\(expectedTradeDateIso\)\.catch\(\(\) => false\);/,
+    "EOD-FALLBACK-3: the EOD cron must gate the fallback on the shared isTwTradingDay calendar check, not wall-clock/weekday alone"
+  );
+  assert.match(
+    serverSrc,
+    /if \(_shouldUseTwseEodFallback\(primaryTradingDateIsoPreview, expectedTradeDateIso, isTradingToday\)\) \{/,
+    "EOD-FALLBACK-3: the EOD cron must gate the actual fallback fetch on _shouldUseTwseEodFallback"
+  );
+  assert.match(
+    serverSrc,
+    /const fallbackRows = await getTwseAfterTradingAllRows\(expectedTradeDateIso\);/,
+    "EOD-FALLBACK-3: the EOD cron must call getTwseAfterTradingAllRows when the gate fires"
+  );
+});
+
+test("EOD-FALLBACK-4: _parseAfterTradingCloseRow maps the rwd afterTrading MI_INDEX per-stock row fields (live-verified shape) into StockDayAllRow, including signed Change reconstruction", async () => {
+  const { _parseAfterTradingCloseRow } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+
+  // Live-verified 2026-07-14 via curl against date=20260713 (see PR body):
+  // 2330 (TSMC) closed 2,440.00, up +25.00 (red).
+  const row2330 = [
+    "2330", "台積電", "35,310,380", "94,215", "86,697,387,632",
+    "2,460.00", "2,480.00", "2,440.00", "2,440.00",
+    "<p style= color:red>+</p>", "25.00",
+    "2,440.00", "333", "2,445.00", "193", "32.80"
+  ];
+  const parsed2330 = _parseAfterTradingCloseRow(row2330, "1150713");
+  assert.deepEqual(parsed2330, {
+    Date: "1150713",
+    Code: "2330",
+    Name: "台積電",
+    TradeVolume: "35,310,380",
+    TradeValue: "86,697,387,632",
+    OpeningPrice: "2,460.00",
+    HighestPrice: "2,480.00",
+    LowestPrice: "2,440.00",
+    ClosingPrice: "2,440.00",
+    Change: "25",
+    Transaction: "94,215",
+  });
+
+  // 0051 (元大中型100): down 0.45 (green) — confirms negative-sign reconstruction,
+  // and the no-quotes-around-color HTML variant observed live alongside the
+  // quoted variant used elsewhere in the response.
+  const rowDown = [
+    "0051", "元大中型100", "76,807", "634", "11,084,013",
+    "144.25", "145.95", "142.50", "143.80",
+    "<p style= color:green>-</p>", "0.45",
+    "142.60", "1", "142.95", "1", "0.00"
+  ];
+  const parsedDown = _parseAfterTradingCloseRow(rowDown, "1150713");
+  assert.equal(parsedDown?.Change, "-0.45", "green sign must reconstruct a negative Change");
+  assert.equal(parsedDown?.ClosingPrice, "143.80");
+
+  // Malformed / non-stock rows must be dropped, not crash.
+  const rowNonNumericCode = ["ABCDEF", "not a stock", "1", "1", "1", "1", "1", "1", "1", "<p>+</p>", "0", "1", "1", "1", "1", "0"];
+  assert.equal(_parseAfterTradingCloseRow(rowNonNumericCode, "1150713"), null, "non-numeric code rejected even with full-length row");
+  assert.equal(_parseAfterTradingCloseRow(null, "1150713"), null, "null row rejected");
+  assert.equal(_parseAfterTradingCloseRow(["2330"], "1150713"), null, "too-short row rejected");
+});
+
+test("EOD-FALLBACK-5: getTwseAfterTradingAllRows returns the per-stock closes on a real success shape (live-verified table layout)", async () => {
+  const { getTwseAfterTradingAllRows } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+
+  const mockFetch = (async (): Promise<Response> => {
+    const body = {
+      stat: "OK",
+      tables: [
+        { title: "115年07月13日 價格指數(臺灣證券交易所)", fields: ["指數", "收盤指數"], data: [] },
+        {
+          title: "115年07月13日 每日收盤行情(不含定價交易、盤後定價交易之證券)",
+          fields: ["證券代號", "證券名稱", "成交股數", "成交筆數", "成交金額", "開盤價", "最高價", "最低價", "收盤價", "漲跌(+/-)", "漲跌價差", "最後揭示買價", "最後揭示買量", "最後揭示賣價", "最後揭示賣量", "本益比"],
+          data: [
+            ["2330", "台積電", "35,310,380", "94,215", "86,697,387,632", "2,460.00", "2,480.00", "2,440.00", "2,440.00", "<p style= color:red>+</p>", "25.00", "2,440.00", "333", "2,445.00", "193", "32.80"]
+          ]
+        }
+      ]
+    };
+    return {
+      ok: true, status: 200,
+      headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers,
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const rows = await getTwseAfterTradingAllRows("2026-07-13", mockFetch);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.Code, "2330");
+  assert.equal(rows[0]!.Date, "1150713", "Date must be the requested ISO date converted to compact ROC, not parsed from the response");
+  assert.equal(rows[0]!.ClosingPrice, "2,440.00");
+});
+
+test("EOD-FALLBACK-6: getTwseAfterTradingAllRows fails open to [] on a non-OK stat (non-trading day / not yet published) — never fakes data", async () => {
+  const { getTwseAfterTradingAllRows } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+
+  const mockFetch = (async (): Promise<Response> => {
+    const body = { stat: "很抱歉，沒有符合條件的資料!", type: "ALLBUT0999" };
+    return {
+      ok: true, status: 200,
+      headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers,
+      json: async () => body
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const rows = await getTwseAfterTradingAllRows("2026-07-14", mockFetch);
+  assert.deepEqual(rows, [], "non-OK stat must fail open to an empty array, not throw or return stale rows");
+});
+
+test("EOD-FALLBACK-7: getTwseAfterTradingAllRows fails open to [] on HTTP error / network failure / bad input", async () => {
+  const { getTwseAfterTradingAllRows } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+
+  const httpErrorFetch = (async (): Promise<Response> => {
+    return { ok: false, status: 503, headers: { get: () => null } as unknown as Headers, json: async () => ({}) } as unknown as Response;
+  }) as typeof fetch;
+  assert.deepEqual(await getTwseAfterTradingAllRows("2026-07-13", httpErrorFetch), []);
+
+  const throwingFetch = (async () => { throw new Error("network down"); }) as unknown as typeof fetch;
+  assert.deepEqual(await getTwseAfterTradingAllRows("2026-07-13", throwingFetch), []);
+
+  // Malformed date input must not reach the network at all.
+  assert.deepEqual(await getTwseAfterTradingAllRows("not-a-date"), []);
+});
+
 // ── SCHED-CURSOR: FinMind sync scheduler round-robin cursor (2026-07-12,
 // #1229 A5/A6 finding) ────────────────────────────────────────────────────
 // Memory-mode (no DB — PERSISTENCE_MODE unset in this test suite) coverage

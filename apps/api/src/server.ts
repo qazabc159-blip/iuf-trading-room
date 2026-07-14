@@ -254,6 +254,7 @@ import {
   _lastPipelineState,
   getPipelineObservabilityAddendum,
   isDailyBriefV2ContractCompliant,
+  isTwTradingDay,
   loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
@@ -17577,6 +17578,50 @@ export function _computeTwseEodCronTradingDateIso(stockDateRaw: string | undefin
 }
 
 /**
+ * True when the TWSE-EOD-QUOTE-CRON's primary source (openapi.twse.com.tw
+ * STOCK_DAY_ALL) has resolved a trading date that lags strictly behind the
+ * expected Taipei trading date, or could not be parsed at all. On its own
+ * this is NOT sufficient reason to fall back to the www rwd afterTrading
+ * endpoint — see `_shouldUseTwseEodFallback`, which also requires the
+ * expected date to actually be a trading day (a real non-trading day
+ * produces this exact same lag signal and must not trigger a fallback
+ * fetch). `primaryTradingDateIso` is the `T13:30:00+08:00`-suffixed value
+ * from `_computeTwseEodCronTradingDateIso` (or `""` when unparseable);
+ * `expectedTradeDateIso` is a plain `"YYYY-MM-DD"`.
+ */
+export function _isTwseEodPrimaryDateBehindExpected(
+  primaryTradingDateIso: string,
+  expectedTradeDateIso: string
+): boolean {
+  if (!primaryTradingDateIso) return true;
+  return primaryTradingDateIso.slice(0, 10) < expectedTradeDateIso;
+}
+
+/**
+ * Final gate for firing the www rwd afterTrading (main-site) fallback fetch
+ * in the TWSE-EOD-QUOTE-CRON. 2026-07-13 quote-chain incident: TWSE OpenAPI's
+ * STOCK_DAY_ALL kept serving 7/9's close data 5 hours after 7/13's official
+ * close, while the main-site `rwd/zh/afterTrading/MI_INDEX` endpoint already
+ * had 7/13's official close for the same stocks (same official TWSE body,
+ * two independent publish pipelines). Requires BOTH:
+ *   1. the primary is behind (or unparseable) — `_isTwseEodPrimaryDateBehindExpected`
+ *   2. `expectedTradeDateIso` is itself a real Taiwan trading day (checked
+ *      against `tw_trading_calendar` via the shared `isTwTradingDay` —
+ *      NEVER a wall-clock/weekday guess)
+ * On a genuine non-trading day (weekend/holiday) condition 1 is expected to
+ * be true and must NOT trigger a fallback fetch — that lag is normal, not
+ * an upstream failure.
+ */
+export function _shouldUseTwseEodFallback(
+  primaryTradingDateIso: string,
+  expectedTradeDateIso: string,
+  isExpectedDateTradingDay: boolean
+): boolean {
+  return isExpectedDateTradingDay
+    && _isTwseEodPrimaryDateBehindExpected(primaryTradingDateIso, expectedTradeDateIso);
+}
+
+/**
  * Detects whether the TWSE MIS intraday feed is still serving the prior
  * trading session's data (2026-07-10 quote-chain outage diagnosis: on the
  * 7/10 typhoon closure, MIS kept returning `d="20260709"` all morning even
@@ -18938,12 +18983,47 @@ function startSchedulers(workspaceSlug: string): void {
       return hhmm < 855 || hhmm >= 1435;
     }
 
+    /** Today's Taipei date as "YYYY-MM-DD" — the fallback gate's expected trade date. */
+    function _twseEodCronTodayIso(): string {
+      return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+    }
+
     async function _runTwseEodCron(): Promise<void> {
       if (!_isTwseEodCronWindow()) return;
       try {
         const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
-        const stockRows = await getStockDayAllRows();
+        let stockRows = await getStockDayAllRows();
         if (!stockRows.length) return;
+
+        // ── Upstream-stuck fallback (2026-07-13 quote-chain incident) ─────────
+        // openapi.twse.com.tw STOCK_DAY_ALL's own publish pipeline can stall —
+        // observed 7/13: it kept serving 7/9's close 5h after 7/13's official
+        // close, while the main-site rwd afterTrading endpoint already had
+        // 7/13's close for the same stocks. Only fall back when the primary's
+        // resolved date is behind (or unparseable) AND today is confirmed a
+        // real Taiwan trading day via tw_trading_calendar — never on wall-clock
+        // alone (a genuine non-trading day produces the identical lag signal
+        // and must NOT trigger a fallback fetch).
+        {
+          const primaryTradingDateIsoPreview = _computeTwseEodCronTradingDateIso(stockRows[0]?.Date);
+          const expectedTradeDateIso = _twseEodCronTodayIso();
+          if (_isTwseEodPrimaryDateBehindExpected(primaryTradingDateIsoPreview, expectedTradeDateIso)) {
+            const isTradingToday = await isTwTradingDay(expectedTradeDateIso).catch(() => false);
+            if (_shouldUseTwseEodFallback(primaryTradingDateIsoPreview, expectedTradeDateIso, isTradingToday)) {
+              console.warn(`[twse-eod-cron] STOCK_DAY_ALL upstream stuck (primary_date=${primaryTradingDateIsoPreview.slice(0, 10) || "unparseable"}, expected=${expectedTradeDateIso}, today_is_trading_day=true) — trying www rwd afterTrading fallback`);
+              const { getTwseAfterTradingAllRows } = await import("./data-sources/twse-openapi-client.js");
+              const fallbackRows = await getTwseAfterTradingAllRows(expectedTradeDateIso);
+              if (fallbackRows.length > 0) {
+                stockRows = fallbackRows;
+                console.log(`[twse-eod-cron] fallback succeeded: ${fallbackRows.length} rows from www rwd afterTrading (trade_date=${expectedTradeDateIso})`);
+              } else {
+                console.warn(`[twse-eod-cron] BOTH sources unavailable for trade_date=${expectedTradeDateIso} — quote_last_close will NOT be updated for today (honest STALE by omission), primary remains at ${primaryTradingDateIsoPreview.slice(0, 10) || "unparseable"}`);
+              }
+            } else {
+              console.log(`[twse-eod-cron] primary date behind expected (${primaryTradingDateIsoPreview.slice(0, 10) || "unparseable"} < ${expectedTradeDateIso}) but ${expectedTradeDateIso} is not a Taiwan trading day — no fallback (expected lag)`);
+            }
+          }
+        }
 
         // Build minimal cron session for upsertManualQuotes
         const cronSession = {
@@ -19042,6 +19122,14 @@ function startSchedulers(workspaceSlug: string): void {
             // Extract YYYY-MM-DD from tradingDateIso ("YYYY-MM-DDT13:30:00+08:00")
             const eodTradeDate = tradingDateIso.slice(0, 10);
             if (/^\d{4}-\d{2}-\d{2}$/.test(eodTradeDate)) {
+              // source stays "twse_eod" regardless of whether `stockRows` came
+              // from the primary openapi.twse.com.tw STOCK_DAY_ALL or the www
+              // rwd afterTrading fallback (2026-07-14) — both are the same
+              // official TWSE EOD close tier, just two different official
+              // delivery endpoints for the identical publish. Not adding a new
+              // quote_last_close.source CHECK-constraint value to avoid an
+              // unrequested migration for what is a delivery-channel distinction,
+              // not a data-quality one.
               const eodEntries = quotes
                 .filter((q) => q.last !== null && q.last > 0)
                 .map((q) => ({
