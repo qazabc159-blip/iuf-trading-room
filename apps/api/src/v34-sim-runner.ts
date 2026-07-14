@@ -160,12 +160,23 @@ export interface V34SizedEntry {
   targetNotionalTwd: number;
   lastClosePrice: number | null;
   targetShares: number;
+  /** True when targetShares is a Taiwan odd-lot (零股, 1-999 shares) order —
+   * i.e. the per-name budget could not afford a single 1000-share board lot.
+   * See computeV34OrderSizing doc (Pete review, PR #1268) for why this exists. */
+  isOddLot: boolean;
   sizingNote: string;
 }
 
 export interface V34OrderResult {
   stockId: string;
   shares: number;
+  /** True when `shares` was placed as a Taiwan odd-lot (零股) order. */
+  isOddLot: boolean;
+  /** shares * lastClosePrice at sizing time — actual notional committed for
+   * this name, so the audit/report can reconcile back to the 10M contracted
+   * notional even when a name entered as an odd lot below the equal-weight
+   * target (Pete review, PR #1268). */
+  executedNotionalTwd: number | null;
   status: KgiOrderLifecycleStatus | "skipped";
   tradeId: string | null;
   error: string | null;
@@ -366,7 +377,7 @@ export function checkV34KgiSubscriptionCap(basket: V34Basket): V34CapCheckResult
 }
 
 // ---------------------------------------------------------------------------
-// Order sizing — equal weight, 10M notional, board-lot rounded
+// Order sizing — equal weight, 10M notional, board-lot preferred / odd-lot fallback
 // ---------------------------------------------------------------------------
 
 /** Round down to nearest 1000-share board lot (mirrors v51-sim-basket-runner.ts convention). */
@@ -374,13 +385,30 @@ function roundDownBoardLot(shares: number): number {
   return Math.floor(shares / 1000) * 1000;
 }
 
+/** Taiwan odd-lot (零股) orders allow 1-999 shares — never a full board lot. */
+const ODD_LOT_MAX_SHARES = 999;
+
 /**
  * Compute per-name target notional (equal weight over the whole basket) and
- * board-lot-rounded target shares from DB last-close prices (fresher than the
- * CSV's own last_close snapshot column, which is only used for schema
- * validation/reference above). Symbols with no available DB last close are
- * sized to 0 shares with an explicit skip note — never silently treated as a
- * valid zero-cost fill.
+ * target shares from DB last-close prices (fresher than the CSV's own
+ * last_close snapshot column, which is only used for schema
+ * validation/reference above).
+ *
+ * Board-lot preferred, odd-lot (零股) fallback (2026-07-14, Pete review PR
+ * #1268 finding + Elva ruling): with 9 names at equal ~1.111M TWD each, 4 of
+ * the 9 real basket prices (2330 @2415, 8046 @1215, 6223 @7080, 6488 @1350)
+ * cannot afford a single 1000-share board lot — the OLD floor-to-nearest-
+ * 1000 logic silently rounded these to 0 shares, meaning only 5/9 names and
+ * ~49.5% of the contracted notional would actually enter tomorrow (violates
+ * the contract's "9 檔等權" intent, silently). Fix: when the raw share count
+ * is below one board lot, place the maximum affordable ODD-lot order
+ * (1-999 shares, `isOddLot: true`) instead of rounding to 0 — every name
+ * still enters, each at close to its equal-weight target notional. Symbols
+ * whose budget affords >= 1000 shares are unaffected (still floor-to-
+ * nearest-1000, isOddLot: false), matching V5-1's original convention.
+ *
+ * Symbols with no available DB last close are sized to 0 shares with an
+ * explicit skip note — never silently treated as a valid zero-cost fill.
  */
 export function computeV34OrderSizing(
   basket: V34Basket,
@@ -396,16 +424,32 @@ export function computeV34OrderSizing(
         targetNotionalTwd: perNameTargetTwd,
         lastClosePrice: null,
         targetShares: 0,
+        isOddLot: false,
         sizingNote: "skipped_missing_last_close",
       };
     }
-    const targetShares = roundDownBoardLot(perNameTargetTwd / close.closePrice);
+    const rawShares = perNameTargetTwd / close.closePrice;
+    if (rawShares >= 1000) {
+      const targetShares = roundDownBoardLot(rawShares);
+      return {
+        stockId: row.stockId,
+        targetNotionalTwd: perNameTargetTwd,
+        lastClosePrice: close.closePrice,
+        targetShares,
+        isOddLot: false,
+        sizingNote: "ok",
+      };
+    }
+    // Budget can't afford a full board lot — fall back to the maximum
+    // affordable odd-lot order rather than silently rounding to 0 shares.
+    const oddShares = Math.min(ODD_LOT_MAX_SHARES, Math.floor(rawShares));
     return {
       stockId: row.stockId,
       targetNotionalTwd: perNameTargetTwd,
       lastClosePrice: close.closePrice,
-      targetShares,
-      sizingNote: targetShares > 0 ? "ok" : "sub_board_lot_rounds_to_zero",
+      targetShares: oddShares,
+      isOddLot: true,
+      sizingNote: oddShares > 0 ? "ok_odd_lot" : "sub_odd_lot_rounds_to_zero",
     };
   });
 }
@@ -689,7 +733,15 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
   const results: V34OrderResult[] = [];
   for (const entry of sized) {
     if (entry.targetShares <= 0) {
-      results.push({ stockId: entry.stockId, shares: 0, status: "skipped", tradeId: null, error: entry.sizingNote });
+      results.push({
+        stockId: entry.stockId,
+        shares: 0,
+        isOddLot: entry.isOddLot,
+        executedNotionalTwd: null,
+        status: "skipped",
+        tradeId: null,
+        error: entry.sizingNote,
+      });
       continue;
     }
 
@@ -714,7 +766,11 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           price: undefined, // MARKET order — approximates next_trading_day_open
           timeInForce: "ROD",
           orderCond: "Cash",
-          oddLot: false,
+          // 2026-07-14 (Pete review, PR #1268): odd-lot fallback so a name whose
+          // equal-weight budget can't afford a full 1000-share board lot still
+          // enters (see computeV34OrderSizing doc) instead of being silently
+          // rounded to 0 shares.
+          oddLot: entry.isOddLot,
           name: "V34_SIM_AUTO",
         });
         const tradeRecord = tradeRaw as Record<string, unknown>;
@@ -724,7 +780,7 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           extractKgiTradeId(tradeRecord["kgi_response_repr"]) ??
           extractKgiTradeId(tradeRecord);
         accepted = true;
-        console.log(`[v34-sim] ${entry.stockId} qty=${entry.targetShares} accepted tradeId=${tradeId ?? "null"}`);
+        console.log(`[v34-sim] ${entry.stockId} qty=${entry.targetShares}${entry.isOddLot ? " (odd lot)" : ""} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -760,6 +816,8 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
     results.push({
       stockId: entry.stockId,
       shares: entry.targetShares,
+      isOddLot: entry.isOddLot,
+      executedNotionalTwd: entry.lastClosePrice !== null ? entry.targetShares * entry.lastClosePrice : null,
       status,
       tradeId,
       error: accepted ? (status === "unconfirmed" ? lastError : null) : lastError,

@@ -39,6 +39,7 @@ import {
   V34_PLANNED_ENTRY,
   V34_RESERVED_SLOTS_OTHER_TRACKERS,
   type V34Basket,
+  type V34BasketRow,
 } from "./v34-sim-runner.js";
 
 const VALID_HEADER = "stock_id,signal_date,gh,days_since_high,wm60_twd,last_close,label,weight,planned_entry";
@@ -219,6 +220,7 @@ test("computeV34OrderSizing: 10M / 9 names = equal notional, board-lot rounded s
     assert.ok(Math.abs(entry.targetNotionalTwd - expectedPerName) < 0.01);
     // 1,111,111.11 / 100 = 11111.11 shares -> floor to nearest 1000 = 11000
     assert.equal(entry.targetShares, 11000);
+    assert.equal(entry.isOddLot, false);
     assert.equal(entry.sizingNote, "ok");
   }
 });
@@ -230,16 +232,103 @@ test("computeV34OrderSizing: missing last close is skipped (0 shares), not silen
 
   const missing = sized.find((s) => s.stockId === basket.rows[1].stockId)!;
   assert.equal(missing.targetShares, 0);
+  assert.equal(missing.isOddLot, false);
   assert.equal(missing.lastClosePrice, null);
   assert.equal(missing.sizingNote, "skipped_missing_last_close");
 });
 
-test("computeV34OrderSizing: sub-board-lot allocation rounds down to 0 shares with explicit note", () => {
+test("computeV34OrderSizing: budget below even 1-share odd-lot rounds to 0 shares with explicit note", () => {
   const basket = basketWithNSymbols(1);
-  const lastCloses = new Map([[basket.rows[0].stockId, { closePrice: 10_000_000 }]]); // absurdly high price
+  const lastCloses = new Map([[basket.rows[0].stockId, { closePrice: 10_000_000_000 }]]); // absurdly high price
   const sized = computeV34OrderSizing(basket, lastCloses, 1_000_000);
   assert.equal(sized[0].targetShares, 0);
-  assert.equal(sized[0].sizingNote, "sub_board_lot_rounds_to_zero");
+  assert.equal(sized[0].isOddLot, true);
+  assert.equal(sized[0].sizingNote, "sub_odd_lot_rounds_to_zero");
+});
+
+// ---------------------------------------------------------------------------
+// Board-lot-preferred / odd-lot-fallback sizing against the REAL committed
+// basket prices (2026-07-14, Pete review PR #1268 finding): the old
+// floor-to-nearest-1000-only logic silently rounded 2330/8046/6223/6488 to 0
+// shares because their equal-weight ~1.111M TWD budget can't afford even a
+// single 1000-share board lot at these real closes — only 5/9 names and
+// ~49.5% of the contracted notional would have entered. Hand-calculated
+// (budget = 10,000,000/9 = 1,111,111.111... per name) against the exact
+// prices in data/lab/sim_baskets/v34_sim_shakedown_basket_2026-07-14.csv —
+// not the flat $100 fixture used by the test above, which was exactly what
+// hid this bug (Pete's point: "28 個測試全用 $100 假價把這病遮掉了").
+// ---------------------------------------------------------------------------
+
+function realBasketRow(stockId: string, lastClose: number): V34BasketRow {
+  return {
+    stockId,
+    signalDate: "2026-07-09",
+    gh: 0.98,
+    daysSinceHigh: 3,
+    wm60Twd: 10_000_000_000,
+    lastClose,
+    label: V34_LABEL,
+    weight: 1 / 9,
+    plannedEntry: V34_PLANNED_ENTRY,
+  };
+}
+
+// stockId -> real committed CSV close price (2026-07-14 basket)
+const REAL_BASKET_PRICES: Array<[string, number]> = [
+  ["2330", 2415.0],
+  ["8046", 1215.0],
+  ["2409", 31.45],
+  ["6223", 7080.0],
+  ["6488", 1350.0],
+  ["6182", 186.5],
+  ["6213", 385.0],
+  ["8150", 117.0],
+  ["3374", 365.5],
+];
+
+function realBasket(): V34Basket {
+  return {
+    schema: "v34_sim_shakedown_basket_v1",
+    sourceFile: "v34_sim_shakedown_basket_2026-07-14.csv",
+    asOfDate: "2026-07-14",
+    rows: REAL_BASKET_PRICES.map(([id, price]) => realBasketRow(id, price)),
+  };
+}
+
+test("computeV34OrderSizing: real committed basket prices — all 9 names get > 0 shares (Pete finding: 4/9 previously rounded to 0)", () => {
+  const basket = realBasket();
+  const lastCloses = new Map(REAL_BASKET_PRICES.map(([id, price]) => [id, { closePrice: price }]));
+  const sized = computeV34OrderSizing(basket, lastCloses, V34_CAPITAL_TWD);
+
+  // Hand-calculated expected shares (budget=1,111,111.111... per name; floor to
+  // nearest 1000 when affordable, else floor to the odd-lot share count):
+  const expected: Record<string, { shares: number; isOddLot: boolean }> = {
+    "2330": { shares: 460, isOddLot: true },     // 1,111,111.11/2415   = 460.09  -> odd lot 460
+    "8046": { shares: 914, isOddLot: true },     // 1,111,111.11/1215   = 914.49  -> odd lot 914
+    "2409": { shares: 35000, isOddLot: false },  // 1,111,111.11/31.45  = 35329.6 -> board lot 35000
+    "6223": { shares: 156, isOddLot: true },     // 1,111,111.11/7080   = 156.94  -> odd lot 156
+    "6488": { shares: 823, isOddLot: true },     // 1,111,111.11/1350   = 823.05  -> odd lot 823
+    "6182": { shares: 5000, isOddLot: false },   // 1,111,111.11/186.5  = 5957.7  -> board lot 5000
+    "6213": { shares: 2000, isOddLot: false },   // 1,111,111.11/385    = 2886.0  -> board lot 2000
+    "8150": { shares: 9000, isOddLot: false },   // 1,111,111.11/117    = 9496.7  -> board lot 9000
+    "3374": { shares: 3000, isOddLot: false },   // 1,111,111.11/365.5  = 3040.0  -> board lot 3000
+  };
+
+  assert.equal(sized.length, 9, "all 9 names must be sized");
+  let totalCommittedTwd = 0;
+  for (const entry of sized) {
+    const exp = expected[entry.stockId];
+    assert.ok(exp, `unexpected stockId ${entry.stockId}`);
+    assert.ok(entry.targetShares > 0, `${entry.stockId}: must get > 0 shares (Pete finding — was silently 0 before this fix)`);
+    assert.equal(entry.targetShares, exp.shares, `${entry.stockId}: expected ${exp.shares} shares`);
+    assert.equal(entry.isOddLot, exp.isOddLot, `${entry.stockId}: expected isOddLot=${exp.isOddLot}`);
+    totalCommittedTwd += entry.targetShares * (entry.lastClosePrice ?? 0);
+  }
+
+  // Total committed notional must stay within the 10M contracted budget, and
+  // close to it (previously only ~49.5% actually committed with the 4 zeroed names).
+  assert.ok(totalCommittedTwd <= V34_CAPITAL_TWD, `total committed ${totalCommittedTwd} must not exceed capital ${V34_CAPITAL_TWD}`);
+  assert.ok(totalCommittedTwd > V34_CAPITAL_TWD * 0.9, `total committed ${totalCommittedTwd} should be close to equal-weight (>90% of ${V34_CAPITAL_TWD})`);
 });
 
 // ---------------------------------------------------------------------------
