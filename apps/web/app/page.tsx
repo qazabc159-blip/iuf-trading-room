@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import type { CSSProperties } from "react";
 
 import { IndustryHeatmap, type IndustryHeatmapTile } from "./components/industry-heatmap";
@@ -1104,19 +1104,38 @@ function formatIndexGiant(value: number | null): [string, string | null] {
   return [Number(intPart).toLocaleString("zh-TW"), decPart ?? null];
 }
 
-function Masthead({
-  now,
-  market,
-  realtimeMarket,
-  brief,
-  intel,
-}: {
-  now: string;
-  market: LoadState<MarketDataOverview | null>;
-  realtimeMarket: LoadState<RealtimeMarketDashboard | null>;
-  brief: LoadState<DailyBriefDashboard>;
-  intel: LoadState<MarketIntelDashboard>;
-}) {
+// ── Masthead 拆兩半（2026-07-14 楊董標準：冷啟動要快）：品牌/模式/MODE 三格
+// 完全靜態、不依賴任何資料，跟著頁面外殼同步立即輸出；「今日焦點/市場/時鐘」
+// 三格依賴 market/realtimeMarket/brief/intel，包成獨立 Suspense 邊界，不卡
+// 整頁第一次繪製。 ─────────────────────────────────────────────────────────
+function MastStatic() {
+  return (
+    <>
+      <div className="mast-brand"><b>IUF·TR</b><small>TRADING ROOM</small></div>
+      <div className="mast-mode"><i />OBSERVE</div>
+      <div className="mast-slot"><small>MODE</small><b>台股觀察</b></div>
+    </>
+  );
+}
+
+function MastSkeleton() {
+  return (
+    <>
+      <div className="mast-slot"><small>今日焦點</small><b>···</b></div>
+      <div className="mast-spacer" />
+      <div className="mast-slot"><small>市場</small><b>···</b></div>
+      <div className="mast-clock"><b>--:--:--</b><small>UTC+8</small></div>
+    </>
+  );
+}
+
+async function MastDynamic({ now }: { now: string }) {
+  const [market, realtimeMarket, brief, intel] = await Promise.all([
+    timedLoad("market_for_mast", FETCH_MARKET_MS, cachedMarket, null),
+    timedLoad("realtime_for_mast", FETCH_MARKET_MS, cachedRealtimeMarket, null),
+    timedLoad("brief_for_mast", FETCH_PRODUCT_MS, cachedBrief, buildEmptyBrief()),
+    timedLoad("intel_for_mast", FETCH_INTEL_MS, cachedIntel, buildEmptyIntel()),
+  ]);
   const nowDate = new Date(now);
   const twii = readMarketIndex(realtimeMarket, market, nowDate);
   const focusText = brief.data.state === "PUBLISHED"
@@ -1126,15 +1145,12 @@ function Masthead({
       : "查看盤勢與候選觀察";
   const marketSlotLabel = twii.source === "realtime" ? "盤中" : twii.updatedAt ? `${formatDate(twii.updatedAt)} 收盤` : "資料更新中";
   return (
-    <header className="mast">
-      <div className="mast-brand"><b>IUF·TR</b><small>TRADING ROOM</small></div>
-      <div className="mast-mode"><i />OBSERVE</div>
-      <div className="mast-slot"><small>MODE</small><b>台股觀察</b></div>
+    <>
       <div className="mast-slot"><small>今日焦點</small><b>{focusText}</b></div>
       <div className="mast-spacer" />
       <div className="mast-slot"><small>市場</small><b>{marketSlotLabel}</b></div>
       <div className="mast-clock"><b suppressHydrationWarning>{formatClock(now)}</b><small>UTC+8</small></div>
-    </header>
+    </>
   );
 }
 
@@ -1235,7 +1251,10 @@ function HeatZonePanel({
 
   return (
     <section className="heatzone">
-      <div className="heat-kicker">
+      {/* 核心/全市場模式切換是原稿沒有的既有產品功能（原稿只有固定核心觀察池），
+          用獨立 .heat-mode-row class（非原稿 .heat-kicker）避免跟下面
+          IndustryHeatmap 內部逐字還原的原稿 .heat-kicker 語意衝突。 */}
+      <div className="heat-mode-row">
         <span>{effectiveMode === "core" ? "核心觀察池" : "全市場"} · {displaySourceLabel}</span>
         <div className="heat-mode-tabs">
           <Link className={effectiveMode === "core" ? "is-active" : ""} href="/">核心熱力圖</Link>
@@ -1503,88 +1522,19 @@ function BrokerConnectionLine({
   );
 }
 
-function DashboardSkeleton() {
-  const pulse = "@keyframes _tac-pulse { 0%,100%{opacity:.18} 50%{opacity:.38} }";
-  const skelCss = "._tac-skel { background:rgba(200,148,63,.09); border:1px solid rgba(200,148,63,.16); border-radius:2px; animation:_tac-pulse 1.6s ease-in-out infinite; }";
-  const rowCss = "._tac-skel-row { display:flex; gap:8px; margin-bottom:8px; }";
-  return (
-    <>
-      <style>{pulse + " " + skelCss + " " + rowCss}</style>
-      <div className="home-ledger-shell">
-        <div className="_tac-skel" style={{ height: 44, marginBottom: 8 }} />
-        <div className="_tac-skel-row" style={{ height: 410 }}>
-          <div className="_tac-skel" style={{ flex: "0 0 454px" }} />
-          <div className="_tac-skel" style={{ flex: 1 }} />
-        </div>
-        <div className="_tac-skel-row" style={{ height: 220 }}>
-          <div className="_tac-skel" style={{ flex: 1 }} />
-          <div className="_tac-skel" style={{ flex: "0 0 348px" }} />
-        </div>
-        <div className="_tac-skel-row" style={{ height: 200 }}>
-          <div className="_tac-skel" style={{ flex: "0 0 392px" }} />
-          <div className="_tac-skel" style={{ flex: 1 }} />
-        </div>
-      </div>
-    </>
-  );
+// ══════════════════════════════════════════════════════════════════════════
+// 冷啟動加速（2026-07-14 楊董標準：首頁還是太慢）：拿掉單一大 Promise.
+// allSettled 卡整頁的舊架構，改每個資料來源各自一個 React `cache()`（同一次
+// request 內多個 Suspense 邊界共用同一份 fetch，不重複打 API）＋每個版面帶
+// 各自獨立 <Suspense>，靜態殼（mast 品牌/模式/位框架）同步立即輸出。
+// ══════════════════════════════════════════════════════════════════════════
+
+function buildEmptyBrief(): DailyBriefDashboard {
+  return { today: todayTaipeiDate(), state: "BLOCKED", latestDate: null, latest: null, todayBrief: null, draftCount: 0, reason: "載入失敗" };
 }
 
-// ── All data fetching lives here — streamed behind Suspense ──────────────────
-async function DashboardContent({
-  selectedSectorParam,
-  heatmapMode,
-}: {
-  selectedSectorParam: string | null;
-  heatmapMode: "core" | "all";
-}) {
-  const now = nowIso();
-  const fetchT0 = Date.now();
-
-  const [realtimeMarketResult, marketResult, briefResult, paperResult, brokerResult, recommendationsResult, s1StrategyResult, s1RealSimResult, intelResult] = await Promise.allSettled([
-    timedFetch("main_market_feed", FETCH_MARKET_MS, loadRealtimeMarketDashboard()),
-    timedFetch(
-      "market",
-      FETCH_MARKET_MS,
-      load("Market data overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data, (value) => !hasMarketOverviewData(value), "市場資料總覽目前沒有可用正式資料。"),
-    ),
-    timedFetch("brief", FETCH_PRODUCT_MS, loadDailyBriefDashboard()),
-    timedFetch("paper", FETCH_SOFT_MS, loadPaperHealthState()),
-    timedFetch("broker", FETCH_SOFT_MS, loadBrokerAccessState()),
-    timedFetch(
-      "recommendations",
-      FETCH_PRODUCT_MS,
-      load(
-        "AI recommendations v3 (canonical, shared with /ai-recommendations)",
-        { runId: null, status: "empty", generatedAt: now, itemCount: 0, items: [] } as AiRecommendationV3Response,
-        async () => await getAiRecommendationsV3(),
-        (value) => (value.items?.length ?? 0) === 0,
-        "今日 AI 推薦 v3 批次尚未回傳正式清單。",
-      ),
-    ),
-    timedFetch("s1_strategy", FETCH_PRODUCT_MS, load("S1 strategy snapshot", null, async () => await getLabStrategySnapshot("cont_liq_v36"), (value) => value === null, "S1 核准快照目前無法讀取。")),
-    timedFetch(
-      "s1_real_sim",
-      FETCH_PRODUCT_MS,
-      load(
-        "S1 F-AUTO SIM 實盤績效",
-        null,
-        async () => {
-          const result = await getTrackRecordNav();
-          return result.ok ? result.data.summary : null;
-        },
-        (value) => value === null,
-        "S1 F-AUTO SIM 實盤績效目前無法讀取。",
-      ),
-    ),
-    timedFetch("intel", FETCH_INTEL_MS, loadMarketIntelDashboard()),
-  ]);
-
-  const totalElapsed = Date.now() - fetchT0;
-  console.warn(`[homepage-fetch] ALL_PANELS total=${totalElapsed}ms`);
-
-  const updatedAt = nowIso();
-  const emptyBrief: DailyBriefDashboard = { today: todayTaipeiDate(), state: "BLOCKED", latestDate: null, latest: null, todayBrief: null, draftCount: 0, reason: "載入失敗" };
-  const emptyIntel: MarketIntelDashboard = {
+function buildEmptyIntel(): MarketIntelDashboard {
+  return {
     items: [],
     selected: [],
     failures: 0,
@@ -1604,97 +1554,159 @@ async function DashboardContent({
       nextAction: "確認 AI 精選排程與官方公告來源；前端不顯示示意新聞。",
     },
   };
+}
 
-  const realtimeMarket = (() => {
-    if (realtimeMarketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: "本日盤後資料" };
-    const v = realtimeMarketResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Main market feed", reason: `資料更新中：${v._timeout}` };
-    return v;
-  })();
-  const market = (() => {
-    if (marketResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: "載入失敗" };
-    const v = marketResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Market data overview", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const brief = (() => {
-    if (briefResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: "載入失敗" };
-    const v = briefResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyBrief, updatedAt, source: "OpenAlice / Daily Brief", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const paper = (() => {
-    if (paperResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: "載入失敗" };
-    const v = paperResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "Paper Health", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const broker = (() => {
-    if (brokerResult.status === "rejected") return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: "載入失敗" };
-    const v = brokerResult.value;
-    if (isTimeoutSentinel(v)) return { state: "EMPTY" as const, data: null, updatedAt, source: "正式券商只讀狀態", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const recommendations = (() => {
-    const emptyRecommendations: AiRecommendationV3Response = { runId: null, status: "empty", generatedAt: updatedAt, itemCount: 0, items: [] };
-    if (recommendationsResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations v3", reason: "載入失敗" };
-    const v = recommendationsResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyRecommendations, updatedAt, source: "AI recommendations v3", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const s1Strategy = (() => {
-    if (s1StrategyResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 strategy snapshot", reason: "載入失敗" };
-    const v = s1StrategyResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 strategy snapshot", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const s1RealSim = (() => {
-    if (s1RealSimResult.status === "rejected") return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 F-AUTO SIM 實盤績效", reason: "載入失敗" };
-    const v = s1RealSimResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: null, updatedAt, source: "S1 F-AUTO SIM 實盤績效", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
-  const intel = (() => {
-    if (intelResult.status === "rejected") return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "公開資訊重大訊息", reason: "載入失敗" };
-    const v = intelResult.value;
-    if (isTimeoutSentinel(v)) return { state: "BLOCKED" as const, data: emptyIntel, updatedAt, source: "公開資訊重大訊息", reason: `資料延遲（${v._timeout}）` };
-    return v;
-  })();
+function buildEmptyRecommendations(): AiRecommendationV3Response {
+  return { runId: null, status: "empty", generatedAt: nowIso(), itemCount: 0, items: [] };
+}
 
-  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
-  const marketHeatmap = buildHeatmap(market);
-  const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
-  const heatmap = coreHeatmap.length > 0 && hasRepresentativeFeed ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap) : marketHeatmap;
+// 每個資料來源各自 cache() 一次——同一次 request 內不論被幾個 Suspense 邊界
+// awaited，實際 fetch 只打一次（React request memoization），各邊界仍各自
+// 獨立 resolve/stream，不互相卡住。
+const cachedMarket = cache((): Promise<LoadState<MarketDataOverview | null>> =>
+  load("Market data overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data, (value) => !hasMarketOverviewData(value), "市場資料總覽目前沒有可用正式資料。"));
+const cachedRealtimeMarket = cache((): Promise<LoadState<RealtimeMarketDashboard | null>> => loadRealtimeMarketDashboard());
+const cachedBrief = cache((): Promise<LoadState<DailyBriefDashboard>> => loadDailyBriefDashboard());
+const cachedPaper = cache((): Promise<LoadState<PaperHealthState | null>> => loadPaperHealthState());
+const cachedBroker = cache((): Promise<LoadState<BrokerAccessDashboard | null>> => loadBrokerAccessState());
+const cachedRecommendations = cache((): Promise<LoadState<AiRecommendationV3Response>> =>
+  load(
+    "AI recommendations v3 (canonical, shared with /ai-recommendations)",
+    buildEmptyRecommendations(),
+    async () => await getAiRecommendationsV3(),
+    (value) => (value.items?.length ?? 0) === 0,
+    "今日 AI 推薦 v3 批次尚未回傳正式清單。",
+  ));
+const cachedS1Strategy = cache((): Promise<LoadState<S1StrategyData | null>> =>
+  load("S1 strategy snapshot", null, async () => await getLabStrategySnapshot("cont_liq_v36"), (value) => value === null, "S1 核准快照目前無法讀取。"));
+const cachedS1RealSim = cache((): Promise<LoadState<TrackRecordNavSummary | null>> =>
+  load(
+    "S1 F-AUTO SIM 實盤績效",
+    null,
+    async () => {
+      const result = await getTrackRecordNav();
+      return result.ok ? result.data.summary : null;
+    },
+    (value) => value === null,
+    "S1 F-AUTO SIM 實盤績效目前無法讀取。",
+  ));
+const cachedIntel = cache((): Promise<LoadState<MarketIntelDashboard>> => loadMarketIntelDashboard());
 
+// timedFetch 的 race-against-timeout 包一層：逾時回真的 BLOCKED LoadState
+// （原本每個呼叫端各自手刻一段 `(() => {...})()`，現在收成一個 helper）。
+async function timedLoad<T>(label: string, ms: number, loader: () => Promise<LoadState<T>>, fallbackData: T): Promise<LoadState<T>> {
+  const result = await timedFetch(label, ms, loader());
+  if (isTimeoutSentinel(result)) {
+    return { state: "BLOCKED", data: fallbackData, updatedAt: nowIso(), source: label, reason: `資料延遲（${result._timeout}）` };
+  }
+  return result;
+}
+
+function skeletonStyleTag() {
+  const pulse = "@keyframes _tac-pulse { 0%,100%{opacity:.18} 50%{opacity:.38} }";
+  const skelCss = "._tac-skel { background:rgba(200,148,63,.09); border:1px solid rgba(200,148,63,.16); border-radius:2px; animation:_tac-pulse 1.6s ease-in-out infinite; }";
+  const rowCss = "._tac-skel-row { display:flex; gap:1px; }";
+  return pulse + " " + skelCss + " " + rowCss;
+}
+
+function HeroBandSkeleton() {
   return (
-    <div className="home-ledger-shell">
-      <MarketStateBanner />
-      <div className="tac-ledger">
-        <Masthead now={now} market={market} realtimeMarket={realtimeMarket} brief={brief} intel={intel} />
-        <div className="sheet">
-          <div className="maincol">
-            <div className="heroband">
-              <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
-              <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-            </div>
-            <div className="leadband">
-              <RecHeadline recommendations={recommendations} />
-              <BriefColumn brief={brief} />
-            </div>
-            <div className="footband">
-              <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
-              <RankColumns market={market} />
-            </div>
-          </div>
-          <NewsTape intel={intel} />
-        </div>
-      </div>
-      <BrokerConnectionLine paper={paper} broker={broker} />
+    <div className="_tac-skel-row" style={{ height: 410 }}>
+      <div className="_tac-skel" style={{ flex: "0 0 454px" }} />
+      <div className="_tac-skel" style={{ flex: 1 }} />
     </div>
   );
 }
 
-// ── Page entry point — sync shell + streamed data content ────────────────────
+function LeadBandSkeleton() {
+  return (
+    <div className="_tac-skel-row" style={{ height: 220 }}>
+      <div className="_tac-skel" style={{ flex: 1 }} />
+      <div className="_tac-skel" style={{ flex: "0 0 348px" }} />
+    </div>
+  );
+}
+
+function FootBandSkeleton() {
+  return (
+    <div className="_tac-skel-row" style={{ height: 200 }}>
+      <div className="_tac-skel" style={{ flex: "0 0 392px" }} />
+      <div className="_tac-skel" style={{ flex: 1 }} />
+    </div>
+  );
+}
+
+function NewsTapeSkeleton() {
+  return <div className="_tac-skel" style={{ minHeight: 400 }} />;
+}
+
+// ── 各版面各自獨立 async section — 各自 Suspense，互不卡住 ──────────────────
+async function HeroBandSection({
+  now,
+  selectedSectorParam,
+  heatmapMode,
+}: {
+  now: string;
+  selectedSectorParam: string | null;
+  heatmapMode: "core" | "all";
+}) {
+  const [market, realtimeMarket] = await Promise.all([
+    timedLoad("market", FETCH_MARKET_MS, cachedMarket, null),
+    timedLoad("main_market_feed", FETCH_MARKET_MS, cachedRealtimeMarket, null),
+  ]);
+  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
+  const marketHeatmap = buildHeatmap(market);
+  const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
+  const heatmap = coreHeatmap.length > 0 && hasRepresentativeFeed ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap) : marketHeatmap;
+  return (
+    <div className="heroband">
+      <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
+      <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+    </div>
+  );
+}
+
+async function LeadBandSection() {
+  const [recommendations, brief] = await Promise.all([
+    timedLoad("recommendations", FETCH_PRODUCT_MS, cachedRecommendations, buildEmptyRecommendations()),
+    timedLoad("brief", FETCH_PRODUCT_MS, cachedBrief, buildEmptyBrief()),
+  ]);
+  return (
+    <div className="leadband">
+      <RecHeadline recommendations={recommendations} />
+      <BriefColumn brief={brief} />
+    </div>
+  );
+}
+
+async function FootBandSection() {
+  const [s1Strategy, s1RealSim, market] = await Promise.all([
+    timedLoad("s1_strategy", FETCH_PRODUCT_MS, cachedS1Strategy, null),
+    timedLoad("s1_real_sim", FETCH_PRODUCT_MS, cachedS1RealSim, null),
+    timedLoad("market", FETCH_MARKET_MS, cachedMarket, null),
+  ]);
+  return (
+    <div className="footband">
+      <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
+      <RankColumns market={market} />
+    </div>
+  );
+}
+
+async function NewsTapeSection() {
+  const intel = await timedLoad("intel", FETCH_INTEL_MS, cachedIntel, buildEmptyIntel());
+  return <NewsTape intel={intel} />;
+}
+
+async function BrokerLineSection() {
+  const [paper, broker] = await Promise.all([
+    timedLoad("paper", FETCH_SOFT_MS, cachedPaper, null),
+    timedLoad("broker", FETCH_SOFT_MS, cachedBroker, null),
+  ]);
+  return <BrokerConnectionLine paper={paper} broker={broker} />;
+}
+
+// ── Page entry point — 靜態殼同步輸出，各版面各自 Suspense stream ──────────
 export default async function HomePage({
   searchParams,
 }: {
@@ -1703,10 +1715,39 @@ export default async function HomePage({
   const params = await searchParams;
   const selectedSectorParam = params?.sector ?? null;
   const heatmapMode = params?.heatmap === "all" ? "all" : "core";
+  const now = nowIso();
 
   return (
-    <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardContent selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-    </Suspense>
+    <div className="home-ledger-shell">
+      <style>{skeletonStyleTag()}</style>
+      <MarketStateBanner />
+      <div className="tac-ledger">
+        <header className="mast">
+          <MastStatic />
+          <Suspense fallback={<MastSkeleton />}>
+            <MastDynamic now={now} />
+          </Suspense>
+        </header>
+        <div className="sheet">
+          <div className="maincol">
+            <Suspense fallback={<HeroBandSkeleton />}>
+              <HeroBandSection now={now} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+            </Suspense>
+            <Suspense fallback={<LeadBandSkeleton />}>
+              <LeadBandSection />
+            </Suspense>
+            <Suspense fallback={<FootBandSkeleton />}>
+              <FootBandSection />
+            </Suspense>
+          </div>
+          <Suspense fallback={<NewsTapeSkeleton />}>
+            <NewsTapeSection />
+          </Suspense>
+        </div>
+      </div>
+      <Suspense fallback={null}>
+        <BrokerLineSection />
+      </Suspense>
+    </div>
   );
 }

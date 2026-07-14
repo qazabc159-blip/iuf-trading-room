@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { formatSectorChipCount } from "./industry-heatmap-chip";
 
@@ -70,14 +70,6 @@ type SectorOption = SectorDefinition & {
   target: number;
   avgPct: number | null;
   hasData: boolean;
-};
-
-type LayoutTile = PreparedTile & {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  labelMode: "hero" | "large" | "medium" | "small";
 };
 
 type IndustryHeatmapProps = {
@@ -698,79 +690,28 @@ function chooseInitialSector(options: SectorOption[], requested?: string | null)
     ?? "all";
 }
 
-function buildTreemapLayout(items: PreparedTile[]): LayoutTile[] {
-  const sorted = [...items].sort((left, right) => right.areaWeight - left.areaWeight);
-  const totalWeight = sorted.reduce((sum, item) => sum + Math.max(1, item.areaWeight), 0);
-  if (totalWeight <= 0) return [];
+// ── 原稿磚格視覺（2026-07-14 楊董定案：呈現層照 artifact byte-exact 磚格，
+//    資料分組/排序/篩選引擎（prepareTiles/buildOptions/rowsForSector 以上）
+//    完全不動）。原稿是固定 CSS Grid repeat(8,1fr)：rank 1 = hero(2x2)，
+//    rank 2-8 = wide(2x1)，其餘 = 一般密磚（1x1，由 grid 隱式排版自動填滿），
+//    取代先前版本的連續漸層 squarified treemap。 */
+type TileVariant = "hero" | "wide" | "";
 
-  const nodes = sorted.map((item) => ({
-    item,
-    area: (Math.max(1, item.areaWeight) / totalWeight) * 10_000,
-  }));
-  const rect = { x: 0, y: 0, w: 100, h: 100 };
-  const layout: LayoutTile[] = [];
-  let row: typeof nodes = [];
+function tileVariantForRank(index: number): TileVariant {
+  if (index === 0) return "hero";
+  if (index >= 1 && index <= 7) return "wide";
+  return "";
+}
 
-  function worstAspect(candidate: typeof nodes, side: number) {
-    if (candidate.length === 0 || side <= 0) return Number.POSITIVE_INFINITY;
-    const areas = candidate.map((node) => Math.max(0.01, node.area));
-    const sum = areas.reduce((acc, area) => acc + area, 0);
-    const max = Math.max(...areas);
-    const min = Math.min(...areas);
-    return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
-  }
-
-  function labelMode(w: number, h: number): LayoutTile["labelMode"] {
-    const area = w * h;
-    if (area >= 600 && w >= 18 && h >= 18) return "hero";
-    if (area >= 260 && w >= 11 && h >= 12) return "large";
-    if (area >= 190 && w >= 13 && h >= 11) return "medium";
-    return "small";
-  }
-
-  function pushRow(nodesInRow: typeof nodes) {
-    if (nodesInRow.length === 0 || rect.w <= 0 || rect.h <= 0) return;
-    const rowArea = nodesInRow.reduce((sum, node) => sum + node.area, 0);
-
-    if (rect.w < rect.h) {
-      const rowH = Math.min(rect.h, rowArea / rect.w);
-      let xCursor = rect.x;
-      nodesInRow.forEach((node, index) => {
-        const tileW = index === nodesInRow.length - 1 ? rect.x + rect.w - xCursor : node.area / rowH;
-        const mode = labelMode(tileW, rowH);
-        layout.push({ ...node.item, x: xCursor, y: rect.y, w: tileW, h: rowH, labelMode: mode });
-        xCursor += tileW;
-      });
-      rect.y += rowH;
-      rect.h -= rowH;
-      return;
-    }
-
-    const rowW = Math.min(rect.w, rowArea / rect.h);
-    let yCursor = rect.y;
-    nodesInRow.forEach((node, index) => {
-      const tileH = index === nodesInRow.length - 1 ? rect.y + rect.h - yCursor : node.area / rowW;
-      const mode = labelMode(rowW, tileH);
-      layout.push({ ...node.item, x: rect.x, y: yCursor, w: rowW, h: tileH, labelMode: mode });
-      yCursor += tileH;
-    });
-    rect.x += rowW;
-    rect.w -= rowW;
-  }
-
-  for (const node of nodes) {
-    const side = Math.min(rect.w, rect.h);
-    const nextRow = [...row, node];
-    if (row.length === 0 || worstAspect(nextRow, side) <= worstAspect(row, side)) {
-      row = nextRow;
-    } else {
-      pushRow(row);
-      row = [node];
-    }
-  }
-  pushRow(row);
-
-  return layout;
+// 原稿固定 10 階色階（u1-5 漲／d1-5 跌／z0 平盤），依 |pct| 相對於 3%（既有
+// 熱力圖飽和度基準，見 heat-scale「≤-3% / ≥+3%」）切 5 個等距桶：
+// 0.6/1.2/1.8/2.4% 為桶界，對應 3% 的 20/40/60/80%。
+function pctBucketClass(pct: number): string {
+  const abs = Math.abs(pct);
+  if (abs < 0.01) return "z0";
+  const sign = pct > 0 ? "u" : "d";
+  const level = abs <= 0.6 ? 1 : abs <= 1.2 ? 2 : abs <= 1.8 ? 3 : abs <= 2.4 ? 4 : 5;
+  return `${sign}${level}`;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -828,27 +769,21 @@ function updateSectorQuery(nextKey: SectorKey) {
   window.history.replaceState(null, "", url);
 }
 
-function staleDotLabel(sourceState: LayoutTile["sourceState"]) {
+function staleDotLabel(sourceState: PreparedTile["sourceState"]) {
   if (sourceState === "twse_eod") return "收盤資料";
   if (sourceState === "cache") return "緩存資料";
   if (sourceState === "no_data") return "暫無資料";
   return null;
 }
 
-function TileTooltip({ tile }: { tile: LayoutTile }) {
+function TileTooltip({ tile }: { tile: PreparedTile }) {
   const staleLabel = staleDotLabel(tile.sourceState);
   return (
     <span className="tac-heat-tooltip" role="tooltip">
       <strong>{tile.symbol} {tile.name}</strong>
-      {tile.sourceState === "no_data" ? (
-        <span>暫無行情資料</span>
-      ) : (
-        <>
-          <span>漲跌幅 {formatPercent(tile.displayPct)}</span>
-          {tile.displayChange !== null && <span>漲跌 {formatPrice(tile.displayChange)}</span>}
-          <span>收盤 {formatPrice(tile.close ?? tile.price)}</span>
-        </>
-      )}
+      <span>漲跌幅 {formatPercent(tile.displayPct)}</span>
+      {tile.displayChange !== null && <span>漲跌 {formatPrice(tile.displayChange)}</span>}
+      <span>收盤 {formatPrice(tile.close ?? tile.price)}</span>
       <span>{tile.weightLabel}</span>
       {tile.date && <span>日期 {tile.date}</span>}
       {staleLabel && <span>來源 {tile.sourceLabel ?? staleLabel}</span>}
@@ -856,50 +791,29 @@ function TileTooltip({ tile }: { tile: LayoutTile }) {
   );
 }
 
-function HeatmapTile({ tile }: { tile: LayoutTile }) {
-  const isNoData = tile.sourceState === "no_data";
+// 原稿磚：離散 CSS Grid 磚（.tile/.tile.hero/.tile.wide），固定 10 階色階，
+// 不再是連續 --heat 漸層。isNoData 磚在 prepareTiles 階段已被濾掉（原稿「未
+// 渲染為灰塊」規則），這裡不需要再處理灰塊分支。
+function HeatmapTile({ tile, variant }: { tile: PreparedTile; variant: TileVariant }) {
   const isStale = tile.sourceState === "twse_eod" || tile.sourceState === "cache";
-  const pct = isNoData ? 0 : tile.displayPct;
-  const abs = Math.min(1, Math.abs(pct) / 3);
-  const tone = isNoData ? "flat" : toneForMove(pct);
-  const style = {
-    "--heat": isNoData ? "0.08" : String(0.28 + abs * 0.58),
-    left: `${tile.x}%`,
-    top: `${tile.y}%`,
-    width: `${tile.w}%`,
-    height: `${tile.h}%`,
-  } as CSSProperties;
-  const sourceDesc = isNoData ? "暫無資料" : isStale ? (staleDotLabel(tile.sourceState) ?? "") : "";
-  const title = isNoData
-    ? `${tile.symbol} ${tile.name}，暫無行情資料`
-    : `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.displayPct)}，${tile.weightLabel}${sourceDesc ? "，" + sourceDesc : ""}`;
+  const bucket = pctBucketClass(tile.displayPct);
+  const sourceDesc = isStale ? (staleDotLabel(tile.sourceState) ?? "") : "";
+  const title = `${tile.symbol} ${tile.name}，漲跌幅 ${formatPercent(tile.displayPct)}，${tile.weightLabel}${sourceDesc ? "，" + sourceDesc : ""}`;
 
   return (
     <Link
       href={`/companies/${encodeURIComponent(tile.symbol)}`}
-      className={`tac-heat-tile ${tone} ${tile.labelMode} ${tile.isSupplemental ? "is-supplemental" : ""} ${isNoData ? "is-no-data" : ""} ${isStale ? "is-stale" : ""}`}
-      style={style}
+      className={`tile ${bucket} ${variant} ${isStale ? "is-stale" : ""}`}
+      style={variant === "hero" ? { gridColumn: "span 2", gridRow: "span 2" } : variant === "wide" ? { gridColumn: "span 2" } : undefined}
       aria-label={title}
     >
       {isStale && <span className="tile-stale-dot" aria-hidden="true" />}
-      {/* tile-body: clips text to the tile's own actual rendered box so a long name/pct
-          on a physically small tile (narrow parent column, e.g. homepage side-by-side
-          layout) never bleeds into a neighboring tile. TileTooltip stays a sibling
-          outside this wrapper so hover escape above the tile is unaffected. Font sizes
-          are set via container query units in CSS so text scales to the tile's real
-          pixel size, not just its labelMode classification. */}
-      <span className="tile-body">
-        <span className="tile-symbol">{tile.symbol}</span>
-        {(tile.labelMode === "hero" || tile.labelMode === "large" || tile.labelMode === "medium" || tile.labelMode === "small") && (
-          <small className="tile-name">{tile.name}</small>
-        )}
-        {isNoData ? (
-          <b className="tile-pct tile-pct-nodata">--</b>
-        ) : (
-          <b className="tile-pct">{formatPercent(tile.displayPct)}</b>
-        )}
-        {tile.labelMode === "hero" && !isNoData && <em className="tile-meta">{tile.weightLabel}</em>}
-      </span>
+      <div className="tl">
+        <b>{tile.symbol}</b>
+        <span className="nm">{tile.name}</span>
+      </div>
+      {variant === "hero" && <div className="meta">{tile.weightLabel}</div>}
+      <div className="pc">{formatPercent(tile.displayPct)}</div>
       <TileTooltip tile={tile} />
     </Link>
   );
@@ -941,7 +855,6 @@ export function IndustryHeatmap({
 
   const activeOption = options.find((option) => option.key === activeKey) ?? options[0];
   const selectedRows = useMemo(() => rowsForSector(prepared, activeKey), [prepared, activeKey]);
-  const layout = useMemo(() => buildTreemapLayout(selectedRows), [selectedRows]);
   const selectedAvg = activeOption?.avgPct ?? null;
   const hasEnoughForProduct = selectedRows.length >= MIN_PRODUCT_COUNT;
   const availableRows = selectedRows.filter((tile) => tile.sourceState !== "no_data").length;
@@ -969,21 +882,23 @@ export function IndustryHeatmap({
   }
 
   return (
-    <div className="tac-industry-heatmap">
-      <div className="tac-heat-toolbar">
-        <div>
-          <span className="tac-heat-kicker">面積代表權重，顏色代表漲跌幅</span>
-          <strong>{activeOption?.description ?? "依產業查看代表股表現"}</strong>
-        </div>
-        <div className="tac-heat-stats" aria-label="熱力圖摘要">
-          <span>更新 {formatDateTime(updatedAt)}</span>
-          <span>{representativeTarget} 檔代表池</span>
-          <span>{availableRows} 檔有行情</span>
-          <span className={toneForMove(selectedAvg)}>均幅 {formatPercent(selectedAvg)}</span>
+    <div className={`tac-industry-heatmap ${switching ? "is-switching" : ""}`}>
+      <div className="heat-toolbar">
+        <div className="tab dim">產業熱力圖 <span className="en">CORE POOL</span></div>
+        <div className="heat-stats" aria-label="熱力圖摘要">
+          <span>更新 <b>{formatDateTime(updatedAt)}</b></span>
+          <span><b>{representativeTarget}</b> 檔代表池</span>
+          <span><b>{availableRows}</b> 檔有行情</span>
+          <span>均幅 <b className={toneForMove(selectedAvg)}>{formatPercent(selectedAvg)}</b></span>
         </div>
       </div>
 
-      <div className="tac-heat-sector-tabs" aria-label="選擇熱力圖產業">
+      <div className="heat-kicker">
+        <span>面積代表權重，顏色代表漲跌幅</span>
+        <strong>{activeOption?.description ?? "依產業查看代表股表現"}</strong>
+      </div>
+
+      <div className="heat-chips" aria-label="選擇熱力圖產業">
         {options.map((option) => (
           <button
             type="button"
@@ -998,29 +913,29 @@ export function IndustryHeatmap({
         ))}
       </div>
 
-      <div className={`tac-heatmap ${switching ? "is-switching" : ""}`}>
-        {layout.length > 0 ? (
-          <div className="tac-heatmap-canvas tac-market-heatmap-canvas">
-            {layout.map((tile) => <HeatmapTile tile={tile} key={tile.symbol} />)}
-          </div>
-        ) : (
-          <div className="tac-heat-empty" role="status">
-            <span>{activeOption?.label ?? "產業"} · 公開資料更新中</span>
-            <strong>{emptyReason}</strong>
-            <small>{sourceLabel} · 資料約 5-15 秒延遲</small>
-          </div>
-        )}
-      </div>
+      {selectedRows.length > 0 ? (
+        <div className="heatmapgrid">
+          {selectedRows.map((tile, index) => (
+            <HeatmapTile tile={tile} variant={tileVariantForRank(index)} key={tile.symbol} />
+          ))}
+        </div>
+      ) : (
+        <div className="tac-heat-empty" role="status">
+          <span>{activeOption?.label ?? "產業"} · 公開資料更新中</span>
+          <strong>{emptyReason}</strong>
+          <small>{sourceLabel} · 資料約 5-15 秒延遲</small>
+        </div>
+      )}
 
-      <div className="tac-heat-footer">
-        <span>
+      <div className="heat-footer">
+        <span className="lead">
           {hasEnoughForProduct ? "固定代表股池完成" : "代表池不足，僅顯示可驗證資料"} · 依成交值優先排序 · {sourceLabel}
-          {missingRepresentativeNote && <> · <span className="tac-heat-source-note">{missingRepresentativeNote}</span></>}
-          {sourceBreakdown && <> · <span className="tac-heat-source-note">{sourceBreakdown}</span></>}
+          {missingRepresentativeNote && <> · {missingRepresentativeNote}</>}
+          {sourceBreakdown && <> · {sourceBreakdown}</>}
         </span>
-        <span className="tac-heat-scale" aria-label="漲跌幅色階">
+        <span className="heat-scale" aria-label="漲跌幅色階">
           <em>≤ -3%</em>
-          <i />
+          <span className="sw"><i className="d5" /><i className="d3" /><i className="d1" /><i className="z0" /><i className="u1" /><i className="u3" /><i className="u5" /></span>
           <em>≥ +3%</em>
         </span>
       </div>
