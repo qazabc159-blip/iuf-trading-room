@@ -19772,6 +19772,40 @@ function startSchedulers(workspaceSlug: string): void {
   }
 
   // =============================================================================
+  // V34-SIM-SHAKEDOWN-PIPELINE: Lab-produced one-time shakedown basket → KGI SIM
+  //
+  // Contract: IUF_SHARED_CONTRACTS/lab_to_tr_v34_sim_shakedown_contract_2026_07_14_v1.md
+  // Elva sign-off 2026-07-14. Yang order: "這週就能跑能上線的策略" (2026-07-14 chat).
+  //
+  // Orders: weekday 08:20-08:40 TST (same window as V5-1) — scans embedded
+  // data/lab/sim_baskets/v34_sim_shakedown_basket_*.csv, submits any basket
+  // whose next-weekday entry date (from the file-name as-of date) is today
+  // and that hasn't already been submitted (idempotent via audit-log check).
+  //
+  // SIM_ONLY. label SIM_EXECUTION_SAMPLE_NOT_VALIDATED passed through verbatim.
+  // This is a ONE-TIME shakedown, not a monthly schedule (V3-4's real forward
+  // formation track starts 2026-08-03 separately). Distinct execution rail
+  // from both S1 and V5-1 (own audit action/entityType, never touches
+  // F-AUTO ledger / unified-order-store / trading-service.ts) — see
+  // v34-sim-runner.ts module doc for the full design rationale.
+  // =============================================================================
+  {
+    const V34_SIM_POLL_MS = 15 * 60 * 1000;
+
+    ui(async () => {
+      try {
+        const { isV34OrderSubmitWindow, runV34OrderSubmitTick } = await import("./v34-sim-runner.js");
+        if (!isV34OrderSubmitWindow()) return;
+        await runV34OrderSubmitTick();
+      } catch (e) {
+        console.error("[v34-order-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, V34_SIM_POLL_MS);
+
+    console.log("[schedulers] V34-SIM-SHAKEDOWN-PIPELINE wired: auto orders(weekday 08:20 TST, entry-date scan over embedded shakedown basket)");
+  }
+
+  // =============================================================================
   // AI-REC-PERF-CRON: forward-return update for ai_rec_pick_snapshots
   //
   // Fires daily at 14:40–15:00 TST (after market close + EOD snapshot).
