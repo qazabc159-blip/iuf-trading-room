@@ -338,6 +338,13 @@ html,body{background:#080b10;}
   .m-sec{border-bottom:1px solid var(--line2);}
 
 </style>
+<style id="interaction-affordances">
+/* 互動可點性提示（2026-07-14 追加）：只加游標/連結行為，class/色彩/字級不動。 */
+.tile[data-symbol]{cursor:pointer;}
+.rk .r[data-symbol]{cursor:pointer;}
+.s1wrap{cursor:pointer;}
+.tape .trow{display:block;text-decoration:none;color:inherit;}
+</style>
 <style id="iso-override">
 /* isolation: neutralize artifact device chrome; component CSS above is byte-exact from原稿 */
 html,body{background:#04060a;}
@@ -447,7 +454,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
                   <div class="brief-meta">
                     <span class="pill" data-slot="brief-status">--</span>
                     <span class="dt" data-slot="brief-date">--</span>
-                    <a>展開全文 ▸</a>
+                    <a href="#" data-slot="brief-toggle">展開全文 ▸</a>
                   </div>
                   <div class="seg" data-slot="brief-seg-placeholder"><div class="sh">載入中</div><div class="sx">載入中…</div></div>
                   <div class="sfoot">只顯示「已發布／待確認／待產生」，不偽裝即時新聞。來源 <code>/briefs</code></div>
@@ -570,7 +577,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
               <div class="brief-meta">
                 <span class="pill" data-slot="brief-status">--</span>
                 <span class="dt" data-slot="brief-date">--</span>
-                <a>全文 ▸</a>
+                <a href="#" data-slot="brief-toggle">全文 ▸</a>
               </div>
               <div class="seg"><div class="sh">載入中</div><div class="sx">載入中…</div></div>
             </div>
@@ -739,12 +746,91 @@ body{margin:0;padding:0;overflow-x:hidden;}
     return "z0";
   }
 
-  function apiFetch(path) {
-    return fetch("/api/ui-final-v031/backend?path=" + encodeURIComponent(path), {
-      credentials: "include",
-      cache: "no-store",
-      headers: { "x-workspace-slug": WORKSPACE_SLUG }
-    }).then(function (res) {
+  // ── 文字密度壓縮（2026-07-14 楊董標準：跟原稿一句話密度看齊，真截斷非 CSS clamp）──
+  function splitZhSentences(s) {
+    var out = [], cur = "";
+    for (var i = 0; i < s.length; i++) {
+      cur += s[i];
+      if (s[i] === "。" || s[i] === "；") { out.push(cur); cur = ""; }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  function hardTruncate(s, maxLen) {
+    if (s.length <= maxLen) return s;
+    var cut = s.slice(0, maxLen);
+    var lastBoundary = Math.max(cut.lastIndexOf("，"), cut.lastIndexOf("、"), cut.lastIndexOf(" "), cut.lastIndexOf("："));
+    if (lastBoundary > maxLen * 0.6) cut = cut.slice(0, lastBoundary);
+    return cut.replace(/[，、\s：]+$/, "") + "…";
+  }
+  // AI 推薦理由：取第一句（。／；前），仍過長才硬截斷
+  function firstSentence(text, maxLen) {
+    if (!text) return text;
+    var s = String(text).trim();
+    var head = splitZhSentences(s)[0] || s;
+    return hardTruncate(head, maxLen);
+  }
+  // 簡報段落節錄：取前 maxSentences 句，仍過長才硬截斷
+  function firstSentences(text, maxSentences, maxLen) {
+    if (!text) return text;
+    var s = String(text).trim();
+    var head = splitZhSentences(s).slice(0, maxSentences).join("") || s;
+    return hardTruncate(head, maxLen);
+  }
+  // 新聞標題：無句號可循，純長度硬截斷
+  function truncatePlain(text, maxLen) {
+    if (!text) return text;
+    return hardTruncate(String(text).trim(), maxLen);
+  }
+
+  // ── 加觀察：真 POST /api/v1/watchlist（idempotent upsert，proxy 已允許） ─────
+  function addToWatchlist(el) {
+    if (el.dataset.busy === "1" || el.dataset.done === "1") return;
+    var symbol = el.getAttribute("data-watch-symbol");
+    var name = el.getAttribute("data-watch-name") || "";
+    if (!symbol) return;
+    var original = el.textContent;
+    el.dataset.busy = "1";
+    el.textContent = "加入中…";
+    apiFetch("/api/v1/watchlist", { method: "POST", body: { symbol: symbol, name: name } }).then(function (res) {
+      el.dataset.busy = "";
+      if (res.ok) {
+        el.dataset.done = "1";
+        el.textContent = "已加入 ✓";
+      } else {
+        el.textContent = original;
+        el.title = "加入自選失敗，請稍後再試";
+      }
+    });
+  }
+
+  // ── 全域點擊代理：熱力圖磚 / 排行列 / S1 面板 / 加觀察 / 簡報展開 ───────────
+  document.addEventListener("click", function (ev) {
+    var watchBtn = ev.target.closest("[data-watch-symbol]");
+    if (watchBtn) { ev.preventDefault(); addToWatchlist(watchBtn); return; }
+
+    var briefToggle = ev.target.closest('[data-slot="brief-toggle"]');
+    if (briefToggle) { ev.preventDefault(); briefState.expanded = !briefState.expanded; renderBriefBody(); return; }
+
+    var tile = ev.target.closest(".tile[data-symbol]");
+    if (tile) { window.top.location.href = "/companies/" + encodeURIComponent(tile.getAttribute("data-symbol")); return; }
+
+    var rankRow = ev.target.closest(".rk .r[data-symbol]");
+    if (rankRow) { window.top.location.href = "/companies/" + encodeURIComponent(rankRow.getAttribute("data-symbol")); return; }
+
+    var s1panel = ev.target.closest(".s1wrap");
+    if (s1panel) { window.top.location.href = "/quant-strategies"; return; }
+  });
+
+  function apiFetch(path, options) {
+    options = options || {};
+    var headers = { "x-workspace-slug": WORKSPACE_SLUG };
+    var init = { credentials: "include", cache: "no-store", headers: headers, method: options.method || "GET" };
+    if (options.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(options.body);
+    }
+    return fetch("/api/ui-final-v031/backend?path=" + encodeURIComponent(path), init).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (body) {
         return { ok: res.ok, status: res.status, body: body };
       });
@@ -880,7 +966,8 @@ body{margin:0;padding:0;overflow-x:hidden;}
               var showName = !mobile || rank < 8;
               var nameHtml = showName && t.name ? '<span class="nm">' + escapeHtml(t.name) + "</span>" : "";
               var pcText = pct == null ? "無行情" : fmtPct(pct);
-              return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + '><div class="tl"><b>' + escapeHtml(t.symbol) + "</b>" + nameHtml + '</div><div class="pc">' + pcText + "</div></div>";
+              var tileTitle = escapeHtml((t.name || t.symbol) + " " + pcText);
+              return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + ' data-symbol="' + escapeHtml(t.symbol) + '" title="' + tileTitle + '"><div class="tl"><b>' + escapeHtml(t.symbol) + "</b>" + nameHtml + '</div><div class="pc">' + pcText + "</div></div>";
             }).join("");
             root.innerHTML = html || '<div class="tile z0"><div class="tl"><b>--</b></div><div class="pc">等待真實行情</div></div>';
           });
@@ -904,7 +991,8 @@ body{margin:0;padding:0;overflow-x:hidden;}
               var bucket = pctBucketClass(t.avgChangePct);
               var sizeClass = rank === 0 ? "hero" : (rank < 8 ? "wide" : "");
               var span = rank === 0 ? ' style="grid-column:span 2;grid-row:span 2"' : (rank < 8 ? ' style="grid-column:span 2"' : "");
-              return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + '><div class="tl"><b>' + escapeHtml(t.industry) + '</b></div><div class="pc">' + fmtPct(t.avgChangePct) + "</div></div>";
+              var tileTitle = escapeHtml(t.industry + " " + fmtPct(t.avgChangePct));
+              return '<div class="tile ' + sizeClass + " " + bucket + '"' + span + ' title="' + tileTitle + '"><div class="tl"><b>' + escapeHtml(t.industry) + '</b></div><div class="pc">' + fmtPct(t.avgChangePct) + "</div></div>";
             }).join("");
             root.innerHTML = html;
           });
@@ -935,23 +1023,21 @@ body{margin:0;padding:0;overflow-x:hidden;}
         var html = cards.map(function (c) {
           var ticker = c.ticker;
           var name = c.company_name && c.company_name !== ticker ? c.company_name : "公司名稱未回傳";
-          var rationale = maskUnsafeAdvice(c.why_buy || "尚未回傳推薦理由。");
+          var rationale = firstSentence(maskUnsafeAdvice(c.why_buy || "尚未回傳推薦理由。"), 40);
           var entryLow = c.entry && c.entry.ote_low != null ? fmtPrice(c.entry.ote_low) : "--";
           var entryHigh = c.entry && c.entry.ote_high != null ? fmtPrice(c.entry.ote_high) : "--";
           var stop = c.targets && c.targets.sl != null ? fmtPrice(c.targets.sl) : "--";
           var tp1 = c.targets && c.targets.tp1 != null ? fmtPrice(c.targets.tp1) : "--";
           var confidence = c.confidence != null ? Math.round(c.confidence * 100) : null;
-          var prefillHref = "/portfolio?ticker=" + encodeURIComponent(ticker) + "&prefill=true" +
-            (c.entry && c.entry.ote_low != null ? "&entry=" + c.entry.ote_low : "") +
-            (c.targets && c.targets.sl != null ? "&stop=" + c.targets.sl : "") +
-            (c.targets && c.targets.tp1 != null ? "&tp=" + c.targets.tp1 : "");
+          var deskHref = "/desk-exact?symbol=" + encodeURIComponent(ticker) + "&side=buy";
           var companyHref = "/companies/" + encodeURIComponent(ticker);
+          var watchAttr = 'data-watch-symbol="' + escapeHtml(ticker) + '" data-watch-name="' + escapeHtml(name) + '"';
           if (mobile) {
             return '<div class="rrow" style="grid-template-columns:56px minmax(0,1fr) auto;">' +
               '<div class="tk">' + escapeHtml(ticker) + "<small>" + escapeHtml(c.bucket || "") + "</small></div>" +
               '<div class="mid"><div class="co">' + escapeHtml(name) + '</div><div class="rs">' + escapeHtml(rationale) + '</div>' +
               '<div class="plan"><b>進</b>' + entryLow + "–" + entryHigh + " · <b>停</b>" + stop + " · <b>TP1</b>" + tp1 + "</div>" +
-              '<div class="actbtns" style="margin-top:5px"><a href="' + companyHref + '">看公司</a><a>加觀察</a><a class="prim" href="' + prefillHref + '">帶入模擬單</a></div></div>' +
+              '<div class="actbtns" style="margin-top:5px"><a href="' + companyHref + '" target="_top">看公司</a><a href="#" ' + watchAttr + '>加觀察</a><a class="prim" href="' + deskHref + '" target="_top">帶入模擬單</a></div></div>' +
               '<div class="side"><div class="conf">信心<b>' + (confidence == null ? "--" : confidence + "%") + "</b></div></div></div>";
           }
           return '<div class="rrow">' +
@@ -959,7 +1045,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
             '<div class="mid"><div class="co">' + escapeHtml(name) + '</div><div class="rs">' + escapeHtml(rationale) + '</div>' +
             '<div class="plan"><b>進</b> ' + entryLow + "–" + entryHigh + " · <b>停</b> " + stop + " · <b>TP1</b> " + tp1 + "</div></div>" +
             '<div class="side"><div class="conf">信心 <b>' + (confidence == null ? "--" : confidence + "%") + "</b></div>" +
-            '<div class="actbtns"><a href="' + companyHref + '">看公司</a><a>加觀察</a><a class="prim" href="' + prefillHref + '">帶入模擬單</a></div></div></div>';
+            '<div class="actbtns"><a href="' + companyHref + '" target="_top">看公司</a><a href="#" ' + watchAttr + '>加觀察</a><a class="prim" href="' + deskHref + '" target="_top">帶入模擬單</a></div></div></div>';
         }).join("") || '<div class="rrow"><div class="mid"><div class="co">目前沒有可行動的 AI 推薦</div></div></div>';
         root.insertAdjacentHTML("beforeend", html);
       });
@@ -967,6 +1053,35 @@ body{margin:0;padding:0;overflow-x:hidden;}
   }
 
   // ── AI 每日簡報 ──────────────────────────────────────────────────────
+  // 楊董 7/14 標準：預設密度比照原稿（每段 1-2 句節錄），「展開全文」才看全文
+  // （純 client 狀態切換，不重打 API）。
+  var briefState = { hasSections: false, sections: [], expanded: false };
+  var BRIEF_HEADING_MAP = {
+    "market overview": "盤勢總覽", "theme summaries": "題材摘要", "company notes": "公司觀察",
+    "risk notes": "風險提示", risks: "風險提示", confirmation: "確認狀態"
+  };
+  var BRIEF_FALLBACK_ORDER = ["盤勢總覽", "題材摘要", "公司觀察", "風險提示"];
+
+  function briefSegHtml() {
+    if (!briefState.hasSections) {
+      return '<div class="seg"><div class="sh">待產生</div><div class="sx">今天尚未發布每日簡報。</div></div>';
+    }
+    return briefState.sections.map(function (sec) {
+      var body = briefState.expanded ? sec.full : sec.preview;
+      return '<div class="seg"><div class="sh">' + escapeHtml(sec.heading) + '</div><div class="sx">' + escapeHtml(body) + "</div></div>";
+    }).join("");
+  }
+  function renderBriefBody() {
+    var html = briefSegHtml();
+    qsa("brief-root").forEach(function (root) {
+      Array.prototype.slice.call(root.querySelectorAll(".seg")).forEach(function (el) { el.remove(); });
+      var meta = root.querySelector(".brief-meta");
+      if (meta) meta.insertAdjacentHTML("afterend", html);
+      else root.insertAdjacentHTML("beforeend", html);
+    });
+    setText("brief-toggle", briefState.expanded ? "收合 ▴" : "展開全文 ▸");
+  }
+
   function renderBrief() {
     return apiFetch("/api/v1/briefs").then(function (res) {
       var briefs = unwrap(res.ok ? res.body : null) || [];
@@ -985,29 +1100,16 @@ body{margin:0;padding:0;overflow-x:hidden;}
       }
       setText("today-focus", shown ? ("閱讀 " + fmtDateTaipei(shown.createdAt) + " AI 簡報") : "今日簡報待產生");
 
-      var known = {
-        "market overview": "盤勢總覽", "theme summaries": "題材摘要", "company notes": "公司觀察",
-        "risk notes": "風險提示", risks: "風險提示", confirmation: "確認狀態"
-      };
-      var fallbackOrder = ["盤勢總覽", "題材摘要", "公司觀察", "風險提示"];
       var sections = shown ? shown.sections : [];
-
-      qsa("brief-root").forEach(function (root) {
-        Array.prototype.slice.call(root.querySelectorAll(".seg")).forEach(function (el) { el.remove(); });
-        var meta = root.querySelector(".brief-meta");
-        var html;
-        if (sections.length > 0) {
-          html = sections.map(function (sec, i) {
-            var key = String(sec.heading || "").trim().toLowerCase().replace(/[_-]/g, " ").replace(/\s+/g, " ");
-            var heading = known[key] || fallbackOrder[i] || "簡報段落";
-            return '<div class="seg"><div class="sh">' + escapeHtml(heading) + '</div><div class="sx">' + escapeHtml(maskUnsafeAdvice(sec.body)) + "</div></div>";
-          }).join("");
-        } else {
-          html = '<div class="seg"><div class="sh">待產生</div><div class="sx">今天尚未發布每日簡報。</div></div>';
-        }
-        if (meta) meta.insertAdjacentHTML("afterend", html);
-        else root.insertAdjacentHTML("beforeend", html);
+      briefState.expanded = false;
+      briefState.hasSections = sections.length > 0;
+      briefState.sections = sections.map(function (sec, i) {
+        var key = String(sec.heading || "").trim().toLowerCase().replace(/[_-]/g, " ").replace(/\s+/g, " ");
+        var heading = BRIEF_HEADING_MAP[key] || BRIEF_FALLBACK_ORDER[i] || "簡報段落";
+        var full = maskUnsafeAdvice(sec.body);
+        return { heading: heading, full: full, preview: firstSentences(full, 2, 80) };
       });
+      renderBriefBody();
     });
   }
 
@@ -1054,7 +1156,7 @@ body{margin:0;padding:0;overflow-x:hidden;}
   // ── 強勢個股排行 ─────────────────────────────────────────────────────
   function rowsHtml(list) {
     return list.map(function (item) {
-      return '<div class="r"><span class="tk">' + escapeHtml(item.symbol) + '</span><span class="nm">' + escapeHtml(item.name || item.market || "") +
+      return '<div class="r" data-symbol="' + escapeHtml(item.symbol) + '"><span class="tk">' + escapeHtml(item.symbol) + '</span><span class="nm">' + escapeHtml(item.name || item.market || "") +
         '</span><span class="pc ' + (item.changePct >= 0 ? "up" : "down") + '">' + fmtPct(item.changePct) + "</span></div>";
     }).join("") || '<div class="r"><span class="nm">目前沒有可顯示的排行資料</span></div>';
   }
@@ -1079,14 +1181,16 @@ body{margin:0;padding:0;overflow-x:hidden;}
       var announcements = unwrap(results[1].ok ? results[1].body : null);
       var aiItems = (news && news.items || []).map(function (item) {
         return {
-          title: item.headline, date: item.date, ticker: item.ticker || "MARKET",
-          companyName: item.companyName || "大盤", category: item.impact_tier || "ai_selected", aiSelected: true
+          title: truncatePlain(item.headline, 34), date: item.date, ticker: item.ticker || "MARKET",
+          companyName: item.companyName || "大盤", category: item.impact_tier || "ai_selected", aiSelected: true,
+          url: item.url || null
         };
       });
       var officialItems = (announcements && announcements.items || []).map(function (item) {
         return {
-          title: item.title, date: item.date, ticker: item.ticker || "MARKET",
-          companyName: item.companyName || "大盤", category: item.category, aiSelected: false
+          title: truncatePlain(item.title, 34), date: item.date, ticker: item.ticker || "MARKET",
+          companyName: item.companyName || "大盤", category: item.category, aiSelected: false,
+          url: item.url || null
         };
       });
       var items = aiItems.concat(officialItems).slice(0, 12);
@@ -1097,8 +1201,14 @@ body{margin:0;padding:0;overflow-x:hidden;}
       var feat = items[0] || null;
       qsa("tape-feat").forEach(function (el) {
         if (!feat) {
+          el.removeAttribute("href"); el.removeAttribute("target"); el.removeAttribute("rel");
           el.innerHTML = '<span class="tag">待資料</span><h3>目前沒有可顯示的市場情報</h3><div class="meta"></div>';
           return;
+        }
+        if (feat.url) {
+          el.setAttribute("href", feat.url); el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener");
+        } else {
+          el.removeAttribute("href"); el.removeAttribute("target"); el.removeAttribute("rel");
         }
         el.innerHTML = '<span class="tag">' + (feat.aiSelected ? "AI 精選" : "重大訊息") + '</span>' +
           "<h3>" + escapeHtml(feat.title || "標題未回傳") + '</h3><div class="meta">' +
@@ -1112,8 +1222,10 @@ body{margin:0;padding:0;overflow-x:hidden;}
         var feat = root.querySelector(".feat");
         var html = rest.map(function (item) {
           var style = mobile ? ' style="padding-right:0;"' : "";
-          return '<div class="trow"' + style + '><div class="tm">' + fmtDateTaipei(item.date) + " <em>" + escapeHtml(item.aiSelected ? "AI 精選" : "重大訊息") + "</em> · " +
-            escapeHtml(item.ticker) + '</div><div class="h">' + escapeHtml(item.title || "標題未回傳") + "</div></div>";
+          var tag = item.url ? "a" : "div";
+          var linkAttrs = item.url ? ' href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener"' : "";
+          return "<" + tag + ' class="trow"' + style + linkAttrs + '><div class="tm">' + fmtDateTaipei(item.date) + " <em>" + escapeHtml(item.aiSelected ? "AI 精選" : "重大訊息") + "</em> · " +
+            escapeHtml(item.ticker) + '</div><div class="h">' + escapeHtml(item.title || "標題未回傳") + "</div></" + tag + ">";
         }).join("");
         if (feat) feat.insertAdjacentHTML("afterend", html);
         else root.insertAdjacentHTML("beforeend", html);
