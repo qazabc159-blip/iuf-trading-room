@@ -12281,8 +12281,7 @@ body:has(.tactical-dashboard) .app-sidebar {
 
 .tac-hero-grid,
 .tac-two-grid,
-.tac-heatmap-wide,
-.tac-single-panel {
+.tac-heatmap-wide {
   display: grid;
   gap: 16px;
   align-items: stretch;
@@ -12301,8 +12300,7 @@ body:has(.tactical-dashboard) .app-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.tac-heatmap-wide,
-.tac-single-panel {
+.tac-heatmap-wide {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -12603,9 +12601,9 @@ body:has(.tactical-dashboard) .app-sidebar {
    原稿手機版是獨立截斷內容的 device-frame mock（推薦只顯 3 檔、熱力圖
    6 欄、排行只顯漲幅、新聞只 2 則），因為那是固定 760px 高的預覽框裁切
    結果，不是真正的行動版資訊架構決策。真站點是可捲動的長頁，沿用同一份
-   真實資料（不因螢幕窄而砍資料），只用 grid-template-areas 重排順序對齊
-   原稿手機版的視覺動線（大盤→推薦→簡報→熱力圖→S1→排行→新聞），其餘
-   樣式/密度/色階/字級完全比照原稿 .m-body 系列。 */
+   真實資料（不因螢幕窄而砍資料），只重排順序對齊原稿手機版的視覺動線
+   （大盤→推薦→簡報→熱力圖→S1→排行→新聞），其餘樣式/密度/色階/字級
+   完全比照原稿 .m-body 系列。 */
 @media (max-width: 480px) {
   .tac-ledger .mast { height: auto; flex-wrap: wrap; }
   .tac-ledger .mast-slot,
@@ -12613,15 +12611,30 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-ledger .mast-clock { margin-left: auto; }
   .tac-ledger .sheet { grid-template-columns: 1fr; }
   .tac-ledger .maincol { border-right: none; }
-  /* Round 3：三個 band 各自獨立 grid（見桌面規則），行動版統一收成單欄，
-     DOM 順序＝ heroband(hero,heat) → leadband(rec,brief) → footband(s1,rank)
-     → tape，跟原稿手機版把 heat 挪到 brief 之後的順序不完全一致（原稿：
-     hero→rec→brief→heat→s1→rank）——這是本輪未特別處理的已知落差，已知
-     且刻意的簡化（Round 3 指示聚焦桌面全寬比例還原，未要求行動版重排），
-     非遺漏。 */
+  /* Round 5（2026-07-14，楊董定案，收掉 Round 3 遺留的已知落差）：三個
+     band（heroband/leadband/footband）是桌面專用的並列 grid 容器，行動版
+     改 display:contents 讓子項直接變成 .maincol 的 flex 子項（.maincol
+     本身桌面/行動版皆 flex-direction:column，見上方非 media 規則），再用
+     order 排出原稿手機動線 hero→rec→brief→heat→s1→rank（news tape 是
+     .sheet 底下獨立於 .maincol 的 sibling，DOM 順序本來就已經最後，不
+     需要 order）。band 本身的 border-bottom/top 隨 display:contents 失效，
+     改在 6 個葉節點各自補一條 border-bottom 分隔線，比照原稿 .m-sec。
+     桌面版 heroband/leadband/footband 規則完全未動（見上方桌面 CSS）。 */
   .tac-ledger .heroband,
   .tac-ledger .leadband,
-  .tac-ledger .footband { grid-template-columns: 1fr; }
+  .tac-ledger .footband { display: contents; }
+  .tac-ledger .idxanchor { order: 1; }
+  .tac-ledger .recwrap { order: 2; }
+  .tac-ledger .briefcol { order: 3; }
+  .tac-ledger .heatzone { order: 4; }
+  .tac-ledger .s1wrap { order: 5; }
+  .tac-ledger .rkwrap { order: 6; }
+  .tac-ledger .idxanchor,
+  .tac-ledger .recwrap,
+  .tac-ledger .briefcol,
+  .tac-ledger .heatzone,
+  .tac-ledger .s1wrap,
+  .tac-ledger .rkwrap { border-bottom: 1px solid var(--lg-line2); }
   .tac-ledger .idxanchor { padding: 16px 14px 14px; border-right: none; }
   .tac-ledger .idxanchor .giant { font-size: 54px; margin-top: 12px; }
   .tac-ledger .idxanchor .giant sub { font-size: 23px; }

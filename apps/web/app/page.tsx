@@ -2763,6 +2763,10 @@ function DataGapPanel({ sources }: { sources: SourceTile[] }) {
 // TacticalSidebar／BrokerConnectionLine 出現過，這裡不再重複第三次。舊三個
 // 函式（FreshnessPanel/DataReadinessPanel/DataGapPanel）保留在檔案中未刪，
 // 只是不再掛載——等 B 案定案再決定去留。
+// v5.1 Round 5（2026-07-14）：楊董定案拿掉首頁的「資料健康」區塊（原稿沒有
+// 這塊，且違反七塊固定 IA），DataHealthPanel 也比照上面三個舊函式改為保留
+// 不刪、不再掛載；唯一呼叫端（`buildSources` 組出的 `sources`）已從
+// DashboardContent 移除。
 function DataHealthPanel({ sources }: { sources: SourceTile[] }) {
   const live = sources.filter((source) => source.state === "LIVE").length;
   const review = sources.filter((source) => source.state === "STALE" || source.state === "REVIEW" || source.state === "DEGRADED").length;
@@ -3475,7 +3479,6 @@ async function DashboardContent({
     );
   }
 
-  const sources = buildSources({ finmind, market, ops, brief, paper, s1Strategy, intel });
   const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
   const marketHeatmap = buildHeatmap(market);
   const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
@@ -3492,9 +3495,15 @@ async function DashboardContent({
   // （全寬promoted）→ 編輯正文兩欄：主欄(S1 佈告 + 排行 + AI簡報) / 右側新聞
   // 電傳紙帶(重大訊息)。七塊 IA 內容鎖定不變（見 feedback_homepage_is_info_
   // overview memory）：大盤總覽／熱力圖／AI推薦／AI簡報／S1量化／強勢排行／
-  // 精選新聞。DataHealth／BrokerConnectionLine 為工程遙測小計，非七塊之一，
-  // 沿用舊排序放頁尾。CUT：AgendaStrip（狀態寫死的裝飾時間軸）、WorkflowPanel
-  // （純連結表，資訊已在各卡 CTA）。
+  // 精選新聞。BrokerConnectionLine 為工程遙測小計，非七塊之一，沿用舊排序
+  // 放頁尾。CUT：AgendaStrip（狀態寫死的裝飾時間軸）、WorkflowPanel（純連結
+  // 表，資訊已在各卡 CTA）。
+  //
+  // v5.1 Round 5（2026-07-14，楊董定案）：拿掉 DataHealthPanel（「資料健康」
+  // 綠燈列表區塊）——原稿沒有這塊，且違反楊董 7/12「首頁七塊固定不加不減」。
+  // DataHealthPanel 函式本體（連同 buildSources/FreshnessPanel/DataReadinessPanel/
+  // DataGapPanel 等既有非掛載函式）比照 Round-3 前例保留不刪，只是不再有
+  // 呼叫端；`sources` 變數隨之移除（原本唯一消費端就是這裡）。
   //
   // v5.1 Round 3（2026-07-13 晚，楊董定案）：拿掉首頁專用左側導航欄
   // （TacticalSidebar 已刪除），首頁改全寬比照原稿——導航改由 masthead
@@ -3531,9 +3540,6 @@ async function DashboardContent({
           </div>
 
           <BrokerConnectionLine paper={paper} broker={broker} />
-          <section className="tac-single-panel">
-            <DataHealthPanel sources={sources} />
-          </section>
         </div>
       </main>
     </div>
