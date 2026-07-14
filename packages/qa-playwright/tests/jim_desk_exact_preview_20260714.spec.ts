@@ -40,7 +40,9 @@ test.describe("/desk-exact preview", () => {
     testInfo.annotations.push({ type: "ledger-count-orders", description: String(ledgerCount) });
     testInfo.annotations.push({ type: "submit-disabled", description: String(submitDisabled) });
 
-    expect(submitDisabled, "submit button must stay disabled (read-only preview, no live order path)").toBe(true);
+    // Round 2 (2026-07-14 晚): paper 通道下單票已接真送單（見報告），submit 鍵
+    // 預設應為可互動狀態，只有送單進行中/驗證失敗時才會暫時 disabled。
+    expect(submitDisabled, "submit button must be interactive by default (paper channel is now wired for real submit)").toBe(false);
 
     const scroll = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
@@ -94,7 +96,7 @@ test.describe("/desk-exact preview", () => {
 
     const m2Submit = await frame.locator("button.m2-submit").first().isDisabled();
     testInfo.annotations.push({ type: "m2-submit-disabled", description: String(m2Submit) });
-    expect(m2Submit, "mobile submit button must stay disabled").toBe(true);
+    expect(m2Submit, "mobile submit button must be interactive by default").toBe(false);
 
     const scroll = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
@@ -104,5 +106,61 @@ test.describe("/desk-exact preview", () => {
     expect(scroll.scrollWidth, "no horizontal overflow at 390").toBeLessThanOrEqual(scroll.clientWidth + 1);
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-mobile-390");
+  });
+
+  // Round 2 (2026-07-14 晚) — 下單票真送單驗收（paper 通道，見 JIM_DESK_EXACT
+  // 報告紅線處置段）。誠實揭露：本次測試執行於台北時間 14:39（盤後，
+  // 09:00-13:30 已收盤），真實 trading_hours 風控 guard 會合法攔截這筆委託
+  // ——這證明送單流已真正打到後端風控引擎（非 stub），而非本頁的 bug。要驗證
+  // 「盤中送出後今日委託表真的多一筆已受理」需在下一個交易日 09:00-13:30
+  // Taipei 內重跑本測試（同一顆 spec，無需修改）。
+  test("desktop ticket real-submits a paper order via /api/v1/trading/orders (honest outcome, market-hours dependent)", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="cap-avail"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000); // let capital/accounts hydration land before submit
+
+    // Switch to SHARE unit + qty 1 (smallest possible odd-lot order), matching
+    // the coordinator's ask ("1 股 SHARE，小額").
+    await frame.locator('[data-slot="t-unit"] button[data-unit="SHARE"]').click();
+    const qtyInput = frame.locator('[data-slot="t-qty"]');
+    await qtyInput.fill("1");
+    const priceInput = frame.locator('[data-slot="t-price"]');
+    await priceInput.fill("1000");
+
+    const submitResponsePromise = page.waitForResponse(
+      (res) => res.url().includes("/api/ui-final-v031/backend") && res.url().includes("path=%2Fapi%2Fv1%2Ftrading%2Forders"),
+      { timeout: 20000 }
+    );
+    await frame.locator('[data-slot="t-submit"]').click();
+    const submitResponse = await submitResponsePromise;
+    const submitBody = await submitResponse.json().catch(() => null);
+    const submitStatus = submitResponse.status();
+
+    testInfo.annotations.push({ type: "submit-http-status", description: String(submitStatus) });
+    testInfo.annotations.push({ type: "submit-response-body", description: JSON.stringify(submitBody) });
+
+    await page.waitForTimeout(1500);
+    const submitMsg = await frame.locator('[data-slot="t-submit-msg"]').first().textContent();
+    testInfo.annotations.push({ type: "submit-msg-shown-to-user", description: String(submitMsg) });
+
+    // The real backend was reached (not a stub / not silently swallowed) —
+    // true regardless of whether the market happens to be open right now.
+    expect(submitStatus === 201 || submitStatus === 422, "real backend responded (accepted or a legitimate risk-gate block)").toBe(true);
+
+    if (submitStatus === 422) {
+      // Legitimate block (e.g. trading_hours outside 09:00-13:30 Taipei) —
+      // assert the UI surfaces a human-readable reason, never a raw enum.
+      expect(submitMsg, "blocked reason must be human-readable, not a raw code").not.toMatch(/^[a-z_]+$/);
+      expect(submitMsg, "blocked reason must not be empty").toBeTruthy();
+    } else {
+      // 201 accepted — assert the ledger table picks up the new row without
+      // a full page reload.
+      await expect(frame.locator('[data-slot="ledger-rows"] tr').first()).toBeVisible({ timeout: 10000 });
+      testInfo.annotations.push({ type: "order-accepted", description: "true" });
+    }
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-submit-outcome");
   });
 });
