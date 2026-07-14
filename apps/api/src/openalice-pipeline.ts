@@ -48,6 +48,7 @@ import {
   getTaiexPrevSessionSnapshot,
   isTwseIndexSnapshotConsistent,
 } from "./data-sources/twse-openapi-client.js";
+import { isTwTradingDay } from "./lib/trading-calendar.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -363,45 +364,12 @@ function visibleDailyBriefCondition() {
 }
 
 // ── Trading calendar check ────────────────────────────────────────────────────
-
-/**
- * Returns true if today is a Taiwan Stock Exchange trading day.
- * Uses tw_trading_calendar DB table if available (Athena spec dataset #9).
- * Falls back to weekend-only check when table is absent (DEGRADED mode).
- *
- * Exported 2026-07-14 (EOD source fallback task) so server.ts's TWSE-EOD-
- * QUOTE-CRON can reuse this same calendar check to gate its www rwd
- * afterTrading fallback trigger, rather than maintaining a second
- * independent trading-day check (same duplicate-implementation bug class
- * as the ROC date parser sweep — reports/ledger_stall_20260709/).
- */
-export async function isTwTradingDay(tradingDate: string): Promise<boolean> {
-  // Weekend fast-path (Taipei local DOW)
-  const parts = tradingDate.split("-").map(Number);
-  const d = new Date(Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!));
-  const dow = d.getUTCDay();
-  if (dow === 0 || dow === 6) return false;
-
-  // DB holiday check — table may not exist (DRAFT migration not yet promoted)
-  if (!isDatabaseMode()) return true;
-  const db = getDb();
-  if (!db) return true;
-
-  try {
-    const rows = await db.execute(
-      drizzleSql`SELECT is_trading_day FROM tw_trading_calendar WHERE date = ${tradingDate} LIMIT 1`
-    );
-    const row = (rows as { rows?: Array<{ is_trading_day?: boolean }> }).rows?.[0];
-    if (row === undefined) {
-      // Date not in table → assume trading day (conservative, better than skipping)
-      return true;
-    }
-    return row.is_trading_day !== false;
-  } catch {
-    // Table doesn't exist yet (migration not promoted) → fall back to weekend check only
-    return true;
-  }
-}
+// Moved to lib/trading-calendar.ts 2026-07-14 (s1-sim-runner tier 1b EOD
+// fallback task) so data-sources/twse-openapi-client.ts can also call this
+// same calendar check without a circular import (that module is imported BY
+// this file, so importing isTwTradingDay back from here would have cycled).
+// server.ts now imports isTwTradingDay directly from lib/trading-calendar.js
+// (see the top-of-file import block above for this file's own internal use).
 
 // ── Live market snapshot (F1: real numbers injected into prompt) ──────────────
 

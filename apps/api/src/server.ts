@@ -254,7 +254,6 @@ import {
   _lastPipelineState,
   getPipelineObservabilityAddendum,
   isDailyBriefV2ContractCompliant,
-  isTwTradingDay,
   loadStrategySnapshot,
   runBatchAiReviewer,
   runPipelineCloseBriefTick,
@@ -305,6 +304,7 @@ import {
 import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
 import { normalizeAndMergeTwseHeatmapTiles } from "./utils/heatmap-normalized-merge.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
+import { isTwTradingDay } from "./lib/trading-calendar.js";
 
 type Variables = {
   repo: TradingRoomRepository;
