@@ -31,6 +31,7 @@
 
 import { createClient } from "redis";
 import { parseRocEodDateIso, isoDateToRocCompact } from "../lib/roc-date.js";
+import { isTwTradingDay } from "../lib/trading-calendar.js";
 
 // ── Base URLs ─────────────────────────────────────────────────────────────────
 
@@ -165,9 +166,54 @@ export function _resetStockDayAllCache(): void {
   _stockDayAllInflight = null;
 }
 
-/** Exported so server routes can pre-warm the shared cache in parallel with DB queries */
+/** Taipei "today" as plain ISO "YYYY-MM-DD" (no time suffix) — used only by
+ * getStockDayAllRows's self-heal gate below. */
+function _stockDayAllTodayIso(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+}
+
+/**
+ * True when STOCK_DAY_ALL's own resolved date (already parsed to plain ISO
+ * via parseRocEodDateIso, no time suffix) lags behind or is unparseable
+ * relative to Taipei's expected trading date. Deliberately a separate, much
+ * simpler comparison than server.ts's `_isTwseEodPrimaryDateBehindExpected`
+ * (which operates on `_computeTwseEodCronTradingDateIso`'s T13:30-suffixed
+ * output) — different input shape, not a third copy of the same logic; both
+ * are trivial ISO string comparisons with no format-drift risk.
+ */
+export function _isStockDayAllPrimaryDateBehindExpected(
+  primaryDateIso: string | null,
+  expectedDateIso: string
+): boolean {
+  if (!primaryDateIso) return true;
+  return primaryDateIso < expectedDateIso;
+}
+
+/**
+ * Exported so server routes can pre-warm the shared cache in parallel with DB queries.
+ *
+ * Self-heals against the 2026-07-13/07-14 upstream-stuck incidents: when
+ * openapi.twse.com.tw's own publish pipeline stalls (primary's resolved date
+ * lags behind Taipei's expected trading date) AND today is confirmed a real
+ * trading day (via the shared isTwTradingDay calendar check — never a
+ * wall-clock/weekday guess), transparently substitutes the same official
+ * data from the www rwd afterTrading endpoint and caches THAT instead.
+ * Every caller of this shared function benefits automatically — heatmap,
+ * breadth, leaders, server.ts's TWSE-EOD-QUOTE-CRON, and s1-sim-runner's
+ * tier 1b mark-to-market — without each needing its own fallback logic.
+ * (server.ts's _runTwseEodCron kept its own explicit #1255 fallback block as
+ * a belt-and-suspenders safety net; this function now resolves the stale
+ * case first in the common case, making that block largely dormant but
+ * harmless to leave in place — not touched here to avoid risk on an
+ * already-merged, already-verified-live cron.)
+ * A genuine non-trading day produces the identical "primary is behind"
+ * signal and must NOT trigger the fallback fetch — that lag is expected.
+ * `isTradingDayOverride` is test-only DI; production callers get the real
+ * shared `isTwTradingDay`.
+ */
 export async function getStockDayAllRows(
-  fetchOverride?: typeof fetch
+  fetchOverride?: typeof fetch,
+  isTradingDayOverride?: (dateIso: string) => Promise<boolean>
 ): Promise<StockDayAllRow[]> {
   // Cache hit
   if (_stockDayAllCache && Date.now() < _stockDayAllCache.expiresAt) {
@@ -177,6 +223,7 @@ export async function getStockDayAllRows(
   if (_stockDayAllInflight) return _stockDayAllInflight;
 
   const doFetch = fetchOverride ?? globalThis.fetch;
+  const checkTradingDay = isTradingDayOverride ?? isTwTradingDay;
   _stockDayAllInflight = (async (): Promise<StockDayAllRow[]> => {
     try {
       const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
@@ -193,7 +240,29 @@ export async function getStockDayAllRows(
         return [];
       }
       const raw = await resp.json();
-      const rows: StockDayAllRow[] = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
+      let rows: StockDayAllRow[] = Array.isArray(raw) ? (raw as StockDayAllRow[]) : [];
+
+      // ── Self-heal (2026-07-13/07-14 upstream-stuck incidents) ────────────
+      if (rows.length > 0) {
+        const primaryDateIso = parseRocEodDateIso(rows[0]?.Date);
+        const expectedDateIso = _stockDayAllTodayIso();
+        if (_isStockDayAllPrimaryDateBehindExpected(primaryDateIso, expectedDateIso)) {
+          const isTradingToday = await checkTradingDay(expectedDateIso).catch(() => false);
+          if (isTradingToday) {
+            console.warn(
+              `[twse-openapi-client] STOCK_DAY_ALL upstream stuck (primary_date=${primaryDateIso ?? "unparseable"}, expected=${expectedDateIso}, today_is_trading_day=true) — trying www rwd afterTrading fallback`
+            );
+            const fallbackRows = await getTwseAfterTradingAllRows(expectedDateIso, doFetch);
+            if (fallbackRows.length > 0) {
+              rows = fallbackRows;
+              console.log(`[twse-openapi-client] STOCK_DAY_ALL self-heal succeeded: ${fallbackRows.length} rows from www rwd afterTrading (trade_date=${expectedDateIso})`);
+            } else {
+              console.warn(`[twse-openapi-client] STOCK_DAY_ALL self-heal: fallback also unavailable for ${expectedDateIso} — caching primary's stale rows as-is`);
+            }
+          }
+        }
+      }
+
       _stockDayAllCache = { rows, expiresAt: Date.now() + STOCK_DAY_ALL_CACHE_TTL_SECONDS * 1000 };
       return rows;
     } catch (err) {

@@ -22679,6 +22679,141 @@ test("EOD-FALLBACK-7: getTwseAfterTradingAllRows fails open to [] on HTTP error 
   assert.deepEqual(await getTwseAfterTradingAllRows("not-a-date"), []);
 });
 
+// ── STOCKDAYALL-SELFHEAL: getStockDayAllRows self-heals against the shared
+// _stockDayAllCache going stale (2026-07-14 s1-sim-runner tier 1b fix — same
+// upstream-stuck incident as #1255, but on a DIFFERENT code path: tier 1b
+// calls getStockDayAllRows() directly and had zero knowledge of #1255's
+// fallback, which lived only inside server.ts's own cron and never wrote
+// back into this shared cache). Fixing it HERE benefits every caller
+// (heatmap, breadth, leaders, the EOD cron, AND s1-sim-runner tier 1b)
+// without a third duplicate copy of the fallback-trigger logic. ────────────
+
+function _taipeiTodayIsoForTest(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+}
+
+test("STOCKDAYALL-SELFHEAL-1: _isStockDayAllPrimaryDateBehindExpected flags a lagging or unparseable primary date, not a fresh one", async () => {
+  const { _isStockDayAllPrimaryDateBehindExpected } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  assert.equal(_isStockDayAllPrimaryDateBehindExpected("2026-07-09", "2026-07-13"), true);
+  assert.equal(_isStockDayAllPrimaryDateBehindExpected("2026-07-13", "2026-07-13"), false);
+  assert.equal(_isStockDayAllPrimaryDateBehindExpected("2026-07-14", "2026-07-13"), false, "primary ahead of expected (shouldn't normally happen) = not behind");
+  assert.equal(_isStockDayAllPrimaryDateBehindExpected(null, "2026-07-13"), true, "unparseable primary = treated as behind");
+});
+
+test("STOCKDAYALL-SELFHEAL-2: getStockDayAllRows substitutes www rwd afterTrading data when the primary is stuck AND today is confirmed a trading day", async () => {
+  const { getStockDayAllRows, _resetStockDayAllCache } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetStockDayAllCache();
+
+  const todayIso = _taipeiTodayIsoForTest();
+  const todayYYYYMMDD = todayIso.replace(/-/g, "");
+
+  const mockFetch = (async (url: string | URL | Request): Promise<Response> => {
+    const urlStr = String(url);
+    if (urlStr.includes("STOCK_DAY_ALL")) {
+      // Stuck primary: an old ROC date (1150101 = 2026-01-01), guaranteed behind "today" in any real test run.
+      const body = [
+        { Date: "1150101", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+      ];
+      return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+    }
+    if (urlStr.includes("afterTrading/MI_INDEX")) {
+      assert.ok(urlStr.includes(`date=${todayYYYYMMDD}`), "must request the fallback endpoint for TODAY's date, not the stuck primary's date");
+      const body = {
+        stat: "OK",
+        tables: [{
+          fields: ["證券代號", "證券名稱", "成交股數", "成交筆數", "成交金額", "開盤價", "最高價", "最低價", "收盤價", "漲跌(+/-)", "漲跌價差", "最後揭示買價", "最後揭示買量", "最後揭示賣價", "最後揭示賣量", "本益比"],
+          data: [["2330", "台積電", "1", "1", "1", "100", "101", "99", "200.00", "<p>+</p>", "0", "1", "1", "1", "1", "0"]]
+        }]
+      };
+      return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+    }
+    throw new Error(`STOCKDAYALL-SELFHEAL-2: unexpected URL in test mock: ${urlStr}`);
+  }) as typeof fetch;
+
+  const isTradingDayOverride = async () => true;
+  const rows = await getStockDayAllRows(mockFetch, isTradingDayOverride);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.ClosingPrice, "200.00", "must return the FALLBACK rows (rwd close 200.00), not the stuck primary's rows (close 100.5)");
+});
+
+test("STOCKDAYALL-SELFHEAL-3: a genuine non-trading day (isTradingDayOverride=false) must NOT trigger the fallback fetch — the lag is expected", async () => {
+  const { getStockDayAllRows, _resetStockDayAllCache } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetStockDayAllCache();
+
+  const mockFetch = (async (url: string | URL | Request): Promise<Response> => {
+    const urlStr = String(url);
+    if (urlStr.includes("STOCK_DAY_ALL")) {
+      const body = [
+        { Date: "1150101", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+      ];
+      return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+    }
+    throw new Error("STOCKDAYALL-SELFHEAL-3: fallback endpoint must NEVER be called on a non-trading day");
+  }) as typeof fetch;
+
+  const isTradingDayOverride = async () => false;
+  const rows = await getStockDayAllRows(mockFetch, isTradingDayOverride);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.ClosingPrice, "100.5", "on a non-trading day, the primary's (stale but expected) rows must be returned as-is");
+});
+
+test("STOCKDAYALL-SELFHEAL-4: a FRESH primary must never trigger the trading-day check at all (no wasted DB round-trip on the common happy path)", async () => {
+  const { getStockDayAllRows, _resetStockDayAllCache } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetStockDayAllCache();
+
+  const todayIso = _taipeiTodayIsoForTest();
+  const [y, m, d] = todayIso.split("-");
+  const rocDateCompact = `${(parseInt(y!, 10) - 1911).toString().padStart(3, "0")}${m}${d}`;
+
+  const mockFetch = (async (): Promise<Response> => {
+    const body = [
+      { Date: rocDateCompact, Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+    ];
+    return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+  }) as typeof fetch;
+
+  const isTradingDayOverride = async (): Promise<boolean> => { throw new Error("must not be called when primary is already fresh"); };
+  const rows = await getStockDayAllRows(mockFetch, isTradingDayOverride);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.ClosingPrice, "100.5");
+});
+
+test("STOCKDAYALL-SELFHEAL-5: both primary AND fallback stuck/unavailable fails open to the primary's stale rows — never worse than before, never fakes data", async () => {
+  const { getStockDayAllRows, _resetStockDayAllCache } = await import("../apps/api/src/data-sources/twse-openapi-client.ts");
+  _resetStockDayAllCache();
+
+  const mockFetch = (async (url: string | URL | Request): Promise<Response> => {
+    const urlStr = String(url);
+    if (urlStr.includes("STOCK_DAY_ALL")) {
+      const body = [
+        { Date: "1150101", Code: "2330", Name: "台積電", TradeVolume: "1", TradeValue: "1", OpeningPrice: "100", HighestPrice: "101", LowestPrice: "99", ClosingPrice: "100.5", Change: "0.5", Transaction: "1" }
+      ];
+      return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+    }
+    if (urlStr.includes("afterTrading/MI_INDEX")) {
+      const body = { stat: "很抱歉，沒有符合條件的資料!" };
+      return { ok: true, status: 200, headers: { get: (h: string) => (h === "content-type" ? "application/json" : null) } as unknown as Headers, json: async () => body } as unknown as Response;
+    }
+    throw new Error(`unexpected URL: ${urlStr}`);
+  }) as typeof fetch;
+
+  const isTradingDayOverride = async () => true;
+  const rows = await getStockDayAllRows(mockFetch, isTradingDayOverride);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.ClosingPrice, "100.5", "both sources stuck: must return the primary's rows unchanged, not [] and not fabricated data");
+});
+
+test("STOCKDAYALL-SELFHEAL-6: s1-sim-runner.ts tier 1b routes through the shared (now self-healing) getStockDayAllRows — no separate/parallel STOCK_DAY_ALL fetch path", () => {
+  const runnerSrc = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.ok(
+    runnerSrc.includes("const { getStockDayAllRows, getTpexMainboardCloseRows } = await import(\"./data-sources/twse-openapi-client.js\");"),
+    "STOCKDAYALL-SELFHEAL-6: tier 1b must import getStockDayAllRows from the shared data-sources client (the self-healing function), not a separate fetch"
+  );
+});
+
 // ── SCHED-CURSOR: FinMind sync scheduler round-robin cursor (2026-07-12,
 // #1229 A5/A6 finding) ────────────────────────────────────────────────────
 // Memory-mode (no DB — PERSISTENCE_MODE unset in this test suite) coverage
