@@ -452,7 +452,9 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-image:none!important;}
 .bezel,.bezel.mob{border:0!important;padding:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;}
 .screen{border-radius:0!important;}
-.screen.desk{width:100%!important;height:100vh!important;height:100dvh!important;}
+/* 比例控制（楊董 7/14 退件）：1280 密度設計直接拉滿大螢幕比例失衡，
+   內容上限 1520 置中，左右同色背景延伸。 */
+.screen.desk{width:100%!important;max-width:1520px;margin:0 auto;height:100vh!important;height:100dvh!important;}
 .screen.mob{width:100%!important;height:100vh!important;height:100dvh!important;margin:0 auto;}
 @media(min-width:721px){.screen.mob{display:none!important;}}
 @media(max-width:720px){.screen.desk{display:none!important;}}

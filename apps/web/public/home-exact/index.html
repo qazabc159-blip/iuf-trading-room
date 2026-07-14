@@ -344,7 +344,9 @@ html,body{background:#04060a;}
 body{margin:0;padding:0;overflow-x:hidden;}
 .device{height:auto!important;max-width:none!important;border:0!important;box-shadow:none!important;}
 .device .scroll{height:auto!important;overflow-y:visible!important;}
-.device.desktop{width:100%!important;margin:0;}
+/* 比例控制：原稿為 1280 密度設計，直接拉滿大螢幕會失衡（楊董 7/14 退件）。
+   內容上限 1520 置中，左右為同色背景延伸＝正常網頁構圖非預覽框。 */
+.device.desktop{width:100%!important;max-width:1520px;margin:0 auto;}
 .device.mobile{width:100%!important;margin:0 auto;}
 @media(min-width:721px){.device.mobile{display:none!important;}}
 @media(max-width:720px){.device.desktop{display:none!important;}}
