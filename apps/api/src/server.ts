@@ -12936,9 +12936,29 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
   }
 });
 
+// Determines whether /market/heatmap/kgi-core should consult the DB-persisted
+// quote_last_close fallback tier (Tier 2.5). True when either (a) today is not
+// a TW trading day at all (weekend/holiday — checked via lib/trading-calendar,
+// which itself knows about holidays via tw_trading_calendar, not a bare
+// wall-clock guess), or (b) today IS a trading day but the current Taipei time
+// is outside the 09:00-13:30 session window. Gating like this (rather than
+// always querying) avoids an unnecessary 40-symbol DB round-trip on every
+// heatmap poll during market hours, when Tier 1/1.5/2 already cover almost
+// every tile. Exported for direct unit testing.
+export async function _isKgiHeatmapAfterHours(nowMs: number = Date.now()): Promise<boolean> {
+  const nowTaipei = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const todayIso = nowTaipei.toISOString().slice(0, 10);
+  const { isTwTradingDay } = await import("./lib/trading-calendar.js");
+  const tradingDay = await isTwTradingDay(todayIso).catch(() => true);
+  if (!tradingDay) return true;
+  const minutesOfDay = nowTaipei.getUTCHours() * 60 + nowTaipei.getUTCMinutes();
+  return minutesOfDay < 9 * 60 || minutesOfDay >= 13 * 60 + 30;
+}
+
 // GET /api/v1/market/heatmap/kgi-core — core heatmap with 3-tier fallback
 // Tier 1: KGI live tick (market hours, EC2 running)
 // Tier 2: TWSE STOCK_DAY_ALL per-symbol EOD close+changePct
+// Tier 2.5: quote_last_close DB table — 盤後 fallback, only queried after-hours
 // Tier 3: In-process last-known-close cache (survives off-hours)
 // Guarantee: ALWAYS returns all 40 KGI core tiles with sourceState. Never drops a tile.
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure heatmap tile data)
@@ -12951,6 +12971,22 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     // Fetch TWSE STOCK_DAY_ALL in parallel (fail-open: empty array if unreachable)
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const twseRows = await getStockDayAllRows().catch(() => []);
+
+    // 盤後 DB close fallback (Tier 2.5) — only queried when after-hours, and
+    // fail-open to undefined on any error (never blocks the heatmap response).
+    let dbCloseMap: Map<string, { closePrice: number; tradeDate: string; source: string }> | undefined;
+    try {
+      const afterHours = await _isKgiHeatmapAfterHours();
+      if (afterHours) {
+        const db = isDatabaseMode() ? getDb() : null;
+        if (db) {
+          const { getLastCloses } = await import("./quote-last-close-store.js");
+          dbCloseMap = await getLastCloses(db, kgiResult.tiles.map((t) => t.symbol));
+        }
+      }
+    } catch (err) {
+      console.warn("[market/heatmap/kgi-core] quote_last_close fallback failed (non-fatal):", err instanceof Error ? err.message : String(err));
+    }
 
     // Sector/industry lookup (companies.chain_position) for the frontend's
     // industry grouping — 2026-07-14: this endpoint previously carried no
@@ -12972,9 +13008,9 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
       console.warn("[market/heatmap/kgi-core] sector lookup failed (non-fatal):", err instanceof Error ? err.message : String(err));
     }
 
-    // 4-tier enrichment: live → mis_intraday → twse_eod → cache → no_data (never drops tiles)
+    // 5-tier enrichment: live → mis_intraday → twse_eod → db_close (盤後) → cache → no_data (never drops tiles)
     const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
-    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache, sectorMap);
+    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache, sectorMap, dbCloseMap);
 
     return c.json(enriched);
   } catch (err) {

@@ -3,7 +3,12 @@
  *
  * Tier 1 (live):       KGI gateway tick   — market hours, EC2 running
  * Tier 2 (twse_eod):   TWSE STOCK_DAY_ALL — per-symbol EOD price + changePct
+ * Tier 2.5 (twse_eod): quote_last_close DB table — 盤後 fallback, survives
+ *                      deploy restarts (unlike Tier 3's in-process cache).
+ *                      Only populated by the caller when after-hours (see
+ *                      server.ts's after-hours gate using lib/trading-calendar).
  * Tier 3 (cache):      In-process last-known-close — survives off-hours gap
+ *                      within a single process lifetime
  *
  * Hard lines:
  *   - Never drops tiles: always returns >= 0 tiles with sourceState set
@@ -16,6 +21,7 @@
 import type { KgiHeatmapTile } from "./kgi-subscription-manager.js";
 import type { StockDayAllRow } from "./data-sources/twse-openapi-client.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
+import type { LastCloseResult } from "./quote-last-close-store.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -205,13 +211,17 @@ const MIS_ENTRY_MAX_AGE_MS = 30 * 60 * 1000; // 30 min — MIS cron refreshes ev
  * @param misCache     TWSE MIS intraday cache from _runTwseMisQuoteCron (may be undefined)
  * @param sectorMap    ticker -> industry/sector label (companies.chain_position),
  *                     built by the route handler (may be undefined if DB unavailable)
+ * @param dbCloseMap   quote_last_close DB rows (Tier 2.5) — only passed in by the
+ *                     route handler when after-hours (see server.ts); undefined
+ *                     during market hours or when DB unavailable
  * @returns            Fully enriched tiles with sourceState for every tile
  */
 export function enrichHeatmapTiles(
   kgiTiles: KgiHeatmapTile[],
   twseRows: StockDayAllRow[],
   misCache?: Map<string, MisTileEntry>,
-  sectorMap?: Map<string, string | null>
+  sectorMap?: Map<string, string | null>,
+  dbCloseMap?: Map<string, LastCloseResult>
 ): EnrichedHeatmapResult {
   // Update last-close cache from TWSE data (write-through for future requests)
   if (twseRows.length > 0) {
@@ -330,6 +340,35 @@ export function enrichHeatmapTiles(
         ts: twse.ts,
         sourceState: "twse_eod" as TileSourceState,
         sourceLabel: buildSourceLabel("twse_eod", twse.ts),
+      };
+    }
+
+    // ── Tier 2.5: DB-persisted last close (quote_last_close, 盤後 fallback) ──
+    // Only present when the route handler determined we're after-hours (via
+    // lib/trading-calendar, not a bare wall-clock guess) and successfully
+    // queried the DB. Durable across deploy restarts — the gap this closes:
+    // Tier 2 (live STOCK_DAY_ALL fetch) can lag hours after close, and Tier 3
+    // (in-process cache below) resets to empty on every deploy restart, so
+    // right after a post-close restart every KGI-core tile fell through to
+    // "no_data" until the next successful live TWSE fetch. Reported as
+    // "twse_eod" — quote_last_close's own source values (twse_eod/tpex_eod/
+    // mis_close/ohlcv_fallback) are all official/reconciled "last known
+    // close" provenance, not live ticks, so the same honest label applies.
+    const dbClose = dbCloseMap?.get(symbol);
+    if (dbClose) {
+      twseEodTileCount++;
+      const ts = `${dbClose.tradeDate}T13:30:00+08:00`;
+      return {
+        symbol,
+        name: kgiTile.name,
+        sector,
+        price: dbClose.closePrice,
+        change: null,
+        changePct: null,
+        tier,
+        ts,
+        sourceState: "twse_eod" as TileSourceState,
+        sourceLabel: buildSourceLabel("twse_eod", ts),
       };
     }
 
