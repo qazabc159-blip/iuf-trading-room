@@ -169,6 +169,10 @@ describe("shouldRenderTickerTape", () => {
     expect(shouldRenderTickerTape("/final-v031/ideas")).toBe(false);
   });
 
+  it("skips /desk-exact (FinalOnlyFrame consumer added 2026-07-14, missed the original skip-list sweep — the extra 32px ticker pushed the order ticket's bottom rows below the fold, 楊董 2026-07-15 report)", () => {
+    expect(shouldRenderTickerTape("/desk-exact")).toBe(false);
+  });
+
   it("does NOT prefix-swallow /portfolio's real non-wrapper sibling route", () => {
     expect(shouldRenderTickerTape("/portfolio/snapshots")).toBe(true);
   });
