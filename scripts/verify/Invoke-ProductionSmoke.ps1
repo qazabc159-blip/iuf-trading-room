@@ -41,8 +41,8 @@
         SL-10 cookie length only - no full value
         SL-11 kbar state!=LIVE is FAIL
         SL-12 kbar rows.length==0 is FAIL
-        SL-13 kbar date stale >2 days is FAIL
-        SL-14 briefs date stale >2 days is FAIL
+        SL-13 kbar date stale (>3 Mon-Fri weekdays back, weekend+1-holiday tolerant) is FAIL
+        SL-14 briefs date stale (>3 Mon-Fri weekdays back, weekend+1-holiday tolerant) is FAIL
 #>
 
 [CmdletBinding()]
@@ -61,10 +61,42 @@ if (-not $Email -or -not $Password) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-TradingWeekdaysAgo {
+    # Walks back $Count Mon-Fri calendar days from $From, skipping Sat/Sun.
+    # This is a lightweight weekend-aware stale threshold, NOT a full TW
+    # market holiday calendar lookup (no network call added - see the
+    # 2026-07-15 decision note at $STALE_THRESHOLD's assignment below for why
+    # this is the deliberate scope, matching the existing zero-new-dependency
+    # calendar-gate pattern apps/api's cron jobs already use).
+    param([datetime]$From, [int]$Count)
+    $d = $From
+    $remaining = $Count
+    while ($remaining -gt 0) {
+        $d = $d.AddDays(-1)
+        if ($d.DayOfWeek -ne [System.DayOfWeek]::Saturday -and $d.DayOfWeek -ne [System.DayOfWeek]::Sunday) {
+            $remaining--
+        }
+    }
+    return $d
+}
+
 # -- Constants ----------------------------------------------------------------
-$SCRIPT_VERSION   = "1.0.0"
+$SCRIPT_VERSION   = "1.1.0"
 $TODAY            = (Get-Date).Date
-$STALE_THRESHOLD  = $TODAY.AddDays(-2)
+# 2026-07-15 (Bruce): was a fixed $TODAY.AddDays(-2) calendar-day threshold,
+# which is calendar-blind - a Fri ad hoc holiday (e.g. typhoon) pushes the
+# real last trading day back a 3rd calendar day and this check false-FAILed
+# (2026-07-12 incident, see memory_sunday_sweep_and_monday_prep_20260712.md).
+# Fix walks back 3 Mon-Fri weekdays (skips Sat/Sun) instead of 2 raw calendar
+# days - absorbs weekends AND a single ad hoc holiday with zero new network
+# calls (no TWSE holiday-schedule dependency added, deliberately - matches
+# the existing zero-new-dependency signal-based calendar gates already used
+# by apps/api's cron jobs, see JASON_KGI_BRIDGE_CALENDAR_GATE_2026-07-10.md
+# section 2). Still a lightweight approximation, not a full holiday-table
+# lookup - multi-day holiday runs (e.g. CNY) can still need a manual re-run
+# with a wider tolerance; this only closes the single-day gap class that
+# actually false-failed.
+$STALE_THRESHOLD  = Get-TradingWeekdaysAgo -From $TODAY -Count 3
 $EVIDENCE_DIR     = "evidence\w7_paper_sprint"
 $HARNESS_DOC      = "$EVIDENCE_DIR\bruce_powershell_smoke_harness_2026-05-05.md"
 
@@ -272,7 +304,7 @@ function Invoke-SmokeRun {
     Out ""
 
     # -- Item 4: GET /api/v1/companies/2330/kbar?freq=1d ---------------------
-    # FAIL if: state!=LIVE OR rows.length==0 OR date < today-2
+    # FAIL if: state!=LIVE OR rows.length==0 OR date < STALE_THRESHOLD (3 trading weekdays back)
     Out "--- Item-4: GET /api/v1/companies/2330/kbar?freq=1d ---"
     $r4 = SafeGet "$BaseUrl/api/v1/companies/2330/kbar?freq=1d" $session
     if ($r4.StatusCode -eq 200 -and $r4.Content) {
@@ -602,11 +634,11 @@ function Write-HarnessDoc {
 | 1 | POST /auth/login | Cookie present, len>0, value REDACTED |
 | 2 | GET /health | status==ok, uptime parseable |
 | 3 | GET /api/v1/companies/2330 | data.id present |
-| 4 | GET /api/v1/companies/2330/kbar?freq=1d | state==LIVE AND rows>0 AND date>=today-2 |
+| 4 | GET /api/v1/companies/2330/kbar?freq=1d | state==LIVE AND rows>0 AND date>=3-trading-weekdays-ago |
 | 5 | GET /api/v1/companies/2330/ohlcv | no entry has source==mock |
 | 6 | GET /api/v1/diagnostics/finmind | requestCount>0 AND ohlcvSource!=mock |
 | 7 | GET /api/v1/data-sources/finmind/status | state==LIVE_READY |
-| 8 | GET /api/v1/briefs | data[0].date >= today-2 |
+| 8 | GET /api/v1/briefs | data[0].date >= 3-trading-weekdays-ago |
 | 9 | GET /api/v1/openalice/observability | workerStatus==healthy AND NOT (queuedJobs==0 AND terminalJobs>100) |
 | 10 | GET /api/v1/paper/fills | HTTP 200 |
 | 11 | GET /api/v1/paper/portfolio | HTTP 200 |
@@ -627,8 +659,8 @@ function Write-HarnessDoc {
 | SL-09/10 | Cookie value printed | Internal - enforced by script design |
 | SL-11 | kbar state!=LIVE | ETL not live |
 | SL-12 | kbar rows.length==0 | ETL not writing |
-| SL-13 | kbar date stale >2d | ETL frozen |
-| SL-14 | briefs date stale >2d | Scheduler dead |
+| SL-13 | kbar date older than 3 trading weekdays ago | ETL frozen |
+| SL-14 | briefs date older than 3 trading weekdays ago | Scheduler dead |
 
 ### Usage
 
