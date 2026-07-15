@@ -20089,7 +20089,8 @@ function startSchedulers(workspaceSlug: string): void {
   //
   // Signal:   Monday 08:30–08:55 TST (once per week, per-day dedup)
   // Orders:   Monday 09:00–09:20 TST (once per week, fires after signal window)
-  // EOD:      Daily 14:00–14:30 TST weekdays
+  // EOD:      Daily 14:45–16:00 TST weekdays (widened from 15:30, see
+  //           s1-sim-runner.ts's isS1EodWindow doc + reports/sprint_2026_07_15/)
   //
   // SIM_ONLY: no real money. KGI_ENV must be "sim" (default).
   // =============================================================================
@@ -20128,7 +20129,7 @@ function startSchedulers(workspaceSlug: string): void {
       }
     }, S1_SIM_POLL_MS);
 
-    console.log("[schedulers] S1-SIM-PIPELINE wired: auto signal(Mon 08:30 TST) + auto orders(Mon 09:00 TST, signal catch-up before submit) + eod(daily 14:00 TST); manual trigger is backup only");
+    console.log("[schedulers] S1-SIM-PIPELINE wired: auto signal(Mon 08:30 TST) + auto orders(Mon 09:00 TST, signal catch-up before submit) + eod(daily 14:45-16:00 TST); manual trigger is backup only");
   }
 
   // =============================================================================

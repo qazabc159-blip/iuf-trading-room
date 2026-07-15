@@ -118,7 +118,7 @@ export const S1_AUTO_SCHEDULER_POLICY = {
   mode: "weekly_tuesday_kgi_sim",
   signalWindowTst: "Tuesday 08:30-08:55",
   orderSubmitWindowTst: "Tuesday 09:00-09:20",
-  eodWindowTst: "Weekdays 14:45-15:30",
+  eodWindowTst: "Weekdays 14:45-16:00",
   pollIntervalMs: 15 * 60 * 1000,
   signalCatchupBeforeOrder: true,
   manualTriggerRole: "owner_backup_only",
@@ -1774,7 +1774,7 @@ export function isS1OrderSubmitWindow(): boolean {
   return taipeiDay === 2 && hhmm >= 900 && hhmm < 920;
 }
 
-/** Daily 14:45–15:30 TST weekdays: EOD report.
+/** Daily 14:45–16:00 TST weekdays: EOD report.
  *
  * Shifted from 14:00-14:30 (YELLOW-1 fix): TWSE STOCK_DAY_ALL typically
  * publishes today's official closes at 14:30-15:00 TST. Opening at 14:00
@@ -1782,11 +1782,27 @@ export function isS1OrderSubmitWindow(): boolean {
  * matched avg_cost exactly (basket entry = yesterday's close) → unrealized=0
  * and false pricingComplete=true that locked _eodLastFiredDate and blocked
  * all subsequent retries. 14:45 start gives TWSE a 15-min buffer after its
- * target publish time; 15:30 end keeps the window within the same session day.
+ * target publish time.
+ *
+ * End extended 15:30→16:00 (2026-07-15 EOD stall follow-up, see
+ * reports/sprint_2026_07_15/): on 2026-07-15, TWSE STOCK_DAY_ALL's own
+ * publish pipeline stayed stuck all afternoon and the #1263 self-heal
+ * fallback (`getStockDayAllRows` → www rwd afterTrading) only produced a
+ * complete same-day close for every S1 basket symbol at the 15:15 tick,
+ * landing the report/ledger write at 15:25:29 TST — 5 minutes before the
+ * old 15:30 cutoff, with only one 15-min poll tick of margin left. On
+ * 2026-07-13 and 2026-07-14 (before #1263 existed) the window closed before
+ * TWSE/MIS ever produced a complete same-day price set at all, permanently
+ * missing those days (no catch-up mechanism — see backfill plan in the same
+ * report). Extending the window by 2 extra poll ticks (15:45, 16:00) gives
+ * the self-heal/MIS fallback chain more retry budget on a slow upstream day
+ * without changing any pricing/staleness logic — `pricingComplete`/
+ * `fullyPriced` still require a genuinely same-day validated source; this
+ * only widens *when* the scheduler is allowed to keep checking.
  */
 export function isS1EodWindow(): boolean {
   const hhmm = taipeiHHMM();
   const taipeiMs = Date.now() + 8 * 3600 * 1000;
   const taipeiDay = new Date(taipeiMs).getUTCDay();
-  return taipeiDay >= 1 && taipeiDay <= 5 && hhmm >= 1445 && hhmm < 1530;
+  return taipeiDay >= 1 && taipeiDay <= 5 && hhmm >= 1445 && hhmm < 1600;
 }
