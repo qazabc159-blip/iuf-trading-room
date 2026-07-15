@@ -311,7 +311,7 @@ export function AnnouncementsPanel({ companyId }: { companyId: string }) {
       )}
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
+          <span className="badge badge-red">暫停</span>
           <span className="state-reason">{state.reason}</span>
         </div>
       )}

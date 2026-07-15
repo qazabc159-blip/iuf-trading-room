@@ -122,11 +122,11 @@ function translateNotes(value: string) {
 
 export function CompanyInfoPanel({ company }: { company: Company }) {
   const { ticker, name, market, country, chainPosition, beneficiaryTier, exposure, validation, notes } = company;
-  const validationMissing = [
-    validation.capitalFlow,
-    validation.consensus,
-    validation.relativeStrength,
-  ].every(isMissing);
+  const validationFields: Array<{ label: string; value: string }> = [
+    { label: "資金流", value: validation.capitalFlow },
+    { label: "市場共識", value: validation.consensus },
+    { label: "相對強弱", value: validation.relativeStrength },
+  ].filter((field) => !isMissing(field.value));
   const chainLabel = industryLabel(chainPosition);
   const tier = tierLabel[beneficiaryTier] ?? beneficiaryTier;
   const marketName = marketLabel[market] ?? market;
@@ -201,23 +201,19 @@ export function CompanyInfoPanel({ company }: { company: Company }) {
         </div>
       </div>
 
-      <div className="company-info-section company-info-section-compact">
-        <div className="company-info-label-row">
-          <span>驗證欄位</span>
-          <b>缺資料會明確標示</b>
-        </div>
-        {validationMissing ? (
-          <div className="company-inline-empty company-inline-empty-compact">
-            尚未接到資金流、市場共識與相對強弱；等 FinMind 籌碼與策略驗證補齊後再顯示結論。
+      {validationFields.length > 0 && (
+        <div className="company-info-section company-info-section-compact">
+          <div className="company-info-label-row">
+            <span>驗證欄位</span>
+            <b>缺資料會明確標示</b>
           </div>
-        ) : (
           <div className="validation-grid company-validation-grid">
-            <ValidationPill label="資金流" value={validation.capitalFlow} />
-            <ValidationPill label="市場共識" value={validation.consensus} />
-            <ValidationPill label="相對強弱" value={validation.relativeStrength} />
+            {validationFields.map((field) => (
+              <ValidationPill key={field.label} label={field.label} value={field.value} />
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {notes && notes.trim() && (
         <div className="company-info-section company-info-section-compact">

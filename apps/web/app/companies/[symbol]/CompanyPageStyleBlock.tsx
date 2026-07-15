@@ -466,8 +466,9 @@ export function CompanyPageStyleBlock() {
   word-break: break-word;
 }
 
-/* State screens — interactive (idle/running/error): keep centered for usability */
-._ai-empty-state,
+/* State screens — interactive (running/error): keep centered for usability.
+   idle (never generated) uses ._ai-cta-row instead — a single compact line,
+   not a full centered empty-state block (2026-07-15 productize round). */
 ._ai-running-state,
 ._ai-error-state {
   display: flex;
@@ -477,6 +478,27 @@ export function CompanyPageStyleBlock() {
   padding: 22px 16px;
   gap: 8px;
   text-align: center;
+}
+
+/* Compact single-line CTA row for the "not yet generated" idle state. */
+._ai-cta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(5,8,12,0.32);
+  border-top: 1px solid rgba(220,228,240,0.06);
+}
+._ai-cta-msg {
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  line-height: 1.5;
+}
+._ai-cta-row ._ai-generate-btn {
+  margin-top: 0;
+  flex-shrink: 0;
 }
 
 /* Non-interactive states (owner-lock / role-loading) — compact horizontal bar */
@@ -492,18 +514,9 @@ export function CompanyPageStyleBlock() {
   border-top: 1px solid rgba(220,228,240,0.06);
 }
 
-._ai-empty-icon {
-  font-size: 24px;
-}
 ._ai-lock-icon {
   font-size: 15px;
   flex-shrink: 0;
-}
-._ai-empty-msg {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: rgba(255,255,255,0.6);
-  font-weight: 600;
 }
 ._ai-lock-msg {
   font-family: var(--mono);
@@ -511,10 +524,6 @@ export function CompanyPageStyleBlock() {
   color: rgba(255,255,255,0.5);
   font-weight: 600;
   flex-shrink: 0;
-}
-._ai-empty-sub {
-  font-size: 11px;
-  max-width: 340px;
 }
 ._ai-lock-sub {
   font-size: 10.5px;

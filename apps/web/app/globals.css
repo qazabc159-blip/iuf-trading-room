@@ -9797,13 +9797,14 @@ body:has(.login-route) > div {
 .company-data-status-rail {
   grid-area: status;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Single column — DerivativesPanel removed (2026-07-15 productize round;
+     未啟用/即將推出 placeholder no longer shipped, see page.tsx). This rail
+     now holds only TickStreamPanel, so span the full row instead of leaving
+     a blank second column. Was repeat(2, ...) + align-items:start when it
+     paired with DerivativesPanel (D4 fix, 2026-07-12 diagnosis). */
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(12px, 1.25vw, 16px);
   min-width: 0;
-  /* D4 fix (2026-07-12 diagnosis): default grid align-items:stretch forced the
-     short 衍生品「未啟用」placeholder to match 成交明細's ~1,600px+ tick-list
-     height, producing a 1,686px empty black box next to it. */
-  align-items: start;
 }
 
 .company-data-dock .panel {

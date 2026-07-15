@@ -15,6 +15,12 @@ type BidAskState =
 
 const LIVE_CSS = `
 ._ba-panel { font-family: var(--mono); }
+/* Sidebar/pane widget context — .state-panel default padding (24px/22px) is
+   sized for full-width empty pages; scope it down here so 休市/待回傳/暫停
+   read as a narrow status bar, not an oversized blank block
+   (2026-07-15 productize round). */
+._ba-panel .state-panel { padding: 10px 0 0; gap: 6px 10px; }
+._ba-panel .state-reason { font-size: 11px; line-height: 1.6; }
 ._ba-live-badge {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 10px; color: var(--tac-ok, #4ade80); letter-spacing: 0.05em;
@@ -87,7 +93,7 @@ function blockedReason(error: unknown) {
 }
 
 function offHoursReason() {
-  return `目前不在台股即時撮合時段，KGI 唯讀五檔不會回傳盤中資料。下一次觀察窗口：${kgiNextOpenLabel()}。`;
+  return `盤後・五檔開盤 ${kgiNextOpenLabel()} 起提供，盤中自動回到 LIVE。`;
 }
 
 export function BidAskPanel({ symbol }: { symbol: string }) {
@@ -146,7 +152,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason} 盤中會自動回到 LIVE。</span>
+          <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
@@ -160,7 +166,7 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
+          <span className="badge badge-red">暫停</span>
           <span className="tg soft">資料源：KGI 唯讀五檔</span>
           <span className="state-reason">{state.reason}</span>
         </div>

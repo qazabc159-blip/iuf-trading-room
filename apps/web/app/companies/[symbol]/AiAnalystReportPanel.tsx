@@ -334,10 +334,8 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
     return (
       <section className="panel hud-frame _ai-report-panel" aria-label="AI 分析師報告">
         <AiPanelHeader />
-        <div className="_ai-empty-state">
-          <div className="_ai-empty-icon">🤖</div>
-          <div className="_ai-empty-msg">尚未生成 AI 分析報告</div>
-          <div className="_ai-empty-sub dim">AI 會用唯讀資料源整理市場、財務、主題與風險，不會建立交易委託。</div>
+        <div className="_ai-cta-row">
+          <span className="_ai-cta-msg">尚未生成 AI 分析報告 — 唯讀整理市場、財務、主題與風險，不建立交易委託。</span>
           <button className="_ai-generate-btn btn-sm" onClick={() => void handleGenerate()}>
             點此生成 {ticker} AI 分析
           </button>
