@@ -132,7 +132,7 @@ export function MarginShortPanel({ companyId }: { companyId: string }) {
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
+          <span className="badge badge-red">暫停</span>
           <span className="tg soft">資料源：FinMind TaiwanStockMarginPurchaseShortSale</span>
           <span className="state-reason">{state.reason}</span>
         </div>

@@ -12,7 +12,7 @@ function stateClass(state: SourceStatus["state"]) {
 function stateLabel(state: SourceStatus["state"]) {
   if (state === "live") return "LIVE";
   if (state === "stale") return "EMPTY / STALE";
-  return "BLOCKED";
+  return "暫停";
 }
 
 function formatTaipeiTime(value: string) {
@@ -33,7 +33,6 @@ export function SourceStatusCard({ sources }: { sources: SourceStatus[] }) {
     <section className="panel hud-frame source-status-panel">
       <h3 className="ascii-head">
         <span className="ascii-head-bracket">資料源</span> 狀態總覽
-        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>LIVE / EMPTY / BLOCKED</span>
       </h3>
       <div className="source-status-card">
         {sources.map((source) => {

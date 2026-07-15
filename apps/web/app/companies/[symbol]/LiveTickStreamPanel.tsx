@@ -16,6 +16,10 @@ type TickStreamState =
 
 const TICK_CSS = `
 ._ts-panel { font-family: var(--mono); }
+/* See BidAskPanel.tsx LIVE_CSS for the same fix — .state-panel default
+   padding is sized for full-width empty pages. */
+._ts-panel .state-panel { padding: 10px 0 0; gap: 6px 10px; }
+._ts-panel .state-reason { font-size: 11px; line-height: 1.6; }
 ._ts-live-badge {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 10px; color: var(--tac-ok, #4ade80); letter-spacing: 0.05em;
@@ -103,7 +107,7 @@ function blockedReason(error: unknown) {
 }
 
 function offHoursReason() {
-  return `目前不在台股即時撮合時段，KGI 唯讀逐筆不會回傳盤中成交。下一次觀察窗口：${kgiNextOpenLabel()}。`;
+  return `盤後・逐筆行情開盤 ${kgiNextOpenLabel()} 起提供，盤中自動回到 LIVE。`;
 }
 
 export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
@@ -153,7 +157,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         <div className="state-panel">
           <span className="badge badge-yellow">休市</span>
           <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason} 盤中會自動回到 LIVE。</span>
+          <span className="state-reason">{state.reason}</span>
         </div>
       )}
 
@@ -167,7 +171,7 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
 
       {state.status === "blocked" && (
         <div className="state-panel">
-          <span className="badge badge-red">BLOCKED</span>
+          <span className="badge badge-red">暫停</span>
           <span className="tg soft">資料源：KGI 唯讀逐筆</span>
           <span className="state-reason">{state.reason}</span>
         </div>

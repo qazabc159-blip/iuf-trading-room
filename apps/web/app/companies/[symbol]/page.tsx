@@ -25,7 +25,9 @@ import { FinancialsPanel }     from "./FinancialsPanel";
 import { ChipsPanel }          from "./ChipsPanel";
 import { AnnouncementsPanel }  from "./AnnouncementsPanel";
 import { SourceStatusCard }    from "./SourceStatusCard";
-import { DerivativesPanel }    from "./DerivativesPanel";
+// DerivativesPanel intentionally not imported/rendered — 權證/選擇權資料源未接入，
+// 產品化收板決議整塊移除（不留「即將推出」空佔位）。Component file kept in tree for
+// when the data source lands; re-enable via import + render below when ready.
 import { TickStreamPanel }     from "./TickStreamPanel";
 import { FullProfilePanels }   from "./FullProfilePanels";
 import { CompanyPageStyleBlock } from "./CompanyPageStyleBlock";
@@ -265,7 +267,7 @@ export default async function CompanyDetailPage({
             </div>
           </div>
           <div className="terminal-note compact" style={{ marginBottom: 16 }}>
-            前端保護：公司主檔缺失時只顯示 BLOCKED，不渲染空白 panel，也不使用 mock。
+            前端保護：公司主檔缺失時只顯示上方暫停狀態，不渲染空白區塊，也不使用假資料。
           </div>
           <Link href="/companies" className="btn-sm">返回公司列表</Link>
         </div>
@@ -571,7 +573,6 @@ export default async function CompanyDetailPage({
           <AnnouncementsPanel companyId={company.id} />
         </div>
         <div className="company-data-status-rail">
-          <DerivativesPanel />
           <TickStreamPanel
             symbol={company.ticker}
             kbarRows={kbarView?.rows ?? []}
@@ -588,7 +589,7 @@ export default async function CompanyDetailPage({
         <div className="_co-section-banner-tags">
           <span>財報</span><span>月營收</span><span>法人</span><span>融資券</span><span>股利</span><span>公告</span>
         </div>
-        <div className="_co-section-banner-desc">財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；任何資料源 STALE / EMPTY / BLOCKED / DEGRADED 均誠實揭露，不補假。</div>
+        <div className="_co-section-banner-desc">財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；資料源狀態不足時會誠實顯示無資料或暫停，不補假。</div>
       </div>
 
       <FullProfilePanels companyId={company.id} />

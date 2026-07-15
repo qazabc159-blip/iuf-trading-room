@@ -170,7 +170,7 @@ export function TickStreamPanel({
     state.status === "aggregate" ? "分K聚合" :
     state.status === "loading" ? "讀取中" :
     state.status === "empty" ? "EMPTY" :
-    "BLOCKED";
+    "暫停";
   const badgeClass =
     state.status === "live" ? "badge-green" :
     state.status === "aggregate" ? "badge-yellow" :
@@ -209,7 +209,7 @@ export function TickStreamPanel({
       {(state.status === "blocked" || state.status === "empty") && (
         <div className="state-panel">
           <span className={`badge ${state.status === "blocked" ? "badge-red" : "badge-yellow"}`}>
-            {state.status === "blocked" ? "BLOCKED" : "EMPTY"}
+            {state.status === "blocked" ? "暫停" : "EMPTY"}
           </span>
           <span className="state-reason">{state.reason}</span>
         </div>
