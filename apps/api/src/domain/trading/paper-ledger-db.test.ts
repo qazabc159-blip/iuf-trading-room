@@ -547,13 +547,15 @@ function makeMapRealizedPnlAdapter(): RealizedPnlAdapter & {
     async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
       return bySellOrder.has(sellOrderId);
     },
-    async insertMatches(userId, matches): Promise<void> {
+    async insertMatches(userId, matches, meta): Promise<void> {
       if (matches.length === 0) return;
+      const source = meta?.source ?? "legacy_paper";
+      const accountId = meta?.accountId ?? null;
       for (const m of matches) {
         const pairKey = `${m.sellOrderId}::${m.buyOrderId}`;
         if (seenPairs.has(pairKey)) continue;
         seenPairs.add(pairKey);
-        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), ...m });
+        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), source, accountId, ...m });
       }
       for (const m of matches) bySellOrder.set(m.sellOrderId, userId);
     },
@@ -675,4 +677,58 @@ test("RPNL-8: insertMatches is safe to call twice directly with identical matche
   await adapter.insertMatches(buy.intent.userId, matches);
 
   assert.equal(adapter._rows.length, 1, "second direct insertMatches() call must not create a duplicate row");
+});
+
+// ---------------------------------------------------------------------------
+// source / accountId metadata (migration 0059, 2026-07-15) — widens the
+// ledger to also accept the unified order-flow pipeline (broker/paper-broker.ts).
+// See broker/paper-broker-realized-pnl.test.ts for the unified-pipeline glue
+// (recordUnifiedRealizedPnlForSell) tests; these cover the metadata plumbing
+// in paper-ledger-db.ts itself.
+// ---------------------------------------------------------------------------
+
+test("RPNL-9: recordRealizedPnlForSell with no meta defaults to source='legacy_paper', accountId=null (regression lock — pre-2026-07-15 callers unaffected)", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+
+  await recordRealizedPnlForSell(sell, [buy], PAPER_COST_RATES, adapter);
+  const rows = await listRealizedPnlForUser(sell.intent.userId, undefined, adapter);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.source, "legacy_paper");
+  assert.equal(rows[0]?.accountId, null);
+});
+
+test("RPNL-10: recordRealizedPnlForSell with meta persists source='unified_paper' + accountId, same FIFO math as legacy", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+
+  await recordRealizedPnlForSell(sell, [buy], PAPER_COST_RATES, adapter, {
+    source: "unified_paper",
+    accountId: "primary-desk"
+  });
+  const rows = await listRealizedPnlForUser(sell.intent.userId, undefined, adapter);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.source, "unified_paper");
+  assert.equal(rows[0]?.accountId, "primary-desk");
+  assert.equal(rows[0]?.realizedPnlTwd, 9370.75, "cost-rate math is identical regardless of pipeline source");
+});
+
+test("RPNL-11: dedup key is (sellOrderId, buyOrderId) only — differing meta on a re-invoked write does NOT bypass the guard", async () => {
+  // What would break without this: if the unique-key check somehow considered
+  // `source` part of the identity, a sell that got re-processed once tagged
+  // 'legacy_paper' and once 'unified_paper' (e.g. a bug that ran both hooks
+  // for the same underlying fill) could double-book the same trade instead of
+  // being caught as a duplicate.
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+  const matches = matchFifoSellAgainstPriorOrders(sell, [buy]);
+
+  await adapter.insertMatches(sell.intent.userId, matches, { source: "legacy_paper", accountId: null });
+  await adapter.insertMatches(sell.intent.userId, matches, { source: "unified_paper", accountId: "primary-desk" });
+
+  assert.equal(adapter._rows.length, 1, "same (sellOrderId, buyOrderId) pair must dedup regardless of differing meta");
+  assert.equal(adapter._rows[0]?.source, "legacy_paper", "first write wins — ON CONFLICT DO NOTHING semantics");
 });

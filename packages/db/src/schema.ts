@@ -542,9 +542,15 @@ export const paperFills = pgTable(
 // not just a soft buy_price/buy_fill_time link); UNIQUE(sellOrderId,
 // buyOrderId) makes idempotency a DB-layer guarantee (ON CONFLICT DO NOTHING
 // in recordRealizedPnlForSell()'s drizzle adapter), not just an app-level
-// check-then-act pre-check; both order FKs use RESTRICT (not CASCADE) since
-// this is an immutable ledger referencing two orders, not a child row that
-// belongs to one order the way paper_fills does.
+// check-then-act pre-check.
+// 2026-07-15 migration 0059: buyOrderId/sellOrderId no longer FK paperOrders —
+// the unified order-flow pipeline (broker/paper-broker.ts) writes rows here
+// too now, with order ids from a completely separate id space (never present
+// in paper_orders). `source` records which pipeline/id-space a row's order
+// ids resolve against (preserves the original "cite an exact source" intent
+// without a single cross-table FK, which can't span two disjoint id spaces).
+// `accountId` is unified-only (legacy has no account concept) — lets a SQL
+// audit confirm FIFO matches never crossed accounts.
 export const paperRealizedPnl = pgTable(
   "paper_realized_pnl",
   {
@@ -557,8 +563,10 @@ export const paperRealizedPnl = pgTable(
     buyFillTime:      timestamp("buy_fill_time", { withTimezone: true }).notNull(),
     sellFillTime:     timestamp("sell_fill_time", { withTimezone: true }).notNull(),
     realizedPnlTwd:   numeric("realized_pnl_twd", { precision: 14, scale: 2 }).notNull(),
-    buyOrderId:       uuid("buy_order_id").notNull().references(() => paperOrders.id, { onDelete: "restrict" }),
-    sellOrderId:      uuid("sell_order_id").notNull().references(() => paperOrders.id, { onDelete: "restrict" }),
+    buyOrderId:       uuid("buy_order_id").notNull(),
+    sellOrderId:      uuid("sell_order_id").notNull(),
+    source:           text("source", { enum: ["legacy_paper", "unified_paper"] }).notNull().default("legacy_paper"),
+    accountId:        text("account_id"),
     createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => ({
