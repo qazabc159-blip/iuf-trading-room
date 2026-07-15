@@ -538,6 +538,13 @@ export const paperFills = pgTable(
 // immutable historical record — see domain/trading/paper-ledger-db.ts
 // recordRealizedPnlForSell() (write) / listRealizedPnlForUser() (read) and
 // GET /api/v1/paper/realized.
+// 2026-07-15 Mike audit: buyOrderId added (exact source-document reference,
+// not just a soft buy_price/buy_fill_time link); UNIQUE(sellOrderId,
+// buyOrderId) makes idempotency a DB-layer guarantee (ON CONFLICT DO NOTHING
+// in recordRealizedPnlForSell()'s drizzle adapter), not just an app-level
+// check-then-act pre-check; both order FKs use RESTRICT (not CASCADE) since
+// this is an immutable ledger referencing two orders, not a child row that
+// belongs to one order the way paper_fills does.
 export const paperRealizedPnl = pgTable(
   "paper_realized_pnl",
   {
@@ -550,12 +557,15 @@ export const paperRealizedPnl = pgTable(
     buyFillTime:      timestamp("buy_fill_time", { withTimezone: true }).notNull(),
     sellFillTime:     timestamp("sell_fill_time", { withTimezone: true }).notNull(),
     realizedPnlTwd:   numeric("realized_pnl_twd", { precision: 14, scale: 2 }).notNull(),
-    sellOrderId:      uuid("sell_order_id").notNull().references(() => paperOrders.id, { onDelete: "cascade" }),
+    buyOrderId:       uuid("buy_order_id").notNull().references(() => paperOrders.id, { onDelete: "restrict" }),
+    sellOrderId:      uuid("sell_order_id").notNull().references(() => paperOrders.id, { onDelete: "restrict" }),
     createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
   },
   (table) => ({
-    userSymbolIdx: index("paper_realized_pnl_user_symbol_idx").on(table.userId, table.symbol, table.sellFillTime.desc()),
-    sellOrderIdx:  index("paper_realized_pnl_sell_order_idx").on(table.sellOrderId)
+    sellBuyUidx:    uniqueIndex("paper_realized_pnl_sell_buy_uidx").on(table.sellOrderId, table.buyOrderId),
+    userSymbolIdx:  index("paper_realized_pnl_user_symbol_idx").on(table.userId, table.symbol, table.sellFillTime.desc()),
+    userIdx:        index("paper_realized_pnl_user_idx").on(table.userId, table.sellFillTime.desc()),
+    buyOrderIdx:    index("paper_realized_pnl_buy_order_idx").on(table.buyOrderId)
   })
 );
 

@@ -52,7 +52,8 @@ import {
   listOrders,
   findByIdempotencyKey as findOrderByIdempotencyKey,
   computeFifoRealizedPnl,
-  listRealizedPnlForUser
+  listRealizedPnlForUser,
+  getRealizedPnlWriteFailureCount
 } from "./domain/trading/paper-ledger-db.js";
 import {
   buildPaperOrderContext,
@@ -14520,6 +14521,14 @@ app.get("/api/v1/paper/health/detail", async (c) => {
         todayEntries: auditLogTodayEntries,
         todayEntriesTimezone: "UTC",
         ...(auditLogDbError ? { dbError: "db_query_failed" } : {})
+      },
+      // 2026-07-15 Mike audit: realized-P&L ledger writes are fail-open (never
+      // block a sell fill) — this is the minimal detection surface for a
+      // silently-swallowed write failure. Process-wide counter, no user data.
+      realizedPnlLedger: {
+        state: getRealizedPnlWriteFailureCount() > 0 ? "DEGRADED" : "READY",
+        writeFailureCount: getRealizedPnlWriteFailureCount(),
+        note: "count of sell fills whose realized-P&L ledger write threw since process start"
       }
     }
   });

@@ -30,6 +30,7 @@ import {
   recordFill,
   listOrders,
   recordRealizedPnlForSell,
+  recordRealizedPnlWriteFailure,
   type OrderState
 } from "./paper-ledger-db.js";
 
@@ -130,6 +131,7 @@ export async function driveOrder(intent: OrderIntent): Promise<DriveOrderResult>
           `[order-driver] failed to persist realized P&L for sell ${finalState.intent.id}:`,
           err
         );
+        recordRealizedPnlWriteFailure();
       }
     }
 

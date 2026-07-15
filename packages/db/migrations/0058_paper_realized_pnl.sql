@@ -16,10 +16,21 @@
 -- Read path:  domain/trading/paper-ledger-db.ts listRealizedPnlForUser(),
 --             surfaced at GET /api/v1/paper/realized.
 --
--- sell_order_id FK + index lets recordRealizedPnlForSell() check "have I
--- already written matches for this sell?" before inserting (defensive
--- idempotency guard; recordFill() itself is already idempotent per orderId,
--- this guards against driveOrder ever being re-invoked for the same fill).
+-- 2026-07-15 Mike audit (NEEDS_FIX, 3 blockers, all addressed in this revision
+-- before first merge — no prod data exists yet, so the table is edited in place
+-- rather than superseded by a new migration number):
+--   1. buy_order_id added — a realized-P&L row must cite its exact source buy
+--      order, not just a soft buy_price/buy_fill_time link.
+--   2. UNIQUE (sell_order_id, buy_order_id) — idempotency is now enforced at the
+--      DB layer via ON CONFLICT DO NOTHING (see recordRealizedPnlForSell()),
+--      not solely by the application's check-then-act hasMatchesForSellOrder()
+--      pre-check, which cannot defend against a genuine race.
+--   3. Both order_id FKs use ON DELETE RESTRICT, not CASCADE — this table is an
+--      immutable ledger; a future order-deletion path must not be able to
+--      silently erase realized-P&L history by deleting its source order rows.
+--      (paper_fills.order_id CASCADEs by design because a fill is *part of* its
+--      order; this ledger row is a *derived historical record referencing* two
+--      orders, a materially different relationship.)
 --
 -- ADDITIVE ONLY — no existing table modified.
 
@@ -33,8 +44,10 @@ CREATE TABLE IF NOT EXISTS paper_realized_pnl (
   buy_fill_time      TIMESTAMPTZ    NOT NULL,
   sell_fill_time     TIMESTAMPTZ    NOT NULL,
   realized_pnl_twd   NUMERIC(14, 2) NOT NULL,
-  sell_order_id      UUID           NOT NULL REFERENCES paper_orders(id) ON DELETE CASCADE,
-  created_at         TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+  buy_order_id       UUID           NOT NULL REFERENCES paper_orders(id) ON DELETE RESTRICT,
+  sell_order_id      UUID           NOT NULL REFERENCES paper_orders(id) ON DELETE RESTRICT,
+  created_at         TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+  CONSTRAINT paper_realized_pnl_sell_buy_uidx UNIQUE (sell_order_id, buy_order_id)
 );
 
 -- Covering index for the main read: "this user's realized trades, newest first,
@@ -42,6 +55,11 @@ CREATE TABLE IF NOT EXISTS paper_realized_pnl (
 CREATE INDEX IF NOT EXISTS paper_realized_pnl_user_symbol_idx
   ON paper_realized_pnl (user_id, symbol, sell_fill_time DESC);
 
--- Idempotency check + cascade lookup.
-CREATE INDEX IF NOT EXISTS paper_realized_pnl_sell_order_idx
-  ON paper_realized_pnl (sell_order_id);
+-- Mike 🟡: an un-filtered "all of this user's realized trades" list (no symbol
+-- filter) cannot use the composite index above for its sort. Cheap to add now.
+CREATE INDEX IF NOT EXISTS paper_realized_pnl_user_idx
+  ON paper_realized_pnl (user_id, sell_fill_time DESC);
+
+-- buy_order_id lookup (e.g. "which realized trades cite this buy order").
+CREATE INDEX IF NOT EXISTS paper_realized_pnl_buy_order_idx
+  ON paper_realized_pnl (buy_order_id);

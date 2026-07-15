@@ -542,16 +542,20 @@ function makeMapRealizedPnlAdapter(): RealizedPnlAdapter & {
 } {
   const rows: PersistedRealizedTrade[] = [];
   const bySellOrder = new Map<string, string>();
+  const seenPairs = new Set<string>();
   return {
     async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
       return bySellOrder.has(sellOrderId);
     },
-    async insertMatches(userId, sellOrderId, matches): Promise<void> {
+    async insertMatches(userId, matches): Promise<void> {
       if (matches.length === 0) return;
       for (const m of matches) {
-        rows.push({ id: randomUUID(), sellOrderId, createdAt: new Date().toISOString(), ...m });
+        const pairKey = `${m.sellOrderId}::${m.buyOrderId}`;
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
+        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), ...m });
       }
-      bySellOrder.set(sellOrderId, userId);
+      for (const m of matches) bySellOrder.set(m.sellOrderId, userId);
     },
     async listForUser(userId, symbol): Promise<PersistedRealizedTrade[]> {
       return rows
@@ -643,4 +647,32 @@ test("RPNL-6: listRealizedPnlForUser isolates rows per user and supports symbol 
 
   const forAFilteredRightSymbol = await listRealizedPnlForUser(userA, "2330", adapter);
   assert.equal(forAFilteredRightSymbol.length, 1);
+});
+
+test("RPNL-7: each PersistedRealizedTrade row carries an exact buyOrderId/sellOrderId, not just a soft price/time link", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+
+  await recordRealizedPnlForSell(sell, [buy], PAPER_COST_RATES, adapter);
+  const rows = await listRealizedPnlForUser(buy.intent.userId, undefined, adapter);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.buyOrderId, buy.intent.id);
+  assert.equal(rows[0]?.sellOrderId, sell.intent.id);
+});
+
+test("RPNL-8: insertMatches is safe to call twice directly with identical matches (DB UNIQUE(sell_order_id, buy_order_id) semantics, bypassing the app-level pre-check)", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+  const matches = matchFifoSellAgainstPriorOrders(sell, [buy]);
+
+  // Call insertMatches() directly TWICE — simulates the race Mike's audit flagged
+  // (two concurrent driveOrder() calls both pass the hasMatchesForSellOrder()
+  // check before either has inserted). The composite-key dedup must hold even
+  // without going through recordRealizedPnlForSell()'s pre-check at all.
+  await adapter.insertMatches(buy.intent.userId, matches);
+  await adapter.insertMatches(buy.intent.userId, matches);
+
+  assert.equal(adapter._rows.length, 1, "second direct insertMatches() call must not create a duplicate row");
 });
