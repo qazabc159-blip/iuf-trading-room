@@ -1,4 +1,5 @@
 import { FinalOnlyFrame } from "@/components/FinalOnlyFrame";
+import { buildDeskExactSrc, type DeskExactHandoffParams } from "@/lib/desk-exact-handoff";
 
 // 交易台「原封搬原稿」路由（2026-07-14）。
 // 靜態頁本體在 apps/web/public/desk-exact/index.html（byte-exact 原稿＋比例
@@ -14,35 +15,14 @@ import { FinalOnlyFrame } from "@/components/FinalOnlyFrame";
 // apps/web/app/final-v031/portfolio/page.tsx 讀 searchParams 轉發進 iframe
 // src 的既有模式（該檔 buildPaperRoomSrc() 是 paper-trading-room 專用的
 // URL 形狀，這裡自己寫一個等價但範圍更小的 sanitizer，而非跨模組硬套）。
+//
+// 2026-07-15：symbol/side 轉發邏輯抽到 lib/desk-exact-handoff.ts 共用（同一份
+// builder 現在也被 app/portfolio/page.tsx 用來把正式交易室 route 接上這個
+// 定版引擎，見該檔），行為完全不變。
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type DeskExactSearchParams = Record<string, string | string[] | undefined>;
-
-function safeTicker(value: string | string[] | undefined) {
-  const raw = Array.isArray(value) ? value[0] : value;
-  const ticker = raw?.trim().toUpperCase();
-  if (!ticker || !/^[A-Z0-9._-]{1,16}$/.test(ticker)) return null;
-  return ticker;
-}
-
-function safeSide(value: string | string[] | undefined) {
-  const raw = Array.isArray(value) ? value[0] : value;
-  return raw === "buy" || raw === "sell" ? raw : null;
-}
-
-function buildDeskExactSrc(params: DeskExactSearchParams | undefined) {
-  const symbol = safeTicker(params?.symbol);
-  const side = safeSide(params?.side);
-  const query = new URLSearchParams();
-  if (symbol) query.set("symbol", symbol);
-  if (side) query.set("side", side);
-  // Stable rev for a handoff load (same handoff = same iframe, no remount);
-  // time-bucketed rev for a plain visit so a fresh load always gets the
-  // latest desk HTML after a deploy — same rationale as buildPaperRoomSrc().
-  query.set("rev", symbol || side ? `handoff-${symbol ?? ""}-${side ?? ""}` : Date.now().toString(36));
-  return `/desk-exact/index.html?${query.toString()}`;
-}
+type DeskExactSearchParams = DeskExactHandoffParams;
 
 export default async function DeskExactPage({
   searchParams,
