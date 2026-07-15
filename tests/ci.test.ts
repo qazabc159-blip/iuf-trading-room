@@ -20756,6 +20756,139 @@ test("SIM-LEDGER-21: writeLiveLedgerAfterEod JSDoc reflects the post-#1184 prici
 });
 
 // =============================================================================
+// SIM-LEDGER-22/23: 2026-07-15 EOD report stall follow-up
+// (reports/sprint_2026_07_15/EOD_REPORT_STALL_RCA_2026_07_15.md)
+// =============================================================================
+//
+// 2026-07-13 and 2026-07-14: the 14:45-15:30 EOD window closed before TWSE
+// STOCK_DAY_ALL (tier 1b) or MIS (tier 1c) ever produced a complete same-day
+// close for every S1 basket symbol — both pricingComplete and fullyPriced
+// stayed false all day, permanently missing the EOD report / week / NAV row
+// for those two days (no catch-up mechanism once the window closes).
+// 2026-07-15: the #1263 self-heal fallback eventually produced a complete
+// official close, but not until the 15:15 tick — the report/ledger write
+// landed at 15:25:29 TST, 5 minutes before the old 15:30 cutoff. Widening the
+// window to 16:00 gives 2 extra 15-min poll ticks of retry budget on a slow
+// upstream day, without loosening any pricing/staleness check.
+
+test("SIM-LEDGER-22: EOD window widened to 14:45-16:00 TST (2026-07-15 near-miss follow-up)", () => {
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+  assert.match(
+    src,
+    /return taipeiDay >= 1 && taipeiDay <= 5 && hhmm >= 1445 && hhmm < 1600;/,
+    "SIM-LEDGER-22: isS1EodWindow must accept ticks through 16:00 TST (was 15:30)"
+  );
+  assert.doesNotMatch(
+    src,
+    /hhmm >= 1445 && hhmm < 1530/,
+    "SIM-LEDGER-22: the old 15:30 cutoff must be gone, not left as dead code alongside the new one"
+  );
+  assert.ok(
+    src.includes('eodWindowTst: "Weekdays 14:45-16:00",'),
+    "SIM-LEDGER-22: S1_AUTO_SCHEDULER_POLICY.eodWindowTst must be updated to match the widened window (status endpoint reports this string)"
+  );
+});
+
+test("SIM-LEDGER-23: isS1EodWindow boundary behavior — 15:45/15:59 now open, 16:00/16:01 still closed", async () => {
+  // Behavioral (not source-check) coverage: `taipeiHHMM()` reads the current
+  // time via `new Date()` (Intl.DateTimeFormat), which does NOT delegate to
+  // `Date.now()` internally — overriding just `Date.now` does not affect
+  // `new Date()`'s result. Subclassing the global `Date` constructor (both
+  // `new Date()` and `Date.now()` routed through the same fixed instant) is
+  // required to actually exercise isS1EodWindow's real boundary behavior.
+  const { isS1EodWindow } = await import("../apps/api/src/s1-sim-runner.ts");
+  const RealDate = Date;
+  // 2026-07-15 is a Wednesday (weekday) — used as the fixed test date.
+  const mkUtcForTaipei = (taipeiHour: number, taipeiMinute: number): number =>
+    RealDate.UTC(2026, 6, 15, taipeiHour, taipeiMinute, 0) - 8 * 3600 * 1000;
+
+  function withMockedNow<T>(fixedMs: number, fn: () => T): T {
+    class MockDate extends RealDate {
+      constructor() {
+        super(fixedMs);
+      }
+      static override now(): number {
+        return fixedMs;
+      }
+    }
+    // @ts-expect-error — intentional global override for the duration of fn()
+    globalThis.Date = MockDate;
+    try {
+      return fn();
+    } finally {
+      globalThis.Date = RealDate;
+    }
+  }
+
+  assert.equal(
+    withMockedNow(mkUtcForTaipei(15, 45), isS1EodWindow),
+    true,
+    "SIM-LEDGER-23: 15:45 TST must be inside the widened window"
+  );
+  assert.equal(
+    withMockedNow(mkUtcForTaipei(15, 59), isS1EodWindow),
+    true,
+    "SIM-LEDGER-23: 15:59 TST must be inside the widened window"
+  );
+  assert.equal(
+    withMockedNow(mkUtcForTaipei(16, 0), isS1EodWindow),
+    false,
+    "SIM-LEDGER-23: 16:00 TST must be the exclusive end boundary (window closed)"
+  );
+  assert.equal(
+    withMockedNow(mkUtcForTaipei(16, 1), isS1EodWindow),
+    false,
+    "SIM-LEDGER-23: 16:01 TST must remain closed"
+  );
+  assert.equal(
+    withMockedNow(mkUtcForTaipei(14, 44), isS1EodWindow),
+    false,
+    "SIM-LEDGER-23: 14:44 TST must remain closed (start boundary unchanged)"
+  );
+});
+
+test("SIM-LEDGER-24: an OTC symbol skipped by the tpexFresh guard (stale TPEX / upstream fed yesterday's data) still falls through to the MIS tier-1c pass", () => {
+  // 2026-07-14 gap scenario: TWSE tier 1b stuck AND TPEX stale simultaneously
+  // — an OTC position that fails the tpexFresh check must not be silently
+  // dropped; it must remain last_price===null so the MIS (tier 1c) pass below
+  // still has a chance to price it same-day, keeping `fullyPriced` reachable
+  // even when both TWSE and TPEX upstreams are behind on the same afternoon.
+  const src = readFileSync(
+    new URL("../apps/api/src/s1-sim-runner.ts", import.meta.url),
+    "utf-8"
+  );
+
+  // tier 1b's TPEX merge only ever ADDS to closeBySymbol inside `if (tpexFresh)`
+  // — a stale/unavailable TPEX response must never mark a position priced.
+  const tpexFreshBlock = /if \(tpexFresh\) \{[\s\S]*?\n\s{8}\}/.exec(src)?.[0] ?? "";
+  assert.ok(tpexFreshBlock.length > 0, "SIM-LEDGER-24: tpexFresh merge block must exist");
+  assert.doesNotMatch(
+    tpexFreshBlock,
+    /p\.last_price\s*=/,
+    "SIM-LEDGER-24: the tpexFresh-gated block only builds closeBySymbol; it must never set p.last_price directly (that only happens in the per-position loop after it, which is unconditional on tpexFresh)"
+  );
+
+  // The per-position tier-1b marking loop (`for (const p of positions)`) runs
+  // AFTER closeBySymbol is finalized, unconditionally — so a stale-TPEX OTC
+  // symbol simply has no entry in closeBySymbol and is left last_price=null.
+  const idx1b = src.indexOf("let marked = 0;");
+  const idxStillNull = src.indexOf("const stillNullPositions = positions.filter((p) => p.last_price === null);");
+  assert.ok(idx1b > 0 && idxStillNull > idx1b,
+    "SIM-LEDGER-24: tier 1c's stillNullPositions computation must run after tier 1b, so TPEX-stale-skipped positions are re-offered to MIS");
+
+  // Tier 1c (MIS) must be date-validated per-symbol independent of the TWSE/
+  // TPEX guards above — so it can legitimately cover a symbol both official
+  // sources missed that day, without inheriting either source's staleness.
+  const idxMisLoop = src.indexOf('for (const p of stillNullPositions)');
+  const idxMisDateGuard = src.indexOf('if ((msg["d"] ?? "").replace(/-/g, "") !== todayYmd) continue;');
+  assert.ok(idxMisLoop > idxStillNull && idxMisDateGuard > idxMisLoop,
+    "SIM-LEDGER-24: MIS tier 1c must run after stillNullPositions and apply its own same-day date guard");
+});
+
+// =============================================================================
 // ROC-DATE-1/2 + S1-PERSIST-TPEX-3/4: 2026-07-10 #1192 review follow-ups
 // (reports/ledger_stall_20260709/)
 // =============================================================================
