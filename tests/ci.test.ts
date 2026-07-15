@@ -16215,6 +16215,31 @@ test("PAPER-REALIZED-2: order-driver.ts persists realized P&L on a sell fill", (
   );
 });
 
+test("V34-RECONCILE-1: server.ts GET /api/v1/kgi/sim/v34-orders route exists and re-reconciles against KGI (not a static snapshot)", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/kgi/sim/v34-orders"'),
+    "V34-RECONCILE-1: GET /api/v1/kgi/sim/v34-orders must be registered"
+  );
+  const routeStart = src.indexOf('"/api/v1/kgi/sim/v34-orders"');
+  const routeEnd = src.indexOf('app.get("/api/v1/kgi/sim/balance"', routeStart);
+  const routeSrc = src.slice(routeStart, routeEnd);
+  assert.ok(
+    routeSrc.includes('auditLogs.action, "v34_sim.order_submit"') &&
+      routeSrc.includes('auditLogs.entityType, "v34_sim"'),
+    "V34-RECONCILE-1: must read the v34 audit action/entityType, not the s1_sim one"
+  );
+  assert.ok(
+    routeSrc.includes("reconcileKgiOrders(") && routeSrc.includes("client.getRecentOrderEvents") &&
+      routeSrc.includes("client.getTrades") && routeSrc.includes("client.getDeals"),
+    "V34-RECONCILE-1: must re-fetch live gateway evidence and reconcile, not just echo the stale audit snapshot"
+  );
+  assert.ok(
+    routeSrc.includes('session.user.role !== "Owner"'),
+    "V34-RECONCILE-1: must stay Owner-only like the sibling /kgi/sim/orders route"
+  );
+});
+
 test("KGI-SIM-UNLOCK-5: kgi-gateway-client classifyError distinguishes NOT_LOGGED_IN from feature-disabled", () => {
   const src = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
   assert.ok(
