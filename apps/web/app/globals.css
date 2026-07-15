@@ -5455,37 +5455,62 @@ body:has(.mobile-route) > div {
   background: linear-gradient(90deg, var(--gold), transparent);
 }
 
-.login-capability-list {
-  display: grid;
-  gap: 0;
-  margin-top: 32px;
-  max-width: 760px;
-  border-top: 1px solid var(--night-rule);
-}
+/* ── /login redesign (2026-07-15, "login-signin" page-scoped modifier) ──────
+   `/register` shares the base `.login-*` template rules above/below this
+   block — those stay untouched so `/register` remains pixel-identical.
+   Everything below scoped under `.login-signin` (added only to the `/login`
+   page's outer `<main>`) is new, `/login`-only presentation. */
 
-.login-capability-card {
-  display: grid;
-  grid-template-columns: 128px minmax(0, 1fr) 66px;
-  gap: 18px;
+.login-mast {
+  display: flex;
   align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--night-rule);
+  gap: 14px;
+  padding: 14px 18px;
+  margin-bottom: clamp(24px, 4vw, 40px);
+  border: 1px solid var(--night-rule-strong);
+  background: linear-gradient(180deg, rgba(226, 184, 92, 0.06), transparent 60%), rgba(255, 255, 255, 0.02);
 }
 
-.login-capability-card > div {
-  display: contents;
+.login-mast-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.login-capability-card p {
-  margin: 0;
+.login-signin .login-grid {
+  grid-template-areas: "copy panel";
+}
+
+.login-signin .login-copy {
+  grid-area: copy;
+}
+
+.login-signin .login-panel {
+  grid-area: panel;
+}
+
+.login-signin .login-copy h2 {
+  font: 700 clamp(34px, 4vw, 52px)/1.15 var(--sans-tc);
+  font-style: normal;
+}
+
+.login-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.login-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--night-rule-strong);
   color: var(--night-mid);
-  font-size: 14px;
-  line-height: 1.78;
-}
-
-.capability-state {
-  text-align: right;
-  white-space: nowrap;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .login-panel {
@@ -5676,21 +5701,16 @@ body:has(.login-route) > div {
     margin-bottom: 22px;
   }
 
-  .login-capability-card {
-    grid-template-columns: 1fr auto;
-    align-items: start;
-  }
-
-  .login-capability-card > div {
-    display: block;
-  }
-
-  .login-capability-card p {
-    margin-top: 6px;
-  }
-
   .login-panel {
     padding: 22px;
+  }
+
+  .login-signin .login-grid {
+    grid-template-areas: "panel" "copy";
+  }
+
+  .login-mast {
+    padding: 12px 14px;
   }
 }
 

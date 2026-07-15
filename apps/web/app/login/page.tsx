@@ -5,29 +5,6 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiLogin, authErrorMessage, setAuthPresence } from "@/lib/auth-client";
 
-const ACCOUNT_CAPABILITIES = [
-  {
-    label: "網站帳號",
-    state: "可用",
-    body: "保存戰情台設定、觀察清單、策略偏好與模擬交易紀錄。",
-  },
-  {
-    label: "模擬交易",
-    state: "可用",
-    body: "券商寫入關閉中，先以 SIM 流程演練報價、風控、委託紀錄與成交回放。",
-  },
-  {
-    label: "券商綁定",
-    state: "預留",
-    body: "之後一個網站帳號可綁定自己的證券帳號；正式券商寫入需產品、風控與後端契約驗收後另行開啟。",
-  },
-  {
-    label: "訂閱權限",
-    state: "規劃",
-    body: "公開測試後逐步開放月費方案、進階資料與 AI 摘要功能。",
-  },
-];
-
 function safeNextPath(value: string | null): string {
   if (!value) return "/";
 
@@ -76,43 +53,25 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="login-route">
+    // `login-signin` is a page-scoped modifier: `/register` shares most of
+    // these class names (`.login-route`/`.login-shell`/`.login-grid`/
+    // `.login-copy`/`.login-panel`/…) from the same template, so all visual
+    // rewrites for this task live under `.login-signin` overrides in
+    // globals.css instead of touching the shared base rules — `/register`
+    // is out of scope and stays pixel-identical.
+    <main className="login-route login-signin">
       <section className="login-shell">
-        <div className="login-brand">
-          <div className="brand-mark">IUF</div>
-          <div>
-            <div className="tg soft">交易戰情室 · 操作員登入</div>
-            <h1>台股 AI 交易戰情室</h1>
+        <div className="login-mast">
+          <div className="tac-logo">
+            I<span />
+          </div>
+          <div className="login-mast-brand">
+            <span className="tac-brand-kicker">IUF TRADING ROOM</span>
+            <span className="tac-brand-version">操作員登入 · SIM 模擬工作台</span>
           </div>
         </div>
 
         <div className="login-grid">
-          <div className="login-copy">
-            <div className="tg gold">IUF 帳號 · 台股交易工作台</div>
-            <h2>登入、建立帳號、SIM 工作台入口都在這裡</h2>
-            <p className="login-intro">
-              這裡是 IUF 網站帳號入口，不是券商下單登入。現階段用邀請碼開通測試帳號；
-              未來同一個帳號會承接證券帳號綁定、資料權限、月費方案與 AI 每日簡報，正式券商寫入維持關閉。
-            </p>
-            <div className="login-copy-actions">
-              <Link href="/register" className="login-secondary-cta">申請測試帳號</Link>
-              <span className="tc soft">已有邀請碼即可開通；未拿到邀請碼時，登入不會偷偷建立假帳號。</span>
-            </div>
-            <div className="login-capability-list">
-              {ACCOUNT_CAPABILITIES.map((item) => (
-                <div className="login-capability-card" key={item.label}>
-                  <div>
-                    <span className="tg gold">{item.label}</span>
-                    <p>{item.body}</p>
-                  </div>
-                  <span className={`tg capability-state ${item.state === "可用" ? "status-ok" : "gold"}`}>
-                    {item.state}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <form className="login-panel" onSubmit={submit} noValidate>
             <div className="panel-head">
               <div>
@@ -121,7 +80,6 @@ export default function LoginPage() {
                 <span className="tg gold">IUF 帳號驗證</span>
                 <div className="panel-sub">電子信箱 / 密碼 / 裝置記憶</div>
               </div>
-              <span className="tg status-ok">可登入</span>
             </div>
 
             <label className="login-field">
@@ -160,9 +118,11 @@ export default function LoginPage() {
               </span>
             </label>
 
-            <div className={`login-error ${error ? "active" : ""}`} role="alert" aria-live="polite">
-              {error || "錯誤訊息會顯示在這裡"}
-            </div>
+            {error && (
+              <div className="login-error active" role="alert" aria-live="polite">
+                {error}
+              </div>
+            )}
 
             <button className="login-submit" type="submit" disabled={loading}>
               {loading ? "登入中..." : "登入戰情室"}
@@ -172,11 +132,24 @@ export default function LoginPage() {
               <span className="tc soft">還沒有帳號？</span>
               <Link href="/register" className="login-secondary-link">用邀請碼建立帳號</Link>
             </div>
-
-            <div className="tg soft login-foot">
-              IUF 帳號 / 真實登入工作階段 / 券商寫入關閉
-            </div>
           </form>
+
+          <div className="login-copy">
+            <div className="tg gold">IUF 帳號 · 台股交易工作台</div>
+            <h2>登入你的交易戰情室工作台</h2>
+            <p className="login-intro">
+              串接即時報價、風控與模擬委託紀錄的操作員工作台。目前為邀請制，取得邀請碼即可開通帳號。
+            </p>
+            <div className="login-copy-actions">
+              <Link href="/register" className="login-secondary-cta">申請測試帳號</Link>
+            </div>
+            <div className="login-tags">
+              <span className="login-tag">報價</span>
+              <span className="login-tag">風控</span>
+              <span className="login-tag">模擬委託</span>
+              <span className="login-tag">操作紀錄</span>
+            </div>
+          </div>
         </div>
       </section>
     </main>
