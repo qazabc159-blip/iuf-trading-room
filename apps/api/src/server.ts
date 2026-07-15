@@ -53,7 +53,9 @@ import {
   findByIdempotencyKey as findOrderByIdempotencyKey,
   computeFifoRealizedPnl,
   listRealizedPnlForUser,
-  getRealizedPnlWriteFailureCount
+  getRealizedPnlWriteFailureCount,
+  getRealizedPnlZeroPriorFillsSellCount,
+  type OrderState as PaperOrderState
 } from "./domain/trading/paper-ledger-db.js";
 import {
   buildPaperOrderContext,
@@ -202,6 +204,7 @@ import {
   listPaperAccounts,
   listPaperOrders,
   listPaperPositions,
+  listUnifiedFillsAsOrderStates,
   subscribeExecutionEvents
 } from "./broker/paper-broker.js";
 import {
@@ -14169,14 +14172,32 @@ app.get("/api/v1/admin/db/migration-status", async (c) => {
   }
 });
 
+// 2026-07-15 Pete review (PR #1279 🔴 #1): /paper/portfolio, /paper/fills, and
+// /paper/realized must reconcile for a user regardless of which pipeline
+// (legacy POST /api/v1/paper/submit, or unified POST /api/v1/trading/orders —
+// the path /desk-exact actually uses) processed a given trade — otherwise a
+// desk-exact round trip shows a nonzero /paper/realized row with zero
+// corresponding position/cash/fill anywhere else in the product ("持倉/資產
+// 顯示必須帳對得起本金"). Single merge point so both consumers below (and the
+// portfolio-snapshot capture job) see the same combined order/fill history.
+async function fetchAllFilledPaperOrders(session: AppSession): Promise<PaperOrderState[]> {
+  const [legacyOrders, unifiedOrders] = await Promise.all([
+    listOrders(session.user.id, { status: "FILLED" }),
+    listUnifiedFillsAsOrderStates(session)
+  ]);
+  return [...legacyOrders, ...unifiedOrders];
+}
+
 // GET /api/v1/paper/fills
-// Returns all FILLED orders for the current user as a fills list.
+// Returns all FILLED orders for the current user as a fills list, merged
+// across both the legacy and unified paper pipelines (see
+// fetchAllFilledPaperOrders() above).
 // Each fill includes orderId, symbol, side, fillQty, fillPrice, fillTime.
 app.get("/api/v1/paper/fills", async (c) => {
   const session = c.get("session");
   let orders;
   try {
-    orders = await listOrders(session.user.id, { status: "FILLED" });
+    orders = await fetchAllFilledPaperOrders(session);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error("[paper/fills] listOrders failed:", detail);
@@ -14212,16 +14233,13 @@ type ComputedPaperPortfolioPosition = {
   investedCostTWD: number;
 };
 
-async function computePaperPortfolioPositions(userId: string): Promise<ComputedPaperPortfolioPosition[]> {
-  let orders;
-  try {
-    orders = await listOrders(userId, { status: "FILLED" });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error("[paper/portfolio] listOrders failed:", detail);
-    throw new Error(`list_orders_failed: ${detail}`);
-  }
-
+// Pure function over an already-fetched order/fill set — callers pass in
+// fetchAllFilledPaperOrders(session)'s merged legacy+unified result (2026-07-15
+// Pete review, PR #1279 🔴 #1) so this always reflects the user's whole paper
+// trading history, not just whichever pipeline processed a given trade.
+function computePaperPortfolioPositions(
+  orders: readonly PaperOrderState[]
+): ComputedPaperPortfolioPosition[] {
   const positions = new Map<string, {
     symbol: string;
     netQty: number;
@@ -14294,10 +14312,10 @@ async function computePaperPortfolioPositions(userId: string): Promise<ComputedP
 app.get("/api/v1/paper/portfolio", async (c) => {
   const session = c.get("session");
   let positionList: ComputedPaperPortfolioPosition[];
-  let filledOrders: Awaited<ReturnType<typeof listOrders>> = [];
+  let filledOrders: PaperOrderState[] = [];
   try {
-    positionList = await computePaperPortfolioPositions(session.user.id);
-    filledOrders = await listOrders(session.user.id, { status: "FILLED" });
+    filledOrders = await fetchAllFilledPaperOrders(session);
+    positionList = computePaperPortfolioPositions(filledOrders);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     return c.json({ error: "list_orders_failed", detail }, 500);
@@ -14349,13 +14367,20 @@ app.get("/api/v1/paper/portfolio", async (c) => {
 // GET /api/v1/paper/realized
 // 2026-07-15 — dedicated realized-P&L ledger endpoint (migration 0058).
 // /paper/portfolio above already surfaces an aggregate realizedPnlTwd (live
-// FIFO recompute, PR #1222); this endpoint instead lists the FORMAL, persisted
-// per-trade record — one row per FIFO-matched (buy-lot, sell-fill) written at
-// the moment each sell actually filled (domain/trading/order-driver.ts). The
-// two never need to reconcile bit-for-bit (the aggregate can include the
-// still-open-lot unrealized portion; this ledger is closed trades only), but
-// in the common case (no PAPER_COST_RATES change since the ledger rows were
-// written) their totals will match.
+// FIFO recompute, PR #1222, merged across both pipelines since PR #1279);
+// this endpoint instead lists the FORMAL, persisted per-trade record — one
+// row per FIFO-matched (buy-lot, sell-fill) written at the moment each sell
+// actually filled (domain/trading/order-driver.ts for the legacy pipeline,
+// broker/paper-broker.ts for the unified pipeline — PR #1279). The two never
+// need to reconcile bit-for-bit (the aggregate can include the still-open-lot
+// unrealized portion; this ledger is closed trades only), but in the common
+// case (no PAPER_COST_RATES change since the ledger rows were written, AND
+// no single symbol traded through BOTH pipelines — each pipeline's write-time
+// hook only FIFO-matches against its own prior fills, so a genuinely
+// cross-pipeline trade sequence for one symbol is the one case where this
+// ledger's total can diverge from /paper/portfolio's live merged recompute;
+// see broker/paper-broker.ts's listUnifiedFillsAsOrderStates() doc comment)
+// their totals will match.
 // Query: ?symbol=2330 (optional filter).
 // Returns 200 + { data: PersistedRealizedTrade[], summary }.
 app.get("/api/v1/paper/realized", async (c) => {
@@ -14802,7 +14827,13 @@ app.get("/api/v1/paper/health/detail", async (c) => {
       realizedPnlLedger: {
         state: getRealizedPnlWriteFailureCount() > 0 ? "DEGRADED" : "READY",
         writeFailureCount: getRealizedPnlWriteFailureCount(),
-        note: "count of sell fills whose realized-P&L ledger write threw since process start"
+        note: "count of sell fills whose realized-P&L ledger write threw since process start",
+        // 2026-07-15 Pete review (PR #1279 🟡 #1): unified-pipeline sells with
+        // zero prior fills in this account are indistinguishable from a
+        // legitimate short sale unless separately counted — see
+        // domain/trading/paper-ledger-db.ts's recordRealizedPnlZeroPriorFillsSell()
+        // doc comment for the specific in-memory-state-loss scenario this detects.
+        zeroPriorFillsSellCount: getRealizedPnlZeroPriorFillsSellCount()
       }
     }
   });
@@ -22219,8 +22250,9 @@ type PortfolioSnapshotRecordLike = {
   createdAt: Date;
 };
 
-async function buildPaperPortfolioSnapshotPositions(userId: string): Promise<PortfolioSnapshotPositionsMap> {
-  const paperPositions = await computePaperPortfolioPositions(userId);
+async function buildPaperPortfolioSnapshotPositions(session: AppSession): Promise<PortfolioSnapshotPositionsMap> {
+  const orders = await fetchAllFilledPaperOrders(session);
+  const paperPositions = computePaperPortfolioPositions(orders);
   const positions: PortfolioSnapshotPositionsMap = {};
 
   for (const position of paperPositions) {
@@ -22276,7 +22308,7 @@ app.post("/api/v1/portfolio/snapshots/capture-paper", async (c) => {
   if (!workspaceId) return c.json({ error: "workspace_not_resolved" }, 400);
 
   try {
-    const positions = await buildPaperPortfolioSnapshotPositions(session.user.id);
+    const positions = await buildPaperPortfolioSnapshotPositions(session);
     const positionCount = Object.keys(positions).length;
     const { createSnapshot } = await import("./portfolio-snapshot-store.js");
     const snapshot = await createSnapshot({

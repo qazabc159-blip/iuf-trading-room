@@ -33,6 +33,20 @@
  *              global list (the actual account-boundary enforcement point;
  *              PB-RPNL-2 tests the isolated function assuming the caller
  *              scopes correctly, this test proves the caller itself does).
+ *   PB-RPNL-7: end-to-end reconciliation (Pete review 🔴 #1, 2026-07-15) — a
+ *              REAL buy -> sell round trip through placePaperOrder() (the
+ *              exact function trading-service.ts calls for /desk-exact
+ *              orders), seeded with a real twse_mis quote via market-data.ts's
+ *              own public upsertTwseMisQuotes() API (no market-data.ts
+ *              internals touched). Proves listUnifiedFillsAsOrderStates()
+ *              (the function server.ts's /paper/portfolio + /paper/fills now
+ *              merge in) and the persisted /paper/realized ledger produce
+ *              IDENTICAL realized-PnL totals for the same trade sequence —
+ *              the literal acceptance bar Elva set for this fix.
+ *   PB-RPNL-8: zero-prior-fills counter (Pete review 🟡 #1) — a sell with no
+ *              prior fills in its account increments a dedicated counter
+ *              (surfaced at GET /api/v1/paper/health/detail), distinguishing
+ *              "in-memory state was lost" from an ordinary 0-match short sale.
  *
  * Run:
  *   node --import ./tests/setup-test-env.mjs --import tsx --test \
@@ -41,6 +55,8 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -48,12 +64,20 @@ import test, { beforeEach } from "node:test";
 
 import type { AppSession, Fill, Order } from "@iuf-trading-room/contracts";
 
-import { recordUnifiedRealizedPnlForSell } from "./paper-broker.js";
+import {
+  recordUnifiedRealizedPnlForSell,
+  listUnifiedFillsAsOrderStates,
+  placePaperOrder
+} from "./paper-broker.js";
+import { resetMarketDataWorkspaceState, upsertTwseMisQuotes } from "../market-data.js";
 import {
   _setDefaultRealizedPnlAdapterForTest,
   _resetRealizedPnlWriteFailureCountForTest,
+  _resetRealizedPnlZeroPriorFillsSellCountForTest,
   getRealizedPnlWriteFailureCount,
+  getRealizedPnlZeroPriorFillsSellCount,
   listRealizedPnlForUser,
+  computeFifoRealizedPnl,
   type RealizedPnlAdapter,
   type PersistedRealizedTrade
 } from "../domain/trading/paper-ledger-db.js";
@@ -120,11 +144,12 @@ function makeFill(order: Order, price: number, timestamp: string): Fill {
 }
 
 beforeEach(() => {
-  // Fresh in-memory adapter + failure counter per test — the module-level
+  // Fresh in-memory adapter + counters per test — the module-level
   // singleton (getDefaultRealizedPnlAdapter()) would otherwise leak rows
   // across tests in the same process.
   _setDefaultRealizedPnlAdapterForTest(null);
   _resetRealizedPnlWriteFailureCountForTest();
+  _resetRealizedPnlZeroPriorFillsSellCountForTest();
 });
 
 test("PB-RPNL-1: buy -> sell in one account persists a source='unified_paper' row with hand-calc-matching PnL", async () => {
@@ -247,4 +272,170 @@ test("PB-RPNL-6 (source assertion): fillOrder()'s priorFills is built from this 
     /state\.orders\.get\(f\.orderId\)/,
     "priorFills must resolve orders via this same account's own `state.orders` map"
   );
+});
+
+// ---------------------------------------------------------------------------
+// PB-RPNL-7/8: 2026-07-15 Pete review follow-ups (real placePaperOrder() round
+// trip + zero-prior-fills counter). Needs a temp MARKET_DATA_STORE_DIR + a
+// unique workspace slug per test, same pattern as
+// __tests__/paper-quotegate-mis-source.test.ts.
+// ---------------------------------------------------------------------------
+
+async function withTempMarketDataStore(run: () => Promise<void>): Promise<void> {
+  const originalStoreDir = process.env.MARKET_DATA_STORE_DIR;
+  const storeDir = await mkdtemp(path.join(tmpdir(), "iuf-paper-broker-reconcile-"));
+  process.env.MARKET_DATA_STORE_DIR = storeDir;
+  try {
+    await run();
+  } finally {
+    if (originalStoreDir === undefined) delete process.env.MARKET_DATA_STORE_DIR;
+    else process.env.MARKET_DATA_STORE_DIR = originalStoreDir;
+    await rm(storeDir, { recursive: true, force: true });
+  }
+}
+
+function makeUniqueSession(slug: string): AppSession {
+  return {
+    workspace: { id: randomUUID(), name: slug, slug },
+    user: { id: randomUUID(), name: "Test User", email: "test@example.com", role: "Owner" },
+    persistenceMode: "memory"
+  };
+}
+
+function freshTwseMisQuote(symbol: string) {
+  return {
+    symbol,
+    market: "TWSE" as const,
+    source: "twse_mis" as const,
+    last: 100,
+    bid: 99.5,
+    ask: 100.5,
+    open: 100,
+    high: 101,
+    low: 99,
+    prevClose: 99,
+    volume: 1000,
+    changePct: 1.01,
+    timestamp: new Date().toISOString()
+  };
+}
+
+test("PB-RPNL-7: real placePaperOrder() buy->sell round trip — listUnifiedFillsAsOrderStates() and the persisted /paper/realized ledger reconcile to the same total (Elva's acceptance bar for Pete's 🔴 #1)", async () => {
+  await withTempMarketDataStore(async () => {
+    const slug = `pb-rpnl-7-${randomUUID()}`;
+    const session = makeUniqueSession(slug);
+    resetMarketDataWorkspaceState(slug);
+    try {
+      // Seed a fresh, paper-safe quote via market-data.ts's own public API
+      // (upsertTwseMisQuotes) — no market-data.ts internals touched.
+      await upsertTwseMisQuotes({ session, quotes: [freshTwseMisQuote("2330")] });
+
+      const accountId = `account-${randomUUID()}`;
+      const buyResult = await placePaperOrder({
+        session,
+        order: {
+          accountId,
+          symbol: "2330",
+          side: "buy",
+          type: "limit",
+          timeInForce: "rod",
+          quantity: 1000,
+          quantity_unit: "SHARE",
+          price: 101, // >= ask (100.5) so a buy limit fills immediately at markPrice
+          stopPrice: null,
+          tradePlanId: null,
+          strategyId: null,
+          clientOrderId: `pb-rpnl-7-buy-${randomUUID()}`,
+          overrideGuards: [],
+          overrideReason: ""
+        },
+        riskCheckId: null
+      });
+      assert.equal(buyResult.status, "filled", "buy must fill immediately against the seeded quote");
+
+      const sellResult = await placePaperOrder({
+        session,
+        order: {
+          accountId,
+          symbol: "2330",
+          side: "sell",
+          type: "limit",
+          timeInForce: "rod",
+          quantity: 1000,
+          quantity_unit: "SHARE",
+          price: 90, // <= bid (99.5) so a sell limit fills immediately at markPrice
+          stopPrice: null,
+          tradePlanId: null,
+          strategyId: null,
+          clientOrderId: `pb-rpnl-7-sell-${randomUUID()}`,
+          overrideGuards: [],
+          overrideReason: ""
+        },
+        riskCheckId: null
+      });
+      assert.equal(sellResult.status, "filled", "sell must fill immediately against the seeded quote");
+
+      // What server.ts's /paper/portfolio and /paper/fills now read (merged
+      // legacy+unified — this test only exercises the unified side).
+      const unifiedStates = await listUnifiedFillsAsOrderStates(session);
+      assert.equal(unifiedStates.length, 2, "both the buy and sell fill must be present");
+      const liveFifo = computeFifoRealizedPnl(unifiedStates);
+
+      // What GET /api/v1/paper/realized reads — the FORMAL persisted ledger
+      // row written at fill-time by recordUnifiedRealizedPnlForSell().
+      const persistedRows = await listRealizedPnlForUser(session.user.id);
+      assert.equal(persistedRows.length, 1, "one FIFO-matched trade");
+      assert.equal(persistedRows[0]?.source, "unified_paper");
+      assert.equal(persistedRows[0]?.accountId, accountId);
+
+      const persistedTotal = persistedRows.reduce((acc, r) => acc + r.realizedPnlTwd, 0);
+
+      // THE reconciliation identity Elva's acceptance bar demands: the live
+      // recompute (what /paper/portfolio shows) and the persisted ledger
+      // (what /paper/realized shows) must agree for a single-pipeline trade.
+      // (Exact price not hand-derived here — market-data.ts's decision
+      // summary is a separate, out-of-lane subsystem whose bid/ask
+      // passthrough precision isn't this test's concern; the cost-rate FIFO
+      // formula itself is already hand-verified against a real Postgres
+      // table by paper-realized-pnl-db.test.ts's RPNL-DB-3/RPNL-DB-1, which
+      // use fully synthetic, controlled prices with no market-data
+      // dependency. This test's job is proving the two READ PATHS agree with
+      // EACH OTHER for whatever price the fill actually executed at.)
+      assert.equal(
+        liveFifo.totalRealizedPnlTwd,
+        persistedTotal,
+        "listUnifiedFillsAsOrderStates()-derived live FIFO total must equal the persisted /paper/realized ledger total"
+      );
+      assert.ok(
+        liveFifo.totalRealizedPnlTwd < 0,
+        "sanity: selling at bid right after buying at ask must realize a small loss (spread + fees), not a gain"
+      );
+      assert.equal(persistedRows[0]?.realizedPnlTwd, liveFifo.totalRealizedPnlTwd);
+    } finally {
+      resetMarketDataWorkspaceState(slug);
+    }
+  });
+});
+
+test("PB-RPNL-8: a sell with zero prior fills in its account increments the zero-prior-fills counter (distinguishes lost state from an ordinary short sale)", async () => {
+  assert.equal(getRealizedPnlZeroPriorFillsSellCount(), 0);
+
+  const session = makeSession(randomUUID());
+  const sellOrder = makeOrder({ accountId: "primary-desk", side: "sell" });
+  const sellFill = makeFill(sellOrder, 110, "2026-07-02T02:00:00Z");
+
+  await recordUnifiedRealizedPnlForSell(session, sellOrder, sellFill, []);
+
+  assert.equal(getRealizedPnlZeroPriorFillsSellCount(), 1);
+
+  // A sell WITH prior fills must NOT increment this counter (regression lock —
+  // only the zero-prior-fills case is counted, not every sell).
+  const buyOrder = makeOrder({ accountId: "primary-desk", side: "buy" });
+  const buyFill = makeFill(buyOrder, 100, "2026-07-01T02:00:00Z");
+  const sellOrder2 = makeOrder({ accountId: "primary-desk", side: "sell" });
+  const sellFill2 = makeFill(sellOrder2, 110, "2026-07-03T02:00:00Z");
+  await recordUnifiedRealizedPnlForSell(session, sellOrder2, sellFill2, [
+    { order: buyOrder, fill: buyFill }
+  ]);
+  assert.equal(getRealizedPnlZeroPriorFillsSellCount(), 1, "unchanged — this sell had a prior fill to match");
 });

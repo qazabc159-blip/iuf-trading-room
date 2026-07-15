@@ -573,7 +573,13 @@ export const paperRealizedPnl = pgTable(
     sellBuyUidx:    uniqueIndex("paper_realized_pnl_sell_buy_uidx").on(table.sellOrderId, table.buyOrderId),
     userSymbolIdx:  index("paper_realized_pnl_user_symbol_idx").on(table.userId, table.symbol, table.sellFillTime.desc()),
     userIdx:        index("paper_realized_pnl_user_idx").on(table.userId, table.sellFillTime.desc()),
-    buyOrderIdx:    index("paper_realized_pnl_buy_order_idx").on(table.buyOrderId)
+    buyOrderIdx:    index("paper_realized_pnl_buy_order_idx").on(table.buyOrderId),
+    // 2026-07-15 Mike audit 🟡 (migration 0059 review): SQL/Drizzle drift —
+    // 0059 created this partial index but schema.ts was missing the matching
+    // definition. Mirrors the existing iuf_events_workspace_unread_idx partial
+    // index pattern above (.where(sql`...`)).
+    accountIdx:     index("paper_realized_pnl_account_idx").on(table.accountId)
+                      .where(sql`${table.accountId} IS NOT NULL`)
   })
 );
 

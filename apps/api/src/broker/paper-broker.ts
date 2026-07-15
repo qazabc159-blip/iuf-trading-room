@@ -25,6 +25,7 @@ import {
   PAPER_COST_RATES,
   recordRealizedPnlForSell,
   recordRealizedPnlWriteFailure,
+  recordRealizedPnlZeroPriorFillsSell,
   type OrderState as RealizedPnlOrderState
 } from "../domain/trading/paper-ledger-db.js";
 import { appendExecutionEvent } from "./execution-events-store.js";
@@ -882,6 +883,16 @@ export async function recordUnifiedRealizedPnlForSell(
   priorFills: readonly { order: Order; fill: Fill }[]
 ): Promise<void> {
   if (sellOrder.side !== "sell") return;
+  // 2026-07-15 Pete review: zero prior fills is indistinguishable from a
+  // legitimate short sale unless logged/counted separately from the normal
+  // "matched 0 lots" case — see paper-ledger-db.ts's doc comment on this
+  // counter for the specific in-memory-state-loss scenario it detects.
+  if (priorFills.length === 0) {
+    console.warn(
+      `[paper-broker] sell ${sellOrder.id} (${sellOrder.symbol}, account ${sellOrder.accountId}) has zero prior fills in this account — either a legitimate short sale or lost in-memory paper-broker state after a restart. Realized P&L for this sell will show 0 matched lots.`
+    );
+    recordRealizedPnlZeroPriorFillsSell();
+  }
   try {
     const sellState = toRealizedPnlOrderState(session, sellOrder, sellFill);
     const priorStates = priorFills.map(({ order, fill }) =>
@@ -898,6 +909,51 @@ export async function recordUnifiedRealizedPnlForSell(
     );
     recordRealizedPnlWriteFailure();
   }
+}
+
+/**
+ * List every fill across every account this session's workspace has traded
+ * through the unified pipeline, converted into the same OrderState shape the
+ * legacy ledger uses.
+ *
+ * 2026-07-15 Pete review (PR #1279 🔴 #1): the ledger write path
+ * (recordUnifiedRealizedPnlForSell above) was wired first, but
+ * GET /api/v1/paper/portfolio and GET /api/v1/paper/fills (server.ts) still
+ * only read the legacy paper_orders table — a desk-exact (unified) buy+sell
+ * round trip produced a nonzero /paper/realized row with zero corresponding
+ * position/cash/fill anywhere else, violating "帳對得起本金". server.ts now
+ * merges this function's output with the legacy listOrders() result before
+ * computing positions/fills/live-FIFO, so all three endpoints reconcile for
+ * any single-pipeline (all-legacy or all-unified) trade sequence.
+ *
+ * Known residual gap (disclosed, not fixed here — out of this PR's scope):
+ * if a user interleaves BOTH pipelines for the SAME symbol (e.g. buys via
+ * legacy /paper/submit, then sells via unified /desk-exact), the live
+ * /paper/portfolio recompute below correctly FIFO-matches across both
+ * (this function's output is merged with legacy orders before computing),
+ * but the *persisted* /paper/realized ledger row for that sell was written
+ * at fill-time scoped to only ONE pipeline's prior fills (each pipeline's
+ * write-time hook only sees its own history) — so a genuinely
+ * cross-pipeline trade sequence can still show a persisted ledger total
+ * that differs from the live portfolio recompute. In practice this requires
+ * a user to hit both /paper/submit and /desk-exact for the same symbol,
+ * which the current product surface doesn't really invite (only automated
+ * smoke/e2e scripts call /paper/submit directly).
+ *
+ * Read-only, no side effects.
+ */
+export async function listUnifiedFillsAsOrderStates(
+  session: AppSession
+): Promise<RealizedPnlOrderState[]> {
+  const ws = await ensureWorkspaceHydrated(session);
+  const result: RealizedPnlOrderState[] = [];
+  for (const state of ws.values()) {
+    for (const fill of state.fills) {
+      const order = state.orders.get(fill.orderId);
+      if (order) result.push(toRealizedPnlOrderState(session, order, fill));
+    }
+  }
+  return result;
 }
 
 async function fillOrder(args: {

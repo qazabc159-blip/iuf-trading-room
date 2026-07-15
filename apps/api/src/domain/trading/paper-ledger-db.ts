@@ -949,3 +949,36 @@ export function getRealizedPnlWriteFailureCount(): number {
 export function _resetRealizedPnlWriteFailureCountForTest(): void {
   _realizedPnlWriteFailureCount = 0;
 }
+
+// ---------------------------------------------------------------------------
+// Zero-prior-fills sell detection (2026-07-15 Pete review on PR #1279, 🟡 #1)
+//
+// broker/paper-broker.ts's unified pipeline keeps its fill history in-memory,
+// persisted only via a fire-and-forget snapshot (paper-broker-store.ts's
+// persistAccountAsync()) — if that snapshot write never completed before a
+// process restart, a subsequent sell of that now-invisible position produces
+// zero prior fills to FIFO-match against. That is silently indistinguishable
+// from a genuinely intentional short sale (both produce 0 matched trades, 0
+// ledger rows) unless something logs the zero-prior-fills case specifically.
+// This counter (+ a console.warn at the call site, see paper-broker.ts) is
+// the minimal "at least greppable" detection Pete asked for — mirrors the
+// write-failure counter above exactly, surfaced additively on the same
+// GET /api/v1/paper/health/detail block.
+// ---------------------------------------------------------------------------
+
+let _realizedPnlZeroPriorFillsSellCount = 0;
+
+/** Called from broker/paper-broker.ts when a sell's priorFills list is empty. */
+export function recordRealizedPnlZeroPriorFillsSell(): void {
+  _realizedPnlZeroPriorFillsSellCount += 1;
+}
+
+/** Read path for GET /api/v1/paper/health/detail. */
+export function getRealizedPnlZeroPriorFillsSellCount(): number {
+  return _realizedPnlZeroPriorFillsSellCount;
+}
+
+/** Test-only reset. */
+export function _resetRealizedPnlZeroPriorFillsSellCountForTest(): void {
+  _realizedPnlZeroPriorFillsSellCount = 0;
+}
