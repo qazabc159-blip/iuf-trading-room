@@ -531,6 +531,34 @@ export const paperFills = pgTable(
   })
 );
 
+// -- paper_realized_pnl -- migration 0058_paper_realized_pnl.sql
+// Persisted FIFO-matched realized P&L ledger: one row per (buy-lot slice,
+// sell-fill) pair, written at the moment a sell order fills. Replaces
+// "recompute FIFO over every filled order on every request" with a formal,
+// immutable historical record — see domain/trading/paper-ledger-db.ts
+// recordRealizedPnlForSell() (write) / listRealizedPnlForUser() (read) and
+// GET /api/v1/paper/realized.
+export const paperRealizedPnl = pgTable(
+  "paper_realized_pnl",
+  {
+    id:               uuid("id").defaultRandom().primaryKey(),
+    userId:           uuid("user_id").notNull(),
+    symbol:           text("symbol").notNull(),
+    matchedQtyShares: integer("matched_qty_shares").notNull(),
+    buyPrice:         numeric("buy_price", { precision: 14, scale: 4 }).notNull(),
+    sellPrice:        numeric("sell_price", { precision: 14, scale: 4 }).notNull(),
+    buyFillTime:      timestamp("buy_fill_time", { withTimezone: true }).notNull(),
+    sellFillTime:     timestamp("sell_fill_time", { withTimezone: true }).notNull(),
+    realizedPnlTwd:   numeric("realized_pnl_twd", { precision: 14, scale: 2 }).notNull(),
+    sellOrderId:      uuid("sell_order_id").notNull().references(() => paperOrders.id, { onDelete: "cascade" }),
+    createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    userSymbolIdx: index("paper_realized_pnl_user_symbol_idx").on(table.userId, table.symbol, table.sellFillTime.desc()),
+    sellOrderIdx:  index("paper_realized_pnl_sell_order_idx").on(table.sellOrderId)
+  })
+);
+
 // ── W7 D3: OHLCV bars per company ─────────────────────────────────────────────
 // migration 0017_companies_ohlcv.sql
 

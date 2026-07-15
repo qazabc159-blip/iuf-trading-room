@@ -51,7 +51,8 @@ import {
   getOrder,
   listOrders,
   findByIdempotencyKey as findOrderByIdempotencyKey,
-  computeFifoRealizedPnl
+  computeFifoRealizedPnl,
+  listRealizedPnlForUser
 } from "./domain/trading/paper-ledger-db.js";
 import {
   buildPaperOrderContext,
@@ -14068,6 +14069,45 @@ app.get("/api/v1/paper/portfolio", async (c) => {
   };
 
   return c.json({ data: positionsWithRealized, summary });
+});
+
+// GET /api/v1/paper/realized
+// 2026-07-15 — dedicated realized-P&L ledger endpoint (migration 0058).
+// /paper/portfolio above already surfaces an aggregate realizedPnlTwd (live
+// FIFO recompute, PR #1222); this endpoint instead lists the FORMAL, persisted
+// per-trade record — one row per FIFO-matched (buy-lot, sell-fill) written at
+// the moment each sell actually filled (domain/trading/order-driver.ts). The
+// two never need to reconcile bit-for-bit (the aggregate can include the
+// still-open-lot unrealized portion; this ledger is closed trades only), but
+// in the common case (no PAPER_COST_RATES change since the ledger rows were
+// written) their totals will match.
+// Query: ?symbol=2330 (optional filter).
+// Returns 200 + { data: PersistedRealizedTrade[], summary }.
+app.get("/api/v1/paper/realized", async (c) => {
+  const session = c.get("session");
+  const symbol = c.req.query("symbol") || undefined;
+  let trades: Awaited<ReturnType<typeof listRealizedPnlForUser>>;
+  try {
+    trades = await listRealizedPnlForUser(session.user.id, symbol);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "list_realized_pnl_failed", detail }, 500);
+  }
+
+  const totalRealizedPnlTwd = Math.round(
+    trades.reduce((acc, t) => acc + t.realizedPnlTwd, 0) * 100
+  ) / 100;
+
+  return c.json({
+    data: trades,
+    summary: {
+      tradeCount: trades.length,
+      totalRealizedPnlTwd,
+      note: trades.length === 0
+        ? "empty_state: no closed (sold) paper trades yet"
+        : "one row per FIFO-matched buy-lot/sell-fill pair, newest sell first"
+    }
+  });
 });
 
 // =============================================================================

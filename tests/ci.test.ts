@@ -16195,6 +16195,26 @@ test("KGI-SIM-UNLOCK-4: server.ts GET /api/v1/paper/positions route exists", () 
   );
 });
 
+test("PAPER-REALIZED-1: server.ts GET /api/v1/paper/realized route exists and reads the persisted ledger", () => {
+  const src = readFileSync("apps/api/src/server.ts", "utf8");
+  assert.ok(
+    src.includes('"/api/v1/paper/realized"'),
+    "PAPER-REALIZED-1: GET /api/v1/paper/realized must be registered"
+  );
+  assert.ok(
+    src.includes("listRealizedPnlForUser"),
+    "PAPER-REALIZED-1: the route must read from the persisted realized-P&L ledger, not recompute FIFO inline"
+  );
+});
+
+test("PAPER-REALIZED-2: order-driver.ts persists realized P&L on a sell fill", () => {
+  const src = readFileSync("apps/api/src/domain/trading/order-driver.ts", "utf8");
+  assert.ok(
+    src.includes("recordRealizedPnlForSell"),
+    "PAPER-REALIZED-2: driveOrder must call recordRealizedPnlForSell after a fill"
+  );
+});
+
 test("KGI-SIM-UNLOCK-5: kgi-gateway-client classifyError distinguishes NOT_LOGGED_IN from feature-disabled", () => {
   const src = readFileSync("apps/api/src/broker/kgi-gateway-client.ts", "utf8");
   assert.ok(

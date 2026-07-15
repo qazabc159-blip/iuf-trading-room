@@ -37,9 +37,16 @@ import {
   recordFill,
   deleteOrder,
   computeFifoRealizedPnl,
-  PAPER_COST_RATES
+  PAPER_COST_RATES,
+  matchFifoSellAgainstPriorOrders,
+  recordRealizedPnlForSell,
+  listRealizedPnlForUser
 } from "./paper-ledger-db.js";
-import type { PaperCostRates } from "./paper-ledger-db.js";
+import type {
+  PaperCostRates,
+  RealizedPnlAdapter,
+  PersistedRealizedTrade
+} from "./paper-ledger-db.js";
 import type { OrderIntentStatus } from "./order-intent.js";
 
 // ---------------------------------------------------------------------------
@@ -521,4 +528,119 @@ test("FIFO-9: PAPER_COST_RATES matches buy 0.1425% / sell 0.4425% (incl. STT)", 
   assert.equal(PAPER_COST_RATES.buyCommissionRate, 0.001425);
   const sellTotal = PAPER_COST_RATES.sellCommissionRate + PAPER_COST_RATES.securitiesTransactionTaxRate;
   closeTo(sellTotal, 0.004425, 0.0000001);
+});
+
+// ---------------------------------------------------------------------------
+// Persisted realized-P&L ledger (migration 0058, 2026-07-15)
+//   matchFifoSellAgainstPriorOrders / recordRealizedPnlForSell /
+//   listRealizedPnlForUser, backed by a Map-based RealizedPnlAdapter test
+//   double (same pattern as makeMapAdapter() above).
+// ---------------------------------------------------------------------------
+
+function makeMapRealizedPnlAdapter(): RealizedPnlAdapter & {
+  _rows: PersistedRealizedTrade[];
+} {
+  const rows: PersistedRealizedTrade[] = [];
+  const bySellOrder = new Map<string, string>();
+  return {
+    async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
+      return bySellOrder.has(sellOrderId);
+    },
+    async insertMatches(userId, sellOrderId, matches): Promise<void> {
+      if (matches.length === 0) return;
+      for (const m of matches) {
+        rows.push({ id: randomUUID(), sellOrderId, createdAt: new Date().toISOString(), ...m });
+      }
+      bySellOrder.set(sellOrderId, userId);
+    },
+    async listForUser(userId, symbol): Promise<PersistedRealizedTrade[]> {
+      return rows
+        .filter((r) => bySellOrder.get(r.sellOrderId) === userId)
+        .filter((r) => (symbol === undefined ? true : r.symbol === symbol))
+        .sort((a, b) => b.sellFillTime.localeCompare(a.sellFillTime));
+    },
+    _rows: rows
+  };
+}
+
+test("RPNL-1: matchFifoSellAgainstPriorOrders returns exactly the new sell's matches (full close)", () => {
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+
+  const matches = matchFifoSellAgainstPriorOrders(sell, [buy]);
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0]?.matchedQtyShares, 1000);
+  assert.equal(matches[0]?.buyPrice, 100);
+  assert.equal(matches[0]?.sellPrice, 110);
+  assert.equal(matches[0]?.realizedPnlTwd, 9370.75);
+});
+
+test("RPNL-2: matchFifoSellAgainstPriorOrders splits across multiple prior lots", () => {
+  const buy1 = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T01:00:00Z" }, 500, 100);
+  const buy2 = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T03:00:00Z" }, 500, 120);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 700, 130);
+
+  const matches = matchFifoSellAgainstPriorOrders(sell, [buy1, buy2]);
+  assert.equal(matches.length, 2, "one sell can close slices of two different prior buy lots");
+  assert.equal(matches[0]?.buyPrice, 100);
+  assert.equal(matches[0]?.matchedQtyShares, 500);
+  assert.equal(matches[1]?.buyPrice, 120);
+  assert.equal(matches[1]?.matchedQtyShares, 200);
+});
+
+test("RPNL-3: matchFifoSellAgainstPriorOrders returns [] for a buy order (nothing to realize)", () => {
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  assert.deepEqual(matchFifoSellAgainstPriorOrders(buy, []), []);
+});
+
+test("RPNL-4: recordRealizedPnlForSell persists matches and is idempotent on a second call", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const sell = makeFilledOrder({ side: "sell", fillTime: "2026-07-02T02:00:00Z" }, 1000, 110);
+
+  const first = await recordRealizedPnlForSell(sell, [buy], PAPER_COST_RATES, adapter);
+  assert.equal(first.length, 1);
+  assert.equal(adapter._rows.length, 1);
+  assert.equal(adapter._rows[0]?.sellOrderId, sell.intent.id);
+
+  // Second call (e.g. a re-invoked driveOrder) must not duplicate the row.
+  const second = await recordRealizedPnlForSell(sell, [buy], PAPER_COST_RATES, adapter);
+  assert.deepEqual(second, [], "idempotent no-op — hasMatchesForSellOrder short-circuits");
+  assert.equal(adapter._rows.length, 1, "no duplicate row inserted");
+});
+
+test("RPNL-5: recordRealizedPnlForSell is a no-op for a buy order", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const buy = makeFilledOrder({ side: "buy", fillTime: "2026-07-01T02:00:00Z" }, 1000, 100);
+  const result = await recordRealizedPnlForSell(buy, [], PAPER_COST_RATES, adapter);
+  assert.deepEqual(result, []);
+  assert.equal(adapter._rows.length, 0);
+});
+
+test("RPNL-6: listRealizedPnlForUser isolates rows per user and supports symbol filter", async () => {
+  const adapter = makeMapRealizedPnlAdapter();
+  const userA = "00000000-0000-0000-0000-0000000000aa";
+  const userB = "00000000-0000-0000-0000-0000000000bb";
+
+  const buyA = makeFilledOrder({ userId: userA, symbol: "2330", side: "buy", fillTime: "2026-07-01T01:00:00Z" }, 1000, 100);
+  const sellA1 = makeFilledOrder({ userId: userA, symbol: "2330", side: "sell", fillTime: "2026-07-02T01:00:00Z" }, 500, 110);
+  const buyB = makeFilledOrder({ userId: userB, symbol: "2330", side: "buy", fillTime: "2026-07-01T01:00:00Z" }, 1000, 100);
+  const sellB = makeFilledOrder({ userId: userB, symbol: "2330", side: "sell", fillTime: "2026-07-02T01:00:00Z" }, 1000, 105);
+
+  await recordRealizedPnlForSell(sellA1, [buyA], PAPER_COST_RATES, adapter);
+  await recordRealizedPnlForSell(sellB, [buyB], PAPER_COST_RATES, adapter);
+
+  const forA = await listRealizedPnlForUser(userA, undefined, adapter);
+  assert.equal(forA.length, 1, "user A's ledger must not include user B's trade");
+  assert.equal(forA[0]?.symbol, "2330");
+
+  const forB = await listRealizedPnlForUser(userB, undefined, adapter);
+  assert.equal(forB.length, 1);
+  assert.equal(forB[0]?.sellPrice, 105);
+
+  const forAFilteredWrongSymbol = await listRealizedPnlForUser(userA, "2317", adapter);
+  assert.deepEqual(forAFilteredWrongSymbol, [], "symbol filter excludes non-matching rows");
+
+  const forAFilteredRightSymbol = await listRealizedPnlForUser(userA, "2330", adapter);
+  assert.equal(forAFilteredRightSymbol.length, 1);
 });
