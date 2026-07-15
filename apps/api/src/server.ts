@@ -5955,6 +5955,280 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
   }
 });
 
+// GET /api/v1/kgi/sim/v34-orders — v34 SIM submitted orders reconciled against KGI SIM
+//
+// v34 shakedown runner (v34-sim-runner.ts) writes a one-shot audit_logs snapshot
+// (action="v34_sim.order_submit", entityType="v34_sim") right after submission —
+// the "unconfirmed" status baked into that snapshot is a point-in-time reconcile
+// attempt taken seconds after createOrder(), before the SIM broker report has
+// necessarily propagated. Unlike /api/v1/kgi/sim/orders (which serves S1/V5-1),
+// there was previously NO way to re-check v34's actual current status against
+// the gateway later on (Bruce 2026-07-15 verification: BLOCKED_NO_RECONCILE_PATH).
+// This route mirrors /api/v1/kgi/sim/orders exactly, but reads the v34 audit
+// action/entityType and the v34 report's results[] shape (stockId/shares/tradeId)
+// instead of S1's (symbol/shares/trade_id + settlement_* fields already reconciled
+// at submit time).
+app.get("/api/v1/kgi/sim/v34-orders", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
+  const gatewayUrl =
+    process.env["KGI_GATEWAY_URL"] ??
+    process.env["KGI_GATEWAY_BASE_URL"] ??
+    "http://127.0.0.1:8787";
+
+  const { KgiGatewayClient, KgiGatewayUnreachableError, KgiGatewayAuthError } =
+    await import("./broker/kgi-gateway-client.js");
+  const { reconcileKgiOrders, summarizeKgiReconciliationEvidence } = await import("./broker/kgi-order-reconciliation.js");
+
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayUrl, connectTimeoutMs: 5_000, ignoreScheduleGuard: true });
+
+  type _V34OrderSubmitReport = {
+    schema: string;
+    label: string;
+    basketAsOfDate: string;
+    entryDateTst: string;
+    submittedAtTst: string;
+    results: Array<{
+      stockId: string;
+      shares: number;
+      isOddLot: boolean;
+      executedNotionalTwd: number | null;
+      status: string;
+      tradeId: string | null;
+      error: string | null;
+    }>;
+  };
+
+  async function _readV34ObservationAudit(workspaceId: string, entityId: string): Promise<_V34OrderSubmitReport | null> {
+    if (!isDatabaseMode()) return null;
+    const db = getDb();
+    if (!db) return null;
+    const rows = await db
+      .select({ payload: auditLogs.payload })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.workspaceId, workspaceId),
+          eq(auditLogs.action, "v34_sim.order_submit"),
+          eq(auditLogs.entityType, "v34_sim"),
+          eq(auditLogs.entityId, entityId),
+        ),
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(1)
+      .catch(() => [] as Array<{ payload: unknown }>);
+    const payload = rows[0]?.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    return payload as _V34OrderSubmitReport;
+  }
+
+  let auditOrders: _V34OrderSubmitReport["results"] = [];
+  let auditDate: string | null = null;
+  let auditSubmittedAt: string | null = null;
+  if (isDatabaseMode()) {
+    for (let daysBack = 0; daysBack <= 7; daysBack++) {
+      const tryDate = _s1TaipeiDateStr(-daysBack);
+      const orderAudit = await _readV34ObservationAudit(session.workspace.id, tryDate);
+      if (orderAudit && Array.isArray(orderAudit.results) && orderAudit.results.length > 0) {
+        auditOrders = orderAudit.results;
+        auditDate = tryDate;
+        auditSubmittedAt = orderAudit.submittedAtTst ?? null;
+        break;
+      }
+    }
+  }
+
+  const baseOrders = auditOrders
+    .filter((r) => r.status !== "skipped")
+    .map((r) => ({
+      tradeId: r.tradeId,
+      symbol: r.stockId,
+      side: "buy" as const,
+      requestedQty: r.shares,
+      submittedAt: auditSubmittedAt,
+    }));
+
+  const orderAuditCount = baseOrders.length;
+  const fetchEvidence = async <T>(
+    name: "order_events" | "trade_reports" | "deals",
+    fn: () => Promise<T>,
+  ): Promise<{ name: string; ok: true; value: T; error: null } | { name: string; ok: false; value: null; error: string }> => {
+    try {
+      return { name, ok: true, value: await fn(), error: null };
+    } catch (error) {
+      return {
+        name,
+        ok: false,
+        value: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  try {
+    const [eventsResult, tradesResult, dealsResult] = await Promise.all([
+      fetchEvidence("order_events", () => client.getRecentOrderEvents(200)),
+      fetchEvidence("trade_reports", () => client.getTrades(false)),
+      fetchEvidence("deals", () => client.getDeals()),
+    ]);
+    const events = eventsResult.ok ? eventsResult.value : [];
+    const trades = tradesResult.ok ? tradesResult.value : null;
+    const deals = dealsResult.ok ? dealsResult.value : null;
+    const reconciled = baseOrders.length > 0
+      ? reconcileKgiOrders({ orders: baseOrders, events, trades, deals })
+      : [];
+    const evidenceSummary = summarizeKgiReconciliationEvidence({ events, trades, deals });
+    const brokerReportConfirmedCount = reconciled.filter((order) => order.brokerReportConfirmed).length;
+    const settlementConfirmedCount = reconciled.filter((order) => order.settlementConfirmed).length;
+    const filledCount = reconciled.filter((order) => order.status === "filled" || order.status === "partially_filled").length;
+    const unconfirmedCount = reconciled.filter((order) => order.status === "unconfirmed").length;
+    const fetchedAt = new Date().toISOString();
+    const ordersArr = reconciled.map((order, index) => ({
+      tradeId: order.tradeId,
+      trade_id: order.tradeId,
+      status: order.status,
+      symbol: order.symbol,
+      side: order.side,
+      qty: order.requestedQty,
+      shares: order.requestedQty,
+      quantityUnit: "SHARE",
+      effectiveQtyShares: order.requestedQty,
+      requestedQty: order.requestedQty,
+      filledQty: order.filledQty,
+      remainingQty: order.remainingQty,
+      avgFillPrice: order.avgFillPrice,
+      price: order.avgFillPrice,
+      orderType: "market",
+      isOddLot: false,
+      submittedAt: auditSubmittedAt ?? auditDate ?? "",
+      submitted_at_tst: auditSubmittedAt,
+      trading_date: auditDate,
+      settlementConfirmed: order.settlementConfirmed,
+      settlementSource: order.settlementSource,
+      brokerReportConfirmed: order.brokerReportConfirmed,
+      confirmedAt: order.confirmedAt,
+      matchStrategy: order.matchStrategy,
+      row: index,
+    }));
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        orders: ordersArr,
+        source: baseOrders.length > 0 ? "audit_plus_kgi_reconciliation" : "kgi_sim",
+        auditDate,
+        reconciliation: {
+          auditOrderCount: orderAuditCount,
+          brokerReportConfirmedCount,
+          settlementConfirmedCount,
+          filledCount,
+          unconfirmedCount,
+          evidence: {
+            orderEventRows: evidenceSummary.orderEventRows,
+            tradeReportRows: evidenceSummary.tradeReportRows,
+            dealRows: evidenceSummary.dealRows,
+            rowsWithTradeId: evidenceSummary.rowsWithTradeId,
+            rowsWithSymbol: evidenceSummary.rowsWithSymbol,
+          },
+          fetch: {
+            orderEvents: eventsResult.ok ? "ok" : "error",
+            tradeReports: tradesResult.ok ? "ok" : "error",
+            deals: dealsResult.ok ? "ok" : "error",
+            errors: [eventsResult, tradesResult, dealsResult]
+              .filter((result) => !result.ok)
+              .map((result) => ({ source: result.name, message: result.error })),
+          },
+          fetchedAt,
+          closureState:
+            orderAuditCount === 0
+              ? "no_strategy_orders"
+              : brokerReportConfirmedCount === orderAuditCount
+                ? "broker_confirmed"
+                : brokerReportConfirmedCount > 0
+                  ? "partially_confirmed"
+                  : "awaiting_broker_report",
+        },
+        note: baseOrders.length > 0
+          ? "Orders are reconstructed from durable v34 audit entries and reconciled against KGI recent events/trades/deals."
+          : "No recent v34 audit orders found; KGI raw trade report did not identify a v34 order.",
+        fetchedAt,
+      },
+    });
+  } catch (err) {
+    const degraded = err instanceof KgiGatewayUnreachableError || err instanceof KgiGatewayAuthError;
+    const reason = degraded
+      ? (err instanceof KgiGatewayAuthError ? "gateway_not_authenticated" : "gateway_unreachable")
+      : "gateway_error";
+
+    const auditRows = auditOrders.map((r) => ({
+      symbol: r.stockId,
+      shares: r.shares,
+      qty: r.shares,
+      requestedQty: r.shares,
+      filledQty: 0,
+      remainingQty: r.shares,
+      avgFillPrice: null,
+      status: r.status,
+      trade_id: r.tradeId,
+      tradeId: r.tradeId,
+      settlementConfirmed: false,
+      settlementSource: "submission_only",
+      confirmedAt: null,
+      side: "buy",
+      quantityUnit: "SHARE",
+      effectiveQtyShares: r.shares,
+      price: null,
+      orderType: "market",
+      isOddLot: r.isOddLot,
+      error: r.error,
+      trading_date: auditDate,
+      submitted_at_tst: auditSubmittedAt,
+      submittedAt: auditSubmittedAt ?? auditDate ?? "",
+    }));
+
+    return c.json({
+      sim_only: true,
+      prod_write_blocked: true,
+      data: {
+        orders: auditRows,
+        source: auditOrders.length > 0 ? "audit_log_fallback" : "kgi_sim",
+        degraded: true,
+        reason,
+        auditDate: auditDate,
+        reconciliation: {
+          auditOrderCount: auditRows.length,
+          brokerReportConfirmedCount: 0,
+          settlementConfirmedCount: 0,
+          filledCount: 0,
+          unconfirmedCount: auditRows.length,
+          evidence: {
+            orderEventRows: 0,
+            tradeReportRows: 0,
+            dealRows: 0,
+            rowsWithTradeId: 0,
+            rowsWithSymbol: 0,
+          },
+          fetch: {
+            orderEvents: "error",
+            tradeReports: "error",
+            deals: "error",
+            errors: [{ source: "gateway", message: reason }],
+          },
+          fetchedAt: new Date().toISOString(),
+          closureState: auditRows.length > 0 ? "gateway_unavailable" : "no_strategy_orders",
+        },
+        note: auditOrders.length > 0
+          ? `KGI SIM gateway unavailable (${reason}). Showing last v34 order submission from audit log (${auditDate}). Settlement status unknown — these orders were submitted to KGI SIM but confirmation was not received.`
+          : `KGI SIM gateway unavailable (${reason}). No recent v34 order activity found in audit log.`,
+        fetchedAt: new Date().toISOString(),
+      },
+    });
+  }
+});
+
 // GET /api/v1/kgi/sim/balance — KGI SIM account balance / funds
 // KGI gateway does not expose a dedicated balance endpoint.
 // We derive balance from positions (realized + unrealized P&L) and
