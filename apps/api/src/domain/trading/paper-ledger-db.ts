@@ -18,9 +18,11 @@
 //
 // Hard stops: no KGI SDK import, no broker, no market-data, no server.ts touch.
 
-import { and, asc, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
-import { getDb, isDatabaseMode, paperFills, paperOrders } from "@iuf-trading-room/db";
+import { and, asc, desc, eq } from "drizzle-orm";
+
+import { getDb, isDatabaseMode, paperFills, paperOrders, paperRealizedPnl } from "@iuf-trading-room/db";
 import type { DatabaseClient } from "@iuf-trading-room/db";
 
 import type { OrderIntent, OrderIntentStatus } from "./order-intent.js";
@@ -449,6 +451,12 @@ export interface RealizedTradeMatch {
   sellFillTime: string;
   /** Net of buy-side commission and sell-side commission + securities transaction tax. */
   realizedPnlTwd: number;
+  /** The order.id of the FILLED buy order this matched lot slice came from — the source
+   * document a persisted ledger row must be able to cite exactly (2026-07-15 Mike audit
+   * blocker #1: buyPrice/buyFillTime alone are a soft, non-verifiable link). */
+  buyOrderId: string;
+  /** The order.id of the FILLED sell order that triggered this match. */
+  sellOrderId: string;
 }
 
 export interface SymbolFifoSummary {
@@ -520,6 +528,7 @@ export function computeFifoRealizedPnl(
     price: number;
     costPerShareWithFee: number;
     fillTime: string;
+    orderId: string;
   }
 
   const lotsBySymbol = new Map<string, Lot[]>();
@@ -556,7 +565,7 @@ export function computeFifoRealizedPnl(
 
     if (o.intent.side === "buy") {
       const costPerShareWithFee = price * (1 + costRates.buyCommissionRate);
-      ensureLots(symbol).push({ qtyShares, price, costPerShareWithFee, fillTime: timeIso });
+      ensureLots(symbol).push({ qtyShares, price, costPerShareWithFee, fillTime: timeIso, orderId: o.intent.id });
       netCashFlowTwd -= qtyShares * costPerShareWithFee;
       continue;
     }
@@ -578,7 +587,9 @@ export function computeFifoRealizedPnl(
         sellPrice: price,
         buyFillTime: lot.fillTime,
         sellFillTime: timeIso,
-        realizedPnlTwd
+        realizedPnlTwd,
+        buyOrderId: lot.orderId,
+        sellOrderId: o.intent.id
       });
 
       const r = ensureRealized(symbol);
@@ -647,4 +658,249 @@ export function computeFifoRealizedPnl(
     totalMarketValueTwd: round2(totalMarketValueTwd),
     netCashFlowTwd: round2(netCashFlowTwd)
   };
+}
+
+// ---------------------------------------------------------------------------
+// Persisted realized-P&L ledger (migration 0058) — 2026-07-15
+//
+// computeFifoRealizedPnl() above is a pure, on-the-fly view: it re-derives
+// every FIFO match by re-scanning ALL filled orders on every call. That's
+// fine for the live /paper/positions summary, but it means "realized P&L"
+// had no formal, immutable record — historical trades would silently
+// re-interpret themselves if PAPER_COST_RATES or the matching algorithm ever
+// changes. This section persists one row per FIFO match at the moment a
+// sell fills (called from order-driver.ts driveOrder()), so a dedicated
+// ledger/endpoint can list actual realized trades without re-deriving them.
+// ---------------------------------------------------------------------------
+
+/** A realized-P&L ledger row as read back from storage (id + persistence metadata added). */
+export interface PersistedRealizedTrade extends RealizedTradeMatch {
+  id: string;
+  createdAt: string;
+}
+
+/**
+ * Determine which FIFO matches a given sell fill produced, without
+ * duplicating any of computeFifoRealizedPnl()'s matching logic: run it over
+ * (priorFilledOrders + this sell) and keep only the matches whose
+ * sellOrderId equals this sell's own order id (2026-07-15 Mike audit: matching
+ * on the order id, now that every RealizedTradeMatch carries one, rather than
+ * the earlier fillTime-string comparison — exact, no "assume no timestamp
+ * collision" caveat needed).
+ *
+ * Pure function: no DB access, no side effects.
+ */
+export function matchFifoSellAgainstPriorOrders(
+  sellOrder: OrderState,
+  priorFilledOrders: readonly OrderState[],
+  costRates: PaperCostRates = PAPER_COST_RATES
+): RealizedTradeMatch[] {
+  if (sellOrder.intent.side !== "sell" || !sellOrder.fill) return [];
+  const combined = computeFifoRealizedPnl([...priorFilledOrders, sellOrder], costRates);
+  return combined.trades.filter((t) => t.sellOrderId === sellOrder.intent.id);
+}
+
+/** Narrow storage interface for the realized-P&L ledger, mirroring LedgerAdapter's pattern. */
+export interface RealizedPnlAdapter {
+  /** True if any ledger rows already exist for this sellOrderId (app-level fast-path
+   * pre-check only — NOT the safety net against duplicates; see insertMatches doc). */
+  hasMatchesForSellOrder(sellOrderId: string): Promise<boolean>;
+  /** Persist a batch of FIFO matches produced by one sell fill. No-op on an empty array.
+   * Must be safe to call twice with the same matches (DB-level dedup, not app-level). */
+  insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void>;
+  /** List all persisted realized trades for a user, newest sell-fill first. */
+  listForUser(userId: string, symbol?: string): Promise<PersistedRealizedTrade[]>;
+}
+
+/** Exported for the real-Postgres DB-mode integration test (see
+ * paper-realized-pnl-db.test.ts) — mirrors drizzleAdapter() being exported above. */
+export function drizzleRealizedPnlAdapter(injectedDb?: DatabaseClient | null): RealizedPnlAdapter {
+  const db = resolveDrizzleDb(injectedDb);
+
+  return {
+    async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
+      const [row] = await db
+        .select({ id: paperRealizedPnl.id })
+        .from(paperRealizedPnl)
+        .where(eq(paperRealizedPnl.sellOrderId, sellOrderId))
+        .limit(1);
+      return row !== undefined;
+    },
+
+    // 2026-07-15 Mike audit blocker #2: the app-level hasMatchesForSellOrder()
+    // check-then-act pattern alone cannot prevent a duplicate insert under
+    // concurrent/re-invoked driveOrder() calls (classic TOCTOU race). The real
+    // guard is the DB: migration 0058's UNIQUE(sell_order_id, buy_order_id)
+    // constraint + ON CONFLICT DO NOTHING here makes a duplicate insert a
+    // guaranteed no-op at the database layer, not just "unlikely". Wrapped in
+    // an explicit transaction per Mike's request (a single multi-row INSERT is
+    // already atomic as one statement, but this keeps the write path explicit
+    // and gives future additions to this write a shared transaction to join).
+    async insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void> {
+      if (matches.length === 0) return;
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(paperRealizedPnl)
+          .values(
+            matches.map((m) => ({
+              userId,
+              symbol: m.symbol,
+              matchedQtyShares: m.matchedQtyShares,
+              buyPrice: String(m.buyPrice),
+              sellPrice: String(m.sellPrice),
+              buyFillTime: new Date(m.buyFillTime),
+              sellFillTime: new Date(m.sellFillTime),
+              realizedPnlTwd: String(m.realizedPnlTwd),
+              buyOrderId: m.buyOrderId,
+              sellOrderId: m.sellOrderId
+            }))
+          )
+          .onConflictDoNothing({
+            target: [paperRealizedPnl.sellOrderId, paperRealizedPnl.buyOrderId]
+          });
+      });
+    },
+
+    async listForUser(userId: string, symbol?: string): Promise<PersistedRealizedTrade[]> {
+      const conditions = [eq(paperRealizedPnl.userId, userId)];
+      if (symbol !== undefined) conditions.push(eq(paperRealizedPnl.symbol, symbol));
+      const rows = await db
+        .select()
+        .from(paperRealizedPnl)
+        .where(and(...conditions))
+        .orderBy(desc(paperRealizedPnl.sellFillTime));
+      return rows.map((row) => ({
+        id: row.id,
+        symbol: row.symbol,
+        matchedQtyShares: row.matchedQtyShares,
+        buyPrice: parseFloat(row.buyPrice),
+        sellPrice: parseFloat(row.sellPrice),
+        buyFillTime: row.buyFillTime.toISOString(),
+        sellFillTime: row.sellFillTime.toISOString(),
+        realizedPnlTwd: parseFloat(row.realizedPnlTwd),
+        buyOrderId: row.buyOrderId,
+        sellOrderId: row.sellOrderId,
+        createdAt: row.createdAt.toISOString()
+      }));
+    }
+  };
+}
+
+/** In-memory fallback for memory mode (CI/local without DB) — same shape as mapAdapter() above.
+ * Dedup mirrors the DB adapter's UNIQUE(sell_order_id, buy_order_id) constraint exactly (a
+ * Set keyed on the same composite pair), so test behaviour matches prod behaviour. */
+function mapRealizedPnlAdapter(): RealizedPnlAdapter {
+  const rows: PersistedRealizedTrade[] = [];
+  const bySellOrder = new Map<string, string>(); // sellOrderId -> userId, for hasMatchesForSellOrder
+  const seenPairs = new Set<string>(); // `${sellOrderId}::${buyOrderId}` — mirrors the DB UNIQUE constraint
+
+  return {
+    async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
+      return bySellOrder.has(sellOrderId);
+    },
+    async insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void> {
+      if (matches.length === 0) return;
+      for (const m of matches) {
+        const pairKey = `${m.sellOrderId}::${m.buyOrderId}`;
+        if (seenPairs.has(pairKey)) continue; // DO NOTHING equivalent
+        seenPairs.add(pairKey);
+        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), ...m });
+      }
+      for (const m of matches) bySellOrder.set(m.sellOrderId, userId);
+    },
+    async listForUser(userId: string, symbol?: string): Promise<PersistedRealizedTrade[]> {
+      return rows
+        .filter((r) => bySellOrder.get(r.sellOrderId) === userId)
+        .filter((r) => (symbol === undefined ? true : r.symbol === symbol))
+        .sort((a, b) => b.sellFillTime.localeCompare(a.sellFillTime));
+    }
+  };
+}
+
+let _defaultRealizedPnlAdapter: RealizedPnlAdapter | null = null;
+
+/** Exposed for test injection only. */
+export function _setDefaultRealizedPnlAdapterForTest(adapter: RealizedPnlAdapter | null): void {
+  _defaultRealizedPnlAdapter = adapter;
+}
+
+function getDefaultRealizedPnlAdapter(): RealizedPnlAdapter {
+  if (!_defaultRealizedPnlAdapter) {
+    _defaultRealizedPnlAdapter = isDatabaseMode() ? drizzleRealizedPnlAdapter() : mapRealizedPnlAdapter();
+  }
+  return _defaultRealizedPnlAdapter;
+}
+
+/**
+ * Persist the FIFO matches produced by a sell fill, idempotently.
+ * Callers (order-driver.ts) should invoke this right after recordFill() for
+ * a sell order that just transitioned to FILLED, passing every OTHER
+ * already-filled order for the same user (any order beforehand, symbol
+ * filtering happens inside the matcher). Fails open in spirit — callers are
+ * expected to catch/log, matching the house style for persistence helpers
+ * that must never block the hot order-fill path (see e.g.
+ * quote-last-close-store.ts's doc comment).
+ *
+ * Returns the matches that were (or would have been, if already recorded)
+ * produced, for logging/testing convenience.
+ */
+export async function recordRealizedPnlForSell(
+  sellOrder: OrderState,
+  priorFilledOrders: readonly OrderState[],
+  costRates: PaperCostRates = PAPER_COST_RATES,
+  adapter?: RealizedPnlAdapter | null
+): Promise<RealizedTradeMatch[]> {
+  if (sellOrder.intent.side !== "sell" || !sellOrder.fill) return [];
+  const a = adapter ?? getDefaultRealizedPnlAdapter();
+
+  const alreadyRecorded = await a.hasMatchesForSellOrder(sellOrder.intent.id);
+  if (alreadyRecorded) return [];
+
+  const matches = matchFifoSellAgainstPriorOrders(sellOrder, priorFilledOrders, costRates);
+  if (matches.length > 0) {
+    await a.insertMatches(sellOrder.intent.userId, matches);
+  }
+  return matches;
+}
+
+/**
+ * List a user's persisted realized-P&L ledger, newest sell-fill first.
+ * Read path for GET /api/v1/paper/realized.
+ */
+export async function listRealizedPnlForUser(
+  userId: string,
+  symbol?: string,
+  adapter?: RealizedPnlAdapter | null
+): Promise<PersistedRealizedTrade[]> {
+  return (adapter ?? getDefaultRealizedPnlAdapter()).listForUser(userId, symbol);
+}
+
+// ---------------------------------------------------------------------------
+// Fail-open write-failure detection (2026-07-15 Mike audit, tied to blocker #3)
+//
+// order-driver.ts calls recordRealizedPnlForSell() in a try/catch that must
+// never block a sell fill on a ledger-write hiccup (console.error alone). A
+// silently-swallowed error means this ledger could be empty from day one with
+// nobody noticing. This process-wide counter is the minimal "at least log +
+// counter" detection Mike asked for — surfaced additively on
+// GET /api/v1/paper/health/detail so ops/Bruce smoke can see it's nonzero.
+// A fuller reconciliation job (ledger total vs computeFifoRealizedPnl() live
+// recompute, per Mike's 🟡) is a follow-up, not done here.
+// ---------------------------------------------------------------------------
+
+let _realizedPnlWriteFailureCount = 0;
+
+/** Called from order-driver.ts's catch block when recordRealizedPnlForSell() throws. */
+export function recordRealizedPnlWriteFailure(): void {
+  _realizedPnlWriteFailureCount += 1;
+}
+
+/** Read path for GET /api/v1/paper/health/detail. */
+export function getRealizedPnlWriteFailureCount(): number {
+  return _realizedPnlWriteFailureCount;
+}
+
+/** Test-only reset. */
+export function _resetRealizedPnlWriteFailureCountForTest(): void {
+  _realizedPnlWriteFailureCount = 0;
 }

@@ -28,6 +28,9 @@ import { executeOrder } from "./paper-executor.js";
 import {
   upsertOrder,
   recordFill,
+  listOrders,
+  recordRealizedPnlForSell,
+  recordRealizedPnlWriteFailure,
   type OrderState
 } from "./paper-ledger-db.js";
 
@@ -109,6 +112,29 @@ export async function driveOrder(intent: OrderIntent): Promise<DriveOrderResult>
     await recordFill(acceptedIntent.id, executorResult.fill);
     const finalState: OrderState = { intent: filledIntent, fill: executorResult.fill };
     await upsertOrder(finalState);
+
+    // Realized-P&L ledger (migration 0058): a sell fill may close one or more
+    // FIFO buy lots. Persist those matches now, at the moment of fill, so the
+    // record is immutable history rather than a value re-derived from a
+    // FIFO scan on every future read. Fail-open — a persistence hiccup here
+    // must never block the order from reaching FILLED status; the live
+    // computeFifoRealizedPnl() view (used by /paper/positions) is unaffected
+    // either way since it doesn't read this ledger.
+    if (finalState.intent.side === "sell") {
+      try {
+        const priorFilledOrders = (
+          await listOrders(finalState.intent.userId, { status: "FILLED" })
+        ).filter((o) => o.intent.id !== finalState.intent.id);
+        await recordRealizedPnlForSell(finalState, priorFilledOrders);
+      } catch (err) {
+        console.error(
+          `[order-driver] failed to persist realized P&L for sell ${finalState.intent.id}:`,
+          err
+        );
+        recordRealizedPnlWriteFailure();
+      }
+    }
+
     return { finalState };
   }
 
