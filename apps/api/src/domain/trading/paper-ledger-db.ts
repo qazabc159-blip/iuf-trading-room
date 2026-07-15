@@ -673,10 +673,31 @@ export function computeFifoRealizedPnl(
 // ledger/endpoint can list actual realized trades without re-deriving them.
 // ---------------------------------------------------------------------------
 
+/** Which pipeline (and therefore which order-id space) a ledger row's
+ * buyOrderId/sellOrderId resolve against. "legacy_paper" = order-driver.ts +
+ * paper_orders table (POST /api/v1/paper/submit). "unified_paper" =
+ * broker/paper-broker.ts's in-memory Order/Fill records (POST
+ * /api/v1/trading/orders, the path the /desk-exact UI actually uses) — see
+ * migration 0059. */
+export type RealizedPnlSource = "legacy_paper" | "unified_paper";
+
 /** A realized-P&L ledger row as read back from storage (id + persistence metadata added). */
 export interface PersistedRealizedTrade extends RealizedTradeMatch {
   id: string;
   createdAt: string;
+  source: RealizedPnlSource;
+  /** Unified-pipeline account id (e.g. "primary-desk"), null for legacy rows
+   * (legacy has no account concept) — see migration 0059. */
+  accountId: string | null;
+}
+
+/** Optional per-call metadata for insertMatches()/recordRealizedPnlForSell() —
+ * defaults to the legacy pipeline's provenance when omitted, so every
+ * pre-existing call site (order-driver.ts, tests) keeps writing
+ * source='legacy_paper', accountId=null with zero changes required. */
+export interface RealizedPnlWriteMeta {
+  source?: RealizedPnlSource;
+  accountId?: string | null;
 }
 
 /**
@@ -706,8 +727,10 @@ export interface RealizedPnlAdapter {
    * pre-check only — NOT the safety net against duplicates; see insertMatches doc). */
   hasMatchesForSellOrder(sellOrderId: string): Promise<boolean>;
   /** Persist a batch of FIFO matches produced by one sell fill. No-op on an empty array.
-   * Must be safe to call twice with the same matches (DB-level dedup, not app-level). */
-  insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void>;
+   * Must be safe to call twice with the same matches (DB-level dedup, not app-level).
+   * `meta` is omitted by legacy call sites (defaults to source='legacy_paper',
+   * accountId=null); the unified pipeline passes it explicitly. */
+  insertMatches(userId: string, matches: RealizedTradeMatch[], meta?: RealizedPnlWriteMeta): Promise<void>;
   /** List all persisted realized trades for a user, newest sell-fill first. */
   listForUser(userId: string, symbol?: string): Promise<PersistedRealizedTrade[]>;
 }
@@ -736,8 +759,14 @@ export function drizzleRealizedPnlAdapter(injectedDb?: DatabaseClient | null): R
     // an explicit transaction per Mike's request (a single multi-row INSERT is
     // already atomic as one statement, but this keeps the write path explicit
     // and gives future additions to this write a shared transaction to join).
-    async insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void> {
+    async insertMatches(
+      userId: string,
+      matches: RealizedTradeMatch[],
+      meta?: RealizedPnlWriteMeta
+    ): Promise<void> {
       if (matches.length === 0) return;
+      const source: RealizedPnlSource = meta?.source ?? "legacy_paper";
+      const accountId = meta?.accountId ?? null;
       await db.transaction(async (tx) => {
         await tx
           .insert(paperRealizedPnl)
@@ -752,7 +781,9 @@ export function drizzleRealizedPnlAdapter(injectedDb?: DatabaseClient | null): R
               sellFillTime: new Date(m.sellFillTime),
               realizedPnlTwd: String(m.realizedPnlTwd),
               buyOrderId: m.buyOrderId,
-              sellOrderId: m.sellOrderId
+              sellOrderId: m.sellOrderId,
+              source,
+              accountId
             }))
           )
           .onConflictDoNothing({
@@ -780,6 +811,8 @@ export function drizzleRealizedPnlAdapter(injectedDb?: DatabaseClient | null): R
         realizedPnlTwd: parseFloat(row.realizedPnlTwd),
         buyOrderId: row.buyOrderId,
         sellOrderId: row.sellOrderId,
+        source: row.source as RealizedPnlSource,
+        accountId: row.accountId ?? null,
         createdAt: row.createdAt.toISOString()
       }));
     }
@@ -798,13 +831,19 @@ function mapRealizedPnlAdapter(): RealizedPnlAdapter {
     async hasMatchesForSellOrder(sellOrderId: string): Promise<boolean> {
       return bySellOrder.has(sellOrderId);
     },
-    async insertMatches(userId: string, matches: RealizedTradeMatch[]): Promise<void> {
+    async insertMatches(
+      userId: string,
+      matches: RealizedTradeMatch[],
+      meta?: RealizedPnlWriteMeta
+    ): Promise<void> {
       if (matches.length === 0) return;
+      const source: RealizedPnlSource = meta?.source ?? "legacy_paper";
+      const accountId = meta?.accountId ?? null;
       for (const m of matches) {
         const pairKey = `${m.sellOrderId}::${m.buyOrderId}`;
         if (seenPairs.has(pairKey)) continue; // DO NOTHING equivalent
         seenPairs.add(pairKey);
-        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), ...m });
+        rows.push({ id: randomUUID(), createdAt: new Date().toISOString(), source, accountId, ...m });
       }
       for (const m of matches) bySellOrder.set(m.sellOrderId, userId);
     },
@@ -843,12 +882,18 @@ function getDefaultRealizedPnlAdapter(): RealizedPnlAdapter {
  *
  * Returns the matches that were (or would have been, if already recorded)
  * produced, for logging/testing convenience.
+ *
+ * `meta` is optional and additive — omit it (as order-driver.ts's legacy call
+ * site does) and rows persist as source='legacy_paper', accountId=null,
+ * unchanged from pre-2026-07-15 behaviour. The unified pipeline
+ * (broker/paper-broker.ts) passes { source: "unified_paper", accountId }.
  */
 export async function recordRealizedPnlForSell(
   sellOrder: OrderState,
   priorFilledOrders: readonly OrderState[],
   costRates: PaperCostRates = PAPER_COST_RATES,
-  adapter?: RealizedPnlAdapter | null
+  adapter?: RealizedPnlAdapter | null,
+  meta?: RealizedPnlWriteMeta
 ): Promise<RealizedTradeMatch[]> {
   if (sellOrder.intent.side !== "sell" || !sellOrder.fill) return [];
   const a = adapter ?? getDefaultRealizedPnlAdapter();
@@ -858,7 +903,7 @@ export async function recordRealizedPnlForSell(
 
   const matches = matchFifoSellAgainstPriorOrders(sellOrder, priorFilledOrders, costRates);
   if (matches.length > 0) {
-    await a.insertMatches(sellOrder.intent.userId, matches);
+    await a.insertMatches(sellOrder.intent.userId, matches, meta);
   }
   return matches;
 }
@@ -903,4 +948,37 @@ export function getRealizedPnlWriteFailureCount(): number {
 /** Test-only reset. */
 export function _resetRealizedPnlWriteFailureCountForTest(): void {
   _realizedPnlWriteFailureCount = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Zero-prior-fills sell detection (2026-07-15 Pete review on PR #1279, 🟡 #1)
+//
+// broker/paper-broker.ts's unified pipeline keeps its fill history in-memory,
+// persisted only via a fire-and-forget snapshot (paper-broker-store.ts's
+// persistAccountAsync()) — if that snapshot write never completed before a
+// process restart, a subsequent sell of that now-invisible position produces
+// zero prior fills to FIFO-match against. That is silently indistinguishable
+// from a genuinely intentional short sale (both produce 0 matched trades, 0
+// ledger rows) unless something logs the zero-prior-fills case specifically.
+// This counter (+ a console.warn at the call site, see paper-broker.ts) is
+// the minimal "at least greppable" detection Pete asked for — mirrors the
+// write-failure counter above exactly, surfaced additively on the same
+// GET /api/v1/paper/health/detail block.
+// ---------------------------------------------------------------------------
+
+let _realizedPnlZeroPriorFillsSellCount = 0;
+
+/** Called from broker/paper-broker.ts when a sell's priorFills list is empty. */
+export function recordRealizedPnlZeroPriorFillsSell(): void {
+  _realizedPnlZeroPriorFillsSellCount += 1;
+}
+
+/** Read path for GET /api/v1/paper/health/detail. */
+export function getRealizedPnlZeroPriorFillsSellCount(): number {
+  return _realizedPnlZeroPriorFillsSellCount;
+}
+
+/** Test-only reset. */
+export function _resetRealizedPnlZeroPriorFillsSellCountForTest(): void {
+  _realizedPnlZeroPriorFillsSellCount = 0;
 }

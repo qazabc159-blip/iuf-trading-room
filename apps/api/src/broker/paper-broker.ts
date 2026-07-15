@@ -21,6 +21,13 @@ import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
 
 import { getMarketDataDecisionSummary } from "../market-data.js";
 import { getLastCloses } from "../quote-last-close-store.js";
+import {
+  PAPER_COST_RATES,
+  recordRealizedPnlForSell,
+  recordRealizedPnlWriteFailure,
+  recordRealizedPnlZeroPriorFillsSell,
+  type OrderState as RealizedPnlOrderState
+} from "../domain/trading/paper-ledger-db.js";
 import { appendExecutionEvent } from "./execution-events-store.js";
 import type { ExecutionGateResult } from "./execution-gate.js";
 import { validateOrderTypeMatrix } from "./order-rules.js";
@@ -806,6 +813,149 @@ export async function placePaperOrder(input: {
   return order;
 }
 
+// ---------------------------------------------------------------------------
+// Realized-P&L ledger (migration 0058/0059) — unified pipeline write path.
+//
+// Reuses the exact same FIFO matcher + persisted-ledger writer as the legacy
+// order-driver.ts flow (domain/trading/paper-ledger-db.ts's
+// recordRealizedPnlForSell() / computeFifoRealizedPnl()) — no duplicated
+// matching or cost-rate logic here, only the glue that maps this file's
+// Order/Fill shape into the shared OrderState shape.
+//
+// 2026-07-15: closes the gap Bruce's E2E found
+// (reports/sprint_2026_07_15/PAPER_REALIZED_PNL_E2E_2026_07_15.md) — orders
+// placed through the unified POST /api/v1/trading/orders pipeline (the path
+// the /desk-exact trading-desk UI actually uses) never reached the ledger;
+// only the legacy POST /api/v1/paper/submit path did.
+// ---------------------------------------------------------------------------
+
+function toRealizedPnlOrderState(
+  session: AppSession,
+  order: Order,
+  fill: Fill
+): RealizedPnlOrderState {
+  return {
+    intent: {
+      id: order.id,
+      idempotencyKey: order.clientOrderId,
+      symbol: order.symbol,
+      side: order.side,
+      orderType: order.type,
+      qty: fill.quantity,
+      quantity_unit: "SHARE",
+      price: order.price,
+      userId: session.user.id,
+      status: "FILLED",
+      reason: order.reason,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt
+    },
+    fill: {
+      fillQty: fill.quantity,
+      fillPrice: fill.price,
+      fillTime: new Date(fill.timestamp)
+    }
+  };
+}
+
+/**
+ * Persist the FIFO-matched realized P&L produced by a sell fill that just
+ * happened in this account's unified paper-broker state. Fail-open (mirrors
+ * order-driver.ts's driveOrder() hook exactly) — a ledger-write hiccup must
+ * never block the fill itself.
+ *
+ * `priorFills` MUST already be scoped to the same accountId as `sellOrder` —
+ * this function does not filter by account itself. fillOrder() below sources
+ * `priorFills` from a single PaperAccountState's own fills/orders maps, which
+ * are already per-account by construction (getOrCreateAccount(session,
+ * accountId)), so a sell in one paper account can never FIFO-match against
+ * buy lots held in a different account (2026-07-15 dispatch requirement —
+ * migration 0059's accountId column makes this externally auditable via SQL).
+ *
+ * Exported (not inlined in fillOrder()) so this exact glue is directly unit-
+ * testable without a full placePaperOrder() round trip (which needs live
+ * market-data quotes — out of lane to mock here).
+ */
+export async function recordUnifiedRealizedPnlForSell(
+  session: AppSession,
+  sellOrder: Order,
+  sellFill: Fill,
+  priorFills: readonly { order: Order; fill: Fill }[]
+): Promise<void> {
+  if (sellOrder.side !== "sell") return;
+  // 2026-07-15 Pete review: zero prior fills is indistinguishable from a
+  // legitimate short sale unless logged/counted separately from the normal
+  // "matched 0 lots" case — see paper-ledger-db.ts's doc comment on this
+  // counter for the specific in-memory-state-loss scenario it detects.
+  if (priorFills.length === 0) {
+    console.warn(
+      `[paper-broker] sell ${sellOrder.id} (${sellOrder.symbol}, account ${sellOrder.accountId}) has zero prior fills in this account — either a legitimate short sale or lost in-memory paper-broker state after a restart. Realized P&L for this sell will show 0 matched lots.`
+    );
+    recordRealizedPnlZeroPriorFillsSell();
+  }
+  try {
+    const sellState = toRealizedPnlOrderState(session, sellOrder, sellFill);
+    const priorStates = priorFills.map(({ order, fill }) =>
+      toRealizedPnlOrderState(session, order, fill)
+    );
+    await recordRealizedPnlForSell(sellState, priorStates, PAPER_COST_RATES, undefined, {
+      source: "unified_paper",
+      accountId: sellOrder.accountId
+    });
+  } catch (err) {
+    console.error(
+      `[paper-broker] failed to persist realized P&L for sell ${sellOrder.id}:`,
+      err
+    );
+    recordRealizedPnlWriteFailure();
+  }
+}
+
+/**
+ * List every fill across every account this session's workspace has traded
+ * through the unified pipeline, converted into the same OrderState shape the
+ * legacy ledger uses.
+ *
+ * 2026-07-15 Pete review (PR #1279 🔴 #1): the ledger write path
+ * (recordUnifiedRealizedPnlForSell above) was wired first, but
+ * GET /api/v1/paper/portfolio and GET /api/v1/paper/fills (server.ts) still
+ * only read the legacy paper_orders table — a desk-exact (unified) buy+sell
+ * round trip produced a nonzero /paper/realized row with zero corresponding
+ * position/cash/fill anywhere else, violating "帳對得起本金". server.ts now
+ * merges this function's output with the legacy listOrders() result before
+ * computing positions/fills/live-FIFO, so all three endpoints reconcile for
+ * any single-pipeline (all-legacy or all-unified) trade sequence.
+ *
+ * Known residual gap (disclosed, not fixed here — out of this PR's scope):
+ * if a user interleaves BOTH pipelines for the SAME symbol (e.g. buys via
+ * legacy /paper/submit, then sells via unified /desk-exact), the live
+ * /paper/portfolio recompute below correctly FIFO-matches across both
+ * (this function's output is merged with legacy orders before computing),
+ * but the *persisted* /paper/realized ledger row for that sell was written
+ * at fill-time scoped to only ONE pipeline's prior fills (each pipeline's
+ * write-time hook only sees its own history) — so a genuinely
+ * cross-pipeline trade sequence can still show a persisted ledger total
+ * that differs from the live portfolio recompute. In practice this requires
+ * a user to hit both /paper/submit and /desk-exact for the same symbol,
+ * which the current product surface doesn't really invite (only automated
+ * smoke/e2e scripts call /paper/submit directly).
+ *
+ * Read-only, no side effects.
+ */
+export async function listUnifiedFillsAsOrderStates(
+  session: AppSession
+): Promise<RealizedPnlOrderState[]> {
+  const ws = await ensureWorkspaceHydrated(session);
+  const result: RealizedPnlOrderState[] = [];
+  for (const state of ws.values()) {
+    for (const fill of state.fills) {
+      const order = state.orders.get(fill.orderId);
+      if (order) result.push(toRealizedPnlOrderState(session, order, fill));
+    }
+  }
+  return result;
+}
+
 async function fillOrder(args: {
   session: AppSession;
   order: Order;
@@ -873,6 +1023,20 @@ async function fillOrder(args: {
 
   state.orders.set(args.order.id, updated);
   state.lastEventAt = args.now;
+
+  // Realized-P&L ledger (migration 0058/0059): a sell fill may close one or
+  // more FIFO buy lots for this account. Only fires once the order is fully
+  // FILLED (mirrors order-driver.ts's driveOrder() hook, which also only
+  // fires on the FILLED transition, not on a partial fill).
+  if (updated.status === "filled" && updated.side === "sell") {
+    const priorFills: { order: Order; fill: Fill }[] = [];
+    for (const f of state.fills) {
+      if (f.id === fill.id) continue; // exclude the fill we just added
+      const priorOrder = state.orders.get(f.orderId);
+      if (priorOrder) priorFills.push({ order: priorOrder, fill: f });
+    }
+    await recordUnifiedRealizedPnlForSell(args.session, updated, fill, priorFills);
+  }
 
   // Fill itself already carries quoteContext (persisted on the record). The
   // event payload *is* the fill, so the timeline's asFill narrow picks it up
