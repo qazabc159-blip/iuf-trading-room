@@ -209,6 +209,33 @@ function settledErrorLabel<T>(result: Settled<T>) {
   return reason instanceof Error ? reason.message : String(reason ?? "unknown_error");
 }
 
+// 2026-07-17 P0 fix: none of apps/web/lib/api.ts's request()/requestRaw() pass
+// an AbortSignal, so a single stuck upstream call could hang this whole SSR
+// route indefinitely (prod incident: /api/ui-final-v031/market-intel hung
+// 70s+, iframe rendered blank — see reports/sprint_2026_07_17/
+// MARKET_INTEL_OUTAGE_RCA_2026_07_17.md). Promise.allSettled already treats a
+// rejected entry as "this source is unavailable" and falls back to
+// null/empty (see buildMarketIntelPayload below) — wrapping each call in a
+// timeout turns an indefinite hang into that same, already-handled rejection
+// path instead of widening the blast radius to a shared-helper-level change
+// under P0 time pressure. Does not cancel the underlying fetch (fetch()
+// itself would need the AbortSignal for that) — this only bounds how long
+// this route waits on it, which is what stops the iframe from hanging. Also
+// robust to the API service's own event loop being stalled (a plausible
+// cause per the RCA): this timer runs in the web service's separate process,
+// so it fires on schedule even if the API process's own AbortSignal timers
+// are running late.
+const MARKET_INTEL_UPSTREAM_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
 // Strip publisher boilerplate tails from scraped headlines, e.g.
 // "...｜新聞快訊｜豐雲學堂 - sinotrade.com.tw" (6/10 audit: headline 帶來源站尾巴).
 function cleanHeadline(raw: string): string {
@@ -306,11 +333,15 @@ function mapInstitutional(raw: MarketInstitutionalSummary) {
 
 async function buildMarketIntelPayload() {
   const [newsResult, announcementsResult, finMindResult, heatmapResult, institutionalResult] = await Promise.allSettled([
-    getNewsTop10(),
-    getMarketIntelAnnouncements({ days: 30, limit: 20, scope: "market" }),
-    getFinMindStatus(),
-    getTwseMarketHeatmap(),
-    getMarketInstitutionalSummary(),
+    withTimeout(getNewsTop10(), MARKET_INTEL_UPSTREAM_TIMEOUT_MS, "getNewsTop10"),
+    withTimeout(
+      getMarketIntelAnnouncements({ days: 30, limit: 20, scope: "market" }),
+      MARKET_INTEL_UPSTREAM_TIMEOUT_MS,
+      "getMarketIntelAnnouncements"
+    ),
+    withTimeout(getFinMindStatus(), MARKET_INTEL_UPSTREAM_TIMEOUT_MS, "getFinMindStatus"),
+    withTimeout(getTwseMarketHeatmap(), MARKET_INTEL_UPSTREAM_TIMEOUT_MS, "getTwseMarketHeatmap"),
+    withTimeout(getMarketInstitutionalSummary(), MARKET_INTEL_UPSTREAM_TIMEOUT_MS, "getMarketInstitutionalSummary"),
   ]);
 
   const news = newsResult.status === "fulfilled" ? newsResult.value.data : null;
