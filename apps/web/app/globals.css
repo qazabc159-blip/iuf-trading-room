@@ -16354,3 +16354,507 @@ body:has(.mobile-route) .header-dock-drawer {
   opacity: 0.84;
 }
 /* ── end internal control sidebar section ────────────────────────── */
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   /login v3 — byte-exact port of design draft (2026-07-16, Jim)
+   Source: reports/design_redesign_20260716/login_redesign_v1.html
+   Everything below is scoped under `.authv3-login` (the route's outer div).
+   Custom properties are declared on that same selector so they cannot leak
+   into / collide with the app-wide `:root` tokens (verified `--mono` etc.
+   are heavily reused elsewhere — these use an `--av3-` prefix instead).
+   Inner class names are also `av3-`-prefixed as defense-in-depth against
+   any bare-name collision (`.row` already exists bare elsewhere in this
+   file). This supersedes the 2026-07-15 `.login-signin` block for the
+   /login route; that older block is left untouched (now unused by /login,
+   may still be referenced by nothing) per surgical-changes convention —
+   no unrelated deletions in this PR.
+   ══════════════════════════════════════════════════════════════════════════ */
+.authv3-login {
+  --av3-black: #04060a;
+  --av3-panel: #0b0f16;
+  --av3-panel2: #080b11;
+  --av3-line: #1b2432;
+  --av3-line2: #26324a;
+  --av3-amber: #c8943f;
+  --av3-amber-hi: #e2b85c;
+  --av3-amber-dim: #6f5c37;
+  --av3-amber-ink: #0a0d12;
+  --av3-ink: #aab4c2;
+  --av3-ink-hi: #cdd6e2;
+  --av3-ink-dim: #5d6675;
+  --av3-ink-faint: #3f4a5a;
+  --av3-up: #e63946;
+  --av3-down: #2ecc71;
+  --av3-mono: "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --av3-cjk: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  color: var(--av3-ink);
+  font-family: var(--av3-mono);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+.authv3-login.login-route {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0;
+  background: var(--av3-black);
+}
+.authv3-login * { box-sizing: border-box; min-width: 0; }
+.authv3-login::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, .12) 2px 3px);
+  mix-blend-mode: multiply;
+  opacity: .42;
+}
+.authv3-login .av3-ambient {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(120% 65% at 30% -8%, rgba(200, 148, 63, .07), transparent 55%),
+    radial-gradient(90% 60% at 100% 110%, rgba(46, 204, 113, .03), transparent 60%);
+}
+.authv3-login .av3-bggrid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image:
+    linear-gradient(rgba(38, 50, 74, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38, 50, 74, .16) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+          mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+}
+
+.authv3-login .av3-mast {
+  display: flex; align-items: center; border-bottom: 1px solid var(--av3-line2);
+  background: rgba(10, 15, 23, .72); backdrop-filter: blur(2px); height: 48px; padding: 0 20px; gap: 12px;
+  position: relative; z-index: 20;
+}
+.authv3-login .av3-mast .av3-glyph {
+  width: 23px; height: 23px; border: 1.5px solid var(--av3-amber); color: var(--av3-amber-hi);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  box-shadow: inset 0 0 8px rgba(200, 148, 63, .2); position: relative; flex: none; font-family: var(--av3-mono);
+}
+.authv3-login .av3-mast .av3-glyph i { position: absolute; right: -1.5px; bottom: -1.5px; width: 6px; height: 6px; background: var(--av3-amber); }
+.authv3-login .av3-mast .av3-wordmark { display: flex; flex-direction: column; gap: 1px; }
+.authv3-login .av3-mast .av3-wordmark b { color: var(--av3-amber-hi); font-size: 12px; letter-spacing: .26em; font-weight: 700; }
+.authv3-login .av3-mast .av3-wordmark small { color: var(--av3-ink-faint); font-size: 9px; letter-spacing: .2em; font-family: var(--av3-cjk); }
+.authv3-login .av3-mast .av3-spacer { flex: 1; }
+.authv3-login .av3-mast .av3-status { display: flex; align-items: center; gap: 14px; }
+.authv3-login .av3-mast .av3-status .av3-clk {
+  font-family: var(--av3-mono); font-size: 12px; color: var(--av3-ink); letter-spacing: .1em;
+  font-variant-numeric: tabular-nums; display: flex; flex-direction: column; text-align: right; gap: 1px;
+}
+.authv3-login .av3-mast .av3-status .av3-clk small { font-family: var(--av3-cjk); font-size: 8px; color: var(--av3-ink-faint); letter-spacing: .18em; }
+.authv3-login .av3-mast .av3-status .av3-beta {
+  font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-amber-dim); letter-spacing: .16em;
+  border: 1px solid var(--av3-amber-dim); padding: 4px 9px; white-space: nowrap;
+}
+
+.authv3-login .av3-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 56px 24px; position: relative; z-index: 10; }
+
+.authv3-login .av3-console {
+  width: 100%; max-width: 1080px; position: relative;
+  border: 1px solid var(--av3-line2); background: linear-gradient(180deg, rgba(11, 15, 22, .86), rgba(6, 9, 14, .92));
+  box-shadow: 0 0 0 1px #05070b, 0 40px 120px rgba(0, 0, 0, .6), inset 0 0 120px rgba(0, 0, 0, .5);
+}
+.authv3-login .av3-console::before, .authv3-login .av3-console::after { content: ""; position: absolute; width: 18px; height: 18px; pointer-events: none; }
+.authv3-login .av3-console::before { top: -1px; left: -1px; border-top: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-login .av3-console::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-login .av3-corner { position: absolute; width: 18px; height: 18px; pointer-events: none; z-index: 2; }
+.authv3-login .av3-corner.tr { top: -1px; right: -1px; border-top: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-login .av3-corner.bl { bottom: -1px; left: -1px; border-bottom: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-login .av3-console-bar {
+  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 16px;
+  border-bottom: 1px solid var(--av3-line); background: rgba(10, 14, 21, .6);
+}
+.authv3-login .av3-console-bar .av3-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--av3-down); box-shadow: 0 0 8px var(--av3-down); flex: none; }
+.authv3-login .av3-console-bar .av3-lbl { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); letter-spacing: .14em; }
+.authv3-login .av3-console-bar .av3-rt { margin-left: auto; font-family: var(--av3-mono); font-size: 9px; color: var(--av3-ink-faint); letter-spacing: .18em; }
+
+.authv3-login .av3-grille { display: grid; grid-template-columns: 1fr 452px; }
+
+.authv3-login .av3-brandpane { padding: 52px 52px 46px; border-right: 1px solid var(--av3-line); position: relative; overflow: hidden; }
+.authv3-login .av3-brandpane::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(80% 55% at 12% 8%, rgba(200, 148, 63, .06), transparent 60%);
+}
+.authv3-login .av3-boot { font-family: var(--av3-mono); font-size: 10px; color: var(--av3-amber); letter-spacing: .28em; display: flex; align-items: center; gap: 9px; position: relative; }
+.authv3-login .av3-boot .av3-tick { width: 22px; height: 1px; background: var(--av3-amber-dim); }
+.authv3-login .av3-brandpane h1 {
+  font-family: var(--av3-cjk); font-weight: 700; color: var(--av3-ink-hi);
+  font-size: 60px; line-height: 1.02; letter-spacing: .04em; margin: 24px 0 0; position: relative;
+  text-shadow: 0 0 32px rgba(200, 148, 63, .14);
+}
+.authv3-login .av3-brandpane h1 .av3-em { color: var(--av3-amber-hi); text-shadow: 0 0 26px rgba(226, 184, 92, .34); }
+.authv3-login .av3-brandpane .av3-lede {
+  font-family: var(--av3-cjk); font-size: 13.5px; color: var(--av3-ink); line-height: 1.85;
+  letter-spacing: .05em; margin: 22px 0 0; max-width: 30em; position: relative;
+}
+.authv3-login .av3-brandpane .av3-lede b { color: var(--av3-ink-hi); font-weight: 600; }
+.authv3-login .av3-brandpane .av3-idline {
+  position: relative; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--av3-line);
+  display: flex; gap: 34px; flex-wrap: wrap;
+}
+.authv3-login .av3-brandpane .av3-idline .av3-cell { display: flex; flex-direction: column; gap: 4px; }
+.authv3-login .av3-brandpane .av3-idline .av3-cell .av3-k { font-family: var(--av3-cjk); font-size: 9px; color: var(--av3-ink-faint); letter-spacing: .16em; }
+.authv3-login .av3-brandpane .av3-idline .av3-cell .av3-v { font-family: var(--av3-mono); font-size: 12px; color: var(--av3-amber-dim); letter-spacing: .12em; }
+.authv3-login .av3-regmarks { position: absolute; bottom: 16px; right: 18px; font-family: var(--av3-mono); font-size: 8px; color: var(--av3-ink-faint); letter-spacing: .24em; opacity: .6; }
+
+.authv3-login .av3-authpane { display: flex; flex-direction: column; }
+.authv3-login .av3-auth { padding: 38px 44px 30px; flex: 1; display: flex; flex-direction: column; }
+.authv3-login .av3-auth-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--av3-line);
+}
+.authv3-login .av3-auth-head b { font-family: var(--av3-cjk); font-size: 15px; color: var(--av3-ink-hi); font-weight: 700; letter-spacing: .16em; }
+.authv3-login .av3-auth-head small { font-family: var(--av3-mono); font-size: 8.5px; color: var(--av3-ink-faint); letter-spacing: .24em; }
+
+.authv3-login .av3-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.authv3-login .av3-field > .av3-lab { font-family: var(--av3-cjk); font-size: 10.5px; color: var(--av3-ink-dim); letter-spacing: .12em; }
+.authv3-login .av3-field .av3-box { position: relative; }
+.authv3-login .av3-field input {
+  background: #05080d; border: 1px solid var(--av3-line2); color: var(--av3-ink-hi);
+  font-family: var(--av3-mono); font-size: 14px; letter-spacing: .02em; padding: 12px 14px; width: 100%;
+  transition: border-color .15s, box-shadow .15s;
+}
+.authv3-login .av3-field input::placeholder { color: var(--av3-ink-faint); font-family: var(--av3-cjk); font-size: 12.5px; letter-spacing: 0; }
+.authv3-login .av3-field input:focus { outline: none; border-color: var(--av3-amber); box-shadow: 0 0 0 1px rgba(200, 148, 63, .4), 0 0 18px rgba(200, 148, 63, .1); }
+
+.authv3-login .av3-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 22px; }
+.authv3-login .av3-check { display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; }
+.authv3-login .av3-check input {
+  appearance: none; -webkit-appearance: none; width: 15px; height: 15px; border: 1px solid var(--av3-line2);
+  background: #05080d; flex: none; position: relative; cursor: pointer; transition: border-color .15s;
+}
+.authv3-login .av3-check input:checked { border-color: var(--av3-amber); }
+.authv3-login .av3-check input:checked::after { content: ""; position: absolute; inset: 3px; background: var(--av3-amber); }
+.authv3-login .av3-check input:focus-visible { outline: 2px solid var(--av3-amber); outline-offset: 2px; }
+.authv3-login .av3-check span { font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink); letter-spacing: .04em; }
+
+.authv3-login .av3-err {
+  border: 1px solid rgba(230, 57, 70, .5); background: rgba(230, 57, 70, .08); color: #f4a7ad;
+  font-family: var(--av3-cjk); font-size: 11px; letter-spacing: .03em; padding: 10px 13px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 9px;
+}
+.authv3-login .av3-err::before {
+  content: "!"; font-family: var(--av3-mono); font-weight: 700; color: var(--av3-up);
+  width: 16px; height: 16px; border: 1px solid var(--av3-up); display: flex; align-items: center; justify-content: center; flex: none;
+}
+
+.authv3-login .av3-submit {
+  background: linear-gradient(180deg, var(--av3-amber-hi), var(--av3-amber)); color: var(--av3-amber-ink);
+  font-family: var(--av3-cjk); font-size: 14px; font-weight: 700; letter-spacing: .24em; text-indent: .24em;
+  border: none; padding: 14px; cursor: pointer; width: 100%; position: relative;
+  transition: filter .15s, transform .05s; box-shadow: 0 0 24px rgba(200, 148, 63, .14);
+}
+.authv3-login .av3-submit:hover { filter: brightness(1.08); }
+.authv3-login .av3-submit:active { transform: translateY(1px); }
+.authv3-login .av3-submit:disabled { filter: grayscale(.5) brightness(.7); cursor: wait; }
+.authv3-login .av3-submit:focus-visible { outline: 2px solid var(--av3-amber-hi); outline-offset: 3px; }
+
+.authv3-login .av3-register {
+  border-top: 1px solid var(--av3-line); background: linear-gradient(180deg, rgba(8, 12, 18, .5), rgba(6, 9, 14, .7));
+  padding: 22px 44px 26px; display: flex; align-items: center; justify-content: space-between; gap: 18px;
+}
+.authv3-login .av3-register .av3-txt b { display: block; font-family: var(--av3-cjk); font-size: 12.5px; color: var(--av3-ink-hi); font-weight: 600; letter-spacing: .08em; }
+.authv3-login .av3-register .av3-txt span { display: block; font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); margin-top: 4px; letter-spacing: .05em; }
+.authv3-login .av3-register a.av3-cta {
+  flex: none; font-family: var(--av3-cjk); font-size: 12.5px; font-weight: 700; letter-spacing: .14em;
+  color: var(--av3-amber-hi); text-decoration: none; border: 1px solid var(--av3-amber);
+  padding: 11px 20px; transition: background .15s, color .15s, box-shadow .15s; white-space: nowrap;
+}
+.authv3-login .av3-register a.av3-cta:hover { background: var(--av3-amber); color: var(--av3-amber-ink); box-shadow: 0 0 20px rgba(200, 148, 63, .22); }
+.authv3-login .av3-register a.av3-cta:focus-visible { outline: 2px solid var(--av3-amber-hi); outline-offset: 3px; }
+
+.authv3-login .av3-footband { border-top: 1px solid var(--av3-line2); background: rgba(7, 11, 17, .8); position: relative; z-index: 10; }
+.authv3-login .av3-footband-inner {
+  max-width: 1080px; margin: 0 auto; padding: 13px 24px; display: flex; justify-content: space-between;
+  align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.authv3-login .av3-footband-inner span { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-faint); letter-spacing: .14em; }
+.authv3-login .av3-footband-inner span b { color: var(--av3-amber-dim); font-weight: 600; }
+
+@media (max-width: 820px) {
+  .authv3-login .av3-stage { padding: 26px 14px 34px; }
+  .authv3-login .av3-grille { grid-template-columns: 1fr; }
+  .authv3-login .av3-brandpane { order: 2; border-right: none; border-top: 1px solid var(--av3-line); padding: 34px 26px 40px; }
+  .authv3-login .av3-authpane { order: 1; }
+  .authv3-login .av3-brandpane h1 { font-size: 38px; }
+  .authv3-login .av3-brandpane .av3-lede { font-size: 12.5px; }
+  .authv3-login .av3-brandpane .av3-idline { gap: 22px; }
+  .authv3-login .av3-auth { padding: 30px 24px 24px; }
+  .authv3-login .av3-register { padding: 20px 24px 22px; flex-direction: column; align-items: stretch; text-align: center; }
+  .authv3-login .av3-register a.av3-cta { text-align: center; }
+  .authv3-login .av3-mast .av3-status .av3-clk { display: none; }
+  .authv3-login .av3-footband-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   /register v3 — byte-exact port of design draft (2026-07-16, Jim)
+   Source: reports/design_redesign_20260716/register_redesign_v1.html
+   Same scoping strategy as `.authv3-login` above: custom properties and all
+   inner selectors live under `.authv3-register` only. Kept as an
+   independent, fully self-contained block (not shared with `.authv3-login`)
+   even though the two pages look similar — the draft's per-page values
+   differ in small but real ways (h1 size, lede size/max-width, field
+   spacing, console-bar dot color), so merging would risk subtle drift from
+   the approved artifact. This does not touch the pre-existing shared
+   `.login-shell`/`.login-brand`/`.login-panel`/… base rules above (used by
+   nothing now that both /login and /register render on their own `av3-`
+   markup, but left in place per surgical-changes convention).
+   ══════════════════════════════════════════════════════════════════════════ */
+.authv3-register {
+  --av3-black: #04060a;
+  --av3-panel: #0b0f16;
+  --av3-panel2: #080b11;
+  --av3-line: #1b2432;
+  --av3-line2: #26324a;
+  --av3-amber: #c8943f;
+  --av3-amber-hi: #e2b85c;
+  --av3-amber-dim: #6f5c37;
+  --av3-amber-ink: #0a0d12;
+  --av3-ink: #aab4c2;
+  --av3-ink-hi: #cdd6e2;
+  --av3-ink-dim: #5d6675;
+  --av3-ink-faint: #3f4a5a;
+  --av3-up: #e63946;
+  --av3-down: #2ecc71;
+  --av3-mono: "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --av3-cjk: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  color: var(--av3-ink);
+  font-family: var(--av3-mono);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+.authv3-register.login-route {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0;
+  background: var(--av3-black);
+}
+.authv3-register * { box-sizing: border-box; min-width: 0; }
+.authv3-register::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, .12) 2px 3px);
+  mix-blend-mode: multiply;
+  opacity: .42;
+}
+.authv3-register .av3-ambient {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(120% 65% at 30% -8%, rgba(200, 148, 63, .07), transparent 55%),
+    radial-gradient(90% 60% at 100% 110%, rgba(46, 204, 113, .03), transparent 60%);
+}
+.authv3-register .av3-bggrid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image:
+    linear-gradient(rgba(38, 50, 74, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38, 50, 74, .16) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+          mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+}
+
+.authv3-register .av3-mast {
+  display: flex; align-items: center; border-bottom: 1px solid var(--av3-line2);
+  background: rgba(10, 15, 23, .72); height: 48px; padding: 0 20px; gap: 12px; position: relative; z-index: 20;
+}
+.authv3-register .av3-mast .av3-glyph {
+  width: 23px; height: 23px; border: 1.5px solid var(--av3-amber); color: var(--av3-amber-hi);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  box-shadow: inset 0 0 8px rgba(200, 148, 63, .2); position: relative; flex: none; font-family: var(--av3-mono);
+}
+.authv3-register .av3-mast .av3-glyph i { position: absolute; right: -1.5px; bottom: -1.5px; width: 6px; height: 6px; background: var(--av3-amber); }
+.authv3-register .av3-mast .av3-wordmark { display: flex; flex-direction: column; gap: 1px; }
+.authv3-register .av3-mast .av3-wordmark b { color: var(--av3-amber-hi); font-size: 12px; letter-spacing: .26em; font-weight: 700; }
+.authv3-register .av3-mast .av3-wordmark small { color: var(--av3-ink-faint); font-size: 9px; letter-spacing: .2em; font-family: var(--av3-cjk); }
+.authv3-register .av3-mast .av3-spacer { flex: 1; }
+.authv3-register .av3-mast .av3-beta {
+  font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-amber-dim); letter-spacing: .16em;
+  border: 1px solid var(--av3-amber-dim); padding: 4px 9px; white-space: nowrap;
+}
+
+.authv3-register .av3-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 56px 24px; position: relative; z-index: 10; }
+
+.authv3-register .av3-console {
+  width: 100%; max-width: 1080px; position: relative;
+  border: 1px solid var(--av3-line2); background: linear-gradient(180deg, rgba(11, 15, 22, .86), rgba(6, 9, 14, .92));
+  box-shadow: 0 0 0 1px #05070b, 0 40px 120px rgba(0, 0, 0, .6), inset 0 0 120px rgba(0, 0, 0, .5);
+}
+.authv3-register .av3-console::before, .authv3-register .av3-console::after { content: ""; position: absolute; width: 18px; height: 18px; pointer-events: none; }
+.authv3-register .av3-console::before { top: -1px; left: -1px; border-top: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-register .av3-console::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-register .av3-corner { position: absolute; width: 18px; height: 18px; pointer-events: none; z-index: 2; }
+.authv3-register .av3-corner.tr { top: -1px; right: -1px; border-top: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-register .av3-corner.bl { bottom: -1px; left: -1px; border-bottom: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-register .av3-console-bar {
+  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 16px;
+  border-bottom: 1px solid var(--av3-line); background: rgba(10, 14, 21, .6);
+}
+.authv3-register .av3-console-bar .av3-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--av3-amber); box-shadow: 0 0 8px var(--av3-amber); flex: none; }
+.authv3-register .av3-console-bar .av3-lbl { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); letter-spacing: .14em; }
+.authv3-register .av3-console-bar .av3-rt { margin-left: auto; font-family: var(--av3-mono); font-size: 9px; color: var(--av3-ink-faint); letter-spacing: .18em; }
+
+.authv3-register .av3-grille { display: grid; grid-template-columns: 1fr 452px; }
+
+.authv3-register .av3-brandpane { padding: 48px 52px 44px; border-right: 1px solid var(--av3-line); position: relative; overflow: hidden; }
+.authv3-register .av3-brandpane::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(80% 55% at 12% 8%, rgba(200, 148, 63, .06), transparent 60%);
+}
+.authv3-register .av3-boot { font-family: var(--av3-mono); font-size: 10px; color: var(--av3-amber); letter-spacing: .26em; display: flex; align-items: center; gap: 9px; position: relative; }
+.authv3-register .av3-boot .av3-tick { width: 22px; height: 1px; background: var(--av3-amber-dim); }
+.authv3-register .av3-brandpane h1 {
+  font-family: var(--av3-cjk); font-weight: 700; color: var(--av3-ink-hi);
+  font-size: 44px; line-height: 1.1; letter-spacing: .03em; margin: 22px 0 0; position: relative;
+  text-shadow: 0 0 32px rgba(200, 148, 63, .14);
+}
+.authv3-register .av3-brandpane h1 .av3-em { color: var(--av3-amber-hi); text-shadow: 0 0 26px rgba(226, 184, 92, .34); }
+.authv3-register .av3-brandpane .av3-lede {
+  font-family: var(--av3-cjk); font-size: 13px; color: var(--av3-ink); line-height: 1.85;
+  letter-spacing: .04em; margin: 20px 0 0; max-width: 32em; position: relative;
+}
+.authv3-register .av3-brandpane .av3-lede b { color: var(--av3-ink-hi); font-weight: 600; }
+.authv3-register .av3-rulecard { position: relative; margin-top: 28px; border: 1px solid var(--av3-line); background: rgba(8, 12, 18, .5); padding: 16px 18px; }
+.authv3-register .av3-rulecard .av3-rc-h { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-amber); letter-spacing: .14em; font-weight: 700; margin-bottom: 11px; }
+.authv3-register .av3-rulecard ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.authv3-register .av3-rulecard li { font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink-dim); letter-spacing: .04em; padding-left: 18px; position: relative; line-height: 1.5; }
+.authv3-register .av3-rulecard li::before { content: "—"; position: absolute; left: 0; color: var(--av3-amber-dim); }
+.authv3-register .av3-back {
+  position: relative; margin-top: 26px; display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink-dim); text-decoration: none; letter-spacing: .06em;
+}
+.authv3-register .av3-back:hover { color: var(--av3-amber-hi); }
+.authv3-register .av3-back .av3-ar { font-family: var(--av3-mono); }
+.authv3-register .av3-regmarks { position: absolute; bottom: 14px; right: 18px; font-family: var(--av3-mono); font-size: 8px; color: var(--av3-ink-faint); letter-spacing: .24em; opacity: .6; }
+
+.authv3-register .av3-regpane { display: flex; flex-direction: column; }
+.authv3-register .av3-reg-head { display: flex; align-items: center; gap: 11px; padding: 22px 40px 18px; border-bottom: 1px solid var(--av3-line); }
+.authv3-register .av3-reg-head .av3-tab {
+  display: inline-flex; align-items: center; gap: 7px; height: 22px; background: var(--av3-amber); color: var(--av3-amber-ink);
+  font-family: var(--av3-cjk); font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 0 16px 0 10px;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 100%, 0 100%); white-space: nowrap;
+}
+.authv3-register .av3-reg-head .av3-tab .av3-cd { font-family: var(--av3-mono); font-size: 8px; letter-spacing: .14em; color: rgba(10, 13, 18, .55); }
+.authv3-register .av3-reg-head .av3-badge { margin-left: auto; font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-amber-hi); border: 1px solid var(--av3-amber-dim); padding: 4px 10px; letter-spacing: .1em; white-space: nowrap; }
+.authv3-register .av3-reg-body { padding: 26px 40px 30px; flex: 1; display: flex; flex-direction: column; }
+
+.authv3-register .av3-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.authv3-register .av3-field > .av3-lab { font-family: var(--av3-cjk); font-size: 10.5px; color: var(--av3-ink-dim); letter-spacing: .12em; display: flex; align-items: baseline; gap: 7px; }
+.authv3-register .av3-field > .av3-lab .av3-hint { font-style: normal; font-family: var(--av3-mono); font-size: 8.5px; color: var(--av3-ink-faint); letter-spacing: .1em; }
+.authv3-register .av3-field input {
+  background: #05080d; border: 1px solid var(--av3-line2); color: var(--av3-ink-hi);
+  font-family: var(--av3-mono); font-size: 14px; letter-spacing: .02em; padding: 12px 14px; width: 100%;
+  transition: border-color .15s, box-shadow .15s;
+}
+.authv3-register .av3-field input::placeholder { color: var(--av3-ink-faint); font-family: var(--av3-cjk); font-size: 12px; letter-spacing: 0; }
+.authv3-register .av3-field input:focus { outline: none; border-color: var(--av3-amber); box-shadow: 0 0 0 1px rgba(200, 148, 63, .4), 0 0 18px rgba(200, 148, 63, .1); }
+.authv3-register .av3-field input.av3-bad { border-color: rgba(230, 57, 70, .5); }
+.authv3-register .av3-field input.av3-good { border-color: rgba(46, 204, 113, .45); }
+
+.authv3-register .av3-pwrules {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin: -4px 0 16px; padding: 11px 13px;
+  border: 1px solid var(--av3-line); background: rgba(8, 12, 18, .4);
+}
+.authv3-register .av3-pwrules .av3-r {
+  font-family: var(--av3-cjk); font-size: 10.5px; color: var(--av3-ink-faint); letter-spacing: .04em;
+  display: flex; align-items: center; gap: 8px; transition: color .15s;
+}
+.authv3-register .av3-pwrules .av3-r .av3-mk {
+  width: 13px; height: 13px; border: 1px solid var(--av3-ink-faint); border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: 9px; font-family: var(--av3-mono); color: transparent; transition: .15s;
+}
+.authv3-register .av3-pwrules .av3-r.av3-ok { color: var(--av3-down); }
+.authv3-register .av3-pwrules .av3-r.av3-ok .av3-mk { border-color: var(--av3-down); color: var(--av3-down); }
+
+.authv3-register .av3-err-persist {
+  font-family: var(--av3-cjk); font-size: 11px; letter-spacing: .03em; padding: 10px 13px; margin-bottom: 16px;
+  border: 1px solid var(--av3-line2); background: rgba(8, 12, 18, .4); color: var(--av3-ink-faint);
+  display: flex; align-items: center; gap: 9px; min-height: 38px; transition: .15s;
+}
+.authv3-register .av3-err-persist::before {
+  content: "i"; font-family: var(--av3-mono); font-weight: 700;
+  width: 16px; height: 16px; border: 1px solid currentColor; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; flex: none; font-size: 9px; opacity: .7;
+}
+.authv3-register .av3-err-persist.av3-on { border-color: rgba(230, 57, 70, .5); background: rgba(230, 57, 70, .08); color: #f4a7ad; }
+.authv3-register .av3-err-persist.av3-on::before { content: "!"; border-radius: 0; opacity: 1; }
+
+.authv3-register .av3-submit {
+  background: linear-gradient(180deg, var(--av3-amber-hi), var(--av3-amber)); color: var(--av3-amber-ink);
+  font-family: var(--av3-cjk); font-size: 14px; font-weight: 700; letter-spacing: .24em; text-indent: .24em;
+  border: none; padding: 14px; cursor: pointer; width: 100%; transition: filter .15s, transform .05s;
+  box-shadow: 0 0 24px rgba(200, 148, 63, .14);
+}
+.authv3-register .av3-submit:hover { filter: brightness(1.08); }
+.authv3-register .av3-submit:active { transform: translateY(1px); }
+.authv3-register .av3-submit:disabled { filter: grayscale(.5) brightness(.7); cursor: wait; }
+.authv3-register .av3-submit:focus-visible { outline: 2px solid var(--av3-amber-hi); outline-offset: 3px; }
+.authv3-register .av3-reg-foot { font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-ink-faint); letter-spacing: .04em; line-height: 1.6; margin-top: 14px; }
+
+/* ── State A：無邀請碼態，置中邀請制卡 ── */
+.authv3-register .av3-gate { padding: 56px 60px 60px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.authv3-register .av3-gate .av3-boot { margin-bottom: 22px; justify-content: center; }
+.authv3-register .av3-gate h1 {
+  font-family: var(--av3-cjk); font-weight: 700; color: var(--av3-ink-hi); font-size: 40px; line-height: 1.1;
+  letter-spacing: .04em; margin: 0; text-shadow: 0 0 30px rgba(200, 148, 63, .14);
+}
+.authv3-register .av3-gate h1 .av3-em { color: var(--av3-amber-hi); text-shadow: 0 0 26px rgba(226, 184, 92, .34); }
+.authv3-register .av3-gatecard {
+  margin-top: 34px; width: 100%; max-width: 520px; border: 1px solid var(--av3-line2);
+  background: linear-gradient(180deg, rgba(10, 14, 21, .7), rgba(6, 9, 14, .85)); padding: 32px 34px 30px; position: relative;
+}
+.authv3-register .av3-gatecard::before { content: ""; position: absolute; top: -1px; left: -1px; width: 14px; height: 14px; border-top: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-register .av3-gatecard::after { content: ""; position: absolute; bottom: -1px; right: -1px; width: 14px; height: 14px; border-bottom: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-register .av3-gatecard .av3-gh { font-family: var(--av3-cjk); font-size: 15px; font-weight: 700; color: var(--av3-amber-hi); letter-spacing: .14em; }
+.authv3-register .av3-gatecard .av3-gp { font-family: var(--av3-cjk); font-size: 13px; color: var(--av3-ink); line-height: 1.85; letter-spacing: .04em; margin: 16px 0 0; }
+.authv3-register .av3-gatecard .av3-fmt { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--av3-line); }
+.authv3-register .av3-gatecard .av3-fmt .av3-k { font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-ink-dim); letter-spacing: .1em; }
+.authv3-register .av3-gatecard .av3-fmt .av3-v {
+  font-family: var(--av3-mono); font-size: 11px; color: var(--av3-amber-dim); letter-spacing: .04em;
+  margin-top: 8px; word-break: break-all; background: #05080d; border: 1px solid var(--av3-line); padding: 9px 11px;
+}
+.authv3-register .av3-gatecard .av3-gcta {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 24px;
+  font-family: var(--av3-cjk); font-size: 12.5px; font-weight: 700; letter-spacing: .14em; color: var(--av3-amber-hi);
+  text-decoration: none; border: 1px solid var(--av3-amber); padding: 11px 22px; transition: .15s;
+}
+.authv3-register .av3-gatecard .av3-gcta:hover { background: var(--av3-amber); color: var(--av3-amber-ink); box-shadow: 0 0 20px rgba(200, 148, 63, .22); }
+
+.authv3-register .av3-footband { border-top: 1px solid var(--av3-line2); background: rgba(7, 11, 17, .8); position: relative; z-index: 10; }
+.authv3-register .av3-footband-inner {
+  max-width: 1080px; margin: 0 auto; padding: 13px 24px; display: flex; justify-content: space-between;
+  align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.authv3-register .av3-footband-inner span { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-faint); letter-spacing: .14em; }
+.authv3-register .av3-footband-inner span b { color: var(--av3-amber-dim); font-weight: 600; }
+
+@media (max-width: 820px) {
+  .authv3-register .av3-stage { padding: 26px 14px 34px; }
+  .authv3-register .av3-grille { grid-template-columns: 1fr; }
+  .authv3-register .av3-brandpane { order: 2; border-right: none; border-top: 1px solid var(--av3-line); padding: 32px 24px 40px; }
+  .authv3-register .av3-regpane { order: 1; }
+  .authv3-register .av3-brandpane h1 { font-size: 32px; }
+  .authv3-register .av3-reg-head { padding: 18px 22px 16px; }
+  .authv3-register .av3-reg-body { padding: 22px 22px 26px; }
+  .authv3-register .av3-pwrules { grid-template-columns: 1fr; }
+  .authv3-register .av3-gate { padding: 36px 22px 44px; }
+  .authv3-register .av3-gate h1 { font-size: 30px; }
+  .authv3-register .av3-gatecard { padding: 26px 22px 24px; }
+  .authv3-register .av3-footband-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
