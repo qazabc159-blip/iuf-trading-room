@@ -345,8 +345,14 @@ export function IndustryGraphPanel({ ticker, companyName, brief: briefProp }: Pr
 
   const mounted = graphState.status !== "loading";
   const nodes = graphState.status === "ready" ? graphState.nodes : [];
-  const brief = graphState.status === "ready" ? graphState.brief : undefined;
   const hasData = nodes.length > 0;
+
+  // 2026-07-17 empty-state collapse: error 與「ready 但沒有節點」都是「抓不到
+  // 上下游圖譜資料」——楊董規則「空態=整欄位移除，非佔位卡」，不留「圖譜資料
+  // 整理中」空白卡；pairrow 補位交給 CompanyPageStyleBlock 的 :only-child CSS。
+  if (graphState.status === "error" || (graphState.status === "ready" && !hasData)) {
+    return null;
+  }
 
   return (
     <section className="panel hud-frame company-intel-panel _ig-panel">
@@ -361,28 +367,6 @@ export function IndustryGraphPanel({ ticker, companyName, brief: briefProp }: Pr
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
           <span className="tg soft">圖譜初始化中…</span>
-        </div>
-      )}
-
-      {graphState.status === "error" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">圖譜資料暫時無法讀取</span>
-          <span className="state-reason" style={{ fontSize: 11 }}>
-            My-TW-Coverage coverage endpoint 暫時沒有回應；這不是 coverage 待補，不會用空資料誤判。
-          </span>
-        </div>
-      )}
-
-      {graphState.status === "ready" && !hasData && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">整理中</span>
-          <span className="tg soft">圖譜資料整理中</span>
-          <span className="state-reason" style={{ fontSize: 11 }}>
-            {brief === null
-              ? `本檔 (${ticker}) coverage 待補，圖譜依 My-TW-Coverage 資料生成`
-              : "此公司暫無上下游關係資料可繪製"}
-          </span>
         </div>
       )}
 

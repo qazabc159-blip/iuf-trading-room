@@ -197,6 +197,26 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
     };
   }, [ticker]);
 
+  // 2026-07-17 empty-state collapse: not_found/error 都是「抓不到知識圖譜資料」——
+  // 楊董規則「空態=整欄位移除，非佔位卡」，不留「coverage 待補」空白卡；
+  // pairrow 補位交給 CompanyPageStyleBlock 的 :only-child CSS 規則。
+  if (state.status === "not_found" || state.status === "error") {
+    return null;
+  }
+  // loaded 但四類內容（業務簡介/供應鏈/客戶供應商/主題雷達）全空 — 視同抓不到。
+  if (
+    state.status === "loaded" &&
+    !state.data.businessOverview &&
+    state.data.supplyChain.upstream.length === 0 &&
+    state.data.supplyChain.midstream.length === 0 &&
+    state.data.supplyChain.downstream.length === 0 &&
+    state.data.majorCustomers.length === 0 &&
+    state.data.majorSuppliers.length === 0 &&
+    (!state.data.wikilinks || state.data.wikilinks.length === 0)
+  ) {
+    return null;
+  }
+
   return (
     <section className="panel hud-frame company-intel-panel _ck-panel">
       <h3 className="ascii-head">
@@ -210,22 +230,6 @@ export function CoverageKnowledgePanel({ ticker }: Props) {
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
           <span className="tg soft">正在載入 My-TW-Coverage 研究資料…</span>
-        </div>
-      )}
-
-      {state.status === "not_found" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">待補</span>
-          <span className="tg soft">
-            本檔 ({ticker}) coverage 待補，1735 檔已收錄
-          </span>
-        </div>
-      )}
-
-      {state.status === "error" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">研究資料暫時無法讀取</span>
         </div>
       )}
 

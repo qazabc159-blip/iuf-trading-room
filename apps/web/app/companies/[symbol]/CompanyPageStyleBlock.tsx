@@ -168,48 +168,22 @@ export function CompanyPageStyleBlock() {
   .company-side-column .panel { transition: none !important; }
 }
 
-/* Data dock sections — tighter separator (was margin-top:24 / padding-top:20) */
-.company-data-dock-title {
-  margin-top: 14px;
-  border-top: 1px solid rgba(220,228,240,0.07);
-  padding-top: 14px;
-}
-
-/* ── 知識圖譜 grid — desktop 2-col ── */
-.company-knowledge-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(12px, 1.4vw, 20px);
-  align-items: start;
-  margin-top: 10px;
-}
-.company-knowledge-grid > .panel {
-  margin: 0 !important;
-}
-
-/* Knowledge panel base — reduced min-height for blocked/empty states */
+/* Knowledge panel base min-height. 2026-07-17 update (Pete review #1293 🟡#2):
+   blocked/empty/not_found/error no longer render at all (return null, see
+   CoverageKnowledgePanel.tsx/IndustryGraphPanel.tsx) — this only still applies
+   to the panel's brief loading state before the first fetch resolves. */
 ._ck-panel,
 ._ig-panel {
   min-height: 100px;
 }
 
-/* state-panel spacing inside knowledge panels — was 24px 0 8px (too tall) */
+/* state-panel spacing inside knowledge panels (loading state only — was
+   24px 0 8px, too tall for a one-line "讀取中" row) */
 ._ck-panel .state-panel,
 ._ig-panel .state-panel {
   padding: 10px 0 6px;
 }
 
-/* Desktop: show knowledge + industry graph side by side starting at 1440px viewport.
-   D1 fix (2026-07-12 diagnosis): was 1280px, but at a 1280px *viewport* the main
-   column itself is only ~490-620px wide (side column reserves 320-360px + gap) —
-   forcing a 2-col split there squeezed the text column to ~207px, wrapping every
-   Chinese word onto its own line and stretching the panel to 2,000-2,930px tall.
-   1440px viewport gives the main column ~850px+, enough room for a real 2-col split. */
-@media (min-width: 1440px) {
-  .company-knowledge-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
-  }
-}
 @media (max-width: 1180px) {
   .company-detail-layout {
     grid-template-columns: minmax(0, 1fr) !important;
@@ -627,88 +601,6 @@ export function CompanyPageStyleBlock() {
   }
 }
 
-/* ── Round 2: _co-trading-view — K-line chart + depth/BidAsk side-by-side ── */
-._co-trading-view {
-  display: flex;
-  gap: 12px;
-  align-items: start;
-  margin-bottom: 12px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-}
-._co-chart-pane {
-  flex: 0 0 64%;
-  min-width: 0;
-  max-width: 100%;
-}
-._co-depth-pane {
-  flex: 1 1 0;
-  min-width: 250px;
-  max-width: 100%;
-  position: sticky;
-  top: clamp(76px, 8vh, 96px);
-}
-._co-chart-pane > *,
-._co-depth-pane > * {
-  min-width: 0;
-  max-width: 100%;
-}
-/* D1 fix (2026-07-12 diagnosis): was max-width:1180px. Between 1181-1439px viewport
-   the outer .company-detail-layout is still 2-col (main + fixed 320-360px side
-   column), so the main column itself is only ~490-620px — the 64/36 row split
-   (#1160) squeezed the K-line chart pane down to ~313px. Stack until 1440px, where
-   the main column is wide enough (~850px+) for the #1160 row layout to make sense. */
-@media (max-width: 1439px) {
-  ._co-trading-view {
-    flex-direction: column;
-    gap: 10px;
-    overflow-x: hidden;
-  }
-  ._co-chart-pane {
-    flex: 1 1 auto;
-    width: 100%;
-    max-width: 100%;
-  }
-  ._co-depth-pane {
-    position: static;
-    flex: 1 1 auto;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-  }
-}
-@media (max-width: 640px) {
-  ._co-chart-pane .company-workbench-shell,
-  ._co-chart-pane .kline-panel,
-  ._co-chart-pane .kline-chart-shell,
-  ._co-chart-pane .kline-chart-canvas {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-  }
-  ._co-chart-pane .company-workbench-shell .kline-panel {
-    padding-inline: 12px !important;
-  }
-  ._co-chart-pane .company-workbench-shell .kline-toolbar {
-    width: 100%;
-    max-width: 100%;
-    grid-template-columns: minmax(0, 1fr) !important;
-    overflow: hidden;
-  }
-  ._co-chart-pane .company-workbench-shell .kline-control-group {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-  }
-  ._co-chart-pane .company-workbench-shell .kline-tab {
-    flex: 0 0 auto;
-  }
-  ._co-chart-pane .company-workbench-shell .kline-chart-canvas {
-    min-height: clamp(300px, 64vh, 420px);
-  }
-}
-
 /* ── Round 2: _co-section-banner — unified section divider replaces company-tabs-band ── */
 ._co-section-banner {
   display: flex;
@@ -836,12 +728,12 @@ export function CompanyPageStyleBlock() {
 
 /* Reusable equal-height 2-col pairrow — 五檔|逐筆 / 知識圖譜|上下游圖譜 /
    法人籌碼|融資融券, matching DESIGN_NOTES.md §三 rows 5/6, 8/9, 11/12.
-   D1 lesson (2026-07-12 diagnosis, see .company-knowledge-grid above): a 2-col
-   split only becomes safe once the *main column itself* is wide enough — at a
-   1180-1439px viewport the side rail still reserves 320-360px, squeezing the
-   main column to ~490-620px and wrapping every CJK word onto its own line.
-   Reuse the same 1440px-viewport threshold this codebase already standardized
-   on rather than inventing a second breakpoint. */
+   D1 lesson (2026-07-12 diagnosis): a 2-col split only becomes safe once the
+   *main column itself* is wide enough — at a 1180-1439px viewport the side
+   rail still reserves 320-360px, squeezing the main column to ~490-620px and
+   wrapping every CJK word onto its own line. Reuse the same 1440px-viewport
+   threshold this codebase already standardized on rather than inventing a
+   second breakpoint. */
 .co-v3-pairrow {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -853,7 +745,13 @@ export function CompanyPageStyleBlock() {
 .co-v3-pairrow > .panel { margin: 0 !important; height: 100%; }
 @media (min-width: 1440px) {
   .co-v3-pairrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* 空態面板不渲染時只剩一個手足 — 讓它補滿兩欄，不留半版空白
+     (2026-07-17 empty-state collapse, DESIGN_NOTES.md §三「空態規則」)。 */
+  .co-v3-pairrow > .panel:only-child { grid-column: 1 / -1; }
 }
+/* 兩側手足都不渲染時（例如盤後五檔+逐筆同時空） pairrow 本身收合，
+   避免留下一段沒有內容的 margin-top 空隙。 */
+.co-v3-pairrow:empty { display: none; }
 
 /* Financial 7-tab strip → flat amber-active tab row (artifact .fintabs) */
 .co-v3-page .company-finance-tabs {

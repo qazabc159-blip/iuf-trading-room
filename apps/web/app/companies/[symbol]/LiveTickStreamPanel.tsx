@@ -136,6 +136,12 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
     return () => clearInterval(id);
   }, [fetchData]);
 
+  // 2026-07-17 empty-state collapse: closed/waiting/blocked all mean "no tick
+  // stream to show right now"（同 BidAskPanel 規則，見同檔 comment）。
+  if (state.status === "closed" || state.status === "waiting" || state.status === "blocked") {
+    return null;
+  }
+
   return (
     <section className="panel hud-frame _ts-panel" style={{ marginBottom: 12 }}>
       <style>{TICK_CSS}</style>
@@ -152,30 +158,6 @@ export function LiveTickStreamPanel({ symbol }: { symbol: string }) {
         )}
         <span className="dim" style={{ fontSize: 9.5, marginLeft: 8 }}>最近 {MAX_TICKS} 筆 / 5s 更新</span>
       </h3>
-
-      {state.status === "closed" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">休市</span>
-          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "waiting" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">待回傳</span>
-          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "blocked" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">資料源：KGI 唯讀逐筆</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
 
       {state.status === "loading" && (
         <div className="state-panel">

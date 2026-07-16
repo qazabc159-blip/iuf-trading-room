@@ -4,11 +4,36 @@ import { useEffect, useState } from "react";
 import { getCompanyFullProfile, type FullProfileInstitutionalRow } from "@/lib/api";
 import { formatInstitutionalNetLotsZh } from "@/lib/institutional-lots-format";
 
+// 30 日累計淨買賣超 — Pete review (#1293) 抓到：舊 ChipsPanel 的 net30d
+// （apps/web/lib/api.ts CompanyChipsData，近 30 日累計）在拆分時被拿掉，
+// InstitutionalPanel 原本只顯示 latest（單日快照），是被移除的獨立指標，非
+// 純格式重整。/full-profile 的 tradingFlow.institutional.history 本來就是
+// 近 30 曆日資料（apps/api/src/server.ts:11028 "last 30 calendar days"），
+// 在這裡直接加總即可補回 30 日視角，零新增後端呼叫。
+interface Net30d {
+  foreign: number;
+  investmentTrust: number;
+  dealer: number;
+  totalNetBuy: number;
+}
+
+function sumHistory30d(history: FullProfileInstitutionalRow[]): Net30d {
+  return history.reduce(
+    (acc, row) => ({
+      foreign: acc.foreign + (row.foreign ?? 0),
+      investmentTrust: acc.investmentTrust + (row.investmentTrust ?? 0),
+      dealer: acc.dealer + (row.dealer ?? 0),
+      totalNetBuy: acc.totalNetBuy + (row.totalNetBuy ?? 0),
+    }),
+    { foreign: 0, investmentTrust: 0, dealer: 0, totalNetBuy: 0 }
+  );
+}
+
 type InstState =
   | { status: "loading" }
   | { status: "blocked"; reason: string }
   | { status: "empty"; date: string }
-  | { status: "live"; row: FullProfileInstitutionalRow; date: string; stale: boolean };
+  | { status: "live"; row: FullProfileInstitutionalRow; date: string; stale: boolean; net30d: Net30d | null };
 
 const INST_CSS = `
 ._inst-bar {
@@ -76,7 +101,9 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
           return;
         }
         const row = section.latest as FullProfileInstitutionalRow;
-        setState({ status: "live", row, date: row.date, stale: section.state === "STALE" });
+        const history = (section.history ?? []) as FullProfileInstitutionalRow[];
+        const net30d = history.length > 0 ? sumHistory30d(history) : null;
+        setState({ status: "live", row, date: row.date, stale: section.state === "STALE", net30d });
       })
       .catch((err) => {
         if (!active) return;
@@ -85,6 +112,12 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
       });
     return () => { active = false; };
   }, [companyId]);
+
+  // 2026-07-17 empty-state collapse: blocked/empty 都是「抓不到法人資料」——
+  // 楊董規則「空態=整欄位移除，非佔位卡」，不留「近 30 日暫無...」空白卡。
+  if (state.status === "blocked" || state.status === "empty") {
+    return null;
+  }
 
   return (
     <section className="panel hud-frame" style={{ marginBottom: 12 }}>
@@ -105,24 +138,8 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
         </div>
       )}
 
-      {state.status === "blocked" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "empty" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">EMPTY</span>
-          <span className="tg soft">近 30 日暫無法人買賣超資料（{state.date}）。</span>
-          <span className="state-reason">不補假法人數字；待 FinMind 回傳後自動顯示。</span>
-        </div>
-      )}
-
       {state.status === "live" && (() => {
-        const { row } = state;
+        const { row, net30d } = state;
         const cells = [
           { label: "外資", value: row.foreign },
           { label: "投信", value: row.investmentTrust },
@@ -139,9 +156,15 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
               ))}
             </div>
             <div className="_inst-total-row">
-              <span className="_inst-total-label">三大法人合計</span>
+              <span className="_inst-total-label">三大法人合計（單日）</span>
               <span className={`_inst-total-val ${tone(row.totalNetBuy)}`}>{formatInstitutionalNetLotsZh(row.totalNetBuy)}</span>
             </div>
+            {net30d && (
+              <div className="_inst-total-row">
+                <span className="_inst-total-label">近 30 日累計</span>
+                <span className={`_inst-total-val ${tone(net30d.totalNetBuy)}`}>{formatInstitutionalNetLotsZh(net30d.totalNetBuy)}</span>
+              </div>
+            )}
           </>
         );
       })()}

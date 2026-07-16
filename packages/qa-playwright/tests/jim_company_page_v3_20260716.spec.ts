@@ -51,10 +51,17 @@ test.describe("company page v3 redesign 2026-07-16", () => {
     await page.goto("/companies/2330", { waitUntil: "networkidle" });
     await page.waitForTimeout(1500);
 
+    // 2026-07-17 empty-state collapse (jim6): BidAsk/LiveTickStream gate on real
+    // KGI trading hours and now collapse to 0 DOM panels entirely off-hours
+    // (楊董規則「空態=整欄位移除，非佔位卡」) instead of always rendering — so
+    // #sec-quote's panel count is legitimately 0 (off-hours) or 2 (in-hours),
+    // never a fixed constant regardless of wall clock.
     const quoteRow = page.locator("#sec-quote");
-    await expect(quoteRow).toBeVisible();
-    await expect(quoteRow.locator(".panel")).toHaveCount(2);
+    const quotePanelCount = await quoteRow.locator(".panel").count();
+    expect([0, 2]).toContain(quotePanelCount);
 
+    // 法人|融資融券 is not time-gated (FinMind daily data) — for a liquid stock
+    // like 2330 both panels should always have data.
     const chipsRow = page.locator("#sec-chips");
     await expect(chipsRow).toBeVisible();
     await expect(chipsRow.locator(".panel")).toHaveCount(2);
@@ -82,9 +89,13 @@ test.describe("company page v3 redesign 2026-07-16", () => {
     const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
     expect(bodyWidth).toBeLessThanOrEqual(400);
 
-    const quoteRow = page.locator("#sec-quote");
-    await expect(quoteRow).toBeVisible();
-    const box = await quoteRow.boundingBox();
+    // 2026-07-17 empty-state collapse (jim6): #sec-quote (五檔/逐筆) is gated on
+    // real KGI trading hours and may legitimately render 0 panels off-hours —
+    // use #sec-chips (法人/融資融券, not time-gated) to verify mobile stacking
+    // instead, so this assertion doesn't depend on wall-clock trading hours.
+    const chipsRow = page.locator("#sec-chips");
+    await expect(chipsRow).toBeVisible();
+    const box = await chipsRow.boundingBox();
     // Below the 1440px pairrow breakpoint the two panels stack — the row's total
     // height should clearly exceed a single panel's height (proves 1-col stacking,
     // not a squeezed 2-col row at mobile width).

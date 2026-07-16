@@ -122,6 +122,13 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
     return () => clearInterval(id);
   }, [fetchData]);
 
+  // 2026-07-17 empty-state collapse: closed/waiting/blocked all mean "no five-tier
+  // data to show right now" — 楊董規則「空態=整欄位移除，非佔位卡」；.co-v3-pairrow
+  // 補位靠 CSS :only-child（見 CompanyPageStyleBlock），不需要在這裡跟手足元件協調狀態。
+  if (state.status === "closed" || state.status === "waiting" || state.status === "blocked") {
+    return null;
+  }
+
   const bidPrices = state.status === "live" ? (state.data.bid_prices ?? []) : [];
   const bidVolumes = state.status === "live" ? (state.data.bid_volumes ?? []) : [];
   const askPrices = state.status === "live" ? (state.data.ask_prices ?? []) : [];
@@ -147,30 +154,6 @@ export function BidAskPanel({ symbol }: { symbol: string }) {
           <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>讀取中</span>
         )}
       </h3>
-
-      {state.status === "closed" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">休市</span>
-          <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "waiting" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">待回傳</span>
-          <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "blocked" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">資料源：KGI 唯讀五檔</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
 
       {state.status === "loading" && (
         <div className="state-panel">

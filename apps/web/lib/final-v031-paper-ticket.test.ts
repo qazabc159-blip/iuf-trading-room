@@ -29,12 +29,24 @@ describe("final-v031 paper ticket price gate", () => {
     expect(companyTickStreamPanelSource).toContain('setState({ status: "closed", reason: offHoursReason() })');
     expect(companyBidAskPanelSource).toContain('setState({ status: "waiting", reason: "KGI 唯讀五檔目前尚未回傳有效委買委賣');
     expect(companyTickStreamPanelSource).toContain('setState({ status: "waiting", reason: "KGI 唯讀逐筆目前尚未回傳有效成交明細');
-    expect(companyBidAskPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
-    expect(companyTickStreamPanelSource).toContain('<span className="badge badge-yellow">休市</span>');
-    expect(companyBidAskPanelSource).toContain('<span className="badge badge-yellow">待回傳</span>');
-    expect(companyTickStreamPanelSource).toContain('<span className="badge badge-yellow">待回傳</span>');
     expect(companyBidAskPanelSource).toContain("這不是系統故障");
     expect(companyTickStreamPanelSource).toContain("這不是系統故障");
+  });
+
+  // 2026-07-17: 楊董裁決「空態=整欄位移除，非佔位卡」覆寫先前的「休市/待回傳」小徽章
+  // 佔位卡做法（見 feedback_login_company_redesign_rules_2026_07_16）。closed/waiting/
+  // blocked 現在一律 return null，不再渲染任何徽章文字 — 鎖住這個方向，防止退回舊佔位卡。
+  it("collapses BidAsk/TickStream panels entirely (no placeholder badge) when there is no live data", () => {
+    expect(companyBidAskPanelSource).toContain(
+      'state.status === "closed" || state.status === "waiting" || state.status === "blocked"'
+    );
+    expect(companyTickStreamPanelSource).toContain(
+      'state.status === "closed" || state.status === "waiting" || state.status === "blocked"'
+    );
+    expect(companyBidAskPanelSource).not.toContain('<span className="badge badge-yellow">休市</span>');
+    expect(companyTickStreamPanelSource).not.toContain('<span className="badge badge-yellow">休市</span>');
+    expect(companyBidAskPanelSource).not.toContain('<span className="badge badge-yellow">待回傳</span>');
+    expect(companyTickStreamPanelSource).not.toContain('<span className="badge badge-yellow">待回傳</span>');
   });
 
   it("keeps an invalid paper ticket out of the ready-submit state", () => {
