@@ -224,7 +224,7 @@ export async function getStockDayAllRows(
 
   const doFetch = fetchOverride ?? globalThis.fetch;
   const checkTradingDay = isTradingDayOverride ?? isTwTradingDay;
-  _stockDayAllInflight = (async (): Promise<StockDayAllRow[]> => {
+  const attempt = (async (): Promise<StockDayAllRow[]> => {
     try {
       const resp = await doFetch(`${TWSE_BASE_URL}/exchangeReport/STOCK_DAY_ALL`, {
         headers: { "Accept": "application/json" },
@@ -268,10 +268,43 @@ export async function getStockDayAllRows(
     } catch (err) {
       console.warn("[twse-openapi-client] STOCK_DAY_ALL fetch failed:", err instanceof Error ? err.message : String(err));
       return [];
-    } finally {
-      _stockDayAllInflight = null;
     }
   })();
+
+  // 2026-07-17 P0 fix: `attempt` above is memoized into `_stockDayAllInflight`
+  // and reused by every concurrent caller across the whole process — that's
+  // the entire point of the dedup. Every fetch inside `attempt` already has
+  // its own AbortSignal bound, and isTwTradingDay() is now bounded too (see
+  // lib/trading-calendar.ts) — but this outer race is a structural guarantee,
+  // not a duplicate of those: if `attempt` ever fails to settle for ANY
+  // reason (including one not yet foreseen), this is what stops
+  // `_stockDayAllInflight` from being wedged as a permanently-pending promise
+  // for the rest of the process's lifetime — exactly what happened on
+  // 2026-07-17 (root cause of the /market/heatmap/twse,
+  // /market/heatmap/kgi-core, and /companies/:id/quote/realtime outage — all
+  // three call this function and share this one module-level singleton; see
+  // reports/sprint_2026_07_17/MARKET_INTEL_OUTAGE_RCA_2026_07_17.md §9). A
+  // service restart was the only thing that ever cleared it before this fix,
+  // because `_stockDayAllInflight` never got a chance to run its cleanup.
+  // Deliberately resolves (not rejects) to an empty array on timeout, and
+  // deliberately does NOT populate `_stockDayAllCache` on this path — a
+  // timeout is a transient degraded read, not a confirmed empty result; the
+  // next call should retry against upstream rather than being stuck serving
+  // a cached-empty heatmap for the rest of the process lifetime.
+  const STOCK_DAY_ALL_INFLIGHT_TIMEOUT_MS = 20_000;
+  _stockDayAllInflight = Promise.race([
+    attempt,
+    new Promise<StockDayAllRow[]>((resolve) => {
+      setTimeout(() => {
+        console.warn(
+          `[twse-openapi-client] STOCK_DAY_ALL attempt did not settle within ${STOCK_DAY_ALL_INFLIGHT_TIMEOUT_MS}ms — unwedging in-flight dedup (returning empty, not caching failure)`
+        );
+        resolve([]);
+      }, STOCK_DAY_ALL_INFLIGHT_TIMEOUT_MS);
+    })
+  ]).finally(() => {
+    _stockDayAllInflight = null;
+  });
 
   return _stockDayAllInflight;
 }
@@ -421,7 +454,7 @@ export async function getTpexMainboardCloseRows(
   if (_tpexDailyCloseInflight) return _tpexDailyCloseInflight;
 
   const doFetch = fetchOverride ?? globalThis.fetch;
-  _tpexDailyCloseInflight = (async (): Promise<TpexDailyRow[]> => {
+  const attempt = (async (): Promise<TpexDailyRow[]> => {
     try {
       const resp = await doFetch(`${TPEX_BASE_URL}/tpex_mainboard_daily_close_quotes`, {
         headers: { "Accept": "application/json" },
@@ -439,10 +472,30 @@ export async function getTpexMainboardCloseRows(
     } catch (err) {
       console.warn("[twse-openapi-client] TPEX daily_close_quotes fetch failed:", err instanceof Error ? err.message : String(err));
       return [];
-    } finally {
-      _tpexDailyCloseInflight = null;
     }
   })();
+
+  // 2026-07-17 P0 fix (same class as getStockDayAllRows() above — see its
+  // comment for the full wedge mechanism this defends against). The only
+  // await inside `attempt` is already AbortSignal-bounded, so this isn't
+  // known to be currently wedgeable — added anyway for structural
+  // consistency: any in-flight-memoized promise sharing a module-level
+  // singleton across every caller should be provably non-wedgeable, not
+  // "safe because nothing inside happens to be unbounded today."
+  const TPEX_DAILY_CLOSE_INFLIGHT_TIMEOUT_MS = 20_000;
+  _tpexDailyCloseInflight = Promise.race([
+    attempt,
+    new Promise<TpexDailyRow[]>((resolve) => {
+      setTimeout(() => {
+        console.warn(
+          `[twse-openapi-client] TPEX daily_close_quotes attempt did not settle within ${TPEX_DAILY_CLOSE_INFLIGHT_TIMEOUT_MS}ms — unwedging in-flight dedup (returning empty, not caching failure)`
+        );
+        resolve([]);
+      }, TPEX_DAILY_CLOSE_INFLIGHT_TIMEOUT_MS);
+    })
+  ]).finally(() => {
+    _tpexDailyCloseInflight = null;
+  });
 
   return _tpexDailyCloseInflight;
 }

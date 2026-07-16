@@ -13266,6 +13266,23 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
     const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
     const twseRows = await getStockDayAllRows().catch(() => []);
 
+    // 2026-07-17 P0 fix: both DB calls below were unbounded — a saturated/
+    // slow connection pool could hang either one indefinitely, which a plain
+    // try/catch does NOT protect against (a catch only fires on rejection,
+    // not on a promise that never settles). Race each against a 3s timeout so
+    // a stuck pool degrades to the exact same fail-open path these blocks
+    // already had, instead of hanging the whole endpoint (root cause of the
+    // /market/heatmap/kgi-core outage — see
+    // reports/sprint_2026_07_17/MARKET_INTEL_OUTAGE_RCA_2026_07_17.md).
+    function withDbTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+      return Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        })
+      ]);
+    }
+
     // 盤後 DB close fallback (Tier 2.5) — only queried when after-hours, and
     // fail-open to undefined on any error (never blocks the heatmap response).
     let dbCloseMap: Map<string, { closePrice: number; tradeDate: string; source: string }> | undefined;
@@ -13275,7 +13292,11 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
         const db = isDatabaseMode() ? getDb() : null;
         if (db) {
           const { getLastCloses } = await import("./quote-last-close-store.js");
-          dbCloseMap = await getLastCloses(db, kgiResult.tiles.map((t) => t.symbol));
+          dbCloseMap = await withDbTimeout(
+            getLastCloses(db, kgiResult.tiles.map((t) => t.symbol)),
+            3_000,
+            "getLastCloses"
+          );
         }
       }
     } catch (err) {
@@ -13292,10 +13313,14 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
       if (db) {
         const workspaceId = c.get("session").workspace.id;
         const symbols = kgiResult.tiles.map((t) => t.symbol);
-        const rows = await db
-          .select({ ticker: companies.ticker, chainPosition: companies.chainPosition })
-          .from(companies)
-          .where(and(eq(companies.workspaceId, workspaceId), inArray(companies.ticker, symbols)));
+        const rows = await withDbTimeout(
+          db
+            .select({ ticker: companies.ticker, chainPosition: companies.chainPosition })
+            .from(companies)
+            .where(and(eq(companies.workspaceId, workspaceId), inArray(companies.ticker, symbols))),
+          3_000,
+          "sector lookup"
+        );
         sectorMap = new Map(rows.map((r) => [r.ticker, r.chainPosition || null]));
       }
     } catch (err) {
