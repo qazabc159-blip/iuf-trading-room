@@ -28,6 +28,12 @@ const GET_ALLOWLIST = [
   /^\/api\/v1\/lab\/strategy\/[^/]+\/snapshot(?:\?|$)/,
   /^\/api\/v1\/track-record\/nav(?:\?|$)/,
   /^\/api\/v1\/market-data\/overview(?:\?|$)/,
+  // /desk-exact header/watchlist twse_mis fallback (2026-07-16 診斷 #1
+  // 病灶修復): only called client-side when /kgi/quote/ticks comes back
+  // empty (raw KGI tick buffer未觸發／斷線), read-only, already used
+  // elsewhere in this proxy's own allowlist scope (kgi/quote/bidask 同款
+  // twse_mis 兜底策略).
+  /^\/api\/v1\/market-data\/effective-quotes(?:\?|$)/,
   /^\/api\/v1\/strategy\/ideas(?:\?|$)/,
   /^\/api\/v1\/paper\/(?:health|fills|orders|portfolio|positions|funds)(?:\?|$|\/)/,
   /^\/api\/v1\/portfolio\/kgi\/positions(?:\?|$)/,

@@ -63,6 +63,27 @@ describe("ui-final-v031 backend proxy allowlist — unified order flow PR-2", ()
     expect(body).toEqual({ data: [] });
   });
 
+  // 2026-07-16 診斷 #1 病灶修復: /desk-exact header/watchlist fallback when
+  // the raw KGI tick buffer is empty (見 public/desk-exact/index.html
+  // fetchEffectiveQuotes()) — must be able to reach this endpoint through
+  // the proxy or the fallback is dead on arrival.
+  it("allows GET /api/v1/market-data/effective-quotes through to upstream (200 shape)", async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(JSON.stringify({ data: { items: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await GET(makeRequest("GET", "/api/v1/market-data/effective-quotes?symbols=2330"));
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ data: { items: [] } });
+  });
+
   it("blocks an off-allowlist POST path with 403 and never calls upstream", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);

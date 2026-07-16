@@ -645,7 +645,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                       <select><option>限價</option></select>
                     </div>
                     <div class="fld"><div class="l">委託價<span class="hlp">升降 0.50</span></div>
-                      <div class="step" data-slot="t-price-step"><button class="sb" data-act="minus">−</button><input data-slot="t-price" value="1085.00" /><button class="sb" data-act="plus">＋</button></div>
+                      <div class="step" data-slot="t-price-step"><button class="sb" data-act="minus">−</button><input data-slot="t-price" value="" placeholder="--" /><button class="sb" data-act="plus">＋</button></div>
                     </div>
                   </div>
                   <!-- ★ 張/股閘門：LOT/SHARE 緊貼數量，單位徽章＋換算跟著切換 -->
@@ -789,7 +789,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
               <div class="m2-fld">
                 <div class="l">委託價 · 限價<span>升降 0.50</span></div>
                 <div class="m2-step" data-slot="m2t-price-step">
-                  <button class="sb" data-act="minus">−</button><input data-slot="m2t-price" value="1085.00" /><button class="sb" data-act="plus">＋</button>
+                  <button class="sb" data-act="minus">−</button><input data-slot="m2t-price" value="" placeholder="--" /><button class="sb" data-act="plus">＋</button>
                 </div>
               </div>
             </div>
@@ -875,6 +875,15 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     if (isNaN(d.getTime())) return "--:--:--";
     return new Intl.DateTimeFormat("zh-TW", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(d);
   }
+  // "今日委託" 分頁的日期過濾用（2026-07-16 診斷 #3 病灶）— /uta/orders 不分
+  // 日期只回最新一批，前端按台北日比對 createdAt，避免昨日單混進「今日委託」。
+  var TAIPEI_DATE_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+  function isTodayTaipei(iso) {
+    if (!iso) return false;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return false;
+    return TAIPEI_DATE_FMT.format(d) === TAIPEI_DATE_FMT.format(new Date());
+  }
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (ch) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
@@ -906,6 +915,49 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     return body && typeof body === "object" && "data" in body ? body.data : body;
   }
 
+  // ── quote fallback (2026-07-16 診斷 #1 病灶修復）──────────────────────────
+  // /kgi/quote/ticks（KGI 原生 tick buffer）沒有內建 fallback，on_tick 長期零
+  // 觸發時整段回空；/kgi/quote/bidask 五檔盤口卻內建 twse_mis fallback 所以是
+  // 活的，導致同頁報價矛盾。這裡讓 header/watchlist 在 ticks 缺資料時，補打
+  // 已內建 twse_mis 兜底的 /market-data/effective-quotes，跟盤口同一份真值
+  // 對齊 —— 不改 backend fallback 策略本身，KGI 有資料時仍優先用 KGI（見呼叫
+  // 端：先打 ticks，只有落空才補打這支）。
+  function fetchEffectiveQuotes(symbols) {
+    var unique = symbols.filter(function (sym, i) { return symbols.indexOf(sym) === i; });
+    if (!unique.length) return Promise.resolve({});
+    return apiFetch("/api/v1/market-data/effective-quotes?symbols=" + unique.join(",")).then(function (res) {
+      var d = res.ok ? unwrap(res.body) : null;
+      var items = d && Array.isArray(d.items) ? d.items : [];
+      var map = {};
+      items.forEach(function (item) { if (item && item.symbol) map[item.symbol] = item; });
+      return map;
+    }).catch(function () { return {}; });
+  }
+
+  // Human-language provenance label for a fallback quote — no enum leak
+  // (mirrors apps/web/app/quote/page.tsx quoteSourceLabel()/freshnessLabel()).
+  // "stale" 專指 13:30 收盤後 twse_mis 仍回應的收盤快照，誠實標示非即時。
+  function effectiveQuoteStateLabel(item) {
+    if (!item || !item.selectedQuote || num(item.selectedQuote.last) == null) return null;
+    var src = item.selectedSource;
+    var srcLabel = src === "twse_mis" ? "證交所" : src === "kgi" ? "凱基" : src === "paper" ? "模擬" : src === "manual" ? "手動資料" : "行情";
+    return item.freshnessStatus === "fresh" ? (srcLabel + "即時") : (srcLabel + "（略舊）");
+  }
+
+  // 下單票委託價預設值：帶入當前標的即時價，換標的跟著換；拿不到價則清空
+  // 讓使用者自行輸入（不餵假數字）。透過真實 "input" 事件通知 wireTicket()
+  // 既有的 refreshPreviewNumbers 監聽器，讓「預估金額」等連動欄位一起更新。
+  function seedTicketPrice(price) {
+    var n = num(price);
+    var text = n != null ? n.toFixed(2) : "";
+    ["t-price", "m2t-price"].forEach(function (name) {
+      qsa(name).forEach(function (el) {
+        el.value = text;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+  }
+
   // ── gateway status strip ────────────────────────────────────────────────
   function renderGateway() {
     return apiFetch("/api/v1/kgi/status").then(function (res) {
@@ -920,38 +972,82 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   }
 
   // ── symbol header + OHLC (hero symbol) ──────────────────────────────────
+  function applySymbolHeaderEmpty() {
+    setText("sym-state", "尚無報價");
+    setText("m2-sym-state", "尚無報價");
+    setText("sym-price", "--"); setText("m2-sym-price", "--");
+    setText("sym-chg", "-- --"); setText("sym-pct", "--%"); setText("m2-sym-chg", "-- --");
+    setText("sym-open", "--"); setText("sym-high", "--"); setText("sym-low", "--");
+    setText("sym-prevclose", "--"); setText("sym-vol", "--");
+    setDir("sym-price", null); setDir("m2-sym-price", null);
+    setDir("sym-chg", null); setDir("sym-pct", null); setDir("m2-sym-chg", null);
+    seedTicketPrice(null);
+  }
+
+  function applySymbolHeaderFromTick(last) {
+    var isUp = num(last.price_chg) > 0 ? true : num(last.price_chg) < 0 ? false : null;
+    setDir("sym-price", isUp); setDir("m2-sym-price", isUp);
+    setDir("sym-chg", isUp); setDir("sym-pct", isUp); setDir("m2-sym-chg", isUp);
+    setText("sym-state", "即時 tick");
+    setText("m2-sym-state", "即時");
+    setText("sym-price", fmtPrice(last.close));
+    setText("m2-sym-price", fmtPrice(last.close));
+    setText("sym-chg", fmtChg(last.price_chg));
+    setText("sym-pct", fmtPct(last.pct_chg));
+    setText("m2-sym-chg", fmtChg(last.price_chg) + " · " + fmtPct(last.pct_chg));
+    setText("sym-open", fmtPrice(last.open));
+    setText("sym-high", fmtPrice(last.high));
+    setText("sym-low", fmtPrice(last.low));
+    var prevClose = num(last.close) != null && num(last.price_chg) != null ? last.close - last.price_chg : null;
+    setText("sym-prevclose", fmtPrice(prevClose));
+    setText("sym-vol", fmtInt(last.total_volume != null ? last.total_volume : last.volume));
+    seedTicketPrice(last.close);
+  }
+
+  function applySymbolHeaderFromEffectiveQuote(q, stateLabel) {
+    var absChg = num(q.last) != null && num(q.prevClose) != null ? q.last - q.prevClose : null;
+    var isUp = absChg > 0 ? true : absChg < 0 ? false : null;
+    setDir("sym-price", isUp); setDir("m2-sym-price", isUp);
+    setDir("sym-chg", isUp); setDir("sym-pct", isUp); setDir("m2-sym-chg", isUp);
+    setText("sym-state", stateLabel);
+    setText("m2-sym-state", stateLabel);
+    setText("sym-price", fmtPrice(q.last));
+    setText("m2-sym-price", fmtPrice(q.last));
+    setText("sym-chg", fmtChg(absChg));
+    setText("sym-pct", fmtPct(q.changePct));
+    setText("m2-sym-chg", fmtChg(absChg) + " · " + fmtPct(q.changePct));
+    setText("sym-open", fmtPrice(q.open));
+    setText("sym-high", fmtPrice(q.high));
+    setText("sym-low", fmtPrice(q.low));
+    setText("sym-prevclose", fmtPrice(q.prevClose));
+    setText("sym-vol", fmtInt(q.volume));
+    seedTicketPrice(q.last);
+  }
+
   function renderSymbolHeader() {
-    return apiFetch("/api/v1/kgi/quote/ticks?symbol=" + currentSymbol + "&limit=1").then(function (res) {
+    var sym = currentSymbol;
+    return apiFetch("/api/v1/kgi/quote/ticks?symbol=" + sym + "&limit=1").then(function (res) {
       var d = res.ok ? unwrap(res.body) : null;
       var ticks = d && Array.isArray(d.ticks) ? d.ticks : [];
       var last = ticks.length ? ticks[ticks.length - 1] : null;
 
-      if (!last || num(last.close) == null) {
-        setText("sym-state", "尚無報價");
-        setText("m2-sym-state", "尚無報價");
-        setText("sym-price", "--"); setText("m2-sym-price", "--");
-        setText("sym-chg", "-- --"); setText("sym-pct", "--%"); setText("m2-sym-chg", "-- --");
-        setText("sym-open", "--"); setText("sym-high", "--"); setText("sym-low", "--");
-        setText("sym-prevclose", "--"); setText("sym-vol", "--");
+      if (last && num(last.close) != null) {
+        applySymbolHeaderFromTick(last);
         return;
       }
 
-      var isUp = num(last.price_chg) > 0 ? true : num(last.price_chg) < 0 ? false : null;
-      setDir("sym-price", isUp); setDir("m2-sym-price", isUp);
-      setDir("sym-chg", isUp); setDir("sym-pct", isUp); setDir("m2-sym-chg", isUp);
-      setText("sym-state", "即時 tick");
-      setText("m2-sym-state", "即時");
-      setText("sym-price", fmtPrice(last.close));
-      setText("m2-sym-price", fmtPrice(last.close));
-      setText("sym-chg", fmtChg(last.price_chg));
-      setText("sym-pct", fmtPct(last.pct_chg));
-      setText("m2-sym-chg", fmtChg(last.price_chg) + " · " + fmtPct(last.pct_chg));
-      setText("sym-open", fmtPrice(last.open));
-      setText("sym-high", fmtPrice(last.high));
-      setText("sym-low", fmtPrice(last.low));
-      var prevClose = num(last.close) != null && num(last.price_chg) != null ? last.close - last.price_chg : null;
-      setText("sym-prevclose", fmtPrice(prevClose));
-      setText("sym-vol", fmtInt(last.total_volume != null ? last.total_volume : last.volume));
+      // KGI 原生 tick buffer 落空（on_tick 零觸發／斷線）— fallback 到已內建
+      // twse_mis 兜底的官方行情端點，避免頭部報價「尚無報價」而 3 公分外的
+      // 五檔盤口卻是活的（2026-07-16 診斷 #1 病灶）。
+      return fetchEffectiveQuotes([sym]).then(function (map) {
+        var item = map[sym];
+        var q = item && item.selectedQuote;
+        if (!q || num(q.last) == null) {
+          applySymbolHeaderEmpty();
+          return;
+        }
+        applySymbolHeaderFromEffectiveQuote(q, effectiveQuoteStateLabel(item) || "行情");
+      });
     });
   }
 
@@ -1018,24 +1114,49 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   }
 
   // ── watchlist rows (desktop 10 rows + mobile 4 chips) ───────────────────
+  function applyWatchlistRow(sym, priceText, pctText, isUp) {
+    setText("wl-v-" + sym, priceText);
+    setText("wl-d-" + sym, pctText);
+    setDir("wl-v-" + sym, isUp); setDir("wl-d-" + sym, isUp);
+    if (M2_CHIP_SYMBOLS.indexOf(sym) !== -1) {
+      setText("m2wl-p-" + sym, priceText);
+      setDir("m2wl-p-" + sym, isUp);
+    }
+  }
+
   function renderWatchlist() {
     return Promise.all(WL_SYMBOLS.map(function (sym) {
       return apiFetch("/api/v1/kgi/quote/ticks?symbol=" + sym + "&limit=1").then(function (res) {
         var d = res.ok ? unwrap(res.body) : null;
         var ticks = d && Array.isArray(d.ticks) ? d.ticks : [];
         var last = ticks.length ? ticks[ticks.length - 1] : null;
-        var isUp = last && num(last.price_chg) > 0 ? true : last && num(last.price_chg) < 0 ? false : null;
-
-        setText("wl-v-" + sym, last ? fmtPrice(last.close) : "--");
-        setText("wl-d-" + sym, last ? fmtPct(last.pct_chg) : "--");
-        setDir("wl-v-" + sym, isUp); setDir("wl-d-" + sym, isUp);
-
-        if (M2_CHIP_SYMBOLS.indexOf(sym) !== -1) {
-          setText("m2wl-p-" + sym, last ? fmtPrice(last.close) : "--");
-          setDir("m2wl-p-" + sym, isUp);
-        }
+        return { sym: sym, last: (last && num(last.close) != null) ? last : null };
       });
-    }));
+    })).then(function (results) {
+      var missing = results.filter(function (r) { return !r.last; }).map(function (r) { return r.sym; });
+      // Same fallback as renderSymbolHeader(): KGI ticks buffer empty for
+      // these symbols → batch-fetch the twse_mis-backed effective-quotes
+      // endpoint once for all of them instead of leaving the whole watchlist
+      // blank (2026-07-16 診斷 #1 病灶).
+      return fetchEffectiveQuotes(missing).then(function (fallbackMap) {
+        results.forEach(function (r) {
+          if (r.last) {
+            var isUp = num(r.last.price_chg) > 0 ? true : num(r.last.price_chg) < 0 ? false : null;
+            applyWatchlistRow(r.sym, fmtPrice(r.last.close), fmtPct(r.last.pct_chg), isUp);
+            return;
+          }
+          var item = fallbackMap[r.sym];
+          var q = item && item.selectedQuote;
+          if (!q || num(q.last) == null) {
+            applyWatchlistRow(r.sym, "--", "--%", null);
+            return;
+          }
+          var absChg = num(q.last) != null && num(q.prevClose) != null ? q.last - q.prevClose : null;
+          var isUp = absChg > 0 ? true : absChg < 0 ? false : null;
+          applyWatchlistRow(r.sym, fmtPrice(q.last), fmtPct(q.changePct), isUp);
+        });
+      });
+    });
   }
 
   // ── symbol switching（自選清單點擊切標的／query prefill）────────────────
@@ -1188,7 +1309,10 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   function renderOrdersTab() {
     return apiFetch("/api/v1/uta/orders?limit=5").then(function (res) {
       var d = res.ok ? unwrap(res.body) : null;
-      var orders = d && Array.isArray(d.orders) ? d.orders : [];
+      var allOrders = d && Array.isArray(d.orders) ? d.orders : [];
+      // /uta/orders 不分日期，純回最新一批 — 「今日委託」標籤必須真的按台北
+      // 日過濾，否則會混進昨日單（2026-07-16 診斷 #3 病灶）。
+      var orders = allOrders.filter(function (o) { return isTodayTaipei(o.createdAt); });
       setText("ledger-count-orders", String(orders.length));
 
       // mobile report-peek pill mirrors this feed's latest row regardless of
