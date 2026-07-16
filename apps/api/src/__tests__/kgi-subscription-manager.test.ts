@@ -13,7 +13,7 @@
  * QM8: Subscription status shape
  */
 
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 // ── Mock gateway fetch ─────────────────────────────────────────────────────────
@@ -21,14 +21,59 @@ import assert from "node:assert/strict";
 
 const _originalFetch = globalThis.fetch;
 
-function mockGatewayAlwaysOk(): void {
-  globalThis.fetch = async (url: string | URL | Request, _init?: RequestInit) => {
+/**
+ * Stateful mock gateway. `online` toggles whether the gateway is reachable
+ * at all (simulates "Railway booted before EC2 gateway's 08:20 start" and
+ * "gateway process restarted mid-day"). `liveTickSymbols` simulates the
+ * gateway's own /quote/status ground truth — subscribing adds to it,
+ * restarting (via `resetMockGateway({ keepLive: false })`) wipes it,
+ * independent of our local `_slots[].subscribed` bookkeeping, exactly like a
+ * real gateway process restart wipes the KGI SDK's in-memory state.
+ */
+const mockGatewayState = {
+  online: true,
+  liveTickSymbols: new Set<string>(),
+  subscribeCalls: [] as string[],
+};
+
+function resetMockGateway(opts: { online?: boolean } = {}): void {
+  mockGatewayState.online = opts.online ?? true;
+  mockGatewayState.liveTickSymbols = new Set<string>();
+  mockGatewayState.subscribeCalls = [];
+}
+
+function installMockGateway(): void {
+  globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = String(typeof url === "string" ? url : url instanceof URL ? url.href : (url as Request).url);
-    if (urlStr.includes("/quote/subscribe/tick") || urlStr.includes("/quote/unsubscribe")) {
+
+    if (!mockGatewayState.online) {
+      throw new Error("mock gateway offline (simulated network error)");
+    }
+
+    if (urlStr.includes("/quote/subscribe/tick")) {
+      const body = init?.body ? (JSON.parse(String(init.body)) as { symbol?: string }) : {};
+      if (body.symbol) {
+        mockGatewayState.liveTickSymbols.add(body.symbol);
+        mockGatewayState.subscribeCalls.push(body.symbol);
+      }
       return new Response(JSON.stringify({ ok: true, label: "tick_mock" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (urlStr.includes("/quote/unsubscribe")) {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (urlStr.includes("/quote/status")) {
+      return new Response(
+        JSON.stringify({
+          subscribed_symbols: { tick: Array.from(mockGatewayState.liveTickSymbols), bidask: [] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
     }
     if (urlStr.includes("/quote/ticks")) {
       return new Response(
@@ -50,6 +95,10 @@ function mockGatewayAlwaysOk(): void {
     }
     return new Response("not found", { status: 404 });
   };
+}
+
+function mockGatewayAlwaysOk(): void {
+  installMockGateway();
 }
 
 function restoreFetch(): void {
@@ -78,6 +127,7 @@ import {
   syncWatchlist,
   getKgiMarketOverview,
   getKgiCoreHeatmap,
+  ensurePermanentSubscriptions,
   _resetSubscriptionManager,
 } from "../kgi-subscription-manager.js";
 
@@ -93,6 +143,10 @@ function dummySymbols(n: number, prefix = "T"): string[] {
 describe("KGI Subscription Manager", () => {
   before(() => {
     mockGatewayAlwaysOk();
+  });
+
+  beforeEach(() => {
+    resetMockGateway();
   });
 
   after(() => {
@@ -340,5 +394,160 @@ describe("KGI Subscription Manager", () => {
       assert.ok("tier" in tile);
       assert.strictEqual(tile.source, "kgi_tick");
     }
+  });
+
+  // ── Durable fix tests (2026-07-16): permanent-tier symbols must actually
+  // reach the gateway, not just sit in local bookkeeping. ──────────────────
+
+  // QM11: permanent tier boot subscribe — the actual bug from 2026-07-16.
+  it("QM11: ensurePermanentSubscriptions actually calls gateway for all 21 permanent symbols", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager(); // seeds 21 permanent slots, subscribed:false, zero gateway calls so far
+
+    const statusBefore = getSubscriptionStatus();
+    // At this point _slots contains exactly the 21 permanent entries (no
+    // dynamic subscribe has happened yet).
+    assert.strictEqual(statusBefore.slots.length, PERMANENT_SLOT_COUNT);
+    assert.ok(
+      statusBefore.slots.every((s) => s.subscribed === false),
+      "Sanity: before the fix, initSubscriptionManager() alone never confirms any permanent slot"
+    );
+    assert.strictEqual(mockGatewayState.subscribeCalls.length, 0, "No gateway calls should have happened yet");
+
+    const result = await ensurePermanentSubscriptions();
+
+    assert.strictEqual(result.gatewayReachable, true);
+    assert.strictEqual(result.subscribed.length, PERMANENT_SLOT_COUNT); // all 21 newly subscribed
+    assert.strictEqual(result.failed.length, 0);
+    assert.strictEqual(mockGatewayState.subscribeCalls.length, PERMANENT_SLOT_COUNT);
+
+    // Every INDEX/STRATEGY/CORE symbol is now confirmed subscribed, including 2330.
+    const statusAfter = getSubscriptionStatus();
+    const twoThreeThirty = statusAfter.slots.find((s) => s.symbol === "2330");
+    assert.ok(twoThreeThirty, "2330 must be in the pool (CORE tier)");
+    assert.strictEqual(twoThreeThirty!.subscribed, true, "2330 must be confirmed subscribed at the gateway");
+    for (const sym of [...INDEX_SYMBOLS, ...STRATEGY_SYMBOLS, ...CORE_SYMBOLS]) {
+      const slot = statusAfter.slots.find((s) => s.symbol === sym);
+      assert.strictEqual(slot?.subscribed, true, `${sym} must be confirmed subscribed`);
+    }
+  });
+
+  // QM12: gateway offline at boot, comes online later — reconciler catches up.
+  it("QM12: gateway offline at first pass, online on next pass — permanent symbols subscribe late", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+    resetMockGateway({ online: false }); // simulate Railway booting before EC2 gateway's 08:20 start
+
+    const firstPass = await ensurePermanentSubscriptions();
+    assert.strictEqual(firstPass.gatewayReachable, false);
+    assert.strictEqual(firstPass.subscribed.length, 0);
+    assert.strictEqual(firstPass.failed.length, 0, "Fail-open: unreachable gateway must not be recorded as a failure");
+
+    const statusStillDown = getSubscriptionStatus();
+    assert.ok(
+      statusStillDown.slots.every((s) => s.subscribed === false),
+      "No state should be mutated while gateway is unreachable"
+    );
+
+    // Gateway comes online (e.g. its 08:20 scheduled boot completes).
+    mockGatewayState.online = true;
+
+    const secondPass = await ensurePermanentSubscriptions();
+    assert.strictEqual(secondPass.gatewayReachable, true);
+    assert.strictEqual(secondPass.subscribed.length, PERMANENT_SLOT_COUNT);
+
+    const statusAfter = getSubscriptionStatus();
+    assert.ok(statusAfter.slots.every((s) => s.subscribed === true), "All permanent slots subscribed once gateway is reachable");
+  });
+
+  // QM13: idempotent — a second reconcile pass over an already-live gateway makes zero new subscribe calls.
+  it("QM13: repeated ensurePermanentSubscriptions calls are idempotent (no duplicate gateway calls)", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+
+    const first = await ensurePermanentSubscriptions();
+    assert.strictEqual(first.subscribed.length, PERMANENT_SLOT_COUNT);
+    const callsAfterFirst = mockGatewayState.subscribeCalls.length;
+    assert.strictEqual(callsAfterFirst, PERMANENT_SLOT_COUNT);
+
+    // Second pass: gateway now reports all 21 as live (ground truth), so this
+    // must be a pure confirm — zero additional /quote/subscribe/tick calls.
+    const second = await ensurePermanentSubscriptions();
+    assert.strictEqual(second.subscribed.length, 0, "Nothing new to subscribe");
+    assert.strictEqual(second.alreadyLive.length, PERMANENT_SLOT_COUNT, "All 21 confirmed live from gateway status alone");
+    assert.strictEqual(
+      mockGatewayState.subscribeCalls.length,
+      callsAfterFirst,
+      "No new gateway subscribe calls on the idempotent pass"
+    );
+  });
+
+  // QM14: gateway restart mid-day — local flag says subscribed, gateway forgot, reconciler re-subscribes.
+  it("QM14: gateway restart wipes live set — reconciler detects and re-subscribes (self-heal)", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+
+    await ensurePermanentSubscriptions();
+    assert.strictEqual(mockGatewayState.subscribeCalls.length, PERMANENT_SLOT_COUNT);
+
+    const statusBeforeRestart = getSubscriptionStatus();
+    assert.ok(statusBeforeRestart.slots.every((s) => s.subscribed === true));
+
+    // Simulate a gateway process restart: its own live-subscribed set is
+    // wiped (fresh KGI SDK session), but our local `_slots[].subscribed`
+    // flags are untouched — exactly the 2026-07-16 incident.
+    mockGatewayState.liveTickSymbols = new Set<string>();
+    mockGatewayState.subscribeCalls = [];
+
+    const afterRestart = await ensurePermanentSubscriptions();
+    assert.strictEqual(afterRestart.gatewayReachable, true);
+    assert.strictEqual(
+      afterRestart.subscribed.length,
+      PERMANENT_SLOT_COUNT,
+      "Reconciler must notice the gateway forgot everything and re-subscribe all 21"
+    );
+    assert.strictEqual(mockGatewayState.subscribeCalls.length, PERMANENT_SLOT_COUNT);
+  });
+
+  // QM15: subscribeSymbol() no longer trusts "in the pool" as proof of a real subscribe.
+  it("QM15: subscribeSymbol retries the real gateway call for an in-pool-but-unconfirmed symbol", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager(); // 2330 is in _slots with subscribed:false, zero gateway calls so far
+
+    assert.strictEqual(mockGatewayState.subscribeCalls.includes("2330"), false);
+
+    const result = await subscribeSymbol("2330", TIER.CORE);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.action, "subscribed", "Must attempt + confirm the real gateway call, not silently claim already_subscribed");
+    assert.ok(mockGatewayState.subscribeCalls.includes("2330"), "A real gateway subscribe call must have been made");
+
+    const status = getSubscriptionStatus();
+    const slot = status.slots.find((s) => s.symbol === "2330");
+    assert.strictEqual(slot?.subscribed, true);
+
+    // A further call for the now-confirmed symbol is the cheap idempotent path.
+    const callsBefore = mockGatewayState.subscribeCalls.length;
+    const result2 = await subscribeSymbol("2330", TIER.CORE);
+    assert.strictEqual(result2.action, "already_subscribed");
+    assert.strictEqual(mockGatewayState.subscribeCalls.length, callsBefore, "No duplicate gateway call once confirmed");
+  });
+
+  // QM16: recordTickReceived wiring — a real tick observed via fetchKgiLatestTick
+  // (through getKgiMarketOverview, which polls ^TWII/^TPEX) must mark the slot live.
+  it("QM16: a successful tick fetch marks the matching slot subscribed + lastTickAt", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+
+    const statusBefore = getSubscriptionStatus();
+    const twii = statusBefore.slots.find((s) => s.symbol === "^TWII");
+    assert.strictEqual(twii?.subscribed, false);
+    assert.strictEqual(twii?.lastTickAt, null);
+
+    await getKgiMarketOverview(); // internally calls fetchKgiLatestTick("^TWII") + ("^TPEX")
+
+    const statusAfter = getSubscriptionStatus();
+    const twiiAfter = statusAfter.slots.find((s) => s.symbol === "^TWII");
+    assert.strictEqual(twiiAfter?.subscribed, true, "recordTickReceived must flip subscribed:true on a real tick");
+    assert.ok(twiiAfter?.lastTickAt, "lastTickAt must be populated");
   });
 });

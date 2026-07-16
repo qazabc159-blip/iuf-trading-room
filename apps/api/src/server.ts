@@ -18737,6 +18737,38 @@ function startSchedulers(workspaceSlug: string): void {
     );
   }, KGI_SIM_DAILY_SMOKE_POLL_MS);
 
+  // KGI permanent-tier subscription reconciler (2026-07-16 durable fix).
+  // initSubscriptionManager() only bookkeeps the 21 INDEX/STRATEGY/CORE
+  // symbols in-memory — it never told the gateway. Nothing else did either
+  // (see kgi-subscription-manager.ts durable-fix notes), so /kgi/quote/ticks
+  // for e.g. 2330 could 404 indefinitely even with a fully healthy gateway.
+  // This reconciler compares against the gateway's own /quote/status (ground
+  // truth) so it self-heals both (a) Railway booting before the EC2 gateway's
+  // scheduled 08:20 TST start, and (b) any mid-day gateway process restart
+  // wiping the KGI SDK's in-memory subscription state. Fail-open + idempotent
+  // — see ensurePermanentSubscriptions() doc comment for full rationale.
+  const KGI_PERMANENT_SUBSCRIPTION_RECONCILE_MS = 5 * 60 * 1000;
+  const runPermanentSubscriptionReconcile = () => {
+    import("./kgi-subscription-manager.js")
+      .then(({ ensurePermanentSubscriptions }) => ensurePermanentSubscriptions())
+      .then((r) => {
+        if (r.subscribed.length > 0 || r.failed.length > 0) {
+          console.log(
+            `[kgi-permanent-subscribe] reachable=${r.gatewayReachable} ` +
+            `alreadyLive=${r.alreadyLive.length} newlySubscribed=${r.subscribed.join(",") || "none"} ` +
+            `failed=${r.failed.join(",") || "none"}`
+          );
+        }
+      })
+      .catch((e) =>
+        console.error("[kgi-permanent-subscribe] reconcile tick failed:", e instanceof Error ? e.message : e)
+      );
+  };
+  // Near-immediate first attempt (short delay to let the process settle),
+  // then recurring reconciliation for the two self-heal cases above.
+  setTimeout(runPermanentSubscriptionReconcile, 20_000).unref();
+  ui(runPermanentSubscriptionReconcile, KGI_PERMANENT_SUBSCRIPTION_RECONCILE_MS);
+
   // CYCLE 16: TWSE Material Announcement Ingest — hourly 09:00–15:00 TST weekdays
   // Source: TWSE OpenAPI /opendata/t187ap46_L (no auth required).
   // Upserts into tw_announcements (migration 0030). Idempotent (ON CONFLICT DO NOTHING).

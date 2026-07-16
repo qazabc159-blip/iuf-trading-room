@@ -99,7 +99,14 @@ export interface SlotEntry {
   lastUsedAt: string; // ISO 8601
   /** Last tick data received from gateway */
   lastTickAt: string | null;
-  /** Whether gateway confirmed the subscription */
+  /**
+   * Whether the gateway has actually confirmed this subscription — either a
+   * `POST /quote/subscribe/tick` call returned ok, or a reconcile pass saw
+   * the symbol in the gateway's own `subscribed_symbols.tick` list.
+   * NOT the same as "present in `_slots`" — a symbol can be bookkept here
+   * (e.g. permanent-tier seeded by `initSubscriptionManager()`) without the
+   * gateway ever having been told about it. See `ensurePermanentSubscriptions()`.
+   */
   subscribed: boolean;
 }
 
@@ -185,6 +192,35 @@ async function gatewayUnsubscribe(symbol: string): Promise<boolean> {
   }
 }
 
+/**
+ * Query the gateway's own view of which tick symbols are actually live
+ * (`GET /quote/status` → `subscribed_symbols.tick`). This is ground truth —
+ * our local `_slots[].subscribed` flag is Railway-side bookkeeping that can
+ * drift from reality (e.g. after any gateway process restart, which wipes the
+ * KGI SDK's in-memory subscription state — see reports/quote_chain_outage_
+ * 20260710/TLS_FIX_2026_07_16.md). Fail-open: gateway unreachable → null, do
+ * NOT throw, do NOT infer either "subscribed" or "not subscribed" from a
+ * failed probe.
+ */
+async function gatewayLiveTickSymbols(): Promise<Set<string> | null> {
+  const url = `${getGatewayUrl()}/quote/status`;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as {
+      subscribed_symbols?: { tick?: string[] };
+    };
+    const tick = body.subscribed_symbols?.tick;
+    return new Set(Array.isArray(tick) ? tick : []);
+  } catch (err) {
+    console.warn(
+      `[kgi-subscription-manager] gateway status probe network error:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return null;
+  }
+}
+
 function symbolInSlots(symbol: string): boolean {
   return _slots.some((s) => s.symbol === symbol);
 }
@@ -204,9 +240,16 @@ function findLruSwappableSlot(): SlotEntry | null {
 // ── Initialise permanent slots ─────────────────────────────────────────────────
 
 /**
- * Initialise the manager with permanent slots.
+ * Initialise the manager with permanent slots (bookkeeping only).
  * Idempotent — calling twice is safe.
- * Does NOT call gateway (gateway may be offline at startup).
+ * Does NOT call gateway (gateway may be offline at startup, and this function
+ * is synchronous — it's called from many hot request paths without await).
+ * Actually telling the gateway about these symbols is
+ * `ensurePermanentSubscriptions()`'s job — call that from a boot task /
+ * recurring scheduler, not here. See 2026-07-16 durable-fix note: previously
+ * NOTHING ever called the gateway for permanent-tier symbols, so `subscribed`
+ * stayed `false` forever and e.g. `/kgi/quote/ticks?symbol=2330` 404'd
+ * indefinitely even when the gateway itself was healthy.
  */
 export function initSubscriptionManager(): void {
   if (_initialized) return;
@@ -231,6 +274,81 @@ export function initSubscriptionManager(): void {
   }
 
   _initialized = true;
+}
+
+export interface EnsurePermanentSubscriptionsResult {
+  gatewayReachable: boolean;
+  /** Already live per the gateway's own status — no network call needed this pass. */
+  alreadyLive: string[];
+  /** Were not live; a real `gatewaySubscribe()` call was made and succeeded. */
+  subscribed: string[];
+  /** Were not live; a real `gatewaySubscribe()` call was made and failed. */
+  failed: string[];
+}
+
+/**
+ * Actually tell the gateway about every permanent-tier (INDEX/STRATEGY/CORE)
+ * symbol, using the gateway's own `/quote/status` as ground truth rather than
+ * our local `subscribed` flag (which can't detect a gateway process restart
+ * on its own — see `gatewayLiveTickSymbols()`).
+ *
+ * Designed to be called both once shortly after boot AND on a recurring
+ * interval (see `startSchedulers()` in server.ts) so it self-heals two
+ * distinct real-world timing problems:
+ *   1. Railway API boots before the EC2 gateway's scheduled 08:20 TST
+ *      EventBridge start — the first pass(es) will see `gatewayReachable:
+ *      false` and no-op; a later interval tick picks it up once the gateway
+ *      is actually up.
+ *   2. The gateway process restarts mid-day (deploy, crash, manual fix like
+ *      the 2026-07-16 TLS cert repair) — the KGI SDK's in-memory
+ *      subscription state is wiped, but our local `_slots[].subscribed`
+ *      flags don't know that. Comparing against `subscribed_symbols.tick`
+ *      each pass catches this and re-subscribes.
+ *
+ * Fail-open throughout: gateway unreachable → returns immediately with
+ * `gatewayReachable:false`, no state mutation, no throw. Idempotent: once a
+ * symbol shows up in the gateway's own live set, subsequent passes make zero
+ * additional subscribe calls for it.
+ *
+ * TODO(follow-up, not required for this fix): detection cadence is bounded by
+ * the caller's interval (5 min in server.ts as of this writing) — a gateway
+ * restart is invisible to desk-exact for up to that long. If that's ever too
+ * slow, a push-based signal (gateway calls back into the API on its own
+ * startup) would close the gap faster than polling.
+ */
+export async function ensurePermanentSubscriptions(): Promise<EnsurePermanentSubscriptionsResult> {
+  if (!_initialized) initSubscriptionManager();
+
+  const result: EnsurePermanentSubscriptionsResult = {
+    gatewayReachable: false,
+    alreadyLive: [],
+    subscribed: [],
+    failed: [],
+  };
+
+  const liveSet = await gatewayLiveTickSymbols();
+  if (liveSet === null) return result; // fail-open, try again next pass
+  result.gatewayReachable = true;
+
+  const permanentSlots = _slots.filter((s) => PERMANENT_TIERS.has(s.tier));
+
+  for (const slot of permanentSlots) {
+    if (liveSet.has(slot.symbol)) {
+      slot.subscribed = true;
+      result.alreadyLive.push(slot.symbol);
+      continue;
+    }
+    const ok = await gatewaySubscribe(slot.symbol);
+    slot.subscribed = ok;
+    if (ok) {
+      slot.lastUsedAt = nowIso();
+      result.subscribed.push(slot.symbol);
+    } else {
+      result.failed.push(slot.symbol);
+    }
+  }
+
+  return result;
 }
 
 // ── Core subscribe API ─────────────────────────────────────────────────────────
@@ -261,10 +379,30 @@ export async function subscribeSymbol(
 ): Promise<SubscribeResult> {
   if (!_initialized) initSubscriptionManager();
 
-  // Already subscribed → update lastUsedAt, done
+  // In the pool already — update lastUsedAt.
   if (symbolInSlots(symbol)) {
     const existing = _slots.find((s) => s.symbol === symbol)!;
     existing.lastUsedAt = nowIso();
+
+    // Being IN the pool is bookkeeping, not proof the gateway was ever told.
+    // Permanent-tier slots are seeded by initSubscriptionManager() with
+    // subscribed:false and nothing else used to ever confirm them (see
+    // 2026-07-16 durable-fix note) — if we still haven't confirmed, do the
+    // real gateway call now instead of silently returning a false "ok".
+    if (!existing.subscribed) {
+      const confirmed = await gatewaySubscribe(symbol);
+      existing.subscribed = confirmed;
+      return {
+        ok: confirmed,
+        symbol,
+        action: confirmed ? "subscribed" : "gateway_error",
+        tier: existing.tier,
+        connection: existing.connection,
+        slotsUsed: _slots.length,
+        slotsMax: MAX_SLOTS,
+      };
+    }
+
     return {
       ok: true,
       symbol,
@@ -643,6 +781,11 @@ export async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapsho
 
     const tick = raw.ticks?.[0];
     if (!tick) return nullTickSnapshot(symbol);
+
+    // Real tick made it all the way back — this is the one place in the file
+    // that actually observes live gateway data flowing for a symbol, so it's
+    // the natural (and only, until 2026-07-16) writer of recordTickReceived().
+    recordTickReceived(symbol);
 
     const ts = tick.datetime ?? tick._received_at ?? null;
     const staleSec = ts ? Math.round((Date.now() - Date.parse(ts)) / 1000) : null;
