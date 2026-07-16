@@ -168,35 +168,36 @@ test.describe("/desk-exact preview", () => {
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-submit-outcome");
   });
 
-  // Round 3 (2026-07-14 深夜) — 互動接活驗收：K 線真資料、自選清單點擊切標的、
-  // query prefill、分頁真切換。楊董退件「交易台也沒真的做好」，本輪把假 K 線
-  // 換真 OHLCV、把死操作換真互動。
-  test("K-line renders real OHLCV candles (not the static demo SVG)", async ({ page }, testInfo) => {
+  // Round 4 (2026-07-17 移植) — K 線改走公司頁真實圖表引擎（iframe 內嵌
+  // /final-v031/portfolio/kline-frame，同一顆 OhlcvCandlestickChart.tsx）：
+  // 分K/日K/週K/月K切換、MA/MACD、量價支撐壓力、游標 read-out 全部真資料，
+  // 取代先前這支測試驗收過的自繪 SVG（該引擎已隨 #1281 切版前的舊實作一起
+  // 被 T-3/矩陣移植取代，見 DESK_MATRIX_CHART_GAP_2026_07_17.md）。
+  test("K-line embeds the real chart engine with interval/crosshair/support-resistance controls", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
-    await frame.locator('[data-slot="chart-status"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(6000); // OHLCV fetch (2000+ daily bars) + candle build
+    const chartFrameEl = frame.locator("#real-kline-frame");
+    await chartFrameEl.waitFor({ state: "attached", timeout: 15000 });
 
-    const chartStatus = await frame.locator('[data-slot="chart-status"]').first().textContent();
-    const candleRectCount = await frame.locator('[data-slot="chart-main-svg"] rect').count();
-    const macdVal = await frame.locator('[data-slot="chart-macd-val"]').first().textContent();
+    const chartSrc = await chartFrameEl.getAttribute("src");
+    testInfo.annotations.push({ type: "chart-iframe-src", description: String(chartSrc) });
+    expect(chartSrc, "desktop chart iframe embeds the real公司頁 kline-frame route").toContain("/final-v031/portfolio/kline-frame");
+    expect(chartSrc, "chart iframe defaults to the hero symbol").toContain("symbol=2330");
 
-    testInfo.annotations.push({ type: "chart-status", description: String(chartStatus) });
-    testInfo.annotations.push({ type: "candle-rect-count", description: String(candleRectCount) });
-    testInfo.annotations.push({ type: "macd-val", description: String(macdVal) });
+    const kline = frame.frameLocator("#real-kline-frame");
+    await kline.locator(".kline-toolbar").first().waitFor({ state: "attached", timeout: 20000 });
+    await page.waitForTimeout(4000); // OHLCV + K-bar fetch inside the nested route
 
-    // Real data: status line must cite a real bar count + "真實" wording, and
-    // there must be enough <rect> candle bodies to prove real bars were
-    // drawn (the old static demo had exactly 16 hardcoded candles).
-    expect(chartStatus, "chart status must report a real bar count").toMatch(/\d+\s*筆真實/);
-    expect(candleRectCount, "chart must render more than the old 16-candle static demo").toBeGreaterThan(16);
-    expect(macdVal, "MACD must show a real DIF/MACD/OSC readout given 2000+ daily bars").toMatch(/DIF .*MACD .*OSC/);
+    const toolbarText = await kline.locator(".kline-toolbar").first().textContent();
+    testInfo.annotations.push({ type: "kline-toolbar-text", description: String(toolbarText) });
+    // 分K/日K/週K/月K 週期切換鍵全部存在（舊自繪版 1分/5分/15分永遠 disabled）。
+    expect(toolbarText || "", "real engine offers 日/週/月 interval tabs").toMatch(/日K|日線/);
+    expect(toolbarText || "", "real engine offers minute (分K) interval tabs, unlike the old permanently-disabled buttons").toMatch(/分/);
 
-    // Target/entry/stop dashed S1 lines must be gone (no real per-symbol
-    // source) — the old demo's fixed "目標/建倉/停損" text must not appear.
-    const chartText = await frame.locator(".chart-body").first().textContent();
-    expect(chartText || "", "no fabricated S1 target/entry/stop lines mixed into the real chart").not.toContain("目標");
+    const srCount = await kline.locator('[data-indicator-readout="volume-price"]').count();
+    testInfo.annotations.push({ type: "support-resistance-readout-count", description: String(srCount) });
+    expect(srCount, "real engine exposes a 量價支撐/壓力 readout panel").toBeGreaterThan(0);
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-realchart");
   });
@@ -216,21 +217,23 @@ test.describe("/desk-exact preview", () => {
     const depthMeta = await frame.locator('[data-slot="depth-meta"]').first().textContent();
     const ticketLabel = await frame.locator('[data-slot="t-symbol-label"]').first().inputValue();
     const rowOnSym = await frame.locator(".wrow.on").first().getAttribute("data-wl-sym");
-    const chartStatus = await frame.locator('[data-slot="chart-status"]').first().textContent();
+    // 2026-07-17 移植：K 線改走 iframe 內嵌真圖表引擎，切標的時
+    // updateChartFrame() 同步改寫 iframe src（不再有 chart-status 文字節點）。
+    const chartSrc = await frame.locator("#real-kline-frame").getAttribute("src");
 
     testInfo.annotations.push({ type: "sym-code-after-click", description: String(symCode) });
     testInfo.annotations.push({ type: "sym-name-after-click", description: String(symName) });
     testInfo.annotations.push({ type: "depth-meta-after-click", description: String(depthMeta) });
     testInfo.annotations.push({ type: "ticket-label-after-click", description: String(ticketLabel) });
     testInfo.annotations.push({ type: "watchlist-on-row-after-click", description: String(rowOnSym) });
-    testInfo.annotations.push({ type: "chart-status-after-click", description: String(chartStatus) });
+    testInfo.annotations.push({ type: "chart-src-after-click", description: String(chartSrc) });
 
     expect(symCode, "symbol header switches to the clicked row's ticker").toBe("2454");
     expect(symName, "symbol header shows the matching company name").toContain("聯發科");
     expect(depthMeta, "depth panel re-fetches for the new symbol").toContain("2454");
     expect(ticketLabel, "order ticket's 標的 field follows the symbol switch").toContain("2454");
     expect(rowOnSym, "watchlist highlight moves to the clicked row").toBe("2454");
-    expect(chartStatus, "chart re-fetches real bars for the new symbol").toMatch(/\d+\s*筆真實/);
+    expect(chartSrc, "chart iframe re-points to the new symbol on switch").toContain("symbol=2454");
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-symbol-switch");
   });

@@ -169,30 +169,20 @@ body{padding:28px 22px 60px;background-image:radial-gradient(1200px 600px at 50%
 
 /* —— ① chart —— */
 .chart{overflow:hidden}
-/* ★ 修正②：K線技術分析工具列 —— 週期切換 + 主圖/副圖指標切換 */
-.chart .bar{display:flex;align-items:center;gap:13px;min-height:32px;padding:5px 10px;border-bottom:1px solid var(--line);flex:0 0 auto;overflow:hidden;white-space:nowrap}
-.grp{display:flex;align-items:center;gap:7px;min-width:0}
-.grp-l{font:600 8.5px/1 var(--mono);letter-spacing:.14em;color:var(--fg-3);text-transform:uppercase;flex:0 0 auto}
-.grp.ind{margin-left:auto}
-.grp .sub-l{font:600 9px/1 var(--tc);color:var(--fg-2);flex:0 0 auto}
-.tf{display:flex;gap:2px}
-.tf button{font:600 10.5px/1 var(--tc);color:var(--fg-3);background:transparent;border:1px solid transparent;border-radius:2px;padding:5px 8px;cursor:pointer;white-space:nowrap}
-.tf button.on{color:var(--brand-2);background:var(--brand-bg);border-color:var(--brand-line)}
-.tf button.dis{opacity:.4;text-decoration:line-through;cursor:not-allowed}
-.ind-row{display:flex;gap:3px}
-.ichip{font:600 10.5px/1 var(--tc);color:var(--fg-3);background:var(--bg-2);border:1px solid var(--line);border-radius:2px;padding:5px 9px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px}
-.ichip i{width:9px;height:2px;border-radius:1px;background:currentColor;opacity:.55}
-.ichip.on{color:var(--brand-2);background:var(--brand-bg);border-color:var(--brand-line);box-shadow:inset 0 0 0 1px rgba(200,148,63,.14)}
-.ichip.on i{opacity:1}
-.ichip.i-vol.on{color:var(--info)} .ichip.i-vol.on{border-color:rgba(107,138,166,.4);background:rgba(107,138,166,.1)}
-.chart-body{flex:1;min-height:0;position:relative}
-.chart-body svg{position:absolute;inset:0;width:100%;height:100%}
-.chart .demo-wm{position:absolute;right:10px;bottom:8px;font:600 9px/1 var(--mono);letter-spacing:.14em;color:var(--fg-3);z-index:2}
-/* 副圖 sub-panel — 證明副圖指標切換真的掛出一條帶 */
-.chart-sub{flex:0 0 auto;height:56px;border-top:1px solid var(--line-2);position:relative;background:var(--bg-1)}
-.chart-sub .sub-tag{position:absolute;left:10px;top:6px;z-index:2;font:600 9px/1 var(--mono);letter-spacing:.04em;color:var(--info);white-space:nowrap}
-.chart-sub .sub-val{position:absolute;right:10px;top:6px;z-index:2;font:600 9px/1 var(--mono);color:var(--fg-2);white-space:nowrap}
-.chart-sub svg{position:absolute;inset:0;width:100%;height:100%}
+/* K 線圖表引擎（2026-07-17 移植）：desk-exact 先前自繪 SVG 只有日/週＋MA20/MACD，
+   1分/5分/15分按鈕死的、無支撐壓力、無游標K —— 楊董點名「至少恢復到切版前舊
+   交易室能力」。舊交易室（apps/web/public/ui-final-v031/paper_trading_room/
+   index.html，見 #1252 前）本來就是用同一招：iframe 內嵌公司頁那顆打磨過的
+   OhlcvCandlestickChart 引擎（apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx，
+   透過 /final-v031/portfolio/kline-frame 頁面），複用不重寫。改走這條路後，原本
+   自繪 SVG 用的週期/指標工具列（.bar/.grp/.tf/.ind-row/.ichip）整組成死碼，
+   一併移除，改用真引擎自帶的工具列（1分/5分/15分/60分/日/週/月、MACD、支撐/
+   壓力、游標K read-out，全部真資料）。*/
+.real-kline-frame-shell{position:relative;flex:1;min-height:0;overflow:hidden;background:#080b10}
+.real-kline-loading{position:absolute;inset:0;z-index:1;display:grid;place-items:center;padding:16px;background:linear-gradient(180deg,rgba(8,11,16,.98),rgba(8,11,16,.9));color:var(--fg-2);font:700 10.5px/1.6 var(--tc);text-align:center;transition:opacity .16s ease}
+.real-kline-loading b{display:block;color:var(--brand-2);font-size:12px;margin-bottom:3px}
+.real-kline-frame-shell.is-loaded .real-kline-loading{opacity:0;pointer-events:none}
+.real-kline-frame-shell iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;background:#080b10}
 
 /* —— ⑤ ledger / 委託回報 —— */
 .ledger{overflow:hidden}
@@ -281,6 +271,18 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 .qty-conv{font:500 9px/1.4 var(--tc);color:var(--fg-3)}
 .qty-conv b{color:var(--brand-2);font-weight:600;font-family:var(--mono)}
 
+/* 台股下單能力矩陣（session/orderCond/TIF 分段選鈕）— T-3（#1252）移植，
+   2026-07-17。非法組合即時灰化，鏡射 apps/api/src/broker/order-rules.ts §4。 */
+.seg4,.seg3{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.seg4{grid-template-columns:repeat(4,1fr)}
+.seg3{grid-template-columns:repeat(3,1fr)}
+.seg4 button,.seg3 button{font-family:var(--tc);font-weight:600;font-size:10px;padding:6px 2px;background:var(--bg-2);color:var(--fg-3);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;letter-spacing:.01em}
+.seg4 button.on,.seg3 button.on{color:var(--brand-2);background:linear-gradient(180deg,rgba(200,148,63,.20),rgba(200,148,63,.05));box-shadow:inset 0 -2px 0 var(--brand)}
+.seg4 button:not(.on):hover:not([disabled]),.seg3 button:not(.on):hover:not([disabled]){color:var(--fg-0);background:var(--bg-3)}
+.seg4 button[disabled],.seg3 button[disabled]{color:var(--fg-3);opacity:.35;cursor:not-allowed}
+.fld .l .hlp.bad{color:var(--bad)}
+.oneclick.err{color:var(--bad);font-weight:700}
+
 /* preview */
 .pv{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;padding:5px 11px 6px;background:var(--bg-2);border-top:1px solid var(--line);flex:0 0 auto;margin:auto -11px -6px;margin-top:auto}
 .pv .it{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -340,8 +342,10 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 .m2-price{font:600 23px/1 var(--mono)}
 .m2-chg{font:600 11px/1 var(--mono);margin-top:4px}
 
-/* scrollable price zone */
-.m2-scroll{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;position:relative}
+/* scrollable price zone — 2026-07-17 移植真 K 線引擎＋下單矩陣塢後內容變高，
+   原本 overflow:hidden 假設整頁剛好塞滿手機螢幕已不成立；bottom 淡出漸層
+   （下方 ::after）本來就是「還有更多，往下滑」的視覺提示，改真的可滾動。 */
+.m2-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;position:relative}
 .m2-scroll::after{content:"";position:absolute;left:0;right:0;bottom:0;height:14px;background:linear-gradient(180deg,transparent,rgba(8,11,16,.9));pointer-events:none;z-index:3}
 
 /* watchlist chip rail */
@@ -353,18 +357,11 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 .m2-chips .chip.on .s{color:var(--brand-2)}
 .m2-chips .more{flex:0 0 auto;display:grid;place-items:center;padding:0 9px;font:600 9.5px/1 var(--mono);color:var(--fg-3);border:1px dashed var(--line-2);border-radius:2px;white-space:nowrap}
 
-/* compact chart card with mini toolbar */
-.m2-chart{flex:0 0 auto;border-bottom:1px solid var(--line);background:var(--bg-1)}
-.m2-cbar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap}
-.m2-cbar .tf{display:flex;gap:2px}
-.m2-cbar .tf button{font:600 10px/1 var(--tc);color:var(--fg-3);background:transparent;border:1px solid transparent;border-radius:2px;padding:4px 7px;cursor:pointer}
-.m2-cbar .tf button.on{color:var(--brand-2);background:var(--brand-bg);border-color:var(--brand-line)}
-.m2-cbar .m2-ind{margin-left:auto;display:flex;gap:3px}
-.m2-cbar .m2-ind button{font:600 9.5px/1 var(--tc);color:var(--fg-3);background:var(--bg-2);border:1px solid var(--line);border-radius:2px;padding:4px 7px;cursor:pointer}
-.m2-cbar .m2-ind button.on{color:var(--brand-2);background:var(--brand-bg);border-color:var(--brand-line)}
-.m2-cbody{position:relative;height:118px}
-.m2-cbody svg{position:absolute;inset:0;width:100%;height:100%}
-.m2-cbody .wm{position:absolute;right:9px;bottom:6px;font:600 8px/1 var(--mono);letter-spacing:.1em;color:var(--fg-3);z-index:2}
+/* compact chart card — 真 K 線引擎（同桌面版 real-kline-frame-shell，2026-07-17
+   移植）；118px 高的自繪 SVG 舊卡片放不下真引擎的工具列＋讀出帶，改 300px 定高，
+   .m2-scroll 已改可捲動，不會把下面的五檔/回報 peek 擠出畫面。 */
+.m2-chart{position:relative;flex:0 0 300px;border-bottom:1px solid var(--line);background:var(--bg-1);overflow:hidden}
+.m2-chart .real-kline-frame-shell{position:absolute;inset:0}
 
 /* quick 五檔 ladder — best 檔粗體、點價帶入 */
 .m2-ladder{flex:0 0 auto;background:var(--bg-1);border-bottom:1px solid var(--line)}
@@ -406,15 +403,28 @@ table.ot .nm-tc{font-family:var(--tc);font-weight:500}
 .m2-lotrow .ll .gate{font:600 8px/1 var(--mono);letter-spacing:.06em;color:var(--brand);border:1px solid var(--brand-line);border-radius:2px;padding:3px 5px;white-space:nowrap}
 .lotsw.big button{flex-direction:row;font-size:14px;padding:9px 2px;gap:6px}
 .lotsw.big button .u{font-size:8px}
+/* 台股下單能力矩陣（session/orderCond/otype/TIF）— T-3 移植，2026-07-17。
+   .m2-lotrow.slim 縮小 padding/gap 讓 4 組新增分段選鈕塞得進拇指區塢裡；
+   .lotsw.four/.three 只改欄數，其餘沿用既有 .lotsw 視覺語彙。 */
+.m2-lotrow.slim{padding:5px 8px;gap:3px}
+.m2-lotrow.slim .ll b{font-size:10px}
+.lotsw.four{grid-template-columns:repeat(4,1fr)}
+.lotsw.three{grid-template-columns:repeat(3,1fr)}
+.lotsw.four button,.lotsw.three button{font-size:10px;padding:7px 1px}
+.lotsw button[disabled]{opacity:.35;cursor:not-allowed}
 
 .m2-qp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .m2-fld{display:flex;flex-direction:column;gap:5px;min-width:0}
 .m2-fld .l{font:500 9px/1 var(--mono);letter-spacing:.06em;color:var(--fg-3);text-transform:uppercase;display:flex;justify-content:space-between;white-space:nowrap}
+.m2-fld .l .bad{color:var(--bad)}
+/* 委託類型下拉（m2t-otype）— 沿用桌面版 .fld select 的視覺語彙，2026-07-17 */
+.m2-fld select{background:var(--bg-2);border:1px solid var(--line);border-radius:2px;color:var(--fg-0);font:600 12px/1 var(--tc);padding:9px 6px;width:100%;min-width:0}
 .m2-step{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;gap:5px}
 .m2-step.hasunit{grid-template-columns:36px minmax(0,1fr) 36px 40px}
 .m2-step .sb{background:var(--bg-3);border:1px solid var(--line);border-radius:2px;color:var(--fg-1);font:600 17px/1 var(--mono);cursor:pointer}
 .m2-step input{background:var(--bg-2);border:1px solid var(--line);border-radius:2px;color:var(--fg-0);font:600 14px/1 var(--mono);text-align:center;padding:9px 4px;width:100%;min-width:0}
 .m2-step .unit-badge{font-size:13px}
+.m2-submit .sub.err{color:var(--bad);font-weight:700}
 
 /* risk chips row */
 .m2-risk{display:flex;gap:6px;flex-wrap:wrap}
@@ -547,36 +557,24 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                 </div>
               </div>
 
-              <!-- ① chart + ★修正② 技術工具列 -->
+              <!-- ① chart — 真 K 線引擎（2026-07-17 移植，見 real-kline-frame-shell
+                   CSS 註解）：1分/5分/15分/60分/日/週/月、MA5/10/20/60、MACD、支撐/
+                   壓力、游標K read-out 全部真資料，iframe 內嵌
+                   /final-v031/portfolio/kline-frame（同一顆 apps/web/app/companies/
+                   [symbol]/OhlcvCandlestickChart.tsx 引擎，公司頁在用的那顆）。 -->
               <div class="panel chart">
-                <div class="bar">
-                  <div class="grp">
-                    <span class="grp-l">週期</span>
-                    <div class="tf" data-slot="tf-group">
-                      <button class="dis" data-tf="1m" disabled title="交易室尚未接入可驗證的 1 分鐘 K 線來源">1分</button><button class="dis" data-tf="5m" disabled title="交易室尚未接入可驗證的 5 分鐘 K 線來源">5分</button><button class="dis" data-tf="15m" disabled title="交易室尚未接入可驗證的 15 分鐘 K 線來源">15分</button><button class="on" data-tf="1d">日</button><button data-tf="1w">週</button>
-                    </div>
-                  </div>
-                  <div class="grp ind">
-                    <span class="grp-l">指標</span>
-                    <span class="sub-l">主圖</span>
-                    <div class="ind-row">
-                      <button class="ichip on" data-ind="ma"><i></i>MA20</button><button class="ichip" data-ind="boll" disabled title="尚未接入 BOLL 計算">BOLL</button>
-                    </div>
-                    <span class="sub-l">副圖</span>
-                    <div class="ind-row">
-                      <button class="ichip i-vol" data-ind="vol" disabled title="副圖目前僅支援 MACD">量</button><button class="ichip on" data-ind="macd">MACD</button><button class="ichip" data-ind="kd" disabled title="尚未接入 KD 計算">KD</button>
-                    </div>
-                  </div>
-                </div>
-                <div class="chart-body">
-                  <span class="demo-wm" data-slot="chart-status">載入中…</span>
-                  <svg viewBox="0 0 600 300" preserveAspectRatio="none" data-slot="chart-main-svg"></svg>
-                </div>
-                <!-- 副圖 MACD（真 EMA12/26/9 計算，見 script computeMacd()） -->
-                <div class="chart-sub" data-slot="chart-sub-wrap">
-                  <span class="sub-tag">MACD (12,26,9)</span>
-                  <span class="sub-val" data-slot="chart-macd-val">--</span>
-                  <svg viewBox="0 0 600 56" preserveAspectRatio="none" data-slot="chart-macd-svg"></svg>
+                <div class="ph"><h4>K 線</h4><span class="cnt">已接公司頁真實圖表引擎</span></div>
+                <div class="real-kline-frame-shell">
+                  <div class="real-kline-loading"><b>正在載入真實 K 線</b>讀取公司 OHLCV、分 K 與量價指標，不使用假線補圖。</div>
+                  <iframe
+                    id="real-kline-frame"
+                    title="交易室真實 K 線"
+                    src="/final-v031/portfolio/kline-frame?symbol=2330"
+                    loading="lazy"
+                    scrolling="no"
+                    referrerpolicy="same-origin"
+                    onload="this.closest('.real-kline-frame-shell').classList.add('is-loaded')"
+                  ></iframe>
                 </div>
               </div>
 
@@ -640,12 +638,40 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                     <div class="l">標的<span class="hlp">沿用左側自選</span></div>
                     <input data-slot="t-symbol-label" value="2330　台灣積體電路製造" readonly />
                   </div>
+                  <!-- 台股下單能力矩陣（session/orderCond）— T-3（#1252）移植，
+                       2026-07-17。非法組合即時灰化，鏡射 order-rules.ts §4.2/§4.5。 -->
+                  <div class="fld">
+                    <div class="l">交易時段<span class="hlp" data-slot="t-session-hint">09:00–13:30</span></div>
+                    <div class="seg4" data-slot="t-session">
+                      <button class="on" data-session="regular">整股</button>
+                      <button data-session="intraday_odd">盤中零股</button>
+                      <button data-session="afterhours_odd">盤後零股</button>
+                      <button data-session="afterhours_fixed">盤後定價</button>
+                    </div>
+                  </div>
+                  <div class="fld">
+                    <div class="l">委託條件</div>
+                    <div class="seg4" data-slot="t-cond">
+                      <button class="on" data-cond="cash">現股</button>
+                      <button data-cond="margin">融資</button>
+                      <button data-cond="short">融券</button>
+                      <button data-cond="daytrade">當沖</button>
+                    </div>
+                  </div>
                   <div class="row2">
                     <div class="fld"><div class="l">委託類型</div>
-                      <select><option>限價</option></select>
+                      <select data-slot="t-otype"><option value="limit">限價</option><option value="market">市價</option></select>
                     </div>
-                    <div class="fld"><div class="l">委託價<span class="hlp">升降 0.50</span></div>
+                    <div class="fld"><div class="l">委託價<span class="hlp" data-slot="t-price-hint">升降 0.50</span></div>
                       <div class="step" data-slot="t-price-step"><button class="sb" data-act="minus">−</button><input data-slot="t-price" value="" placeholder="--" /><button class="sb" data-act="plus">＋</button></div>
+                    </div>
+                  </div>
+                  <div class="fld">
+                    <div class="l">委託效期</div>
+                    <div class="seg3" data-slot="t-tif">
+                      <button class="on" data-tif="rod" title="當日有效">ROD</button>
+                      <button data-tif="ioc" title="立即成交，剩餘取消">IOC</button>
+                      <button data-tif="fok" title="全部成交，否則取消">FOK</button>
                     </div>
                   </div>
                   <!-- ★ 張/股閘門：LOT/SHARE 緊貼數量，單位徽章＋換算跟著切換 -->
@@ -728,19 +754,22 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
               <div class="more">自選 10/15</div>
             </div>
 
-            <!-- compact chart + mini toolbar -->
+            <!-- compact chart — 真 K 線引擎（同桌面版 real-kline-frame-shell，
+                 2026-07-17 移植，見 CSS 註解）：1分/5分/15分/60分/日/週/月、
+                 MACD、支撐/壓力、游標K read-out 全部真資料，取代先前手機版
+                 自繪 SVG（1分/5分死按鈕、MACD 副圖手機版乾脆不顯示）。 -->
             <div class="m2-chart">
-              <div class="m2-cbar">
-                <div class="tf" data-slot="m2-tf-group">
-                  <button class="dis" data-tf="1m" disabled title="尚未接入 1 分鐘 K 線來源">1分</button><button class="dis" data-tf="5m" disabled title="尚未接入 5 分鐘 K 線來源">5分</button><button class="on" data-tf="1d">日</button><button data-tf="1w">週</button>
-                </div>
-                <div class="m2-ind">
-                  <button class="on" data-ind="ma">MA20</button><button class="dis" disabled title="尚未接入">量</button><button data-ind="macd" disabled title="手機版暫不顯示副圖">MACD</button><button class="dis" disabled title="尚未接入">KD</button>
-                </div>
-              </div>
-              <div class="m2-cbody">
-                <span class="wm" data-slot="m2-chart-status">載入中…</span>
-                <svg viewBox="0 0 390 118" preserveAspectRatio="none" data-slot="m2-chart-svg"></svg>
+              <div class="real-kline-frame-shell">
+                <div class="real-kline-loading"><b>正在載入真實 K 線</b>讀取公司 OHLCV、分 K 與量價指標，不使用假線補圖。</div>
+                <iframe
+                  id="real-kline-frame-mobile"
+                  title="交易室真實 K 線（手機）"
+                  src="/final-v031/portfolio/kline-frame?symbol=2330"
+                  loading="lazy"
+                  scrolling="no"
+                  referrerpolicy="same-origin"
+                  onload="this.closest('.real-kline-frame-shell').classList.add('is-loaded')"
+                ></iframe>
               </div>
             </div>
 
@@ -770,6 +799,27 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
               <button class="sell" data-side="sell">賣出<span class="t">SELL</span></button>
             </div>
 
+            <!-- 台股下單能力矩陣（session/orderCond）— T-3（#1252）移植，
+                 2026-07-17。非法組合即時灰化，鏡射 order-rules.ts §4.2/§4.5。 -->
+            <div class="m2-lotrow slim">
+              <div class="ll"><b>交易時段</b><span class="gate" data-slot="m2t-session-hint">09:00–13:30</span></div>
+              <div class="lotsw four" data-slot="m2t-session">
+                <button class="on" data-session="regular">整股</button>
+                <button data-session="intraday_odd">盤中零股</button>
+                <button data-session="afterhours_odd">盤後零股</button>
+                <button data-session="afterhours_fixed">盤後定價</button>
+              </div>
+            </div>
+            <div class="m2-lotrow slim">
+              <div class="ll"><b>委託條件</b></div>
+              <div class="lotsw four" data-slot="m2t-cond">
+                <button class="on" data-cond="cash">現股</button>
+                <button data-cond="margin">融資</button>
+                <button data-cond="short">融券</button>
+                <button data-cond="daytrade">當沖</button>
+              </div>
+            </div>
+
             <!-- ★ 手機張/股閘門：全寬 segmented governs 數量 -->
             <div class="m2-lotrow">
               <div class="ll"><b>數量單位</b><span class="gate">1000× 風險閘門 · 必選</span></div>
@@ -787,9 +837,24 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                 </div>
               </div>
               <div class="m2-fld">
-                <div class="l">委託價 · 限價<span>升降 0.50</span></div>
+                <div class="l">委託價<span data-slot="m2t-price-hint">升降 0.50</span></div>
                 <div class="m2-step" data-slot="m2t-price-step">
                   <button class="sb" data-act="minus">−</button><input data-slot="m2t-price" value="" placeholder="--" /><button class="sb" data-act="plus">＋</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="m2-qp">
+              <div class="m2-fld">
+                <div class="l">委託類型</div>
+                <select data-slot="m2t-otype"><option value="limit">限價</option><option value="market">市價</option></select>
+              </div>
+              <div class="m2-fld">
+                <div class="l">委託效期</div>
+                <div class="lotsw three" data-slot="m2t-tif">
+                  <button class="on" data-tif="rod">ROD</button>
+                  <button data-tif="ioc">IOC</button>
+                  <button data-tif="fok">FOK</button>
                 </div>
               </div>
             </div>
@@ -831,7 +896,6 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   // prefill, and every render function reads it fresh rather than closing
   // over a stale value.
   var currentSymbol = "2330";
-  var currentInterval = "1d";
   var latestAvailableCashTWD = null; // set by renderCapital(), read by the ticket controller
   // TWSE odd-lot bound (packages/contracts/src/paper.ts TWSE_ODD_LOT_MAX_SHARES =
   // TWSE_BOARD_LOT_SHARES-1). Fixed exchange rule, not business logic — safe to
@@ -1226,7 +1290,8 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     currentSymbol = sym;
     applySymbolIdentity(sym);
     if (opts && opts.side) applySidePrefill(opts.side);
-    Promise.all([renderSymbolHeader(), renderDepth(), renderChart()]).catch(function () { /* individual renderers already fail closed */ });
+    updateChartFrame(sym);
+    Promise.all([renderSymbolHeader(), renderDepth()]).catch(function () { /* individual renderers already fail closed */ });
   }
 
   function applySidePrefill(side) {
@@ -1486,235 +1551,24 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     });
   }
 
-  // ── K 線（真 OHLCV，互動接活 round 2026-07-14 晚 — 假 K 線是大罪，見報告）──
-  // 端點：/api/v1/companies/<symbol>/ohlcv?interval=1d|1w（同 OhlcvCandlestickChart.tsx
-  // 既有消費慣例：symbol 可直接當路徑參數，不需先解析成公司 UUID）。bar.source
-  // 可能是 "mock"——凡是 mock 一律過濾掉，絕不混進真線裡（見
-  // apps/web/app/companies/[symbol]/OhlcvCandlestickChart.tsx officialDailyBarCount()
-  // 的同一原則）。原稿的目標/建倉/停損三條虛線是 S1 策略價位，此處無對應真實
-  // 來源（一般自選股不是 S1 標的），直接拿掉，不讓假線混進真 K 線。
-  // 1分/5分/15分完全沒有可驗證來源（contracts OhlcvInterval 只定義 1d/1w/1m，
-  // 1m 是「月」不是分鐘）——HTML 已把這三顆按鈕標成 disabled，這裡不再處理。
-  function ohlcvNum(v) { var n = Number(v); return Number.isFinite(n) ? n : null; }
-
-  function fetchOhlcvBars(symbol, interval) {
-    var path = "/api/v1/companies/" + encodeURIComponent(symbol) + "/ohlcv?interval=" + encodeURIComponent(interval);
-    return apiFetch(path).then(function (res) {
-      var raw = res.ok ? unwrap(res.body) : null;
-      var bars = Array.isArray(raw) ? raw : [];
-      return bars
-        .filter(function (b) { return b && b.source !== "mock"; })
-        .map(function (b) {
-          var o = ohlcvNum(b.open), h = ohlcvNum(b.high), l = ohlcvNum(b.low), c = ohlcvNum(b.close);
-          if (o == null || h == null || l == null || c == null) return null;
-          return { dt: b.dt, o: o, h: h, l: l, c: c, v: ohlcvNum(b.volume) || 0 };
-        })
-        .filter(Boolean)
-        .sort(function (a, b) { return String(a.dt).localeCompare(String(b.dt)); });
-    });
-  }
-
-  function computeSMA(values, period) {
-    var out = new Array(values.length).fill(null);
-    var sum = 0;
-    for (var i = 0; i < values.length; i++) {
-      sum += values[i];
-      if (i >= period) sum -= values[i - period];
-      if (i >= period - 1) out[i] = sum / period;
-    }
-    return out;
-  }
-
-  // Standard EMA with an SMA(period) seed at index period-1 (values before
-  // that stay null — no fabricated warm-up numbers).
-  function computeEMA(values, period) {
-    var out = new Array(values.length).fill(null);
-    var k = 2 / (period + 1);
-    var sma = computeSMA(values, period);
-    for (var i = 0; i < values.length; i++) {
-      if (sma[i] == null) continue;
-      if (out[i - 1] == null) { out[i] = sma[i]; continue; }
-      out[i] = values[i] * k + out[i - 1] * (1 - k);
-    }
-    return out;
-  }
-
-  function computeMacd(closes) {
-    var ema12 = computeEMA(closes, 12);
-    var ema26 = computeEMA(closes, 26);
-    var macdLine = closes.map(function (_, i) {
-      return ema12[i] != null && ema26[i] != null ? ema12[i] - ema26[i] : null;
-    });
-    // EMA9 of the MACD line, seeded from wherever MACD itself first becomes
-    // defined (not from index 0 — computeEMA's own SMA seed would otherwise
-    // average over leading nulls).
-    var firstMacdIdx = macdLine.findIndex(function (v) { return v != null; });
-    var signalLine = new Array(closes.length).fill(null);
-    if (firstMacdIdx !== -1) {
-      var macdTail = macdLine.slice(firstMacdIdx);
-      var emaOfTail = computeEMA(macdTail, 9);
-      for (var i = 0; i < emaOfTail.length; i++) signalLine[firstMacdIdx + i] = emaOfTail[i];
-    }
-    var histogram = closes.map(function (_, i) {
-      return macdLine[i] != null && signalLine[i] != null ? macdLine[i] - signalLine[i] : null;
-    });
-    return { macdLine: macdLine, signalLine: signalLine, histogram: histogram };
-  }
-
-  function priceScale(values, height, padTop, padBottom) {
-    var defined = values.filter(function (v) { return v != null; });
-    var min = Math.min.apply(null, defined), max = Math.max.apply(null, defined);
-    if (!isFinite(min) || !isFinite(max) || min === max) { min = (min || 0) - 1; max = (max || 0) + 1; }
-    var usable = height - padTop - padBottom;
-    return function (p) { return padTop + usable * (1 - (p - min) / (max - min)); };
-  }
-
-  function buildCandleSvg(bars, ma, width, height) {
-    var n = bars.length;
-    if (!n) return "";
-    var allPrices = [];
-    bars.forEach(function (b) { allPrices.push(b.h, b.l); });
-    ma.forEach(function (v) { if (v != null) allPrices.push(v); });
-    var y = priceScale(allPrices, height, height * 0.06, height * 0.06);
-    var slot = width / n;
-    var bodyW = Math.max(1.5, Math.min(slot * 0.6, 20));
-    var grid = [0.15, 0.35, 0.55, 0.75].map(function (f) {
-      var yy = (height * f).toFixed(1);
-      return '<line x1="0" y1="' + yy + '" x2="' + width + '" y2="' + yy + '" stroke="rgba(198,208,222,.05)" stroke-width="1"/>';
-    }).join("");
-    var candles = bars.map(function (b, i) {
-      var cx = (slot * (i + 0.5)).toFixed(1);
-      var up = b.c >= b.o;
-      var color = up ? "#e63946" : "#2ecc71";
-      var yTop = y(Math.max(b.o, b.c)), yBot = y(Math.min(b.o, b.c));
-      var bodyH = Math.max(1, yBot - yTop);
-      return '<g stroke="' + color + '"><line x1="' + cx + '" y1="' + y(b.h).toFixed(1) + '" x2="' + cx + '" y2="' + y(b.l).toFixed(1) + '"/></g>' +
-        '<rect x="' + (slot * (i + 0.5) - bodyW / 2).toFixed(1) + '" y="' + yTop.toFixed(1) + '" width="' + bodyW.toFixed(1) + '" height="' + bodyH.toFixed(1) + '" fill="' + color + '"/>';
-    }).join("");
-    var maPts = ma.map(function (v, i) {
-      return v == null ? null : (slot * (i + 0.5)).toFixed(1) + "," + y(v).toFixed(1);
-    }).filter(Boolean).join(" ");
-    var maLine = maPts ? '<polyline fill="none" stroke="#c8943f" stroke-width="1.3" opacity=".85" points="' + maPts + '"/>' : "";
-    return grid + candles + maLine;
-  }
-
-  function buildMacdSvg(macdLine, signalLine, histogram, width, height) {
-    var n = macdLine.length;
-    if (!n) return "";
-    var defined = [];
-    macdLine.forEach(function (v) { if (v != null) defined.push(v); });
-    signalLine.forEach(function (v) { if (v != null) defined.push(v); });
-    histogram.forEach(function (v) { if (v != null) defined.push(v); });
-    if (!defined.length) return "";
-    var maxAbs = Math.max.apply(null, defined.map(Math.abs)) || 1;
-    var mid = height / 2;
-    var scale = (height / 2 - 4) / maxAbs;
-    var slot = width / n;
-    var barW = Math.max(1, Math.min(slot * 0.6, 16));
-    var zero = '<line x1="0" y1="' + mid + '" x2="' + width + '" y2="' + mid + '" stroke="rgba(198,208,222,.12)" stroke-width="1"/>';
-    var bars = histogram.map(function (v, i) {
-      if (v == null) return "";
-      var h = Math.abs(v) * scale;
-      var yTop = v >= 0 ? mid - h : mid;
-      var color = v >= 0 ? "rgba(230,57,70,.55)" : "rgba(46,204,113,.5)";
-      return '<rect x="' + (slot * (i + 0.5) - barW / 2).toFixed(1) + '" y="' + yTop.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(1, h).toFixed(1) + '" fill="' + color + '"/>';
-    }).join("");
-    function line(values, color) {
-      var pts = values.map(function (v, i) {
-        return v == null ? null : (slot * (i + 0.5)).toFixed(1) + "," + (mid - v * scale).toFixed(1);
-      }).filter(Boolean).join(" ");
-      return pts ? '<polyline fill="none" stroke="' + color + '" stroke-width="1.2" opacity=".85" points="' + pts + '"/>' : "";
-    }
-    return zero + bars + line(macdLine, "#c8943f") + line(signalLine, "#6b8aa6");
-  }
-
-  function paintChart(bars) {
-    var closes = bars.map(function (b) { return b.c; });
-    var ma20 = computeSMA(closes, Math.min(20, bars.length));
-    var mainSvgDesk = document.querySelector('[data-slot="chart-main-svg"]');
-    var mainSvgMobile = document.querySelector('[data-slot="m2-chart-svg"]');
-    if (mainSvgDesk) mainSvgDesk.innerHTML = buildCandleSvg(bars, ma20, 600, 300);
-    if (mainSvgMobile) mainSvgMobile.innerHTML = buildCandleSvg(bars, ma20, 390, 118);
-
-    var lastDt = bars[bars.length - 1].dt;
-    var status = bars.length + " 筆真實 " + (currentInterval === "1w" ? "週" : "日") + "K · 至 " + lastDt;
-    setText("chart-status", status);
-    setText("m2-chart-status", status);
-
-    if (bars.length < 35) {
-      setText("chart-macd-val", "資料筆數不足以計算 MACD（現有 " + bars.length + " 筆，需 ≥35 筆）");
-      var macdSvg = document.querySelector('[data-slot="chart-macd-svg"]');
-      if (macdSvg) macdSvg.innerHTML = "";
-      return;
-    }
-    var macd = computeMacd(closes);
-    var lastIdx = closes.length - 1;
-    var dif = macd.macdLine[lastIdx], dea = macd.signalLine[lastIdx], osc = macd.histogram[lastIdx];
-    setText("chart-macd-val", dif != null && dea != null && osc != null
-      ? "DIF " + dif.toFixed(2) + " · MACD " + dea.toFixed(2) + " · OSC " + (osc >= 0 ? "+" : "") + osc.toFixed(2)
-      : "MACD 計算中…");
-    var macdSvgEl = document.querySelector('[data-slot="chart-macd-svg"]');
-    if (macdSvgEl) macdSvgEl.innerHTML = buildMacdSvg(macd.macdLine, macd.signalLine, macd.histogram, 600, 56);
-  }
-
-  function renderChart() {
-    var sym = currentSymbol;
-    var interval = currentInterval;
-    setText("chart-status", "正在讀取真實 K 線資料…");
-    setText("m2-chart-status", "讀取中…");
-    return fetchOhlcvBars(sym, interval).then(function (bars) {
-      if (sym !== currentSymbol || interval !== currentInterval) return; // stale response, a newer switch already landed
-      if (!bars.length) {
-        setText("chart-status", sym + " 目前沒有可繪製的真實 OHLCV 資料");
-        setText("m2-chart-status", "無可用 K 線資料");
-        var mainSvgDesk = document.querySelector('[data-slot="chart-main-svg"]');
-        var mainSvgMobile = document.querySelector('[data-slot="m2-chart-svg"]');
-        if (mainSvgDesk) mainSvgDesk.innerHTML = "";
-        if (mainSvgMobile) mainSvgMobile.innerHTML = "";
-        setText("chart-macd-val", "--");
-        return;
-      }
-      // Render the most recent window so candles stay legible regardless of
-      // how much history the endpoint returns.
-      paintChart(bars.slice(-90));
-    }).catch(function () {
-      setText("chart-status", "K 線端點讀取失敗，已停止沿用舊圖");
-      setText("m2-chart-status", "讀取失敗");
-    });
-  }
-
-  function wireChartToolbar() {
-    ["tf-group", "m2-tf-group"].forEach(function (slotName) {
-      var group = document.querySelector('[data-slot="' + slotName + '"]');
-      if (!group) return;
-      group.querySelectorAll("button[data-tf]:not([disabled])").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var interval = btn.getAttribute("data-tf");
-          if (interval === currentInterval) return;
-          currentInterval = interval;
-          document.querySelectorAll('[data-slot="tf-group"] button[data-tf], [data-slot="m2-tf-group"] button[data-tf]').forEach(function (b) {
-            b.classList.toggle("on", b.getAttribute("data-tf") === interval);
-          });
-          renderChart();
-        });
-      });
-    });
-    // MA20 toggle just show/hides the polyline already drawn (no re-fetch).
-    document.querySelectorAll('button[data-ind="ma"]').forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        btn.classList.toggle("on");
-        var show = btn.classList.contains("on");
-        document.querySelectorAll('[data-slot="chart-main-svg"] polyline, [data-slot="m2-chart-svg"] polyline').forEach(function (el) {
-          el.style.display = show ? "" : "none";
-        });
-      });
-    });
-    document.querySelectorAll('button[data-ind="macd"]:not([disabled])').forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        btn.classList.toggle("on");
-        var wrap = document.querySelector('[data-slot="chart-sub-wrap"]');
-        if (wrap) wrap.style.display = btn.classList.contains("on") ? "" : "none";
-      });
+  // ── K 線（真實圖表引擎，2026-07-17 移植 round）──────────────────────────
+  // 桌面／手機兩個 <iframe data-slot="chart-frame"> 都嵌 /final-v031/portfolio/
+  // kline-frame?symbol=<sym>（同一顆 apps/web/app/companies/[symbol]/
+  // OhlcvCandlestickChart.tsx 引擎，公司頁在用的那顆：分K/日/週/月切換、
+  // MA/MACD、量價支撐壓力、游標 read-out 全部真資料）。此頁先前手動用
+  // /api/v1/companies/<symbol>/ohlcv 自繪 SVG K 線＋MACD 副圖，1分/5分/15分
+  // 永遠 disabled、無支撐壓力、無游標讀出 —— 改走 iframe 複用打磨過的引擎後，
+  // 那整組自繪程式碼（fetchOhlcvBars/computeSMA/computeEMA/computeMacd/
+  // buildCandleSvg/buildMacdSvg/paintChart/renderChart/wireChartToolbar）
+  // 已無任何 DOM 掛載點，一併移除，只留下切換標的時同步兩顆 iframe src。
+  function updateChartFrame(symbol) {
+    var src = "/final-v031/portfolio/kline-frame?symbol=" + encodeURIComponent(symbol);
+    ["real-kline-frame", "real-kline-frame-mobile"].forEach(function (id) {
+      var frame = document.getElementById(id);
+      if (!frame) return;
+      var shell = frame.closest(".real-kline-frame-shell");
+      if (shell) shell.classList.remove("is-loaded");
+      frame.src = src;
     });
   }
 
@@ -1731,10 +1585,13 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   }
 
   // ── 下單票（真送出，僅 paper 通道 — 見交付報告紅線處置）──────────────────
-  // 只接 paper 通道：實盤/KGI SIM 完全不呼叫。orderCond/session/timeInForce
-  // 固定為此原稿票面唯一支援的組合（現股 · 整股 · ROD——原稿委託類型欄位本來
-  // 就只有「限價」一個 option，沒有零股/融資融券/當沖選擇器，不無中生有加控件）；
-  // quantity_unit 必填無 default，跟著 UI 的張/股切換走。
+  // 只接 paper 通道：實盤/KGI SIM 完全不呼叫。orderCond/session/timeInForce/
+  // 委託類型（限價/市價）2026-07-17 起改接台股下單能力完整矩陣（T-3，#1252
+  // 移植回正式交易室 route）：交易類別（整股/盤中零股/盤後零股/盤後定價）×
+  // 委託種類（現股/融資/融券/當沖）× 委託類型（限價/市價）× 委託效期
+  // （ROD/IOC/FOK）四組控件，非法組合由 applyMatrixGating() 即時灰化，鏡射
+  // apps/api/src/broker/order-rules.ts §4.1/§4.2/§4.5；quantity_unit 必填無
+  // default，跟著 UI 的張/股切換走。
   var RISK_GUARD_LABELS = {
     max_per_trade: "單筆金額 ≤ 上限",
     max_daily_loss: "單日虧損 ≤ 上限",
@@ -1762,6 +1619,14 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     ODD_LOT_CASH_ONLY: "零股／盤後定價僅支援現股",
     LOT_QUANTITY_INVALID: "整股委託數量須為整張倍數",
     ODD_LOT_QUANTITY_INVALID: "零股委託股數須介於 1–999 股"
+  };
+  // 台股下單能力矩陣（session）交易時間帶 — packages/contracts/src/broker.ts
+  // orderSessionSchema 註解逐字對應。
+  var SESSION_HOURS = {
+    regular: "09:00–13:30",
+    intraday_odd: "09:10–13:30 逐筆",
+    afterhours_odd: "13:40–14:30 集合競價",
+    afterhours_fixed: "14:00–14:30 以收盤價成交"
   };
 
   var accountsCache = null;
@@ -1831,6 +1696,14 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     var submitBtn = slot("-submit");
     var submitLabelEl = slot("-submit-label");
     var submitMsgEl = slot("-submit-msg");
+    // 台股下單能力矩陣（session/orderCond/委託類型/TIF）— T-3（#1252）移植，
+    // 2026-07-17。四組控件皆非必要（舊 markup 沒有時優雅降級：currentXxx()
+    // 各自回退到唯一原本支援的組合現股/整股/限價/ROD）。
+    var sessionRoot = slot("-session");
+    var condRoot = slot("-cond");
+    var otypeSelect = slot("-otype");
+    var tifRoot = slot("-tif");
+    var sessionHintEl = slot("-session-hint");
     if (!sideRoot || !qtyInput || !priceInput || !unitRoot || !submitBtn) return; // markup not present for this scope
 
     function currentSide() {
@@ -1843,8 +1716,99 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     }
     function currentQty() { return Math.max(0, Math.round(Number(qtyInput.value) || 0)); }
     function currentPrice() { return Math.max(0, Number(priceInput.value) || 0); }
+    function currentSession() {
+      var on = sessionRoot && sessionRoot.querySelector(".on");
+      return (on && on.dataset.session) || "regular";
+    }
+    function currentCond() {
+      var on = condRoot && condRoot.querySelector(".on");
+      return (on && on.dataset.cond) || "cash";
+    }
+    function currentOtype() { return otypeSelect ? (otypeSelect.value || "limit") : "limit"; }
+    function currentTif() {
+      var on = tifRoot && tifRoot.querySelector(".on");
+      return (on && on.dataset.tif) || "rod";
+    }
+
+    // Client-side mirror of apps/api/src/broker/order-rules.ts §4.1/§4.2/§4.5
+    // (market-order TIF, odd-lot session×TIF, session×orderCond) — greys out
+    // illegal buttons/options and auto-corrects the selection the instant it
+    // becomes illegal, so the operator never has to round-trip a 委託種類
+    // rejection to discover a bad combo.
+    function applyMatrixGating() {
+      var session = currentSession();
+      var isOdd = session !== "regular";
+      var isAfterhoursFixedTif = session === "afterhours_odd" || session === "afterhours_fixed";
+
+      // session -> unit：零股 session 一律以股計價（§3/D4）
+      unitRoot.querySelectorAll("button").forEach(function (b) { b.disabled = isOdd && b.dataset.unit === "LOT"; });
+      var unitOn = unitRoot.querySelector(".on");
+      if (isOdd && unitOn && unitOn.dataset.unit === "LOT") {
+        unitRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+        var shareBtn = unitRoot.querySelector('[data-unit="SHARE"]');
+        if (shareBtn) shareBtn.classList.add("on");
+      }
+
+      // session -> orderCond：零股／盤後定價僅支援現股（§4.5）
+      if (condRoot) {
+        condRoot.querySelectorAll("button").forEach(function (b) { b.disabled = isOdd && b.dataset.cond !== "cash"; });
+        var condOn = condRoot.querySelector(".on");
+        if (isOdd && condOn && condOn.dataset.cond !== "cash") {
+          condRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+          var cashBtn = condRoot.querySelector('[data-cond="cash"]');
+          if (cashBtn) cashBtn.classList.add("on");
+        }
+      }
+
+      if (sessionHintEl) sessionHintEl.textContent = SESSION_HOURS[session] || "";
+
+      // session -> 委託類型：盤後零股／盤後定價只能 ROD（集合競價／收盤價成
+      // 交），跟「市價單僅 IOC/FOK」矛盾，所以這兩個 session 底下市價選項本
+      // 身就不合法，先擋在 <select> 這一層。
+      if (otypeSelect) {
+        var marketOption = otypeSelect.querySelector('option[value="market"]');
+        if (marketOption) marketOption.disabled = isAfterhoursFixedTif;
+        if (isAfterhoursFixedTif && otypeSelect.value === "market") otypeSelect.value = "limit";
+      }
+      var otype = currentOtype();
+
+      // 委託類型 × session -> TIF（§4.1/§4.2）
+      if (tifRoot) {
+        var allowedTif = otype === "market" ? { ioc: 1, fok: 1 } : { rod: 1, ioc: 1, fok: 1 };
+        if (isAfterhoursFixedTif) allowedTif = { rod: 1 };
+        tifRoot.querySelectorAll("button").forEach(function (b) { b.disabled = !allowedTif[b.dataset.tif]; });
+        var tifOn = tifRoot.querySelector(".on");
+        if (tifOn && !allowedTif[tifOn.dataset.tif]) {
+          tifRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+          var fallbackKey = Object.keys(allowedTif)[0];
+          var fallbackBtn = fallbackKey && tifRoot.querySelector('[data-tif="' + fallbackKey + '"]');
+          if (fallbackBtn) fallbackBtn.classList.add("on");
+        }
+      }
+    }
+
+    // Defense-in-depth re-check right before submit (mirrors order-rules.ts
+    // §4.1/§4.2/§4.5) — normally unreachable because applyMatrixGating()
+    // already greys out illegal buttons, but guards against any timing gap.
+    function matrixViolation() {
+      var session = currentSession();
+      var cond = currentCond();
+      var otype = currentOtype();
+      var tif = currentTif();
+      if (otype === "market" && tif !== "ioc" && tif !== "fok") {
+        return ORDER_RULE_REASON_LABELS.MARKET_ORDER_TIF_INVALID;
+      }
+      if ((session === "afterhours_odd" || session === "afterhours_fixed") && tif !== "rod") {
+        return ORDER_RULE_REASON_LABELS.ODD_LOT_SESSION_TIF_INVALID;
+      }
+      if (session !== "regular" && cond !== "cash") {
+        return ORDER_RULE_REASON_LABELS.ODD_LOT_CASH_ONLY;
+      }
+      return null;
+    }
 
     function refreshPreviewNumbers() {
+      applyMatrixGating();
       var unit = currentUnit();
       var qty = currentQty();
       var price = currentPrice();
@@ -1881,7 +1845,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       if (!(qty > 0)) return "請輸入有效數量";
       if (unit === "SHARE" && qty > TWSE_ODD_LOT_MAX_SHARES) return "零股股數須介於 1–" + TWSE_ODD_LOT_MAX_SHARES + " 股";
       if (!(price > 0)) return "請輸入有效委託價";
-      return null;
+      return matrixViolation();
     }
 
     function setSubmitBusy(disabled) {
@@ -1898,11 +1862,24 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     });
     unitRoot.querySelectorAll("button").forEach(function (btn) {
       btn.addEventListener("click", function () {
+        if (btn.disabled) return;
         unitRoot.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
         btn.classList.add("on");
         refreshPreviewNumbers();
       });
     });
+    [sessionRoot, condRoot, tifRoot].forEach(function (root) {
+      if (!root) return;
+      root.querySelectorAll("button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (btn.disabled) return;
+          root.querySelectorAll("button").forEach(function (b) { b.classList.remove("on"); });
+          btn.classList.add("on");
+          refreshPreviewNumbers();
+        });
+      });
+    });
+    if (otypeSelect) otypeSelect.addEventListener("change", refreshPreviewNumbers);
     [
       { input: qtyInput, step: 1, min: 1 },
       { input: priceInput, step: 0.5, min: 0.5 }
@@ -1924,10 +1901,19 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       cfg.input.addEventListener("input", refreshPreviewNumbers);
     });
 
+    // 顯著顯示送單結果／風控攔截訊息：非錯誤（送單中/成功）用預設樣式，
+    // 錯誤／被攔截（含 422 trading_hours 等 guard 訊息）切到 .err（桌面
+    // .oneclick.err／手機 .m2-submit .sub.err，紅字加粗）。
+    function setSubmitMsg(text, isError) {
+      if (!submitMsgEl) return;
+      submitMsgEl.textContent = text;
+      submitMsgEl.classList.toggle("err", !!isError);
+    }
+
     submitBtn.addEventListener("click", function () {
       var invalidReason = validate();
       if (invalidReason) {
-        if (submitMsgEl) submitMsgEl.textContent = invalidReason;
+        setSubmitMsg(invalidReason, true);
         return;
       }
       var side = currentSide();
@@ -1935,12 +1921,12 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       var qty = currentQty();
       var price = currentPrice();
       setSubmitBusy(true);
-      if (submitMsgEl) submitMsgEl.textContent = "送單中…";
+      setSubmitMsg("送單中…", false);
 
       var basePayload = {
         symbol: currentSymbol,
         side: side,
-        orderType: "limit",
+        orderType: currentOtype(),
         qty: qty,
         quantity_unit: unit,
         price: price
@@ -1957,7 +1943,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
         return loadPaperAccountId();
       }).then(function (accountId) {
         if (!accountId) {
-          if (submitMsgEl) submitMsgEl.textContent = "找不到模擬帳號，請重新整理後再試";
+          setSubmitMsg("找不到模擬帳號，請重新整理後再試", true);
           setSubmitBusy(false);
           return null;
         }
@@ -1969,36 +1955,41 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
           quantity: basePayload.qty,
           quantity_unit: basePayload.quantity_unit,
           price: basePayload.price,
-          // Fixed to this ticket's only supported combination (現股 · 整股 ·
-          // ROD) — 原稿委託類型欄位只有「限價」一個 option，沒有零股/融資
-          // 融券/當沖/session 選擇器，不無中生有加控件（見交付報告）。
-          orderCond: "cash",
-          session: "regular",
-          timeInForce: "rod"
+          // 台股下單能力矩陣（T-3，2026-07-17）：交易類別/委託種類/委託效期
+          // 三個真控件的即時值，不再寫死。合法組合由 applyMatrixGating()
+          // 即時灰化＋matrixViolation() 送出前二次檢查，鏡射
+          // order-rules.ts §4.1/§4.2/§4.5。
+          orderCond: currentCond(),
+          session: currentSession(),
+          timeInForce: currentTif()
         };
         return apiFetch("/api/v1/trading/orders", { method: "POST", body: JSON.stringify(orderPayload) });
       }).then(function (result) {
         if (!result) return;
         if (result.status === 409) {
           var body409 = result.body || {};
-          if (submitMsgEl) submitMsgEl.textContent = body409.error === "channel_coming_soon" ? "此券商通道即將開放，敬請期待" : "券商通道暫不可用";
+          setSubmitMsg(body409.error === "channel_coming_soon" ? "此券商通道即將開放，敬請期待" : "券商通道暫不可用", true);
           setSubmitBusy(false);
           return;
         }
         if (!result.ok) {
           var data = result.body && result.body.data;
-          if (submitMsgEl) submitMsgEl.textContent = data ? unifiedBlockedMessage(data) : "紙上單未通過";
+          // 422 block（含 trading_hours 等 guard）：除了一行摘要訊息，也把
+          // 完整 guards[] 灌回風控預覽面板（renderRiskGuards 已有 pass/warn
+          // 樣式），不只顯示第一個攔截原因。
+          if (data && data.riskCheck) renderRiskGuards(scopePrefix, data.riskCheck);
+          setSubmitMsg(data ? unifiedBlockedMessage(data) : "紙上單未通過", true);
           setSubmitBusy(false);
           return;
         }
         var order = result.body && result.body.data && result.body.data.order;
         if (order && order.status === "rejected") {
-          if (submitMsgEl) submitMsgEl.textContent = ORDER_RULE_REASON_LABELS[order.reason] || "委託未通過（不合法的買法組合）";
+          setSubmitMsg(ORDER_RULE_REASON_LABELS[order.reason] || "委託未通過（不合法的買法組合）", true);
           setSubmitBusy(false);
           return;
         }
         var orderId = order && order.id ? String(order.id) : "";
-        if (submitMsgEl) submitMsgEl.textContent = orderId ? "紙上單 #" + orderId.slice(-8) + " 已送出" : "紙上單已送出";
+        setSubmitMsg(orderId ? "紙上單 #" + orderId.slice(-8) + " 已送出" : "紙上單已送出", false);
         setSubmitBusy(false);
         // Refresh the ledger tabs (counts + whichever tab is active) and
         // capital summary so the new order/updated cash shows up without a
@@ -2006,7 +1997,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
         renderLedgerCounts();
         renderCapital();
       }).catch(function () {
-        if (submitMsgEl) submitMsgEl.textContent = "送單時發生連線錯誤，請稍後再試";
+        setSubmitMsg("送單時發生連線錯誤，請稍後再試", true);
         setSubmitBusy(false);
       });
     });
@@ -2021,14 +2012,12 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   wireTicket("m2t");
   wireWatchlistInteractions();
   wireLedgerTabs();
-  wireChartToolbar();
   applyQueryPrefill();
 
   Promise.all([
     renderGateway(),
     renderSymbolHeader(),
     renderDepth(),
-    renderChart(),
     renderWatchlist(),
     renderCapital(),
     renderLedgerCounts()
