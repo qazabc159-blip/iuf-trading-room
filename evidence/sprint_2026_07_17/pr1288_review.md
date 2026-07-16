@@ -58,3 +58,52 @@ YES
 Reviewer: Pete
 Date: 2026-07-17
 Sprint: W7 (paper sprint) — 2026-07-17
+
+---
+
+# Re-review — Pete 2026-07-17 (round 2) — commit `26f8b1a3`
+
+## Fix reviewed
+`fix(auth): close password-reset enumeration timing side-channel + add audit logs` — `password-reset-store.ts:45,78-90,295` + `server.ts:20896-20900,21007-21010`.
+
+## ① No-op queries — genuinely equal work?
+Round-trip **count** is now equalized: miss path runs SELECT users (common to both) → SELECT `password_reset_tokens WHERE user_id = NIL_UUID` (`:88`) → SELECT `users WHERE id = NIL_UUID` (`:89`) → return, exactly 3 sequential awaits, same as the hit path's SELECT → revoke-UPDATE → INSERT. `NIL_UUID = "00000000-0000-0000-0000-000000000000"` is a syntactically valid but never-real UUID, so both no-op SELECTs are guaranteed structurally (not just currently) to match zero rows via an index seek — no planner caching/short-circuit risk, no accidental data leak.
+
+**Residual gap, not closed**: round-trip *count* now matches, but the *work type* per round-trip still differs — hit path's 2nd/3rd calls are a write (UPDATE) and a write (INSERT), each an autocommit transaction that must wait on WAL fsync/commit; miss path's 2nd/3rd calls are plain read-only SELECTs with no commit-fsync wait. This is a real, smaller residual timing signal. Judgment: in this app's threat model (admin-mediated internal tool, calls transit Railway's managed Postgres over network — network RTT per round-trip dominates execution time by 1-2 orders of magnitude versus the sub-millisecond read/write fsync delta), the dominant, single-request-distinguishable oracle (extra round-trips) is closed. Only a statistical, high-sample-count timing attack against sub-ms fsync overhead remains theoretically possible — not a concrete single-shot exploit. Not blocker-worthy; recorded as a documented residual-risk nit below.
+
+## ② New problems introduced?
+None found. No test files touched (`git diff 1768684e 26f8b1a3 -- '*.test.ts'` empty) and none needed — the no-ops don't change hit/miss DB-state outcomes that PRS-1/PRS-2/PRF-1 already assert on. The two extra no-op reads sit inside the same `if (!user...) { ...; return; }` branch already covered by the outer route handler's try/catch (`server.ts` `/api/v1/auth/request-password-reset`), so a DB hiccup on the no-ops still degrades to the same generic response, not a new error surface.
+
+## ③ Claim vs implementation
+Comment narrowed from "no timing-sensitive branch visible to the caller" (unqualified, and the false claim I flagged) to "identical DB round-trip count on both branches — see ... NIL_UUID no-ops" (`server.ts:20898-20900`). This narrower claim is now accurate and directly traceable to the code. Good practice: they scoped the claim down to what's actually true rather than re-asserting the original absolute claim.
+
+## ④ Audit log format alignment
+- `generate-link` (`server.ts:21007-21010`): in the route handler (has request context), tag `[admin/password-reset-requests/:id/generate-link]` matches the route-path-bracket convention used by `owner-reset-password`/`change-password`, includes IP. Field name `admin_id=` (vs siblings' `user_id=`) is a reasonable, arguably clearer deviation since the actor is acting on someone else's request — acceptable.
+- `reset-password` (`password-reset-store.ts:295`): tag is `[password-reset-store]` (module/file name) instead of the route-path style (`[auth/reset-password]`) every other sibling log uses, and it has **no IP** (comment explains: placed in the store layer, no request context available there — the route handler could have logged with IP instead, matching the others exactly). This is a minor, disclosed limitation, not a regression from "no log at all" — downgraded to nit.
+
+## Updated Findings
+### 🟡 → resolved
+- Original 🔴 (timing oracle) — **closed** for the practical/dominant signal (round-trip count); residual moved to nit below.
+- Original 🟡#3 (missing audit logs) — mostly closed; `generate-link` fully matches convention, `reset-password` partially (see nit).
+- 🟡#1 (test:db informational CI gate) and 🟡#2 (rate limiting) — **unchanged, still open**, both explicitly deferred by the author to Elva/Bruce (CI policy) and a follow-up PR respectively — consistent with what was asked, not a re-review concern.
+
+### 💭 New nits (this round)
+1. Residual sub-round-trip timing signal (write-commit/fsync vs read-only) not eliminated — acceptable given network-RTT-dominated threat model; would only matter for a genuinely constant-time hardening pass, not blocking.
+2. `reset-password`'s new audit log (`password-reset-store.ts:295`) uses a file-name tag and has no IP, unlike the route-path+IP convention every other auth audit log in this codebase follows — could be moved to (or duplicated in) the `server.ts` route handler for full parity; low priority given DB already retains `used_at`/`user_id`.
+
+## Verdict (round 2)
+- [x] **APPROVED** — 0 blocker remaining. Both 🟡 items still open (test:db required-gate policy, rate limiting) were explicitly deferred with owner's stated reasoning (Elva/Bruce policy call; follow-up PR), not silently dropped — acceptable to proceed to ready with those tracked as follow-ups, not re-review blockers.
+
+## Suggested Owner for Fixes (round 2)
+- 💭 #1 (residual timing) → no action required now; note for a future constant-time hardening pass if threat model changes
+- 💭 #2 (reset-password log tag/IP) → Jason, optional low-priority follow-up
+- 🟡#1 (test:db required-gate) → Elva/Bruce, still pending
+- 🟡#2 (rate limit) → Jason, follow-up PR per author's own commit message
+
+## Re-review Required
+NO
+
+---
+Reviewer: Pete
+Date: 2026-07-17 (round 2)
+Sprint: W7 (paper sprint) — 2026-07-17
