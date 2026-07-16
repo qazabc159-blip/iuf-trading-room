@@ -1219,7 +1219,13 @@ function HeatZonePanel({
     ? loadStateData(realtimeMarket)?.kgiCoreHeatmap?.updatedAt ?? market.data?.marketContext.breadth?.updatedAt ?? market.data?.generatedAt ?? null
     : loadStateData(realtimeMarket)?.twseOverview?.taiex?.ts ?? null;
   const displaySourceLabel = showCoverageFallback ? "TWSE 全市場 · 代表股資料暖機中" : sourceLabel;
-  const effectiveMode: "core" | "all" = showKgiFallback || showCoverageFallback ? "all" : activeMode;
+  // 根因修復（2026-07-17）：showKgiFallback 只代表「KGI 即時報價收盤/非交易時段」，
+  // 不等於「沒有可顯示的核心熱力圖資料」——heatmap（EOD 代表股）在此情境下仍有真值，
+  // hasCore 已經處理過不拿 KGI 死 tick 混算。之前把 showKgiFallback 也塞進這裡，
+  // 導致每天 14:10-09:00 與整個週末，使用者點「核心熱力圖」永遠被強制蓋回全市場視圖
+  // （核心/全市場 tab 形同壞掉）。只有真的沒有代表股覆蓋（showCoverageFallback）才需要
+  // 強制切到全市場救援視圖；KGI 收盤與否交給上面的 banner 說明，不應該動 effectiveMode。
+  const effectiveMode: "core" | "all" = showCoverageFallback ? "all" : activeMode;
 
   return (
     <section className="heatzone">
