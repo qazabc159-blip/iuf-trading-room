@@ -20896,8 +20896,9 @@ app.post("/api/v1/auth/change-password", async (c) => {
 //
 // Hard lines:
 //   - request-password-reset NEVER reveals whether the email matched an
-//     account — identical response either way, identical status code, no
-//     timing-sensitive branch visible to the caller.
+//     account — identical response either way, identical status code, and
+//     (2026-07-17 fix) an identical DB round-trip count on both branches —
+//     see password-reset-store.ts requestPasswordReset()'s NIL_UUID no-ops.
 //   - reset-password NEVER reveals which failure mode a bad token hit
 //     (missing / expired / used / revoked all collapse to invalid_or_expired).
 //   - Frontend copy for request-password-reset must NOT claim an email was
@@ -21003,6 +21004,10 @@ app.post("/api/v1/admin/password-reset-requests/:id/generate-link", async (c) =>
     if (!result) {
       return c.json({ error: "request_not_found_or_already_resolved" }, 404);
     }
+    const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
+    console.log(
+      `[admin/password-reset-requests/:id/generate-link] admin_id=${session.user.id}, request_id=${requestId}, action=reset_link_generated, ip=${ip}`
+    );
     return c.json({ data: result }, 201);
   } catch (err) {
     console.error("[admin/password-reset-requests/:id/generate-link] error:", err instanceof Error ? err.message : err);

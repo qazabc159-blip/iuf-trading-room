@@ -39,6 +39,11 @@ import { hashPassword, validateNewPassword } from "./auth-store.js";
 const RESET_URL_BASE = "https://app.eycvector.com/reset-password";
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, starting at generation time (not request time)
 
+// Guaranteed-empty predicate value for the timing-parity no-op reads below —
+// never a real row, so these queries always match zero rows regardless of
+// data state.
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
@@ -70,7 +75,20 @@ export async function requestPasswordReset(email: string): Promise<void> {
     .where(eq(users.email, normalEmail))
     .limit(1);
 
-  if (!user || user.isActive === false) return;
+  if (!user || user.isActive === false) {
+    // Anti-timing-oracle (Pete review, 2026-07-17): the match branch below
+    // makes 2 more DB round-trips than a bare SELECT (revoke UPDATE + insert
+    // INSERT). The HTTP response body/status are already byte-identical
+    // either way, but a caller timing responses in bulk could still
+    // enumerate real accounts from that round-trip-count difference alone.
+    // Run two read-only no-ops here so both branches always make exactly 3
+    // sequential DB round-trips — these match zero rows (NIL_UUID) and write
+    // nothing, preserving the existing "no junk rows for typos/probing"
+    // invariant.
+    await db.select({ id: passwordResetTokens.id }).from(passwordResetTokens).where(eq(passwordResetTokens.userId, NIL_UUID)).limit(1);
+    await db.select({ id: users.id }).from(users).where(eq(users.id, NIL_UUID)).limit(1);
+    return;
+  }
 
   // Supersede any prior pending/active (not yet used, not yet revoked) row
   // for this user — only the newest request can ever be resolved.
@@ -267,6 +285,14 @@ export async function resetPassword(opts: {
     }
     throw err;
   }
+
+  // Operational audit log (Pete review, 2026-07-17) — matches the
+  // admin/owner-reset-password and auth/change-password convention. No IP
+  // here (public token-based flow, no request context in this store-layer
+  // function) — the route handler in server.ts owns request-scoped fields;
+  // this at least gives log-stream visibility into which account was reset,
+  // matching what generatePasswordResetLink() below logs on the admin side.
+  console.log(`[password-reset-store] user_id=${row.userId}, action=password_reset_via_token`);
 
   return { ok: true };
 }
