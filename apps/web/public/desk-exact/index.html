@@ -944,6 +944,26 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     return item.freshnessStatus === "fresh" ? (srcLabel + "即時") : (srcLabel + "（略舊）");
   }
 
+  // 五檔盤口兩種 response shape 相容（2026-07-16 三輪終驗發現的 regression）：
+  // twse_mis fallback 回扁平 data.{ask,bid}_{prices,volumes}（附 data.source:
+  // "twse_mis_intraday"）；KGI 原生（行情腿修通後）回巢狀
+  // data.bidask.{ask,bid}_{prices,volumes}（無 source 欄位，改用同層級的
+  // data.freshness / data.stale）。只認扁平路徑會讓 KGI 源下盤口整段空白
+  // ——比舊版（至少還有 twse_mis 假資料）更糟，這裡兩種都吃。
+  function normalizeBidAsk(d) {
+    if (!d) return { askP: [], askV: [], bidP: [], bidV: [], sourceLabel: null, isStale: false };
+    var nested = d.bidask && typeof d.bidask === "object" ? d.bidask : null;
+    var src = nested || d;
+    return {
+      askP: src.ask_prices || [],
+      askV: src.ask_volumes || [],
+      bidP: src.bid_prices || [],
+      bidV: src.bid_volumes || [],
+      sourceLabel: nested ? "凱基" : (d.source === "twse_mis_intraday" ? "證交所" : (src.ask_prices || src.bid_prices ? "行情" : null)),
+      isStale: d.stale === true || d.freshness === "stale"
+    };
+  }
+
   // 下單票委託價預設值：帶入當前標的即時價，換標的跟著換；拿不到價則清空
   // 讓使用者自行輸入（不餵假數字）。透過真實 "input" 事件通知 wireTicket()
   // 既有的 refreshPreviewNumbers 監聽器，讓「預估金額」等連動欄位一起更新。
@@ -984,12 +1004,26 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     seedTicketPrice(null);
   }
 
-  function applySymbolHeaderFromTick(last) {
+  // KGI tick 的 datetime 是 "YYYYMMDDHHmmss" 字串（同 bidask.datetime 格式），
+  // 用來在 stale 快照時誠實標示「這是幾點的資料」而非假裝即時。
+  function fmtKgiDatetimeHM(v) {
+    var s = String(v == null ? "" : v);
+    if (!/^\d{14}$/.test(s)) return null;
+    return s.slice(8, 10) + ":" + s.slice(10, 12) + ":" + s.slice(12, 14);
+  }
+
+  // isStale/staleSince 來自 d.stale / d.freshness（跟 d.ticks 同層級的 envelope
+  // 欄位，非個別 tick 上），2026-07-16 三輪終驗發現：ops 手動訂閱打進來的是
+  // 「單一快照」（buffer_used:1），不是持續推播，回應會帶 stale:true。有值就要
+  // 照顯＋誠實標示資料時間，不能因為 stale 旗標就打回「尚無報價」空狀態。
+  function applySymbolHeaderFromTick(last, isStale) {
     var isUp = num(last.price_chg) > 0 ? true : num(last.price_chg) < 0 ? false : null;
     setDir("sym-price", isUp); setDir("m2-sym-price", isUp);
     setDir("sym-chg", isUp); setDir("sym-pct", isUp); setDir("m2-sym-chg", isUp);
-    setText("sym-state", "即時 tick");
-    setText("m2-sym-state", "即時");
+    var asof = fmtKgiDatetimeHM(last.datetime);
+    var stateLabel = isStale ? ("凱基" + (asof ? "（" + asof + " 快照）" : "（略舊）")) : "即時 tick";
+    setText("sym-state", stateLabel);
+    setText("m2-sym-state", isStale ? "略舊" : "即時");
     setText("sym-price", fmtPrice(last.close));
     setText("m2-sym-price", fmtPrice(last.close));
     setText("sym-chg", fmtChg(last.price_chg));
@@ -1030,9 +1064,11 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       var d = res.ok ? unwrap(res.body) : null;
       var ticks = d && Array.isArray(d.ticks) ? d.ticks : [];
       var last = ticks.length ? ticks[ticks.length - 1] : null;
+      // stale/freshness 是 envelope 層級欄位（跟 d.ticks 同層，非個別 tick 上）。
+      var isStale = !!(d && (d.stale === true || d.freshness === "stale"));
 
       if (last && num(last.close) != null) {
-        applySymbolHeaderFromTick(last);
+        applySymbolHeaderFromTick(last, isStale);
         return;
       }
 
@@ -1055,10 +1091,8 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   function renderDepth() {
     return apiFetch("/api/v1/kgi/quote/bidask?symbol=" + currentSymbol).then(function (res) {
       var d = res.ok ? unwrap(res.body) : null;
-      var askP = (d && d.ask_prices) || [];
-      var askV = (d && d.ask_volumes) || [];
-      var bidP = (d && d.bid_prices) || [];
-      var bidV = (d && d.bid_volumes) || [];
+      var nb = normalizeBidAsk(d);
+      var askP = nb.askP, askV = nb.askV, bidP = nb.bidP, bidV = nb.bidV;
 
       if (!askP.length && !bidP.length) {
         setText("depth-meta", currentSymbol + " · 尚無委買委賣");
@@ -1070,7 +1104,8 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
         return;
       }
 
-      setText("depth-meta", currentSymbol + " · 即時 tick");
+      var depthStateLabel = (nb.sourceLabel || "行情") + (nb.isStale ? "（略舊）" : "即時");
+      setText("depth-meta", currentSymbol + " · " + depthStateLabel);
       setText("depth-hint", "點任一檔價位 帶入委託價 → 價格到票券一眼距離");
 
       // index 0 = best (matches getKgiBidAsk() consumer convention in

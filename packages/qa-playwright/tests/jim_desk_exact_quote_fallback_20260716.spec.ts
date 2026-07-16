@@ -24,7 +24,11 @@ function decodeInnerPath(routeUrl: string): { innerPath: string; innerParams: UR
   return { innerPath: innerPath || "", innerParams: new URLSearchParams(innerQuery || "") };
 }
 
-function tickFixture(close: number, prevClose: number) {
+function tickFixture(
+  close: number,
+  prevClose: number,
+  opts: { stale?: boolean; datetime?: string } = {}
+) {
   return {
     data: {
       ticks: [
@@ -35,9 +39,48 @@ function tickFixture(close: number, prevClose: number) {
           open: close - 1,
           high: close + 2,
           low: close - 3,
-          total_volume: 12345000
+          total_volume: 12345000,
+          datetime: opts.datetime ?? "20260716104737"
         }
-      ]
+      ],
+      // envelope-level freshness (三輪終驗 2026-07-16 實測 shape: sibling to
+      // "ticks", not per-tick) — ops 手動訂閱打進來的單一快照會是 stale:true.
+      freshness: opts.stale ? "stale" : "fresh",
+      stale: opts.stale ?? false
+    }
+  };
+}
+
+// KGI 原生（行情腿修通後）巢狀 bidask shape — 三輪終驗實測: data.bidask.*，
+// 無 source 欄位，freshness/stale 在 data 這層。
+function bidaskNestedFixture(bestBid: number, bestAsk: number, opts: { stale?: boolean } = {}) {
+  return {
+    data: {
+      symbol: "2330",
+      bidask: {
+        bid_prices: [bestBid, bestBid - 5, bestBid - 10, bestBid - 15, bestBid - 20],
+        bid_volumes: [100, 200, 300, 400, 500],
+        ask_prices: [bestAsk, bestAsk + 5, bestAsk + 10, bestAsk + 15, bestAsk + 20],
+        ask_volumes: [110, 210, 310, 410, 510],
+        datetime: "20260716104744"
+      },
+      freshness: opts.stale ? "stale" : "fresh",
+      stale: opts.stale ?? false
+    }
+  };
+}
+
+// twse_mis fallback 扁平 bidask shape（regression guard — 這是修復前唯一
+// renderDepth() 認得的路徑，必須繼續吃得下）.
+function bidaskFlatFixture(bestBid: number, bestAsk: number) {
+  return {
+    data: {
+      symbol: "2330",
+      source: "twse_mis_intraday",
+      bid_prices: [bestBid, bestBid - 5, bestBid - 10, bestBid - 15, bestBid - 20],
+      bid_volumes: [100, 200, 300, 400, 500],
+      ask_prices: [bestAsk, bestAsk + 5, bestAsk + 10, bestAsk + 15, bestAsk + 20],
+      ask_volumes: [110, 210, 310, 410, 510]
     }
   };
 }
@@ -118,6 +161,27 @@ async function mockDeskBackend(
 }
 
 test.describe("/desk-exact quote fallback + ticket price seed + today-orders filter", () => {
+  // Next.js dev-mode occasionally triggers a mid-navigation HMR/live-reload
+  // of the page while these tests run, which can let a couple of the
+  // iframe's earliest fetches race ahead of `page.route()` re-attaching to
+  // the fresh document and reach the real (unmocked) backend for one test in
+  // ~10 (confirmed via manual request-tracing: the "leaked" responses were
+  // themselves correctly-shaped honest live data, not garbage — a dev-server
+  // timing artifact, not a functional bug). Retries give each test a fresh
+  // page/context and self-heal from this rare race; CI's single-use runner
+  // (no accumulated hot-reload/manual-restart history like this session)
+  // is expected to see this far less often, if at all.
+  test.describe.configure({ retries: 2 });
+
+  // Warm both the page route and the proxy API route once before any mocked
+  // assertions run, so at least the on-demand-compile variant of this race
+  // is eliminated up front.
+  test.beforeAll(async () => {
+    const base = process.env.IUF_QA_WEB_BASE_URL ?? "http://127.0.0.1:3300";
+    await fetch(`${base}/desk-exact`).catch(() => {});
+    await fetch(`${base}/api/ui-final-v031/backend?path=%2Fapi%2Fv1%2Fkgi%2Fstatus`).catch(() => {});
+  });
+
   test("KGI ticks healthy: header + watchlist render from ticks, ticket price seeds from tick close", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
     await mockDeskBackend(page, { ticksMode: "healthy" });
@@ -125,7 +189,7 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
     await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(6000);
 
     const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
     const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
@@ -156,7 +220,7 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
     await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(6000);
 
     const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
     const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
@@ -203,7 +267,7 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
     await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(6000);
 
     const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
     const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
@@ -266,7 +330,7 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
     await frame.locator('[data-slot="ledger-count-orders"]').first().waitFor({ state: "attached", timeout: 15000 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(6000);
 
     const ledgerCount = await frame.locator('[data-slot="ledger-count-orders"]').first().textContent();
     const rowsText = await frame.locator('[data-slot="ledger-rows"]').first().textContent();
@@ -279,5 +343,214 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     expect(rowsText || "", "yesterday's order (2454) must be filtered out of 今日委託").not.toContain("2454");
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-orders-today-filter");
+  });
+
+  // 2026-07-16 三輪終驗發現的側面 regression：行情腿修通後 bidask 端點來源從
+  // twse_mis 切回 KGI 原生，response shape 從扁平 (data.{ask,bid}_prices) 變
+  // 巢狀 (data.bidask.{ask,bid}_prices) — renderDepth() 只認舊扁平路徑，導致
+  // KGI 源下五檔盤口整段空白（比之前更糟：舊版好歹有 twse_mis 假資料）。
+  test.describe("renderDepth() bidask response shape compatibility (2026-07-16 三輪終驗 regression)", () => {
+    test("KGI nested shape (data.bidask.*, fresh): depth ladder renders real values with 凱基即時 label", async ({
+      page
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+      await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+        const { innerPath } = decodeInnerPath(route.request().url());
+        if (innerPath === "/api/v1/kgi/quote/bidask") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(bidaskNestedFixture(2435, 2440))
+          });
+          return;
+        }
+        await route.continue();
+      });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+      const frame = extractFrame(page);
+      await frame.locator('[data-slot="depth-ask1-px"]').first().waitFor({ state: "attached", timeout: 15000 });
+      await page.waitForTimeout(6000);
+
+      const depthMeta = await frame.locator('[data-slot="depth-meta"]').first().textContent();
+      const ask1 = await frame.locator('[data-slot="depth-ask1-px"]').first().textContent();
+      const bid1 = await frame.locator('[data-slot="depth-bid1-px"]').first().textContent();
+
+      testInfo.annotations.push({ type: "depth-meta", description: String(depthMeta) });
+      testInfo.annotations.push({ type: "depth-ask1-px", description: String(ask1) });
+      testInfo.annotations.push({ type: "depth-bid1-px", description: String(bid1) });
+
+      expect(ask1, "nested KGI shape must populate the ask ladder, not stay blank").toBe("2,440.00");
+      expect(bid1, "nested KGI shape must populate the bid ladder, not stay blank").toBe("2,435.00");
+      expect(depthMeta, "depth panel must attribute the source honestly as KGI").toContain("凱基即時");
+
+      await saveRouteScreenshot(page, testInfo, "desk-exact-depth-kgi-nested-fresh");
+    });
+
+    test("KGI nested shape, stale snapshot: values still render with an honest 略舊 label", async ({ page }, testInfo) => {
+      test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+      await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+        const { innerPath } = decodeInnerPath(route.request().url());
+        if (innerPath === "/api/v1/kgi/quote/bidask") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(bidaskNestedFixture(2435, 2440, { stale: true }))
+          });
+          return;
+        }
+        await route.continue();
+      });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+      const frame = extractFrame(page);
+      await frame.locator('[data-slot="depth-ask1-px"]').first().waitFor({ state: "attached", timeout: 15000 });
+      await page.waitForTimeout(6000);
+
+      const depthMeta = await frame.locator('[data-slot="depth-meta"]').first().textContent();
+      const ask1 = await frame.locator('[data-slot="depth-ask1-px"]').first().textContent();
+
+      testInfo.annotations.push({ type: "depth-meta", description: String(depthMeta) });
+      testInfo.annotations.push({ type: "depth-ask1-px", description: String(ask1) });
+
+      expect(ask1, "a stale snapshot must still render its real value, not blank").toBe("2,440.00");
+      expect(depthMeta, "a stale snapshot must be honestly labeled 略舊, not silently shown as live").toContain("略舊");
+
+      await saveRouteScreenshot(page, testInfo, "desk-exact-depth-kgi-nested-stale");
+    });
+
+    test("twse_mis flat shape (regression guard, pre-existing path): depth ladder still renders", async ({
+      page
+    }, testInfo) => {
+      test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+      await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+        const { innerPath } = decodeInnerPath(route.request().url());
+        if (innerPath === "/api/v1/kgi/quote/bidask") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(bidaskFlatFixture(2420, 2425))
+          });
+          return;
+        }
+        await route.continue();
+      });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+      const frame = extractFrame(page);
+      await frame.locator('[data-slot="depth-ask1-px"]').first().waitFor({ state: "attached", timeout: 15000 });
+      await page.waitForTimeout(6000);
+
+      const depthMeta = await frame.locator('[data-slot="depth-meta"]').first().textContent();
+      const ask1 = await frame.locator('[data-slot="depth-ask1-px"]').first().textContent();
+      const bid1 = await frame.locator('[data-slot="depth-bid1-px"]').first().textContent();
+
+      testInfo.annotations.push({ type: "depth-meta", description: String(depthMeta) });
+      testInfo.annotations.push({ type: "depth-ask1-px", description: String(ask1) });
+      testInfo.annotations.push({ type: "depth-bid1-px", description: String(bid1) });
+
+      expect(ask1, "the old flat twse_mis shape must keep working (no regression)").toBe("2,425.00");
+      expect(bid1, "the old flat twse_mis shape must keep working (no regression)").toBe("2,420.00");
+      expect(depthMeta, "flat shape is honestly attributed to 證交所").toContain("證交所即時");
+
+      await saveRouteScreenshot(page, testInfo, "desk-exact-depth-twse-mis-flat");
+    });
+  });
+
+  // 2026-07-16 三輪終驗：自選 10 檔中有 5 檔（2382/3661/3035/2618/3443）不在
+  // KGI 訂閱白名單內，ticks 端點回 422 SYMBOL_NOT_ALLOWED（非 QUOTE_NOT_
+  // AVAILABLE）— 驗證這種失敗原因也會觸發同一套 fallback，不是只認特定錯誤碼。
+  test("SYMBOL_NOT_ALLOWED (422) on ticks also triggers the twse_mis fallback for header + watchlist", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: "SYMBOL_NOT_ALLOWED",
+            message: "Symbol is not on the quote whitelist (KGI_QUOTE_SYMBOL_WHITELIST)."
+          })
+        });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => {
+          const { last, prevClose } = fallbackPriceFor(sym);
+          return effectiveQuoteItem(sym, last, prevClose, "fresh");
+        });
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wl2454 = await frame.locator('[data-slot="wl-v-2454"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-v-2454", description: String(wl2454) });
+
+    const expected2330 = fallbackPriceFor("2330");
+    const expected2454 = fallbackPriceFor("2454");
+    expect(symState, "SYMBOL_NOT_ALLOWED must not collapse the header to 尚無報價").not.toBe("尚無報價");
+    expect(symPrice, "SYMBOL_NOT_ALLOWED falls back to the effective-quotes price").toBe(expected2330.last.toFixed(2));
+    expect(wl2454, "watchlist also falls back on SYMBOL_NOT_ALLOWED").toBe(expected2454.last.toFixed(2));
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-symbol-not-allowed-fallback");
+  });
+
+  // 2026-07-16 三輪終驗：ops 手動訂閱打進來的是「單一快照」（buffer_used:1），
+  // 回應帶 freshness:"stale" — 有值要照顯＋誠實標示，不能因為 stale 就打回
+  // 「尚無報價」空狀態（那樣反而比顯示一個舊快照更誤導）。
+  test("ticks with freshness:\"stale\" still renders the real price with an honest label (not 尚無報價)", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(tickFixture(2435, 2440, { stale: true, datetime: "20260716104737" }))
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const ticketPrice = await frame.locator('[data-slot="t-price"]').first().inputValue();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "ticket-price", description: String(ticketPrice) });
+
+    expect(symState, "a stale tick snapshot must NOT be shown as 尚無報價 (it has real data)").not.toBe("尚無報價");
+    expect(symState, "a stale tick snapshot must be honestly labeled, not silently shown as 即時 tick").not.toBe("即時 tick");
+    expect(symPrice, "the real tick price still renders even though the snapshot is stale").toBe("2,435.00");
+    expect(Number(ticketPrice), "ticket price still seeds from the stale-but-real tick close").toBeCloseTo(2435, 2);
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-header-stale-tick-snapshot");
   });
 });
