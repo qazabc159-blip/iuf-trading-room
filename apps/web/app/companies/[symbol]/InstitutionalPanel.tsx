@@ -86,6 +86,12 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
     return () => { active = false; };
   }, [companyId]);
 
+  // 2026-07-17 empty-state collapse: blocked/empty 都是「抓不到法人資料」——
+  // 楊董規則「空態=整欄位移除，非佔位卡」，不留「近 30 日暫無...」空白卡。
+  if (state.status === "blocked" || state.status === "empty") {
+    return null;
+  }
+
   return (
     <section className="panel hud-frame" style={{ marginBottom: 12 }}>
       <style>{INST_CSS}</style>
@@ -102,22 +108,6 @@ export function InstitutionalPanel({ companyId }: { companyId: string }) {
         <div className="state-panel">
           <span className="badge badge-blue">讀取中</span>
           <span className="tg soft">正在讀取 FinMind 三大法人買賣超資料。</span>
-        </div>
-      )}
-
-      {state.status === "blocked" && (
-        <div className="state-panel">
-          <span className="badge badge-red">暫停</span>
-          <span className="tg soft">資料源：FinMind TaiwanStockInstitutionalInvestorsBuySell</span>
-          <span className="state-reason">{state.reason}</span>
-        </div>
-      )}
-
-      {state.status === "empty" && (
-        <div className="state-panel">
-          <span className="badge badge-yellow">EMPTY</span>
-          <span className="tg soft">近 30 日暫無法人買賣超資料（{state.date}）。</span>
-          <span className="state-reason">不補假法人數字；待 FinMind 回傳後自動顯示。</span>
         </div>
       )}
 

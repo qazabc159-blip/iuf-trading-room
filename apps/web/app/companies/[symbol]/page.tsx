@@ -105,6 +105,7 @@ function CompanySideNavPanel() {
     { href: "#sec-fin", label: "財報與估值", meta: "七分頁" },
     { href: "#company-knowledge", label: "知識 / 上下游圖譜", meta: "產業鏈" },
     { href: "#sec-chips", label: "法人 / 融資融券", meta: "籌碼" },
+    { href: "#sec-hold", label: "外資持股 / 分佈", meta: "股權" },
     { href: "#sec-detail", label: "成交明細", meta: "逐筆" },
     { href: "#sec-news", label: "重大訊息", meta: "公告" },
     { href: "#company-ai-report", label: "AI 分析師報告", meta: "九段" },
@@ -537,9 +538,9 @@ export default async function CompanyDetailPage({
             <MarginShortPanel companyId={company.id} />
           </div>
 
-          {/* ── 外資持股與分佈（DESIGN_NOTES §三 #17）。ChipsPanel 亦重複三大法人/融資券摘要
-               （與上方 InstitutionalPanel/MarginShortPanel 的詳細 30 日表重疊）——未拆分該元件，
-               見交付報告「意外」揭露。 ── */}
+          {/* ── 外資持股與分佈（DESIGN_NOTES §三 #17，`#sec-hold`）。2026-07-17 已拆分：
+               ChipsPanel 收斂為純外資持股/股權分散單一職責，不再與上方 InstitutionalPanel/
+               MarginShortPanel 的三大法人/融資券 30 日表重複。 ── */}
           <ChipsPanel companyId={company.id} />
 
           {/* ── 逐筆成交明細 full-width（DESIGN_NOTES §三 #19） ── */}
