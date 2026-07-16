@@ -7,11 +7,12 @@ import { type NextRequest, NextResponse } from "next/server";
  * `iuf_auth=1` is only a client-side presence hint and can survive after a
  * cross-subdomain cookie migration, so it must not be trusted by middleware.
  *
- * Public routes: /login, /register, /_next/*, /favicon.ico
+ * Public routes: /login, /register, /forgot-password, /reset-password,
+ * /_next/*, /favicon.ico
  * Everything else redirects to /login if not authenticated.
  */
 
-const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const PUBLIC_PATHS = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
 const PRESENCE_COOKIE = "iuf_auth";
 const SESSION_COOKIE = "iuf_session";
 const CANONICAL_APP_ORIGIN = "https://app.eycvector.com";

@@ -4,31 +4,17 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRegister, setAuthPresence, authErrorMessage } from "@/lib/auth-client";
+import { passwordPolicyRules, policyPassed } from "@/lib/password-policy";
 
 // /register v3 — byte-exact port of design draft (2026-07-16, Jim).
 // Source: reports/design_redesign_20260716/register_redesign_v1.html
 // Two real states driven by the actual `?invite=` URL param (the draft's
 // `.demoswitch` two-state toggle was a review-only affordance and is not
 // ported — it never ships). DOM/CSS scoped under `.authv3-register`.
-
-// ── Password policy ───────────────────────────────────────────────────────────
-// Frontend enforces 12 chars + complexity; backend minimum is 8 (legacy).
-// Real-time hints so users don't get surprised on submit.
-
-type PolicyRule = { key: "len" | "upper" | "lower" | "digit"; label: string; met: boolean };
-
-function passwordPolicyRules(p: string): PolicyRule[] {
-  return [
-    { key: "len", label: "至少 12 字元", met: p.length >= 12 },
-    { key: "upper", label: "含大寫字母", met: /[A-Z]/.test(p) },
-    { key: "lower", label: "含小寫字母", met: /[a-z]/.test(p) },
-    { key: "digit", label: "含數字", met: /[0-9]/.test(p) },
-  ];
-}
-
-function policyPassed(p: string): boolean {
-  return passwordPolicyRules(p).every((r) => r.met);
-}
+//
+// Password policy rules (4-rule real-time checklist) live in
+// lib/password-policy.ts (2026-07-17, extracted so /reset-password reuses
+// the same implementation instead of duplicating it).
 
 // ── Error message map ─────────────────────────────────────────────────────────
 

@@ -163,6 +163,58 @@ export async function apiChangePassword(
   }
 }
 
+// ── Forgot / reset password (admin-mediated, no mailer) ───────────────────────
+// Backend contract (#1288, migration 0060): request-password-reset always
+// returns the same 200 regardless of whether the email matched an account
+// (no enumeration oracle). reset-password never reveals which failure mode a
+// bad token hit. Both endpoints return a `message` field with copy already
+// vetted for honesty — callers should prefer showing that over inventing
+// their own "email sent" wording.
+
+export type RequestPasswordResetResult = { ok: true; message: string } | AuthFailure;
+
+export async function apiRequestPasswordReset(email: string): Promise<RequestPasswordResetResult> {
+  if (!API_BASE) return missingApi();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/request-password-reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+    if (!res.ok) {
+      return { ok: false, error: body.error ?? `server_error_${res.status}` };
+    }
+    return { ok: true, message: body.message ?? "" };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+export type ResetPasswordResult = { ok: true; message: string } | AuthFailure;
+
+export async function apiResetPassword(token: string, newPassword: string): Promise<ResetPasswordResult> {
+  if (!API_BASE) return missingApi();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword }),
+    });
+
+    const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+    if (!res.ok) {
+      return { ok: false, error: body.error ?? `server_error_${res.status}` };
+    }
+    return { ok: true, message: body.message ?? "" };
+  } catch {
+    return { ok: false, error: "network_error" };
+  }
+}
+
 export function authErrorMessage(error: string): string {
   switch (error) {
     case "invalid_credentials":
