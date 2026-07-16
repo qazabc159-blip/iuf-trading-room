@@ -47,11 +47,29 @@
 
 ## ③ ChipsPanel 內部重複拆分（佇列 #17）
 
-原本 `ChipsPanel.tsx` 同時打 `getCompanyChips`（三大法人 30 日 net + 融資融券餘額）與 `getCompanyShareholding`（外資持股/股權分散），畫面上與 `InstitutionalPanel`/`MarginShortPanel`（`#sec-chips` pairrow）完全重複顯示三大法人買賣超與融資券餘額。
+原本 `ChipsPanel.tsx` 同時打 `getCompanyChips`（三大法人 30 日累計 net30d + 融資融券餘額）與
+`getCompanyShareholding`（外資持股/股權分散），畫面上與 `InstitutionalPanel`/`MarginShortPanel`
+（`#sec-chips` pairrow）重複顯示三大法人買賣超與融資券餘額。
 
 **改法**：`ChipsPanel.tsx` 收斂為單一職責「外資持股與分佈」（對應 `DESIGN_NOTES.md` §三 #17 `#sec-hold`），移除 `getCompanyChips` 呼叫與 `NetRow`/`BalanceRow` 渲染，只保留 `ShareholdingBlock` 內容；state 從 4 態（loading/blocked/empty/live）×（chips+shareholding 兩份資料）簡化為單一 shareholding 資料源。空態同規則（blocked/empty → `return null`）。
 
 新增 nav 索引項 `#sec-hold`（`CompanySideNavPanel`），對齊既有其他 section 的錨點慣例。
+
+### 修正（Pete review #1293 🟡#1）— 融資融券部分重複成立，三大法人部分不成立
+Pete 審查抓到：融資融券部分「重複」判斷正確（`MarginShortPanel` 顯示餘額+較前日增減，
+與舊 `BalanceRow` 同粒度）；但三大法人部分不成立——舊 `ChipsPanel` 顯示的是
+`CompanyChipsData.foreign.net30d`（`apps/web/lib/api.ts:2602-2608`，近 30 日累計買賣超，
+一個月趨勢訊號），`InstitutionalPanel` 只顯示 `section.latest`（單日快照，
+`FullProfileInstitutionalRow` 無任何 "30d" 欄位），30 日累計視角是被拿掉的獨立指標，
+非純格式重整（唯一還留著的地方是 `FullProfilePanels.tsx` [08] 頁籤裡的逐日表格，需使用者
+自行手動加總）。
+
+**修法**（選版面上合理的一個，未恢復 ChipsPanel）：`InstitutionalPanel.tsx` 補回近 30 日
+累計摘要列，**沿用既有資料源、零新增後端呼叫**——`/full-profile` 的
+`tradingFlow.institutional.history` 本來就是近 30 曆日資料
+（`apps/api/src/server.ts:11028` "last 30 calendar days"），在前端直接加總
+`history[].{foreign,investmentTrust,dealer,totalNetBuy}` 即可；單日快照列改標「三大法人
+合計（單日）」與新增的「近 30 日累計」列並列顯示，兩個時間粒度同時可見。
 
 ## 驗證
 

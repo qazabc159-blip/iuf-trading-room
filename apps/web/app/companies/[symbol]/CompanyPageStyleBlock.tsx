@@ -168,13 +168,17 @@ export function CompanyPageStyleBlock() {
   .company-side-column .panel { transition: none !important; }
 }
 
-/* Knowledge panel base — reduced min-height for blocked/empty states */
+/* Knowledge panel base min-height. 2026-07-17 update (Pete review #1293 🟡#2):
+   blocked/empty/not_found/error no longer render at all (return null, see
+   CoverageKnowledgePanel.tsx/IndustryGraphPanel.tsx) — this only still applies
+   to the panel's brief loading state before the first fetch resolves. */
 ._ck-panel,
 ._ig-panel {
   min-height: 100px;
 }
 
-/* state-panel spacing inside knowledge panels — was 24px 0 8px (too tall) */
+/* state-panel spacing inside knowledge panels (loading state only — was
+   24px 0 8px, too tall for a one-line "讀取中" row) */
 ._ck-panel .state-panel,
 ._ig-panel .state-panel {
   padding: 10px 0 6px;
