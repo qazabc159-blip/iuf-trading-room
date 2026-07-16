@@ -103,6 +103,14 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").default("Viewer").notNull(),
   workspaceId: uuid("workspace_id"),
   isActive: boolean("is_active").notNull().default(true),
+  // Bumped on password reset (POST /api/v1/auth/reset-password) to invalidate
+  // every previously-issued session cookie for this user in one write — the
+  // signed cookie embeds the epoch it was issued with, and the auth
+  // middleware rejects any cookie whose epoch != the current DB value.
+  // Not bumped by /api/v1/auth/change-password or /api/v1/admin/owner-reset-password
+  // (those already clear only the caller's own cookie by design — see their
+  // header comments in server.ts).
+  sessionEpoch: integer("session_epoch").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
@@ -1411,6 +1419,41 @@ export const workspaceInvites = pgTable(
     workspaceExpiresIdx: index("workspace_invites_workspace_expires_idx").on(table.workspaceId, table.expiresAt),
     workspaceCreatedIdx: index("workspace_invites_workspace_created_idx").on(table.workspaceId, table.createdAt.desc()),
     createdByIdx:        index("workspace_invites_created_by_idx").on(table.createdBy),
+  })
+);
+
+// -- migration 0060_password_reset_tokens.sql
+// Admin-mediated password reset (no outbound mailer for arbitrary end-user
+// addresses in this app — see invite_codes/workspace_invites, which are the
+// same admin-hands-over-a-link pattern). Two-step lifecycle per row:
+//   1. requested   — user self-submits via POST /auth/request-password-reset;
+//                    row inserted with tokenHash = NULL ("pending").
+//   2. generated    — Owner/Admin reviews the pending queue and calls
+//                    POST /admin/password-reset-requests/:id/generate-link,
+//                    which fills tokenHash/expiresAt/generatedBy/generatedAt.
+//                    Plain token is returned once in that response and never
+//                    stored (same discipline as workspace_invites.tokenHash).
+// A fresh self-submitted request revokes any still-pending/still-active prior
+// row for the same user (revokedAt set) so only one row can ever be resolved.
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id:           uuid("id").defaultRandom().primaryKey(),
+    userId:       uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash:    text("token_hash").unique(), // null until an admin generates the link
+    requestedAt:  timestamp("requested_at",  { withTimezone: true }).defaultNow().notNull(),
+    generatedAt:  timestamp("generated_at",  { withTimezone: true }),
+    generatedBy:  uuid("generated_by").references(() => users.id),
+    expiresAt:    timestamp("expires_at",    { withTimezone: true }), // set at generation time (+1h)
+    usedAt:       timestamp("used_at",       { withTimezone: true }),
+    revokedAt:    timestamp("revoked_at",    { withTimezone: true }), // superseded by a newer request
+  },
+  (table) => ({
+    userIdIdx:   index("password_reset_tokens_user_id_idx").on(table.userId),
+    // Supports the admin pending-queue listing (WHERE token_hash IS NULL AND
+    // revoked_at IS NULL ORDER BY requested_at) and a future cleanup job that
+    // sweeps rows past expires_at.
+    requestedAtIdx: index("password_reset_tokens_requested_at_idx").on(table.requestedAt),
   })
 );
 

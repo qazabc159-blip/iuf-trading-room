@@ -329,7 +329,8 @@ export async function validateAndClaimWorkspaceInvite(opts: {
       role: newUser.role as "Owner" | "Admin" | "Analyst" | "Trader" | "Viewer",
       workspaceId: newUser.workspaceId ?? null
     },
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug }
+    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    sessionEpoch: newUser.sessionEpoch
   };
 }
 
