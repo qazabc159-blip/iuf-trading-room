@@ -389,6 +389,16 @@ function isPublicDiagRoute(path: string): boolean {
   return false;
 }
 
+// Unauthenticated-by-necessity auth routes — a caller who has forgotten their
+// password by definition has no session cookie. Same trust model as
+// /auth/login and /auth/register-with-invite (outside /api/v1/*, see below):
+// each handler does its own token/body validation and never trusts a cookie.
+function isPublicAuthRoute(path: string): boolean {
+  if (path === "/api/v1/auth/request-password-reset") return true;
+  if (path === "/api/v1/auth/reset-password") return true;
+  return false;
+}
+
 app.use("/api/v1/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
 
@@ -400,6 +410,11 @@ app.use("/api/v1/*", async (c, next) => {
 
   // Public read-only diagnostics for Bruce smoke / uptime monitors. Strict allow-list.
   if (isPublicDiagRoute(path)) {
+    c.set("repo", repository);
+    return next();
+  }
+
+  if (isPublicAuthRoute(path)) {
     c.set("repo", repository);
     return next();
   }
@@ -421,12 +436,12 @@ app.use("/api/v1/*", async (c, next) => {
     return next();
   }
 
-  const userId = parseSessionCookie(c.req.header("cookie"));
-  if (!userId) {
+  const parsedCookie = parseSessionCookie(c.req.header("cookie"));
+  if (!parsedCookie) {
     return c.json({ error: "unauthenticated" }, 401);
   }
 
-  const user = await getUserById(userId);
+  const user = await getUserById(parsedCookie.userId, parsedCookie.sessionEpoch);
   if (!user) {
     return c.json({ error: "unauthenticated" }, 401);
   }
@@ -6624,7 +6639,7 @@ app.post("/auth/login", async (c) => {
   if (!result.ok) {
     return c.json({ error: result.error }, 401);
   }
-  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id, result.sessionEpoch));
   return c.json({ user: result.user, workspace: result.workspace });
 });
 
@@ -6650,7 +6665,7 @@ app.post("/auth/register-with-invite", async (c) => {
     const status = result.error === "email_already_registered" ? 409 : 400;
     return c.json({ error: result.error }, status);
   }
-  c.header("Set-Cookie", buildSetCookieHeader(result.user.id));
+  c.header("Set-Cookie", buildSetCookieHeader(result.user.id, result.sessionEpoch));
   return c.json({ user: result.user, workspace: result.workspace });
 });
 
@@ -6681,9 +6696,9 @@ app.post("/auth/issue-invite", (c) => {
 app.get("/auth/me", async (c) => {
   const cookieHeader = c.req.header("cookie");
   const { parseSessionCookie, getUserById } = await import("./auth-store.js");
-  const userId = parseSessionCookie(cookieHeader);
-  if (!userId) return c.json({ error: "unauthenticated" }, 401);
-  const user = await getUserById(userId);
+  const parsedCookie = parseSessionCookie(cookieHeader);
+  if (!parsedCookie) return c.json({ error: "unauthenticated" }, 401);
+  const user = await getUserById(parsedCookie.userId, parsedCookie.sessionEpoch);
   if (!user) return c.json({ error: "user_not_found" }, 401);
   return c.json({ user, workspace: user.workspace });
 });
@@ -20867,6 +20882,132 @@ app.post("/api/v1/auth/change-password", async (c) => {
     mustReauth: true,
     message: "Password updated. Please log in again."
   });
+});
+
+// =============================================================================
+// Forgot password — admin-mediated (2026-07-16)
+// =============================================================================
+// This app has no mailer capable of sending to an arbitrary end-user address
+// (see password-reset-store.ts header comment). Flow:
+//   POST /api/v1/auth/request-password-reset        — public, self-submit
+//   GET  /api/v1/admin/password-reset-requests       — Owner/Admin, pending queue
+//   POST /api/v1/admin/password-reset-requests/:id/generate-link — Owner/Admin
+//   POST /api/v1/auth/reset-password                  — public, token + new password
+//
+// Hard lines:
+//   - request-password-reset NEVER reveals whether the email matched an
+//     account — identical response either way, identical status code, no
+//     timing-sensitive branch visible to the caller.
+//   - reset-password NEVER reveals which failure mode a bad token hit
+//     (missing / expired / used / revoked all collapse to invalid_or_expired).
+//   - Frontend copy for request-password-reset must NOT claim an email was
+//     sent — nothing is emailed in this flow. See message field below.
+// =============================================================================
+
+const requestPasswordResetSchema = z.object({
+  email: z.string().email()
+});
+
+app.post("/api/v1/auth/request-password-reset", async (c) => {
+  let body: z.infer<typeof requestPasswordResetSchema>;
+  try {
+    body = requestPasswordResetSchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_body", hint: "email required" }, 400);
+  }
+
+  const GENERIC_RESPONSE = {
+    ok: true,
+    message:
+      "若該電子郵件對應有效帳號，重設申請已送出，請等待管理員審核並提供重設連結。"
+  } as const;
+
+  try {
+    const { requestPasswordReset } = await import("./password-reset-store.js");
+    await requestPasswordReset(body.email);
+  } catch (err) {
+    // Log server-side for operator visibility but still return the generic
+    // response — a DB error must not become an enumeration oracle either.
+    console.error("[auth/request-password-reset] error:", err instanceof Error ? err.message : err);
+  }
+
+  return c.json(GENERIC_RESPONSE);
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1).max(512),
+  newPassword: z.string().min(12).max(256)
+});
+
+app.post("/api/v1/auth/reset-password", async (c) => {
+  let body: z.infer<typeof resetPasswordSchema>;
+  try {
+    body = resetPasswordSchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "invalid_body", hint: "token and newPassword (min 12 chars) required" }, 400);
+  }
+
+  const { resetPassword: doReset } = await import("./password-reset-store.js");
+  let result: Awaited<ReturnType<typeof doReset>>;
+  try {
+    result = await doReset({ token: body.token, newPassword: body.newPassword });
+  } catch (err) {
+    console.error("[auth/reset-password] error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "reset_password_unavailable" }, 503);
+  }
+
+  if (!result.ok) {
+    // Both "invalid_or_expired" (bad token) and validateNewPassword's policy
+    // error codes (e.g. "password_too_short") are 400 — the token oracle
+    // concern is only about distinguishing missing/expired/used/revoked from
+    // each other, not about hiding "your new password is too weak".
+    return c.json({ error: result.error }, 400);
+  }
+
+  return c.json({
+    ok: true,
+    message: "密碼已更新，請使用新密碼重新登入。"
+  });
+});
+
+app.get("/api/v1/admin/password-reset-requests", async (c) => {
+  const session = c.get("session");
+  if (!session || (session.user.role !== "Owner" && session.user.role !== "Admin")) {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const { listPendingPasswordResetRequests } = await import("./password-reset-store.js");
+  try {
+    const requests = await listPendingPasswordResetRequests(session.workspace.id);
+    return c.json({ data: requests });
+  } catch (err) {
+    console.error("[admin/password-reset-requests] list error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "list_failed" }, 500);
+  }
+});
+
+app.post("/api/v1/admin/password-reset-requests/:id/generate-link", async (c) => {
+  const session = c.get("session");
+  if (!session || (session.user.role !== "Owner" && session.user.role !== "Admin")) {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+  const requestId = c.req.param("id");
+  if (!requestId) return c.json({ error: "missing_request_id" }, 400);
+
+  const { generatePasswordResetLink } = await import("./password-reset-store.js");
+  try {
+    const result = await generatePasswordResetLink({
+      requestId,
+      workspaceId: session.workspace.id,
+      generatedBy: session.user.id
+    });
+    if (!result) {
+      return c.json({ error: "request_not_found_or_already_resolved" }, 404);
+    }
+    return c.json({ data: result }, 201);
+  } catch (err) {
+    console.error("[admin/password-reset-requests/:id/generate-link] error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "generate_link_failed" }, 500);
+  }
 });
 
 // =============================================================================

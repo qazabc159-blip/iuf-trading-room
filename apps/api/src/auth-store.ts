@@ -58,22 +58,38 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 // ── cookie helpers ────────────────────────────────────────────────────────────
-function signCookie(userId: string): string {
+// Cookie payload is `<userId>:<sessionEpoch>`, HMAC-signed. Embedding the
+// epoch lets POST /api/v1/auth/reset-password invalidate every previously
+// issued cookie for one user (bump users.session_epoch) without a sessions
+// table — verifyAndParseCookie's signature check fails for any cookie signed
+// under a stale epoch because the payload itself changed.
+export type ParsedSessionCookie = { userId: string; sessionEpoch: number };
+
+function signCookie(userId: string, sessionEpoch: number): string {
   const secret = getAuthSecret();
-  const mac = createHmac("sha256", secret).update(userId).digest("hex");
-  return `${userId}.${mac}`;
+  const payload = `${userId}:${sessionEpoch}`;
+  const mac = createHmac("sha256", secret).update(payload).digest("hex");
+  return `${payload}.${mac}`;
 }
 
-function verifyAndParseCookie(value: string): string | null {
+function verifyAndParseCookie(value: string): ParsedSessionCookie | null {
   const dot = value.lastIndexOf(".");
   if (dot < 0) return null;
-  const userId = value.slice(0, dot);
+  const payload = value.slice(0, dot);
   const mac = value.slice(dot + 1);
-  const expected = createHmac("sha256", getAuthSecret()).update(userId).digest("hex");
+  const expected = createHmac("sha256", getAuthSecret()).update(payload).digest("hex");
   const expectedBuf = Buffer.from(expected);
   const receivedBuf = Buffer.from(mac.padEnd(expected.length, "0").slice(0, expected.length));
   if (expectedBuf.length !== receivedBuf.length) return null;
-  return timingSafeEqual(expectedBuf, receivedBuf) ? userId : null;
+  if (!timingSafeEqual(expectedBuf, receivedBuf)) return null;
+
+  const colon = payload.lastIndexOf(":");
+  if (colon < 0) return null; // legacy pre-epoch cookie format — treat as invalid
+  const userId = payload.slice(0, colon);
+  const epochStr = payload.slice(colon + 1);
+  const sessionEpoch = Number(epochStr);
+  if (!userId || !Number.isInteger(sessionEpoch) || sessionEpoch < 0) return null;
+  return { userId, sessionEpoch };
 }
 
 // In production the web app and api are on different sub-domains
@@ -90,8 +106,8 @@ function buildCookieAttributes(): string[] {
   return attrs;
 }
 
-export function buildSetCookieHeader(userId: string): string {
-  const value = signCookie(userId);
+export function buildSetCookieHeader(userId: string, sessionEpoch: number): string {
+  const value = signCookie(userId, sessionEpoch);
   return [
     `${COOKIE_NAME}=${value}`,
     `Max-Age=${COOKIE_MAX_AGE}`,
@@ -107,7 +123,7 @@ export function buildClearCookieHeader(): string {
   ].join("; ");
 }
 
-export function parseSessionCookie(cookieHeader: string | undefined): string | null {
+export function parseSessionCookie(cookieHeader: string | undefined): ParsedSessionCookie | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const [k, v] = part.trim().split("=");
@@ -140,7 +156,10 @@ export type WorkspaceRow = {
 };
 
 export type AuthResult =
-  | { ok: true; user: AuthUser; workspace: WorkspaceRow }
+  // sessionEpoch is NOT part of AuthUser (never echoed in an API response) —
+  // it's only here so callers (server.ts /auth/login, /auth/register-with-invite)
+  // can pass the user's current epoch into buildSetCookieHeader().
+  | { ok: true; user: AuthUser; workspace: WorkspaceRow; sessionEpoch: number }
   | { ok: false; error: string };
 
 const authUserColumns = {
@@ -150,7 +169,8 @@ const authUserColumns = {
   passwordHash: users.passwordHash,
   role: users.role,
   workspaceId: users.workspaceId,
-  isActive: users.isActive
+  isActive: users.isActive,
+  sessionEpoch: users.sessionEpoch
 };
 
 const authWorkspaceColumns = {
@@ -217,18 +237,29 @@ export async function loginWithPassword(
       role: row.role as AuthUser["role"],
       workspaceId: row.workspaceId ?? null
     },
-    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug }
+    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    sessionEpoch: row.sessionEpoch
   };
 }
 
 // ── get user by id (for session hydration) ───────────────────────────────────
-export async function getUserById(userId: string): Promise<(AuthUser & { workspace: WorkspaceRow }) | null> {
+// `expectedEpoch`, when provided, must match the user's current
+// `session_epoch` or the session is treated as invalid (same UX as a
+// deactivated user) — this is what makes POST /api/v1/auth/reset-password's
+// "invalidate all sessions" actually take effect on the very next request.
+export async function getUserById(
+  userId: string,
+  expectedEpoch?: number
+): Promise<(AuthUser & { workspace: WorkspaceRow }) | null> {
   const db = requireDb();
   const [row] = await db.select(authUserColumns).from(users).where(eq(users.id, userId)).limit(1);
   if (!row) return null;
 
   // Deactivated users lose their active session immediately.
   if (row.isActive === false) return null;
+
+  // Cookie signed under a superseded epoch (e.g. password was reset since) — reject.
+  if (expectedEpoch !== undefined && row.sessionEpoch !== expectedEpoch) return null;
 
   const workspace = await selectAuthWorkspace(row.workspaceId ?? null);
 
