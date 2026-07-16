@@ -100,9 +100,15 @@ function displayThemeName(theme: Theme) {
 
 function CompanySideNavPanel() {
   const items = [
-    { href: "#company-knowledge", label: "My-TW-Coverage", meta: "知識圖譜" },
-    { href: "#company-ai-report", label: "AI 分析師", meta: "AI 分析" },
-    { href: "#company-data-dock", label: "資料艙", meta: "價格 / 財報" },
+    { href: "#sec-kline", label: "K 線圖", meta: "技術面" },
+    { href: "#sec-quote", label: "五檔 / 逐筆", meta: "即時行情" },
+    { href: "#sec-fin", label: "財報與估值", meta: "七分頁" },
+    { href: "#company-knowledge", label: "知識 / 上下游圖譜", meta: "產業鏈" },
+    { href: "#sec-chips", label: "法人 / 融資融券", meta: "籌碼" },
+    { href: "#sec-detail", label: "成交明細", meta: "逐筆" },
+    { href: "#sec-news", label: "重大訊息", meta: "公告" },
+    { href: "#company-ai-report", label: "AI 分析師報告", meta: "九段" },
+    { href: "#sec-theme", label: "主題受惠", meta: "分類" },
     { href: "#company-full-profile", label: "完整資料區", meta: "FinMind [06]-[11]" },
     { href: "#company-source-status", label: "資料來源", meta: "狀態" },
   ];
@@ -429,6 +435,7 @@ export default async function CompanyDetailPage({
     >
       <CompanyPageStyleBlock />
       <MarketStateBanner />
+      <div className="co-v3-page">
       <div style={{ marginBottom: 10 }}>
         <a href="/companies" className="_co-back-btn">
           ← 返回公司列表
@@ -489,32 +496,34 @@ export default async function CompanyDetailPage({
 
       <div className="company-detail-layout">
         <div className="company-main-column">
-          {/* ── Round 2: Trading view — K-line 左 64% + BidAsk/Depth 右 36% ── */}
-          <div className="_co-trading-view">
-            <div className="_co-chart-pane">
-              <div className="company-workbench-shell">
-                <OhlcvCandlestickChart
-                  bars={bars}
-                  kbarRows={kbarView?.rows ?? []}
-                  kbarState={kbarState}
-                  kbarReason={kbarReason}
-                  kbarDate={kbarView?.date ?? kbarDate}
-                  symbol={company.ticker}
-                  sourceState={ohlcvState}
-                  sourceReason={ohlcvReason}
-                />
-              </div>
-            </div>
-            <div className="_co-depth-pane">
-              {/* 五檔委買委賣 — 與 K 線並排，標準交易終端佈局 */}
-              <BidAskPanel symbol={company.ticker} />
-              {/* 盤中逐筆 */}
-              <LiveTickStreamPanel symbol={company.ticker} />
-            </div>
+          {/* ── K 線圖：既有 OhlcvCandlestickChart 引擎原封裝入（禁重寫），
+               週期/範圍/分K視窗/均線/RSI/MACD 切換皆元件自帶 chrome ── */}
+          <div id="sec-kline" className="company-workbench-shell">
+            <OhlcvCandlestickChart
+              bars={bars}
+              kbarRows={kbarView?.rows ?? []}
+              kbarState={kbarState}
+              kbarReason={kbarReason}
+              kbarDate={kbarView?.date ?? kbarDate}
+              symbol={company.ticker}
+              sourceState={ohlcvState}
+              sourceReason={ohlcvReason}
+            />
           </div>
 
-          {/* ── My-TW-Coverage：知識面板 + 上下游圖譜 ── */}
-          <div id="company-knowledge" className="company-knowledge-grid">
+          {/* ── 五檔委買委賣 | 逐筆即時成交 — 等高並排（DESIGN_NOTES §三 #5/#6） ── */}
+          <div id="sec-quote" className="co-v3-pairrow">
+            <BidAskPanel symbol={company.ticker} />
+            <LiveTickStreamPanel symbol={company.ticker} />
+          </div>
+
+          {/* ── 財報與估值：既有 7-tab FinancialsPanel（財報/月營收/資產負債/現金流/估值/市值/股利） ── */}
+          <div id="sec-fin">
+            <FinancialsPanel companyId={company.id} />
+          </div>
+
+          {/* ── 知識圖譜 | 上下游圖譜（DESIGN_NOTES §三 #8/#9） ── */}
+          <div id="company-knowledge" className="co-v3-pairrow">
             <CoverageKnowledgePanel ticker={company.ticker} />
             <IndustryGraphPanel
               ticker={company.ticker}
@@ -522,67 +531,68 @@ export default async function CompanyDetailPage({
             />
           </div>
 
+          {/* ── 法人籌碼 | 融資融券（DESIGN_NOTES §三 #11/#12） ── */}
+          <div id="sec-chips" className="co-v3-pairrow">
+            <InstitutionalPanel companyId={company.id} />
+            <MarginShortPanel companyId={company.id} />
+          </div>
+
+          {/* ── 外資持股與分佈（DESIGN_NOTES §三 #17）。ChipsPanel 亦重複三大法人/融資券摘要
+               （與上方 InstitutionalPanel/MarginShortPanel 的詳細 30 日表重疊）——未拆分該元件，
+               見交付報告「意外」揭露。 ── */}
+          <ChipsPanel companyId={company.id} />
+
+          {/* ── 逐筆成交明細 full-width（DESIGN_NOTES §三 #19） ── */}
+          <div id="sec-detail">
+            <TickStreamPanel
+              symbol={company.ticker}
+              kbarRows={kbarView?.rows ?? []}
+              kbarState={kbarState}
+              kbarReason={kbarReason}
+            />
+          </div>
+
+          {/* ── 重大訊息 full-width（DESIGN_NOTES §三 #18） ── */}
+          <div id="sec-news">
+            <AnnouncementsPanel companyId={company.id} />
+          </div>
+
           {/* ── AI 分析師深度報告 ── */}
           <div id="company-ai-report">
             <AiAnalystReportPanel ticker={company.ticker} />
           </div>
+
+          {/* ── 主題受惠（DESIGN_NOTES §三 #14） ── */}
+          {detail.themes.length > 0 && (
+            <div id="sec-theme" className="panel hud-frame">
+              <h3 className="ascii-head">
+                <span className="ascii-head-bracket">主題受惠</span>
+                <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>產業主題 / 受惠分類</span>
+              </h3>
+              <div className="_co-theme-grid">
+                {detail.themes.map((theme) => (
+                  <div key={theme} className="_co-theme-card" style={{ "--_accent": "rgba(200,148,63,0.62)" } as React.CSSProperties}>
+                    <div className="_co-theme-name">{theme}</div>
+                    <div className="_co-theme-tier">{tierLabel[detail.beneficiaryTier] ?? detail.beneficiaryTier}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className="company-side-column">
           <CompanyInfoPanel company={company} />
           <CompanySideNavPanel />
-          {/* 籌碼面板 — BidAsk/LiveTick 已移至 trading view */}
-          <InstitutionalPanel companyId={company.id} />
-          <MarginShortPanel companyId={company.id} />
           <div id="company-source-status">
             <SourceStatusCard sources={sources} />
           </div>
         </aside>
       </div>
 
-      {detail.themes.length > 0 && (
-        <div className="panel hud-frame" style={{ marginBottom: 0, padding: "16px clamp(16px,2vw,26px) 20px" }}>
-          <h3 className="ascii-head">
-            <span className="ascii-head-bracket">主題受惠</span>
-            <span className="tg soft" style={{ marginLeft: 8, fontSize: 10 }}>產業主題 / 受惠分類</span>
-          </h3>
-          <div className="_co-theme-grid">
-            {detail.themes.map((theme) => (
-              <div key={theme} className="_co-theme-card" style={{ "--_accent": "rgba(200,148,63,0.62)" } as React.CSSProperties}>
-                <div className="_co-theme-name">{theme}</div>
-                <div className="_co-theme-tier">{tierLabel[detail.beneficiaryTier] ?? detail.beneficiaryTier}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div id="company-data-dock" className="_co-section-banner">
-        <span className="_co-section-banner-title">公司資料艙</span>
-        <span className="_co-section-banner-sub">FinMind 與正式資料流</span>
-        <div className="_co-section-banner-tags">
-          <span>價格</span><span>財報</span><span>籌碼</span><span>公告</span><span>逐筆</span>
-        </div>
-        <div className="_co-section-banner-desc">財報、籌碼、公告與盤中資料各自揭露來源狀態；沒有資料就顯示無資料或暫停，不補假內容。</div>
-      </div>
-
-      <div className="company-data-dock">
-        <FinancialsPanel companyId={company.id} />
-        <div className="company-data-side-rail">
-          <ChipsPanel companyId={company.id} />
-          <AnnouncementsPanel companyId={company.id} />
-        </div>
-        <div className="company-data-status-rail">
-          <TickStreamPanel
-            symbol={company.ticker}
-            kbarRows={kbarView?.rows ?? []}
-            kbarState={kbarState}
-            kbarReason={kbarReason}
-          />
-        </div>
-      </div>
-
-      {/* BLOCK #8 Lane C — sections [06]-[11] off /full-profile */}
+      {/* 完整資料區 — 沿用既有 FullProfilePanels（[06]-[11] 延伸細表）不動；
+          2026-07-12 D5 dedup 已把公告展開 UI 收斂到 AnnouncementsPanel 並保留此區為連結出口，
+          本輪不重複拆解（見 tests/ci.test.ts COMPANY-ANN-DETAIL-UI-1 guard）。 */}
       <div id="company-full-profile" className="_co-section-banner">
         <span className="_co-section-banner-title">完整資料區</span>
         <span className="_co-section-banner-sub">FinMind 11 資料集（[06]–[11]）</span>
@@ -593,6 +603,7 @@ export default async function CompanyDetailPage({
       </div>
 
       <FullProfilePanels companyId={company.id} />
+      </div>
 
     </PageFrame>
   );

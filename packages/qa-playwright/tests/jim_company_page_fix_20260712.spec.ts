@@ -24,7 +24,11 @@ test.describe("company page fix 2026-07-12 verification", () => {
 
       // D1: K-line chart pane should now take up close to the main column's
       // full width, not be squeezed to ~313px by a 64/36 row split.
-      const chartPane = page.locator("._co-chart-pane").first();
+      // 2026-07-16 v3 redesign (jim2): the K-line + BidAsk/LiveTick 64/36 row
+      // split (`._co-chart-pane`) was replaced with a full-width K-line panel
+      // (`#sec-kline`) followed by a dedicated 五檔|逐筆 pairrow below it — the
+      // chart pane is now even less squeezed than the D1 fix targeted.
+      const chartPane = page.locator("#sec-kline").first();
       await expect(chartPane).toBeVisible();
       const chartBox = await chartPane.boundingBox();
       expect(chartBox?.width ?? 0).toBeGreaterThan(400);

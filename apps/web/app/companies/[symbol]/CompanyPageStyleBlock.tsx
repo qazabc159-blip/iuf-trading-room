@@ -759,6 +759,125 @@ export function CompanyPageStyleBlock() {
   color: var(--night-mid, #91a0b5);
   letter-spacing: 0.05em;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   v3 redesign skin (2026-07-16, jim2) — scoped strictly under .co-v3-page.
+   Ports company_redesign_v1.html "individual stock worksheet" chrome onto
+   the EXISTING panel components (FinancialsPanel / ChipsPanel / InstitutionalPanel /
+   MarginShortPanel / CoverageKnowledgePanel / IndustryGraphPanel / CompanyInfoPanel /
+   SourceStatusCard / AiAnalystReportPanel / OhlcvCandlestickChart / BidAskPanel /
+   LiveTickStreamPanel / TickStreamPanel / AnnouncementsPanel) — zero rewrites of
+   their render/data logic. Retheme only: tighter panel chrome (CSS var override,
+   not padding:0 — internal component spacing stays intact), amber "tab" badge
+   headers, and a reusable 2-col equal-height pairrow utility for the section
+   groupings the artifact specifies (五檔|逐筆, 知識圖譜|上下游圖譜, 法人籌碼|融資融券).
+   ══════════════════════════════════════════════════════════════════════ */
+
+.co-v3-page {
+  /* Global panel padding is driven by these two custom properties everywhere
+     in globals.css — overriding them here (rather than touching padding
+     directly) keeps every nested component's internal spacing assumptions
+     intact while still shrinking the "roomy dashboard" gutter down to the
+     artifact's dense operator-terminal feel. */
+  --hud-gutter-x: 14px;
+  --panel-gutter-x: 14px;
+}
+
+.co-v3-page .panel.hud-frame {
+  padding-top: 10px !important;
+  padding-bottom: 14px !important;
+  border: 1px solid rgba(220,228,240,0.14) !important;
+  border-top: 1px solid rgba(220,228,240,0.14) !important;
+  background:
+    linear-gradient(105deg, rgba(226,184,92,0.03), transparent 34%),
+    linear-gradient(180deg, rgba(10,14,21,0.88), rgba(8,11,17,0.92)) !important;
+  box-shadow: 0 0 0 1px rgba(5,7,11,0.55), inset 0 0 40px rgba(0,0,0,0.25) !important;
+}
+.co-v3-page .panel.hud-frame:hover {
+  border-color: rgba(226,184,92,0.32) !important;
+}
+.co-v3-page .panel.hud-frame.kline-panel {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+.co-v3-page .panel + .panel { margin-top: 16px !important; }
+
+/* Section header → amber clip-path "tab" badge, matching the artifact's
+   .tab treatment; rest of the ascii-head row becomes hint text. */
+.co-v3-page .ascii-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-height: 30px;
+  margin: 0 0 12px !important;
+  padding: 0 0 10px !important;
+  border-bottom: 1px solid rgba(220,228,240,0.09);
+  font-size: 12.5px !important;
+}
+.co-v3-page .ascii-head-bracket {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 13px 0 9px;
+  background: var(--gold, #c8943f);
+  color: var(--night, #05080c);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 100%, 0 100%);
+  margin-right: 0 !important;
+}
+.co-v3-page .company-info-titlebar .ascii-head-bracket {
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 100%, 0 100%);
+}
+
+/* Reusable equal-height 2-col pairrow — 五檔|逐筆 / 知識圖譜|上下游圖譜 /
+   法人籌碼|融資融券, matching DESIGN_NOTES.md §三 rows 5/6, 8/9, 11/12.
+   D1 lesson (2026-07-12 diagnosis, see .company-knowledge-grid above): a 2-col
+   split only becomes safe once the *main column itself* is wide enough — at a
+   1180-1439px viewport the side rail still reserves 320-360px, squeezing the
+   main column to ~490-620px and wrapping every CJK word onto its own line.
+   Reuse the same 1440px-viewport threshold this codebase already standardized
+   on rather than inventing a second breakpoint. */
+.co-v3-pairrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  margin-top: 16px;
+}
+.co-v3-pairrow > .panel { margin: 0 !important; height: 100%; }
+@media (min-width: 1440px) {
+  .co-v3-pairrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+/* Financial 7-tab strip → flat amber-active tab row (artifact .fintabs) */
+.co-v3-page .company-finance-tabs {
+  border: 1px solid rgba(220,228,240,0.14);
+  background: rgba(5,8,12,0.5);
+  padding: 4px;
+  gap: 4px;
+}
+.co-v3-page .company-finance-tabs .mini-button {
+  background: var(--gold, #c8943f) !important;
+  border-color: var(--gold, #c8943f) !important;
+  color: var(--night, #05080c) !important;
+  font-weight: 800 !important;
+}
+.co-v3-page .company-finance-tabs .outline-button {
+  background: transparent !important;
+  border-color: rgba(220,228,240,0.16) !important;
+}
+
+/* Full-width detail-table / news sections get the same compact chrome */
+.co-v3-page .company-data-table-fit th,
+.co-v3-page .company-data-table-fit td {
+  font-size: 11px;
+}
     `}</style>
   );
 }
