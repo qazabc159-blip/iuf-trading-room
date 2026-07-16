@@ -16536,6 +16536,11 @@ body:has(.mobile-route) .header-dock-drawer {
 .authv3-login .av3-check input:checked::after { content: ""; position: absolute; inset: 3px; background: var(--av3-amber); }
 .authv3-login .av3-check input:focus-visible { outline: 2px solid var(--av3-amber); outline-offset: 2px; }
 .authv3-login .av3-check span { font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink); letter-spacing: .04em; }
+.authv3-login .av3-row .av3-help {
+  font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); text-decoration: none; letter-spacing: .04em;
+  border-bottom: 1px solid transparent; transition: color .15s, border-color .15s;
+}
+.authv3-login .av3-row .av3-help:hover { color: var(--av3-amber-hi); border-bottom-color: var(--av3-amber-dim); }
 
 .authv3-login .av3-err {
   border: 1px solid rgba(230, 57, 70, .5); background: rgba(230, 57, 70, .08); color: #f4a7ad;
@@ -16857,4 +16862,203 @@ body:has(.mobile-route) .header-dock-drawer {
   .authv3-register .av3-gate h1 { font-size: 30px; }
   .authv3-register .av3-gatecard { padding: 26px 22px 24px; }
   .authv3-register .av3-footband-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   /forgot-password + /reset-password v3 (2026-07-17, Jim)
+   Same authv3 console language as /login + /register (shared vars, mast,
+   corner marks, field/box/submit, footband — see those two blocks above for
+   the reference implementation). Both routes share this single scope
+   because they're both a single narrow single-column console (no
+   brandpane/grille split needed) — merging avoids re-duplicating ~100 lines
+   of near-identical CSS for two very small forms per the "Simplicity First"
+   guideline. Reuses `.av3-field`/`.av3-box`/`.av3-submit`/`.av3-err`/
+   `.av3-pwrules`/`.av3-good`/`.av3-bad` naming conventions from the other
+   two blocks for consistency, even though the selectors are declared fresh
+   here (fully self-contained, same convention as `.authv3-register` above).
+   ══════════════════════════════════════════════════════════════════════════ */
+.authv3-forgot {
+  --av3-black: #04060a;
+  --av3-panel: #0b0f16;
+  --av3-panel2: #080b11;
+  --av3-line: #1b2432;
+  --av3-line2: #26324a;
+  --av3-amber: #c8943f;
+  --av3-amber-hi: #e2b85c;
+  --av3-amber-dim: #6f5c37;
+  --av3-amber-ink: #0a0d12;
+  --av3-ink: #aab4c2;
+  --av3-ink-hi: #cdd6e2;
+  --av3-ink-dim: #5d6675;
+  --av3-ink-faint: #3f4a5a;
+  --av3-up: #e63946;
+  --av3-down: #2ecc71;
+  --av3-mono: "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --av3-cjk: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  color: var(--av3-ink);
+  font-family: var(--av3-mono);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+.authv3-forgot.login-route {
+  display: flex; flex-direction: column; align-items: stretch; min-height: 100vh; width: 100%; padding: 0;
+  background: var(--av3-black);
+}
+.authv3-forgot * { box-sizing: border-box; min-width: 0; }
+.authv3-forgot::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 90;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, .12) 2px 3px);
+  mix-blend-mode: multiply; opacity: .42;
+}
+.authv3-forgot .av3-ambient {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(120% 65% at 30% -8%, rgba(200, 148, 63, .07), transparent 55%),
+    radial-gradient(90% 60% at 100% 110%, rgba(46, 204, 113, .03), transparent 60%);
+}
+.authv3-forgot .av3-bggrid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+  background-image:
+    linear-gradient(rgba(38, 50, 74, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38, 50, 74, .16) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+          mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 78%);
+}
+
+.authv3-forgot .av3-mast {
+  display: flex; align-items: center; border-bottom: 1px solid var(--av3-line2);
+  background: rgba(10, 15, 23, .72); backdrop-filter: blur(2px); height: 48px; padding: 0 20px; gap: 12px;
+  position: relative; z-index: 20;
+}
+.authv3-forgot .av3-mast .av3-glyph {
+  width: 23px; height: 23px; border: 1.5px solid var(--av3-amber); color: var(--av3-amber-hi);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  box-shadow: inset 0 0 8px rgba(200, 148, 63, .2); position: relative; flex: none; font-family: var(--av3-mono);
+}
+.authv3-forgot .av3-mast .av3-glyph i { position: absolute; right: -1.5px; bottom: -1.5px; width: 6px; height: 6px; background: var(--av3-amber); }
+.authv3-forgot .av3-mast .av3-wordmark { display: flex; flex-direction: column; gap: 1px; }
+.authv3-forgot .av3-mast .av3-wordmark b { color: var(--av3-amber-hi); font-size: 12px; letter-spacing: .26em; font-weight: 700; }
+.authv3-forgot .av3-mast .av3-wordmark small { color: var(--av3-ink-faint); font-size: 9px; letter-spacing: .2em; font-family: var(--av3-cjk); }
+.authv3-forgot .av3-mast .av3-spacer { flex: 1; }
+.authv3-forgot .av3-mast .av3-beta {
+  font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-amber-dim); letter-spacing: .16em;
+  border: 1px solid var(--av3-amber-dim); padding: 4px 9px; white-space: nowrap;
+}
+
+.authv3-forgot .av3-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 56px 24px; position: relative; z-index: 10; }
+
+.authv3-forgot .av3-console {
+  width: 100%; max-width: 520px; position: relative;
+  border: 1px solid var(--av3-line2); background: linear-gradient(180deg, rgba(11, 15, 22, .86), rgba(6, 9, 14, .92));
+  box-shadow: 0 0 0 1px #05070b, 0 40px 120px rgba(0, 0, 0, .6), inset 0 0 120px rgba(0, 0, 0, .5);
+}
+.authv3-forgot .av3-corner { position: absolute; width: 18px; height: 18px; pointer-events: none; z-index: 2; }
+.authv3-forgot .av3-corner.tr { top: -1px; right: -1px; border-top: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
+.authv3-forgot .av3-corner.bl { bottom: -1px; left: -1px; border-bottom: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
+.authv3-forgot .av3-console-bar {
+  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 16px;
+  border-bottom: 1px solid var(--av3-line); background: rgba(10, 14, 21, .6);
+}
+.authv3-forgot .av3-console-bar .av3-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--av3-down); box-shadow: 0 0 8px var(--av3-down); flex: none; }
+.authv3-forgot .av3-console-bar .av3-lbl { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); letter-spacing: .14em; }
+.authv3-forgot .av3-console-bar .av3-rt { margin-left: auto; font-family: var(--av3-mono); font-size: 9px; color: var(--av3-ink-faint); letter-spacing: .18em; }
+
+.authv3-forgot .av3-panel-body { padding: 40px 44px 36px; }
+.authv3-forgot .av3-boot { font-family: var(--av3-mono); font-size: 10px; color: var(--av3-amber); letter-spacing: .28em; display: flex; align-items: center; gap: 9px; }
+.authv3-forgot .av3-boot .av3-tick { width: 22px; height: 1px; background: var(--av3-amber-dim); }
+.authv3-forgot h1 {
+  font-family: var(--av3-cjk); font-weight: 700; color: var(--av3-ink-hi);
+  font-size: 30px; line-height: 1.2; letter-spacing: .04em; margin: 20px 0 12px;
+  text-shadow: 0 0 32px rgba(200, 148, 63, .14);
+}
+.authv3-forgot .av3-lede {
+  font-family: var(--av3-cjk); font-size: 13px; color: var(--av3-ink); line-height: 1.8;
+  letter-spacing: .04em; margin: 0 0 26px;
+}
+.authv3-forgot .av3-lede b { color: var(--av3-ink-hi); font-weight: 600; }
+
+.authv3-forgot .av3-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.authv3-forgot .av3-field > .av3-lab {
+  font-family: var(--av3-cjk); font-size: 10.5px; color: var(--av3-ink-dim); letter-spacing: .12em;
+  display: flex; align-items: baseline; gap: 7px;
+}
+.authv3-forgot .av3-field > .av3-lab .av3-hint { font-style: normal; font-family: var(--av3-mono); font-size: 8.5px; color: var(--av3-ink-faint); letter-spacing: .1em; }
+.authv3-forgot .av3-field .av3-box { position: relative; }
+.authv3-forgot .av3-field input {
+  background: #05080d; border: 1px solid var(--av3-line2); color: var(--av3-ink-hi);
+  font-family: var(--av3-mono); font-size: 14px; letter-spacing: .02em; padding: 12px 14px; width: 100%;
+  transition: border-color .15s, box-shadow .15s;
+}
+.authv3-forgot .av3-field input::placeholder { color: var(--av3-ink-faint); font-family: var(--av3-cjk); font-size: 12.5px; letter-spacing: 0; }
+.authv3-forgot .av3-field input:focus { outline: none; border-color: var(--av3-amber); box-shadow: 0 0 0 1px rgba(200, 148, 63, .4), 0 0 18px rgba(200, 148, 63, .1); }
+.authv3-forgot .av3-field input.av3-bad { border-color: rgba(230, 57, 70, .5); }
+.authv3-forgot .av3-field input.av3-good { border-color: rgba(46, 204, 113, .45); }
+
+.authv3-forgot .av3-pwrules {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin: -6px 0 18px; padding: 11px 13px;
+  border: 1px solid var(--av3-line); background: rgba(8, 12, 18, .4);
+}
+.authv3-forgot .av3-pwrules .av3-r {
+  font-family: var(--av3-cjk); font-size: 10.5px; color: var(--av3-ink-faint); letter-spacing: .04em;
+  display: flex; align-items: center; gap: 8px; transition: color .15s;
+}
+.authv3-forgot .av3-pwrules .av3-r .av3-mk {
+  width: 13px; height: 13px; border: 1px solid var(--av3-ink-faint); border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: 9px; font-family: var(--av3-mono); color: transparent; transition: .15s;
+}
+.authv3-forgot .av3-pwrules .av3-r.av3-ok { color: var(--av3-down); }
+.authv3-forgot .av3-pwrules .av3-r.av3-ok .av3-mk { border-color: var(--av3-down); color: var(--av3-down); }
+
+.authv3-forgot .av3-err {
+  border: 1px solid rgba(230, 57, 70, .5); background: rgba(230, 57, 70, .08); color: #f4a7ad;
+  font-family: var(--av3-cjk); font-size: 11px; letter-spacing: .03em; padding: 10px 13px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 9px;
+}
+.authv3-forgot .av3-err::before {
+  content: "!"; font-family: var(--av3-mono); font-weight: 700; color: var(--av3-up);
+  width: 16px; height: 16px; border: 1px solid var(--av3-up); display: flex; align-items: center; justify-content: center; flex: none;
+}
+
+.authv3-forgot .av3-neutral {
+  border: 1px solid var(--av3-line2); background: rgba(8, 12, 18, .4); color: var(--av3-ink);
+  font-family: var(--av3-cjk); font-size: 12.5px; letter-spacing: .03em; line-height: 1.8; padding: 16px 18px; margin-bottom: 18px;
+}
+.authv3-forgot .av3-neutral .av3-neutral-h { color: var(--av3-amber-hi); font-weight: 700; font-size: 13px; letter-spacing: .1em; margin-bottom: 8px; }
+.authv3-forgot .av3-neutral p { margin: 0 0 10px; }
+.authv3-forgot .av3-neutral p:last-child { margin-bottom: 0; }
+
+.authv3-forgot .av3-submit {
+  background: linear-gradient(180deg, var(--av3-amber-hi), var(--av3-amber)); color: var(--av3-amber-ink);
+  font-family: var(--av3-cjk); font-size: 14px; font-weight: 700; letter-spacing: .24em; text-indent: .24em;
+  border: none; padding: 14px; cursor: pointer; width: 100%; transition: filter .15s, transform .05s;
+  box-shadow: 0 0 24px rgba(200, 148, 63, .14);
+}
+.authv3-forgot .av3-submit:hover { filter: brightness(1.08); }
+.authv3-forgot .av3-submit:active { transform: translateY(1px); }
+.authv3-forgot .av3-submit:disabled { filter: grayscale(.5) brightness(.7); cursor: wait; }
+.authv3-forgot .av3-submit:focus-visible { outline: 2px solid var(--av3-amber-hi); outline-offset: 3px; }
+
+.authv3-forgot .av3-back {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
+  font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink-dim); text-decoration: none; letter-spacing: .06em;
+}
+.authv3-forgot .av3-back:hover { color: var(--av3-amber-hi); }
+.authv3-forgot .av3-back .av3-ar { font-family: var(--av3-mono); }
+
+.authv3-forgot .av3-footband { border-top: 1px solid var(--av3-line2); background: rgba(7, 11, 17, .8); position: relative; z-index: 10; }
+.authv3-forgot .av3-footband-inner {
+  max-width: 1080px; margin: 0 auto; padding: 13px 24px; display: flex; justify-content: space-between;
+  align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.authv3-forgot .av3-footband-inner span { font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-faint); letter-spacing: .14em; }
+.authv3-forgot .av3-footband-inner span b { color: var(--av3-amber-dim); font-weight: 600; }
+
+@media (max-width: 820px) {
+  .authv3-forgot .av3-stage { padding: 26px 14px 34px; }
+  .authv3-forgot .av3-panel-body { padding: 30px 24px 28px; }
+  .authv3-forgot h1 { font-size: 24px; }
+  .authv3-forgot .av3-pwrules { grid-template-columns: 1fr; }
+  .authv3-forgot .av3-footband-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
 }

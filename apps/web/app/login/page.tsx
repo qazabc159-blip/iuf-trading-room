@@ -191,6 +191,9 @@ export default function LoginPage() {
                     />
                     <span>記住這台裝置</span>
                   </label>
+                  <Link className="av3-help" href="/forgot-password">
+                    忘記密碼？
+                  </Link>
                 </div>
 
                 {error && (
