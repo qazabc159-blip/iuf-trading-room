@@ -20,7 +20,7 @@ import { expect, test } from "@playwright/test";
 // 覆蓋率正常（showCoverageFallback=false，prod 正常運作下恆真），核心/全市場
 // 兩個 tab 都必須能真實切換且反映在 DOM 上。
 test.describe("/ homepage heatmap core/全市場 mode toggle", () => {
-  test("clicking 核心熱力圖 renders the treemap grid, clicking 全市場熱力圖 renders the market-wide grid, and they are mutually exclusive", async ({ page }, testInfo) => {
+  test("clicking 核心熱力圖 renders the treemap grid, clicking 全市場熱力圖 renders the market-wide grid, and they are mutually exclusive @smoke", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
 
     // Start on core mode (default route, no query).
