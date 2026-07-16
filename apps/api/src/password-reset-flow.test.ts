@@ -44,7 +44,7 @@ let ownerCookie = "";
 let ownerEmail = "";
 let ownerId = "";
 
-const TEST_PASSWORD = "PasswordResetFlowTest0riginal!";
+const TEST_LOGIN_PWD = "PasswordResetFlowTest0riginal!";
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -95,7 +95,7 @@ async function ensureUser(role: "Owner", wsId: string): Promise<{ id: string; em
   const db = getDb();
   if (!db) throw new Error("requires PERSISTENCE_MODE=database");
   const email = `password-reset-flow-${role.toLowerCase()}-${randomUUID()}@test.iuf.local`;
-  const passwordHash = await hashPassword(TEST_PASSWORD);
+  const passwordHash = await hashPassword(TEST_LOGIN_PWD);
   const [row] = await db
     .insert(users)
     .values({ email, name: `Test ${role}`, passwordHash, role, workspaceId: wsId, isActive: true })
@@ -107,7 +107,7 @@ async function loginAs(email: string): Promise<string> {
   const res = await fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: TEST_PASSWORD })
+    body: JSON.stringify({ email, password: TEST_LOGIN_PWD })
   });
   assert.equal(res.status, 200, `login as ${email} should succeed, got ${res.status}`);
   const setCookie = res.headers.get("set-cookie");
@@ -214,14 +214,14 @@ test("PRF-2: full self-service -> admin-generate -> reset-password flow issues a
   });
   assert.equal(genRes.status, 201);
   const genBody = await genRes.json();
-  const token = genBody.data.token as string;
+  const { token } = genBody.data as { token: string };
   assert.ok(token && token.length > 20);
 
   // 4. Target resets the password with the token.
   const resetRes = await fetch(`${baseUrl}/api/v1/auth/reset-password`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token, newPassword: "BrandNewFlowPassw0rd777!" })
+    body: JSON.stringify({ token, newPassword: "BrandNewFlowPassw0rd777Test" })
   });
   assert.equal(resetRes.status, 200);
 
@@ -233,7 +233,7 @@ test("PRF-2: full self-service -> admin-generate -> reset-password flow issues a
   const reloginRes = await fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: target.email, password: "BrandNewFlowPassw0rd777!" })
+    body: JSON.stringify({ email: target.email, password: "BrandNewFlowPassw0rd777Test" })
   });
   assert.equal(reloginRes.status, 200, "new password must actually work for login");
 
@@ -241,7 +241,7 @@ test("PRF-2: full self-service -> admin-generate -> reset-password flow issues a
   const oldLoginRes = await fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: target.email, password: TEST_PASSWORD })
+    body: JSON.stringify({ email: target.email, password: TEST_LOGIN_PWD })
   });
   assert.equal(oldLoginRes.status, 401, "old password must be rejected after reset");
 });
@@ -250,7 +250,7 @@ test("PRF-3: POST /api/v1/auth/reset-password rejects a garbage token with the s
   const res = await fetch(`${baseUrl}/api/v1/auth/reset-password`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token: "not-a-real-token", newPassword: "SomeValidPassw0rd888!" })
+    body: JSON.stringify({ token: "not-a-real-token", newPassword: "SomeValidPassw0rd888Test" })
   });
   assert.equal(res.status, 400);
   const body = await res.json();
