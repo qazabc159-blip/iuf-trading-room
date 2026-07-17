@@ -7840,7 +7840,7 @@ app.get("/internal/market/health", async (c) => {
 
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
 import { getTwseOpenApiClient } from "./data-sources/twse-openapi-client.js";
-import { resolveAuthoritativeTradeDate } from "./market-data-integrity-gate.js";
+import { resolveAuthoritativeTradeDate, verifyPriceWithinDailyRange } from "./market-data-integrity-gate.js";
 import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
 import {
   runMonthlyRevenueSync,
@@ -10112,6 +10112,14 @@ export type PersistedOhlcvBar = {
   volume: number | null;
 };
 
+/** Bound for `_queryLatestPersistedOhlcvBars()` below — Pete review Round 1
+ * (PR #1300): the query had no timeout; a hung connection would leave the
+ * whole `/quote/realtime` request hanging on a best-effort cross-check that
+ * was only ever supposed to be a nice-to-have. Bounded fail-open (resolves
+ * to `[]`, never rejects) — same "never worse than before" convention as
+ * `getStockDayAllRows()`'s own in-flight timeout guard above. */
+const PERSISTED_OHLCV_QUERY_TIMEOUT_MS = 3000;
+
 /**
  * Latest persisted `companies_ohlcv` daily bars (newest first) for the
  * authoritative-trade-date cross-check in `mergeEodFallbackWithPersistedBars()`
@@ -10120,8 +10128,8 @@ export type PersistedOhlcvBar = {
  * formatting THAT via `String()`/slicing yields a locale timestamp string, not
  * an ISO date; same convention already used for `companies_ohlcv` reads
  * elsewhere in this file (freq=1d kbar path). Fail-open to `[]` on any DB
- * error — this is a best-effort cross-check, never a hard dependency of the
- * realtime-quote path.
+ * error OR timeout — this is a best-effort cross-check, never a hard
+ * dependency of the realtime-quote path.
  */
 export async function _queryLatestPersistedOhlcvBars(
   companyId: string,
@@ -10131,11 +10139,16 @@ export async function _queryLatestPersistedOhlcvBars(
   try {
     const db = getDb();
     if (!db) return [];
-    const result = await db.execute(drizzleSql`
-      SELECT dt::text AS dt, open, high, low, close, volume FROM companies_ohlcv
-      WHERE company_id = ${companyId} AND interval = '1d'
-      ORDER BY dt DESC LIMIT ${limit}
-    `);
+    const result = await Promise.race([
+      db.execute(drizzleSql`
+        SELECT dt::text AS dt, open, high, low, close, volume FROM companies_ohlcv
+        WHERE company_id = ${companyId} AND interval = '1d'
+        ORDER BY dt DESC LIMIT ${limit}
+      `),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("persisted_ohlcv_query_timeout")), PERSISTED_OHLCV_QUERY_TIMEOUT_MS);
+      }),
+    ]);
     const rows = dbExecRows<Record<string, unknown>>(result);
     return rows.map((r) => ({
       dt: String(r["dt"] ?? "").slice(0, 10),
@@ -10202,6 +10215,44 @@ export function mergeEodFallbackWithPersistedBars(
     marketSession: live.marketSession,
     referenceReason: live.referenceReason,
   };
+}
+
+/**
+ * 2026-07-18 Pete review Round 1 NEEDS_FIX on PR #1300: `verifyPriceWithinDailyRange()`
+ * was defined + unit-tested but had ZERO production call sites — "wired in
+ * definition, dead at call site" is a false safety net (the PR's own claim
+ * that this invariant is "CI-enforced going forward" was not true until this
+ * function exists and is actually called below). This is the real gate:
+ * every `/quote/realtime` response candidate that carries a high/low band
+ * (the MIS-intraday and EOD-fallback/persisted-supersede tiers — the exact
+ * tiers involved in the 2330/3661 P0) passes through here immediately before
+ * `c.json()`. A violation degrades the candidate to an honest NO_DATA (never
+ * a 500, never a silently-shipped impossible number) — the frontend already
+ * renders NO_DATA/STALE as "--"/"收盤參考" rather than trusting a bad number.
+ * Candidates with no high/low at all (the live KGI tick success path) pass
+ * through unchanged — `verifyPriceWithinDailyRange()` itself returns valid
+ * when a bound is unavailable (can't disprove, not a false accusation), so
+ * wrapping that path too is harmless and future-proofs it if high/low is
+ * ever added there.
+ */
+export function _gatePriceRangeInvariant<T extends {
+  lastPrice: number | null;
+  high?: number | null;
+  low?: number | null;
+  state: string;
+  note?: string | null;
+}>(symbol: string, payload: T): T {
+  const check = verifyPriceWithinDailyRange(payload.lastPrice, payload.high ?? null, payload.low ?? null);
+  if (check.valid) return payload;
+  console.warn(
+    `[realtime] price-range invariant violated for ${symbol}: lastPrice=${payload.lastPrice} high=${payload.high ?? null} low=${payload.low ?? null} reason=${check.reason} — degrading response to NO_DATA`
+  );
+  return {
+    ...payload,
+    lastPrice: null,
+    state: "NO_DATA",
+    note: `price_range_invariant_violated:${check.reason} (raw_lastPrice=${payload.lastPrice}, high=${payload.high ?? null}, low=${payload.low ?? null})`,
+  } as T;
 }
 
 app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
@@ -10416,20 +10467,41 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     try {
       const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
       const isOtc = _misPrefixForMarket(market) === "otc";
+      // Pete review Round 1 (PR #1300) narrow-edge fix: a row can be FOUND
+      // (matched by symbol) but have an unparseable/placeholder price field
+      // (e.g. "－" for a suspended stock) — `_build*EodResult()` correctly
+      // reports that as `lastPrice: null` / `state: "NO_DATA"`, but the old
+      // code returned immediately on "row found" regardless of whether the
+      // price actually parsed, giving up before trying the OTHER exchange's
+      // source even though it might have a usable price for the same symbol.
+      // Only return early when the built result actually has a price;
+      // otherwise fall through to the other source before giving up.
       if (isOtc) {
         const tpexRows = await getTpexMainboardCloseRows();
         const tpexRow = tpexRows.find((r) => r.SecuritiesCompanyCode?.trim() === sym);
-        if (tpexRow) return _buildTpexEodResult(tpexRow, blockReason);
+        if (tpexRow) {
+          const built = _buildTpexEodResult(tpexRow, blockReason);
+          if (built.lastPrice !== null) return built;
+        }
         const twseRows = await getStockDayAllRows();
         const twseRow = twseRows.find((r) => r.Code === sym);
-        if (twseRow) return _buildTwseEodResult(twseRow, blockReason);
+        if (twseRow) {
+          const built = _buildTwseEodResult(twseRow, blockReason);
+          if (built.lastPrice !== null) return built;
+        }
       } else {
         const twseRows = await getStockDayAllRows();
         const twseRow = twseRows.find((r) => r.Code === sym);
-        if (twseRow) return _buildTwseEodResult(twseRow, blockReason);
+        if (twseRow) {
+          const built = _buildTwseEodResult(twseRow, blockReason);
+          if (built.lastPrice !== null) return built;
+        }
         const tpexRows = await getTpexMainboardCloseRows();
         const tpexRow = tpexRows.find((r) => r.SecuritiesCompanyCode?.trim() === sym);
-        if (tpexRow) return _buildTpexEodResult(tpexRow, blockReason);
+        if (tpexRow) {
+          const built = _buildTpexEodResult(tpexRow, blockReason);
+          if (built.lastPrice !== null) return built;
+        }
       }
       return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "not_in_twse_or_tpex_eod", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     } catch (e) {
@@ -10459,7 +10531,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     const mis = await _twseMisIntradayFetch(symbol, company.market);
     if (mis) {
       return c.json({
-        data: {
+        data: _gatePriceRangeInvariant(symbol, {
           symbol,
           lastPrice: mis.lastPrice,
           open: mis.open,
@@ -10477,12 +10549,12 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           dataDate: _misCompactDateToIso(mis.tradeDate),
           note: `mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
-        }
+        })
       });
     }
     const fb = await _twseRealtimeFallback(symbol, company.market);
     return c.json({
-      data: {
+      data: _gatePriceRangeInvariant(symbol, {
         symbol,
         lastPrice: fb.lastPrice,
         open: fb.open,
@@ -10502,7 +10574,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         note: fb.note,
         dataDate: fb.dataDate,
         updatedAt
-      }
+      })
     });
   }
 
@@ -10526,7 +10598,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       const mis = await _twseMisIntradayFetch(symbol, company.market);
       if (mis) {
         return c.json({
-          data: {
+          data: _gatePriceRangeInvariant(symbol, {
             symbol,
             lastPrice: mis.lastPrice,
             open: mis.open,
@@ -10545,12 +10617,12 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
             dataDate: _misCompactDateToIso(mis.tradeDate),
             note: `kgi_subscribe_failed:${subscribeBlockReason} → mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
             updatedAt
-          }
+          })
         });
       }
       const fb = await _twseRealtimeFallback(symbol, company.market, subscribeBlockReason);
       return c.json({
-        data: {
+        data: _gatePriceRangeInvariant(symbol, {
           symbol,
           lastPrice: fb.lastPrice,
           open: fb.open,
@@ -10570,7 +10642,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           note: `kgi_subscribe_failed:${subscribeBlockReason} → ${fb.note}`,
           dataDate: fb.dataDate,
           updatedAt
-        }
+        })
       });
     }
 
@@ -10641,7 +10713,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     const mis = await _twseMisIntradayFetch(symbol, company.market);
     if (mis) {
       return c.json({
-        data: {
+        data: _gatePriceRangeInvariant(symbol, {
           symbol,
           lastPrice: mis.lastPrice,
           open: mis.open,
@@ -10660,13 +10732,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
           dataDate: _misCompactDateToIso(mis.tradeDate),
           note: `kgi_blocked:${blockedReason} → mis_${mis.state === "CLOSE" ? "close" : "intraday"} date=${mis.tradeDate} time=${mis.tradeTime}`,
           updatedAt
-        }
+        })
       });
     }
     // MIS also unavailable (e.g. non-trading hours) — fall back to EOD
     const fb = await _twseRealtimeFallback(symbol, company.market, blockedReason);
     return c.json({
-      data: {
+      data: _gatePriceRangeInvariant(symbol, {
         symbol,
         lastPrice: fb.lastPrice,
         open: fb.open,
@@ -10686,7 +10758,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
         note: `kgi_blocked:${blockedReason} → ${fb.note}`,
         dataDate: fb.dataDate,
         updatedAt
-      }
+      })
     });
   } else if (freshness === "fresh" && lastPrice !== null) {
     state = "LIVE";
@@ -10697,7 +10769,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   }
 
   return c.json({
-    data: {
+    data: _gatePriceRangeInvariant(symbol, {
       symbol,
       lastPrice,
       bid,
@@ -10708,7 +10780,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       source: "kgi-gateway" as const,
       marketSession,
       updatedAt
-    }
+    })
   });
 });
 
