@@ -156,6 +156,11 @@ describe("shouldRenderTickerTape", () => {
     expect(shouldRenderTickerTape("/m/kill")).toBe(false);
   });
 
+  it("skips /forgot-password and /reset-password (楊董 2026-07-17 prod report: the empty-state 行情資料暫時無法讀取 banner was leaking onto these authv3 recovery pages, which were missed from the original login/register skip-list sweep)", () => {
+    expect(shouldRenderTickerTape("/forgot-password")).toBe(false);
+    expect(shouldRenderTickerTape("/reset-password")).toBe(false);
+  });
+
   it("skips the homepage (already has its own real-data .tac-ticker)", () => {
     expect(shouldRenderTickerTape("/")).toBe(false);
   });

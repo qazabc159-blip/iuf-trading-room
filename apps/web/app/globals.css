@@ -16279,10 +16279,11 @@ body:has(.mobile-route) .header-dock-drawer {
 .authv3-login .av3-check input:focus-visible { outline: 2px solid var(--av3-amber); outline-offset: 2px; }
 .authv3-login .av3-check span { font-family: var(--av3-cjk); font-size: 11px; color: var(--av3-ink); letter-spacing: .04em; }
 .authv3-login .av3-row .av3-help {
-  font-family: var(--av3-cjk); font-size: 10px; color: var(--av3-ink-dim); text-decoration: none; letter-spacing: .04em;
-  border-bottom: 1px solid transparent; transition: color .15s, border-color .15s;
+  font-family: var(--av3-cjk); font-size: 12px; font-weight: 700; color: var(--av3-amber);
+  text-decoration: none; letter-spacing: .04em;
+  border-bottom: 1px solid var(--av3-amber-dim); transition: color .15s, border-color .15s;
 }
-.authv3-login .av3-row .av3-help:hover { color: var(--av3-amber-hi); border-bottom-color: var(--av3-amber-dim); }
+.authv3-login .av3-row .av3-help:hover { color: var(--av3-amber-hi); border-bottom-color: var(--av3-amber-hi); }
 
 .authv3-login .av3-err {
   border: 1px solid rgba(230, 57, 70, .5); background: rgba(230, 57, 70, .08); color: #f4a7ad;
@@ -16554,35 +16555,6 @@ body:has(.mobile-route) .header-dock-drawer {
 .authv3-register .av3-submit:focus-visible { outline: 2px solid var(--av3-amber-hi); outline-offset: 3px; }
 .authv3-register .av3-reg-foot { font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-ink-faint); letter-spacing: .04em; line-height: 1.6; margin-top: 14px; }
 
-/* ── State A：無邀請碼態，置中邀請制卡 ── */
-.authv3-register .av3-gate { padding: 56px 60px 60px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.authv3-register .av3-gate .av3-boot { margin-bottom: 22px; justify-content: center; }
-.authv3-register .av3-gate h1 {
-  font-family: var(--av3-cjk); font-weight: 700; color: var(--av3-ink-hi); font-size: 40px; line-height: 1.1;
-  letter-spacing: .04em; margin: 0; text-shadow: 0 0 30px rgba(200, 148, 63, .14);
-}
-.authv3-register .av3-gate h1 .av3-em { color: var(--av3-amber-hi); text-shadow: 0 0 26px rgba(226, 184, 92, .34); }
-.authv3-register .av3-gatecard {
-  margin-top: 34px; width: 100%; max-width: 520px; border: 1px solid var(--av3-line2);
-  background: linear-gradient(180deg, rgba(10, 14, 21, .7), rgba(6, 9, 14, .85)); padding: 32px 34px 30px; position: relative;
-}
-.authv3-register .av3-gatecard::before { content: ""; position: absolute; top: -1px; left: -1px; width: 14px; height: 14px; border-top: 2px solid var(--av3-amber); border-left: 2px solid var(--av3-amber); }
-.authv3-register .av3-gatecard::after { content: ""; position: absolute; bottom: -1px; right: -1px; width: 14px; height: 14px; border-bottom: 2px solid var(--av3-amber); border-right: 2px solid var(--av3-amber); }
-.authv3-register .av3-gatecard .av3-gh { font-family: var(--av3-cjk); font-size: 15px; font-weight: 700; color: var(--av3-amber-hi); letter-spacing: .14em; }
-.authv3-register .av3-gatecard .av3-gp { font-family: var(--av3-cjk); font-size: 13px; color: var(--av3-ink); line-height: 1.85; letter-spacing: .04em; margin: 16px 0 0; }
-.authv3-register .av3-gatecard .av3-fmt { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--av3-line); }
-.authv3-register .av3-gatecard .av3-fmt .av3-k { font-family: var(--av3-cjk); font-size: 9.5px; color: var(--av3-ink-dim); letter-spacing: .1em; }
-.authv3-register .av3-gatecard .av3-fmt .av3-v {
-  font-family: var(--av3-mono); font-size: 11px; color: var(--av3-amber-dim); letter-spacing: .04em;
-  margin-top: 8px; word-break: break-all; background: #05080d; border: 1px solid var(--av3-line); padding: 9px 11px;
-}
-.authv3-register .av3-gatecard .av3-gcta {
-  display: inline-flex; align-items: center; gap: 8px; margin-top: 24px;
-  font-family: var(--av3-cjk); font-size: 12.5px; font-weight: 700; letter-spacing: .14em; color: var(--av3-amber-hi);
-  text-decoration: none; border: 1px solid var(--av3-amber); padding: 11px 22px; transition: .15s;
-}
-.authv3-register .av3-gatecard .av3-gcta:hover { background: var(--av3-amber); color: var(--av3-amber-ink); box-shadow: 0 0 20px rgba(200, 148, 63, .22); }
-
 .authv3-register .av3-footband { border-top: 1px solid var(--av3-line2); background: rgba(7, 11, 17, .8); position: relative; z-index: 10; }
 .authv3-register .av3-footband-inner {
   max-width: 1080px; margin: 0 auto; padding: 13px 24px; display: flex; justify-content: space-between;
@@ -16600,9 +16572,6 @@ body:has(.mobile-route) .header-dock-drawer {
   .authv3-register .av3-reg-head { padding: 18px 22px 16px; }
   .authv3-register .av3-reg-body { padding: 22px 22px 26px; }
   .authv3-register .av3-pwrules { grid-template-columns: 1fr; }
-  .authv3-register .av3-gate { padding: 36px 22px 44px; }
-  .authv3-register .av3-gate h1 { font-size: 30px; }
-  .authv3-register .av3-gatecard { padding: 26px 22px 24px; }
   .authv3-register .av3-footband-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
 

@@ -251,6 +251,37 @@ test("/login: ticker tape does not render (skip-route contract)", async ({ page 
 });
 
 /**
+ * 2026-07-17 (楊董 prod report): `/forgot-password` was leaking the ticker's
+ * "行情資料暫時無法讀取" empty-state banner in prod — `shouldRenderTickerTape`'s
+ * skip list had `/login`/`/register`/`/m` but was missing the two
+ * password-recovery routes, even though they already carry the same
+ * `.login-route` chrome class (which correctly hides sidebar/header-dock via
+ * `body:has(.login-route)` CSS — only the ticker's separate pathname gate
+ * was wrong). Assert both the DOM absence AND the specific leaked text never
+ * appears anywhere on the page, so a future regression can't slip back in
+ * under a different selector.
+ */
+for (const route of ["/forgot-password", "/reset-password"]) {
+  test(`${route}: ticker tape does not render, no leaked market-status text (skip-route contract)`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    test.setTimeout(30_000);
+
+    const context = await page.context().browser()!.newContext();
+    const authPage = await context.newPage();
+    await authPage.goto(route, { waitUntil: "domcontentloaded" });
+    await authPage.waitForTimeout(500);
+
+    await expect(authPage.locator(TICKER_LABEL)).toHaveCount(0);
+    const bodyText = await authPage.locator("body").innerText();
+    expect(bodyText).not.toContain("行情資料暫時無法讀取");
+    expect(bodyText).not.toContain("尚無盤面資料");
+    await context.close();
+  });
+}
+
+/**
  * Pete review, 2026-07-10 (PR #1208 NEEDS_FIX round): `/portfolio` and
  * `/market-intel` render `<FinalOnlyFrame/>` (`components/FinalOnlyFrame.tsx`)
  * — a full-bleed iframe wrapper whose `.iuf-final-content-frame` forces

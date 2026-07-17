@@ -127,7 +127,14 @@ export function tickerDirection(value: number | null | undefined): TickerDirecti
 
 /**
  * Prefix-skip routes:
- *  - `/login`, `/register`, `/m` — own minimal chrome / unauthenticated.
+ *  - `/login`, `/register`, `/forgot-password`, `/reset-password`, `/m` —
+ *    own minimal `.login-route` chrome / unauthenticated (2026-07-17: the
+ *    two password-recovery routes were added after 楊董 caught the ticker's
+ *    "行情資料暫時無法讀取" empty-state banner leaking onto `/forgot-password`
+ *    in prod — they ship the same authv3 console chrome as `/login`/`/register`
+ *    but were missing from this list, so the ticker's own pathname gate never
+ *    skipped them even though CSS already hides sidebar/header-dock there via
+ *    `body:has(.login-route)`).
  *  - `/final-v031` — every nested route under it (`/final-v031/portfolio`,
  *    `/final-v031/portfolio/kline-frame`, `/final-v031/market-intel`,
  *    `/final-v031/ideas`) renders `<FinalOnlyFrame/>` (see below); all are
@@ -135,7 +142,7 @@ export function tickerDirection(value: number | null | undefined): TickerDirecti
  *    (unlike `/portfolio`, which has a real non-wrapper sibling route —
  *    see EXACT_SKIP_ROUTES).
  */
-const SKIP_ROUTE_PREFIXES = ["/login", "/register", "/m", "/final-v031"];
+const SKIP_ROUTE_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password", "/m", "/final-v031"];
 
 /**
  * Exact-match-only skip routes (do NOT prefix-match — each has at least one

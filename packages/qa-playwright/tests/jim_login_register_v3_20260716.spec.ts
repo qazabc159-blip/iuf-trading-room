@@ -99,30 +99,54 @@ test.describe("/login v3 — visual + real auth flow", () => {
   });
 });
 
-test.describe("/register v3 — two real states + validation", () => {
+test.describe("/register v3 — open registration form + validation", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("no invite param -> invite-only gate card (no form rendered)", async ({ page }, testInfo) => {
+  // 2026-07-17 (楊董 prod report): the invite-only empty-state gate is
+  // retired — /register always renders the real form now, with or without
+  // a `?invite=` URL param. Supersedes the old two-state (gate/form) test.
+  test("no invite param -> real form still renders (invite optional)", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-chromium", "runs once on desktop-chromium");
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/register", { waitUntil: "networkidle" });
-    await expect(page.locator(".av3-gatecard")).toBeVisible();
-    await expect(page.locator(".av3-gh")).toHaveText("本系統採邀請制");
-    await expect(page.locator(".av3-reg-body")).toHaveCount(0);
+    await expect(page.locator(".av3-reg-body")).toBeVisible();
+    await expect(page.locator(".av3-reg-body input[autocomplete=name]")).toBeVisible();
+    await expect(page.locator(".av3-reg-body input[type=email]")).toBeVisible();
+    await expect(page.locator(".av3-badge")).toHaveCount(0);
 
     await ensureDir();
-    await page.screenshot({ path: path.join(REPORT_DIR, "register-stateA-1920.png"), fullPage: true });
+    await page.screenshot({ path: path.join(REPORT_DIR, "register-no-invite-1920.png"), fullPage: true });
   });
 
-  test("with ?invite= -> full form state renders", async ({ page }, testInfo) => {
+  test("with ?invite= -> same form renders, invite badge shown", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-chromium", "runs once on desktop-chromium");
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/register?invite=demo-token-abc123", { waitUntil: "networkidle" });
     await expect(page.locator(".av3-reg-body")).toBeVisible();
     await expect(page.locator(".av3-reg-body input[autocomplete=name]")).toBeVisible();
+    await expect(page.locator(".av3-badge")).toBeVisible();
 
     await ensureDir();
-    await page.screenshot({ path: path.join(REPORT_DIR, "register-stateB-1920.png"), fullPage: true });
+    await page.screenshot({ path: path.join(REPORT_DIR, "register-with-invite-1920.png"), fullPage: true });
+  });
+
+  // ⚠️ Known backend gap (reported to Elva, not fixed in this frontend PR):
+  // /auth/register-with-invite still requires a non-empty inviteToken
+  // server-side, so a no-invite submit is currently blocked. This test locks
+  // the honesty rule — the real backend error text must surface as-is, the
+  // frontend must not fabricate a friendlier "invite optional" success copy.
+  test("no-invite submit surfaces the real backend rejection (backend still requires invite server-side)", async ({ page }) => {
+    await page.route("**/auth/register-with-invite", async (route) => {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "invalid_request_body" }) });
+    });
+    await page.goto("/register", { waitUntil: "networkidle" });
+    await page.fill(".av3-reg-body input[autocomplete=name]", "Test User");
+    await page.fill(".av3-reg-body input[type=email]", "test@example.com");
+    const pwInputs = page.locator(".av3-reg-body input[type=password]");
+    await pwInputs.nth(0).fill("LongEnough123");
+    await pwInputs.nth(1).fill("LongEnough123");
+    await page.click(".av3-submit");
+    await expect(page.locator(".av3-err-persist")).toContainText("表單資料有誤");
   });
 
   test("mobile 390: both states have no horizontal overflow", async ({ page }) => {
