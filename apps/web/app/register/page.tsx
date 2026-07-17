@@ -14,16 +14,16 @@ import { passwordPolicyRules, policyPassed } from "@/lib/password-policy";
 // lib/password-policy.ts (2026-07-17, extracted so /reset-password reuses
 // the same implementation instead of duplicating it).
 //
-// 2026-07-17 (楊董 prod report): the invite-gated empty state (draft's
-// "State A") is retired — the real registration form always renders now.
-// `?invite=` is still read and silently carried into the submit body when
-// present (prefill), but is no longer required to see or use the form.
-// ⚠️ KNOWN GAP (reported to Elva, not fixed here — backend lane): the
-// `/auth/register-with-invite` endpoint's zod schema still requires
-// `inviteToken: z.string().min(1)`, so a no-invite submit currently gets
-// rejected with `invalid_request_body` (400). Frontend intentionally does
-// not fabricate a friendlier message for this — the real backend error is
-// shown as-is until Jason opens up invite-less registration server-side.
+// 2026-07-17 (楊董裁決 B, same-day revision): public open registration was
+// tried and reverted — 楊董裁決**維持邀請制**（開放註冊會讓陌生人拿到自己的
+// workspace，目前單 workspace 架構會漏 owner 的模擬帳本給陌生人，Jason 已
+// 在後端正確擋下；真正的多租戶隔離是日後專案，不在本輪）。The old gated
+// "State A" empty-card (no form at all without `?invite=`) is still retired,
+// but the real form now always requires a visible, real **邀請碼** field
+// (not silently pulled from the URL alone) — `?invite=` still prefills it
+// when present, but the field itself is a required input so someone who
+// pastes the URL without the query param, or types a code by hand, gets an
+// honest required-field affordance instead of a silent no-op.
 
 // ── Error message map ─────────────────────────────────────────────────────────
 
@@ -57,14 +57,13 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const hasInvite = loaded && Boolean(inviteToken);
   const rules = passwordPolicyRules(password);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
-    if (!email.trim() || !name.trim() || !password || !confirmPassword) {
+    if (!inviteToken.trim() || !email.trim() || !name.trim() || !password || !confirmPassword) {
       setError("請填完整所有欄位。");
       return;
     }
@@ -115,7 +114,7 @@ export default function RegisterPage() {
           <span className="av3-corner bl" />
           <div className="av3-console-bar">
             <span className="av3-dot" />
-            <span className="av3-lbl">{hasInvite ? "受邀開通 · 建立操作員帳號" : "建立操作員帳號"}</span>
+            <span className="av3-lbl">受邀開通 · 建立操作員帳號</span>
             <span className="av3-rt">IUF-01 · TAIPEI</span>
           </div>
 
@@ -154,9 +153,22 @@ export default function RegisterPage() {
                 <span className="av3-tab">
                   受邀開通 <span className="av3-cd">REG</span>
                 </span>
-                {hasInvite && <span className="av3-badge">邀請制</span>}
+                <span className="av3-badge">邀請制</span>
               </div>
               <form className="av3-reg-body" onSubmit={submit} noValidate>
+                <label className="av3-field">
+                  <span className="av3-lab">
+                    邀請碼 <span className="av3-hint">本系統採邀請制，請向管理員索取</span>
+                  </span>
+                  <input
+                    value={inviteToken}
+                    onChange={(e) => setInviteToken(e.target.value)}
+                    type="text"
+                    autoComplete="off"
+                    placeholder="輸入管理員提供的邀請碼"
+                    className={inviteToken.length === 0 ? "" : "av3-good"}
+                  />
+                </label>
                 <label className="av3-field">
                   <span className="av3-lab">姓名 / 暱稱</span>
                   <input
@@ -225,11 +237,7 @@ export default function RegisterPage() {
                 <button className="av3-submit" type="submit" disabled={loading || !loaded}>
                   {loading ? "建立中…" : "建立帳號"}
                 </button>
-                <p className="av3-reg-foot">
-                  {hasInvite
-                    ? "邀請碼已隨連結帶入並綁定此次註冊；建立成功後直接進入戰情室首頁。"
-                    : "建立成功後直接進入戰情室首頁。"}
-                </p>
+                <p className="av3-reg-foot">邀請碼會綁定此次註冊；建立成功後直接進入戰情室首頁。</p>
               </form>
             </div>
           </div>
