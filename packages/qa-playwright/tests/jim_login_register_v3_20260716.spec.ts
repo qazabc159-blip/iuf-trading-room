@@ -99,30 +99,56 @@ test.describe("/login v3 — visual + real auth flow", () => {
   });
 });
 
-test.describe("/register v3 — two real states + validation", () => {
+test.describe("/register v3 — honest invite-gated real form + validation", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("no invite param -> invite-only gate card (no form rendered)", async ({ page }, testInfo) => {
+  // 2026-07-17 (楊董裁決 B, same-day revision): open public registration was
+  // tried and reverted — 維持邀請制 (single-workspace architecture would leak
+  // the owner's own paper ledger to a stranger's account). The old gated
+  // "State A" empty-card (no form without `?invite=`) stays retired, but the
+  // real form now always shows a required, visible **邀請碼** field instead
+  // of silently reading it from the URL alone.
+  test("no invite param -> real form renders, invite field visible+empty+required", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-chromium", "runs once on desktop-chromium");
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/register", { waitUntil: "networkidle" });
-    await expect(page.locator(".av3-gatecard")).toBeVisible();
-    await expect(page.locator(".av3-gh")).toHaveText("本系統採邀請制");
-    await expect(page.locator(".av3-reg-body")).toHaveCount(0);
+    await expect(page.locator(".av3-reg-body")).toBeVisible();
+    await expect(page.locator(".av3-reg-body input[autocomplete=name]")).toBeVisible();
+    await expect(page.locator(".av3-reg-body input[type=email]")).toBeVisible();
+    await expect(page.locator(".av3-badge")).toBeVisible();
+
+    const inviteInput = page.locator(".av3-reg-body input[type=text]").first();
+    await expect(inviteInput).toBeVisible();
+    await expect(inviteInput).toHaveValue("");
+
+    // Submitting with every field filled EXCEPT invite code must be blocked
+    // client-side with the same generic required-fields error, not silently
+    // accepted and not sent to the backend as an empty string.
+    await page.fill(".av3-reg-body input[autocomplete=name]", "Test User");
+    await page.fill(".av3-reg-body input[type=email]", "test@example.com");
+    const pwInputs = page.locator(".av3-reg-body input[type=password]");
+    await pwInputs.nth(0).fill("LongEnough123");
+    await pwInputs.nth(1).fill("LongEnough123");
+    await page.click(".av3-submit");
+    await expect(page.locator(".av3-err-persist")).toContainText("請填完整所有欄位");
 
     await ensureDir();
-    await page.screenshot({ path: path.join(REPORT_DIR, "register-stateA-1920.png"), fullPage: true });
+    await page.screenshot({ path: path.join(REPORT_DIR, "register-no-invite-1920.png"), fullPage: true });
   });
 
-  test("with ?invite= -> full form state renders", async ({ page }, testInfo) => {
+  test("with ?invite= -> invite field prefilled, form renders, badge shown", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-chromium", "runs once on desktop-chromium");
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto("/register?invite=demo-token-abc123", { waitUntil: "networkidle" });
     await expect(page.locator(".av3-reg-body")).toBeVisible();
     await expect(page.locator(".av3-reg-body input[autocomplete=name]")).toBeVisible();
+    await expect(page.locator(".av3-badge")).toBeVisible();
+
+    const inviteInput = page.locator(".av3-reg-body input[type=text]").first();
+    await expect(inviteInput).toHaveValue("demo-token-abc123");
 
     await ensureDir();
-    await page.screenshot({ path: path.join(REPORT_DIR, "register-stateB-1920.png"), fullPage: true });
+    await page.screenshot({ path: path.join(REPORT_DIR, "register-with-invite-1920.png"), fullPage: true });
   });
 
   test("mobile 390: both states have no horizontal overflow", async ({ page }) => {

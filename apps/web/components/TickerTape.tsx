@@ -15,8 +15,8 @@
  *    timestamp, never "即時"
  *  - missing quotes render "--", never a fabricated number
  *
- * Skipped on `/login`, `/register`, `/m` (own minimal chrome, see
- * lib/ticker-tape.ts `shouldRenderTickerTape`).
+ * Skipped on `/login`, `/register`, `/forgot-password`, `/reset-password`,
+ * `/m` (own minimal chrome, see lib/ticker-tape.ts `shouldRenderTickerTape`).
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
