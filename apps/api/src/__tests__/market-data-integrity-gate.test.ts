@@ -18,6 +18,7 @@ import {
   crossValidateWithIndependentSource,
   needsIndependentCrossCheck,
   resolveAuthoritativeTradeDate,
+  verifyPriceWithinDailyRange,
 } from "../market-data-integrity-gate.js";
 
 // ── Invariant #1: a price without an internally-consistent % move is never "verified" ──
@@ -136,4 +137,42 @@ test("INVARIANT: all sources missing a date resolves to null — never guesses f
   ]);
   assert.equal(result.tradeDate, null);
   assert.equal(result.chosenSource, null);
+});
+
+// ── Invariant #6 (2026-07-18 company page P0): 最新價 must fall within its
+// own day's [最低, 最高] band — a stale close mixed with a fresher day's
+// high/low is a DIFFERENT bug class from arithmetic self-consistency (#1). ──
+
+test("INVARIANT: 最新價 above 當日最高 is rejected — exact 2330 prod repro (2,470.0 shown as 最新價 vs 當日最高 2,395.0)", () => {
+  const result = verifyPriceWithinDailyRange(2470.0, 2395.0, 2290.0);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "price_above_daily_high");
+});
+
+test("INVARIANT: 最新價 above 當日最高 is rejected — exact 3661 prod repro (3,770.0 shown as 最新價 vs 當日最高 3,655.0)", () => {
+  const result = verifyPriceWithinDailyRange(3770.0, 3655.0, 3480.0);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "price_above_daily_high");
+});
+
+test("INVARIANT: the true close (2,290 backed out from the mismatched -7.29%) IS within its own day's range — the fix target, not a rejection", () => {
+  const result = verifyPriceWithinDailyRange(2290.0, 2395.0, 2290.0);
+  assert.equal(result.valid, true);
+  assert.equal(result.reason, null);
+});
+
+test("INVARIANT: 最新價 below 當日最低 is also rejected (symmetric case, not just the above-high direction)", () => {
+  const result = verifyPriceWithinDailyRange(2000.0, 2395.0, 2290.0);
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "price_below_daily_low");
+});
+
+test("INVARIANT: with no high/low bound available, the range guard cannot disprove — accepts (not a false accusation, same convention as isPriceMagnitudePlausible)", () => {
+  assert.equal(verifyPriceWithinDailyRange(2470.0, null, null).valid, true);
+  assert.equal(verifyPriceWithinDailyRange(2470.0, undefined, undefined).valid, true);
+});
+
+test("INVARIANT: a null/non-finite close cannot be judged against the range — accepts (missing_close is verifyQuoteTuple's job, not this check's)", () => {
+  assert.equal(verifyPriceWithinDailyRange(null, 2395.0, 2290.0).valid, true);
+  assert.equal(verifyPriceWithinDailyRange(NaN, 2395.0, 2290.0).valid, true);
 });
