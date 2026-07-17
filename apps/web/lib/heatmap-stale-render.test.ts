@@ -281,4 +281,15 @@ describe("F4-T5: P0-5 — trade date is derived from data, not the wall clock", 
     expect(formatTradeDateWithWeekday("")).toBeNull();
     expect(formatTradeDateWithWeekday("not-a-date")).toBeNull();
   });
+
+  it("2026-07-18 banner-date-unify regression: a UTC 'Z' timestamp that rolls into the next Taipei day gets BOTH the date and weekday right (not just the date)", () => {
+    // 2026-07-17 is a Friday. The real prod marketContext.index.timestamp
+    // shape for that trading day's close is "2026-07-16T16:00:00.000Z" (UTC
+    // calendar date 07/16, Taipei calendar date 07/17). Before the fix, the
+    // date part (mmdd) and the weekday part were derived from two DIFFERENT
+    // naive-slice implementations that could disagree with each other, not
+    // just disagree with other pages.
+    const label = formatTradeDateWithWeekday("2026-07-16T16:00:00.000Z");
+    expect(label).toBe("07/17 (五)");
+  });
 });

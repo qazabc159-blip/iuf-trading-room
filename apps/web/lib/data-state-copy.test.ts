@@ -19,6 +19,18 @@ describe("formatAsOfDate", () => {
   it("returns null for malformed input", () => {
     expect(formatAsOfDate("not-a-date")).toBeNull();
   });
+
+  it("2026-07-18 banner-date-unify regression: a UTC 'Z' timestamp that rolls into the next Taipei day resolves to the TAIPEI date, not the UTC date", () => {
+    // Real prod value of marketContext.index.timestamp on 2026-07-17's close:
+    // "2026-07-16T16:00:00.000Z" — the UTC calendar date is 07/16, but
+    // 16:00 UTC = 00:00 next day in Taipei (+8h), so the true Taipei trading
+    // date is 07/17. A naive `value.slice(0, 10)` (the pre-fix implementation)
+    // returned "07/16" — this is exactly why /companies/[symbol] and
+    // /ai-recommendations showed "07/16 收盤資料" while the homepage (whose
+    // KGI-sourced timestamp happened to already be in Taipei-local "+08:00"
+    // form) correctly showed "07/17" for the SAME trading day.
+    expect(formatAsOfDate("2026-07-16T16:00:00.000Z")).toBe("07/17");
+  });
 });
 
 describe("dataStateLabel", () => {

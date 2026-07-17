@@ -10,6 +10,8 @@
  * 純函式，無 React / DOM 依賴，供 <DataStateBadge> 與其他頁面直接引用文案規則。
  */
 
+import { taipeiCalendarDate } from "./taipei-date";
+
 export type DataState = "live" | "close" | "delayed" | "empty";
 
 export type DataStateTone = {
@@ -30,13 +32,18 @@ export function dataStateTone(state: DataState): DataStateTone {
 }
 
 /**
- * 把 ISO 日期／日期時間字串轉成 "MM/DD"。
+ * 把 ISO 日期／日期時間字串轉成 "MM/DD"（Taipei 日曆日，見 `taipei-date.ts`）。
  * 空值或格式不對回 null（呼叫端決定 fallback 文案，不在這裡編數字）。
+ *
+ * 2026-07-18 修正：舊版對輸入字串做 `value.slice(0, 10)` 天真截字串，UTC "Z"
+ * 格式時間戳（例如 market-data/overview 的 `marketContext.index.timestamp`）
+ * 在 UTC 小時 >= 16:00 時，UTC 日曆日跟 Taipei 日曆日會差一天，導致公司頁 /
+ * AI 推薦頁的收盤 banner 顯示「07/16」而首頁顯示「07/17」（同一個交易日）。
  */
 export function formatAsOfDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const datePart = value.length >= 10 ? value.slice(0, 10) : value;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  const isoDate = taipeiCalendarDate(value);
+  if (!isoDate) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   if (!match) return null;
   const [, , month, day] = match;
   return `${month}/${day}`;

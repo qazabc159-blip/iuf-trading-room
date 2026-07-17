@@ -37,15 +37,7 @@
  */
 
 import { getMarketDataOverview, getTwseMarketOverview } from "./api";
-
-const TAIPEI_TZ = "Asia/Taipei";
-
-function taipeiCalendarDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-CA", { timeZone: TAIPEI_TZ });
-}
+import { taipeiCalendarDate } from "./taipei-date";
 
 /**
  * Returns true when `candidate`'s Taipei calendar date is strictly newer
@@ -97,6 +89,21 @@ export function resolveAuthoritativeTradeDate(
  * return a `lastCloseDate` prop. Fail-open (never throws — the banner is
  * cosmetic; a resolution failure should fall back to the component's own
  * single-source client fetch rather than break the page).
+ *
+ * 2026-07-18 追查（company/airec 仍顯 07/16，homepage 顯 07/17 的真根因）：
+ * 這支函式本身的候選比較邏輯（`resolveAuthoritativeTradeDate` 用 Taipei 日曆
+ * 日比較）從一開始就是對的——不是「跟首頁用不同 resolver」。真正的 bug 在下游：
+ * `market_context_index` 候選的 timestamp 是 UTC "Z" 格式（例如
+ * "2026-07-16T16:00:00.000Z"，其 Taipei 日曆日其實是 07-17），這個 resolver
+ * 選中它後把「原始字串」回傳給呼叫端，呼叫端（`MarketStateBanner` →
+ * `formatTradeDateWithWeekday` → 舊版 `formatAsOfDate`）再對這個字串做
+ * `slice(0, 10)` 天真截斷，截出的是 UTC 日期「07-16」而非 Taipei 日期
+ * 「07-17」。首頁沒踩到是因為它的 KGI 分支拿到的時間戳恰好已經是
+ * Taipei-local「+08:00」格式（slice 剛好對），並非首頁的日期邏輯比較高明。
+ * 已在 `lib/taipei-date.ts` 收斂成單一 Taipei 日曆日轉換函式，
+ * `lib/data-state-copy.ts::formatAsOfDate()` 與
+ * `lib/market-state-banner.ts::formatTradeDateWithWeekday()` 的 weekday 推導
+ * 都改用它，徹底消滅這個下游 naive-slice 重複實作，而不是再加一個候選來源。
  */
 export async function resolveBannerLastCloseDate(): Promise<string | null> {
   const [overview, twse] = await Promise.allSettled([
