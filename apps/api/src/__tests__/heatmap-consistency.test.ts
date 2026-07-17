@@ -84,6 +84,46 @@ test("getTwseIndustryHeatmap serves last-good tiles on transient upstream outage
   _resetStockDayAllCache();
 });
 
+test("kgi-core heatmap: comma-formatted TWSE ClosingPrice (>=1,000) must not truncate to a single digit (2026-07-17 P1 regression)", () => {
+  // Repro of the 2026-07-17 prod bug: TWSE STOCK_DAY_ALL/afterTrading rows
+  // format ClosingPrice with a thousands-comma once price crosses 1,000
+  // ("2,470.0000"). A bare parseFloat() stopped at the comma and returned
+  // just `2` — exactly what Bruce's prod verify caught for 2330/2454/2308/
+  // 3008/6669 (all >=1,000 that day) while the other 35 sub-1,000 tiles
+  // were unaffected.
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  const twseRows = [stockRow("2330", "2,470.0000", "-30.0000", "1150717")];
+
+  const result = enrichHeatmapTiles(kgiTiles, twseRows);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_eod");
+  assert.equal(tile.price, 2470, `price must be the full comma-parsed value, got ${tile.price}`);
+  assert.equal(tile.change, -30);
+  assert.ok(tile.changePct !== null && Math.abs(tile.changePct - -1.2) < 0.05, `changePct ≈ -1.2, got ${tile.changePct}`);
+});
+
+test("kgi-core heatmap: a TWSE row with an implausible changePct must never leak a corrupted price — falls through to no_data", () => {
+  // Defense-in-depth: even if some future/unforeseen parse issue produces a
+  // garbage close price (simulated here directly, independent of the comma
+  // bug above), the resulting pctRaw computation blows past the ±10% daily
+  // limit band. The enricher must drop the WHOLE row (not just null
+  // changePct while still serving the corrupted price) so the tile falls
+  // through to the next tier (here: no_data, since no cache/db/MIS entry
+  // exists for this symbol in this test).
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "3008", name: "大立光", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  // close=2 (garbage), change=-180 (real magnitude) → prevClose=182, pctRaw ≈ -98.9% (implausible)
+  const twseRows = [stockRow("3008", "2", "-180", "1150717")];
+
+  const result = enrichHeatmapTiles(kgiTiles, twseRows);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `corrupted row must not surface as twse_eod, got ${tile.sourceState}`);
+  assert.equal(tile.price, null, `price must never be the corrupted value 2, got ${tile.price}`);
+});
+
 test("PERF: fetchKgiLatestTick short-circuits when the gateway is scheduled off", () => {
   // 6/15 15:13: /heatmap/kgi-core (40 parallel symbols) and /overview/kgi
   // burned ~3.5s per request because fetchKgiLatestTick had no scheduled-off

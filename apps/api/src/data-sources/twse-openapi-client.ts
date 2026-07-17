@@ -669,7 +669,14 @@ export interface TwseMarketOverviewResult {
 
 const INDEX_CONSISTENCY_TOLERANCE_PCT = 0.15;
 
-function parseTwseNumber(value: unknown): number | null {
+// Exported (2026-07-17 P1 fix): TWSE numeric fields (ClosingPrice/OpeningPrice/
+// etc.) are comma-thousands-formatted once the value crosses 1,000 (e.g.
+// "2,470.0000"). A bare parseFloat() stops at the first non-numeric char and
+// silently returns just the leading digit(s) before the comma — root cause
+// of the kgi-core heatmap "price corrupted to a single digit" bug for
+// higher-priced tiles (2330/2454/2308/3008/6669). kgi-heatmap-enricher.ts
+// reuses this instead of duplicating comma-stripping logic.
+export function parseTwseNumber(value: unknown): number | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
   const parsed = Number(String(value).replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : null;
