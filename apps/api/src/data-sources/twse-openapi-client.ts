@@ -1319,6 +1319,39 @@ function todayTaipeiYYYYMMDD(): string {
   return `${year}${month}${day}`;
 }
 
+/**
+ * 2026-07-17/18 market-data-integrity-gate fix (index headline regression
+ * caught by Elva's post-#1298 prod verify): walks backward from wall-clock
+ * "today" (Taipei) to find the most recent Taiwan Stock Exchange TRADING
+ * day, bounded to 10 days (covers any realistic holiday run — Chinese New
+ * Year is the longest at ~9 consecutive non-trading days). Root cause this
+ * closes: `_fetchTwseMarketOverviewUncached()`'s Tier 1 (MI_5MINS_INDEX)
+ * only ever queried wall-clock "today" — correct while today IS the trading
+ * day (live intraday + same-day post-close), but once the calendar rolls
+ * past midnight into a weekend/holiday, "today" has no trading data at all
+ * (confirmed live: TWSE returns `stat` != "OK" for a genuine non-trading
+ * date), so it fell straight through to Tier 2 (OpenAPI MI_INDEX) — which
+ * lags FURTHER behind (confirmed live: still serving 07/16 hours into
+ * 07/18, well past 07/17's real 13:30 close) — instead of trying the SAME
+ * reliable MI_5MINS_INDEX main-site source for the actual last trading day.
+ * Fail-open to weekend-only check (isTwTradingDay's own convention) if the
+ * DB calendar table is unavailable.
+ */
+export async function mostRecentTradingDayYYYYMMDD(fromYYYYMMDD: string): Promise<string> {
+  const { isTwTradingDay } = await import("../lib/trading-calendar.js");
+  const year = Number(fromYYYYMMDD.slice(0, 4));
+  const month = Number(fromYYYYMMDD.slice(4, 6));
+  const day = Number(fromYYYYMMDD.slice(6, 8));
+  const fromDate = new Date(Date.UTC(year, month - 1, day));
+  for (let back = 0; back <= 10; back++) {
+    const d = new Date(fromDate.getTime() - back * 24 * 60 * 60 * 1000);
+    const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const isTrading = await isTwTradingDay(iso).catch(() => true); // fail-open, same convention as isTwTradingDay's own callers
+    if (isTrading) return iso.replace(/-/g, "");
+  }
+  return fromYYYYMMDD; // exhausted lookback (shouldn't happen) — caller's existing null-handling takes over
+}
+
 // ── Market Overview fetcher ───────────────────────────────────────────────────
 
 /**
@@ -1395,6 +1428,24 @@ async function _fetchTwseMarketOverviewUncached(
   if (taiex && !isTwseIndexSnapshotConsistent(taiex)) {
     console.warn("[twse-openapi-client] rejected inconsistent MI_5MINS_INDEX snapshot");
     taiex = null;
+  }
+
+  // ── Tier 1.5: MI_5MINS_INDEX for the last actual TRADING day (2026-07-17/18
+  // fix) — wall-clock "today" can be a weekend/holiday (no data at all, by
+  // design — Tier 1 above correctly returned null for that), in which case
+  // the last real trading day's index close is still available via this SAME
+  // reliable main-site source and must be tried BEFORE falling to Tier 2
+  // (OpenAPI MI_INDEX), which lags further behind. Skipped entirely when
+  // todayStr already IS the last trading day (normal case — no extra fetch).
+  if (!taiex) {
+    const lastTradingDayStr = await mostRecentTradingDayYYYYMMDD(todayStr);
+    if (lastTradingDayStr !== todayStr) {
+      taiex = await fetchTaiwanMarketIndexToday(lastTradingDayStr, doFetch);
+      if (taiex && !isTwseIndexSnapshotConsistent(taiex)) {
+        console.warn("[twse-openapi-client] rejected inconsistent MI_5MINS_INDEX snapshot (last trading day fallback)");
+        taiex = null;
+      }
+    }
   }
 
   // ── Fallback: MI_INDEX (OpenAPI official, may be stale until next publish) ──────

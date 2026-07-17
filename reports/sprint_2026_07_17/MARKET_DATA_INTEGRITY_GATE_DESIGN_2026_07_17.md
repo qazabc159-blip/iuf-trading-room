@@ -1,5 +1,110 @@
 # 市場資料完整性閘門（Market Data Integrity Gate）— 設計 + RCA — 2026-07-17（Jason，續 PR #1297）
 
+---
+
+## Round 3 追加（2026-07-18 凌晨）：Elva 部署後三度複驗 — 指數 stale regression 真根因 + 多管線問題誠實回報
+
+### 先定死權威真值（楊董/Elva 要求：別信 finmind，用 TWSE 官方指數源）
+直接 curl TWSE 主站官方 **MI_5MINS_INDEX**（逐 5 秒指數統計，非批次落後的 OpenAPI
+`MI_INDEX`/`STOCK_DAY_ALL`）：
+
+```
+07/16 (四) 09:00:00 開盤 45,631.59 → 13:30:00 收盤 45,624.98
+07/17 (五) 09:00:00 開盤 45,624.98 → 13:30:00 收盤 42,671.27
+```
+
+07/17 開盤值（45,624.98）精確銜接 07/16 收盤值，收盤 42,671.27，真實漲跌
+= 42,671.27 − 45,624.98 = **−2,953.71（−6.47%）**。同時 curl TWSE MIS 即時報價
+（`tse_t00.tw`）目前（07/18 凌晨，TWSE 系統 `sysDate=20260718`）仍卡在
+`d="20260717"`（尚未有新交易日蓋掉），其 `y`（昨收）=45,624.98、`z`（成交）=42,671.27，
+兩個獨立官方源完全互證。**結論：07/17 是真交易日，−6.47% 真崩盤，非 finmind 髒 bar，
+之前判斷正確；07/17 才是「現在最新完整交易日」，07/16 是它的前一日。**
+
+### 真根因：`getTwseMarketOverview()` Tier 1 用「今天」（wall-clock）查詢，非「最近交易日」
+`apps/api/src/data-sources/twse-openapi-client.ts` 的 `_fetchTwseMarketOverviewUncached()`
+Tier 1（MI_5MINS_INDEX 主站）永遠用 `todayTaipeiYYYYMMDD()`（wall-clock「今天」）當查詢
+日期。**平日盤中/盤後當天查詢完全正確**；但一旦跨過午夜進入非交易日（本例：07/18 週六
+凌晨），wall-clock「今天」= 07/18，MI_5MINS_INDEX 對 07/18 查詢正確回報「查無資料」
+（非交易日，這部分行為本身無誤），程式碼卻**直接**落到 Tier 2（OpenAPI `MI_INDEX`，
+自己已知會 lag 到隔天甚至更久 — 親測目前仍卡在 07/16），而不是先試同一個可靠的
+MI_5MINS_INDEX 源、但查詢日期換成「最近一個真交易日」（07/17，其實有完整資料、剛剛
+curl 證實）。這正是首頁大盤指數顯示 45,624.98／標「07/16」（過時但非假資料，是 Tier 2
+落後版本）而非 42,671.27／07/17 真崩盤值的根因——**跟 #1298 的 `resolveAuthoritativeTradeDate`
+無關，是更上游、資料抓取層本身選錯查詢日期**。
+
+### 修法（同分支 `feat/market-data-integrity-gate-jason-20260717` 續作）
+新增 `mostRecentTradingDayYYYYMMDD(fromYYYYMMDD)`（`twse-openapi-client.ts`）：純函式，
+用既有 `lib/trading-calendar.ts` 的 `isTwTradingDay()` 逐日往回查（bound 10 天，涵蓋最長
+的農曆春節連假），找到「wall-clock 今天」以前（含）第一個真交易日。`_fetchTwseMarketOverviewUncached()`
+新增 **Tier 1.5**：Tier 1（今天）失敗時，若「最近交易日」≠「今天」，用同一個可靠的
+MI_5MINS_INDEX 源、換成該交易日的日期再試一次，成功即直接採用（真值 42,671.27/-6.47%），
+只有這一步也失敗才落到 Tier 2。純日期運算、無網路依賴，`mostRecentTradingDayYYYYMMDD` 本身
+用字串參數而非 wall-clock，可完全決定性單元測試（07/18→07/17、07/19→07/17、平日回自己）。
+
+### 多管線問題（熱力圖磚/強勢股排行）— 誠實回報，未硬幹
+Elva 觀察到「kgi-core 端點 JSON（curl）07/16，但首頁渲染 DOM 卻是 07/17」——這代表**至少
+兩個不同的資料新鮮度來源**：一個是我剛 curl 到的、真的卡在 07/16 的 TWSE 上游（STOCK_DAY_ALL
+本身，我親測也還卡在 07/16，並非我方 bug，是 TWSE 官方批次檔案本身還沒發布 07/17 全量）；
+另一個是「渲染 DOM 顯示 07/17」——最可能的解釋是 **prod 那台 Railway process 從 07/17 盤中
+就一直在跑，其 in-process cache（enricher Tier 3 `_lastCloseCache`，48h TTL）在市場時間內已經
+用 KGI live tick/MIS 抓到 07/17 的真實收盤值並快取住**，而我從沙盒環境新 curl TWSE 官方
+STOCK_DAY_ALL 拿到的是「這個當下上游批次檔還沒更新」的狀態——兩者並不矛盾，只是反映
+「prod 熱的 in-process 快取」vs「TWSE 批次檔尚未發布」的時間差，不是我方管線邏輯錯誤。
+
+**但這確實暴露 Elva 說的真問題**：熱力圖磚走的是 kgi-core 專屬 enricher（5-tier fallback，
+per-symbol 各自选最佳可用值），跟指數/banner 走的 `getTwseMarketOverview()`/
+`marketContext.index` 是完全不同的程式碼路徑與快取層，**沒有共用同一個
+`resolveAuthoritativeTradeDate()` 判斷**。#1298 的 `resolveAuthoritativeTradeDate()`
+目前只 wire 到 `readMarketIndex()`（指數大字+banner），**沒有觸及 kgi-core enricher 這條
+獨立管線**——這是 Elva 診斷正確的架構缺口。
+
+**未動手的原因（誠實揭露，非拖延）**：
+1. **無法在沙盒環境直接觀察 prod 的即時狀態**——只有 owner session 能看到 prod 這台
+   process 實際快取了什麼、DOM 渲染當下真正吃到哪個 tier。我這邊能做的驗證僅限於：程式碼
+   邏輯推演＋對外部官方源的獨立 curl，無法重現「prod 那個特定 process 的 in-process 快取
+   狀態」。
+2. **架構張力未解決**：熱力圖 tier 制度的設計初衷是「per-symbol 各自找最佳可用值，
+   絕不因為某一天全域日期對不上就整批拒絕」（40 檔裡任何一檔缺某天資料，其他 39 檔仍該
+   正常顯示）。若粗暴地讓每個 tile 都被迫套用「全域唯一 resolved trade-date」，可能反而
+   讓原本個別 tile 有效的資料被誤判剔除（例如某檔股票剛好 07/17 的資料還沒到，但 07/16
+   的仍然完全誠實可信，不該因為「日期不是全域選定的那天」就被丟成 no_data）。這不是
+   「改起來很大」這種純工作量問題，是需要先決定「熱力圖到底要不要犧牲 per-symbol 韌性
+   換全頁日期一致」這個產品/架構取捨，值得楊董/Elva 明確裁決後再做，不要我自己猜方向
+   硬做。
+3. 本輪已完成、驗證過、風險可控的部分（指數/banner 那條管線的權威日期解析）已交付；
+   熱力圖磚那條管線的統一，留待下一輪依裁決方向實作（若裁定「全頁一致優先」，設計方向：
+   在 `server.ts` 的 `/heatmap/kgi-core` 與 `/market-data/overview` 之間新增一個共用的
+   「resolved trade-date」中介層，讓 enricher 的 tier 選擇在同一天內部排序時，同分優先選
+   跟全頁解析日期一致的候選，而非直接砍掉不一致的——保留 per-symbol 韌性同時盡量貼齊
+   全域日期）。
+
+### Invariant 測試新增（本輪，`twse-market-overview.test.ts`，本次順手掛回 `package.json`
+`test` script——這份測試檔案先前是孤兒檔案，從未被 CI 執行過，本次修復順手補上）
+- T7：`mostRecentTradingDayYYYYMMDD("20260718")` → `"20260717"`（週六回週五）
+- T7b：`mostRecentTradingDayYYYYMMDD("20260719")` → `"20260717"`（週日回週五）
+- T7c：平日輸入回傳自己（不做多餘查詢）
+- T7d：`getTwseMarketOverview()` 端到端整合測試——模擬 wall-clock「今天」查無資料時，
+  必須先試「最近交易日」的 MI_5MINS_INDEX（Tier 1.5）成功取得真值
+  （42,671.27/-6.47%），才不會落到更落後的 Tier 2；本測試在真實跑測當下（wall-clock
+  今天）剛好落在 07/17 之後的窗口內完整執行並通過（非 skip），證實修復對現在這個真實
+  時間窗確實生效。
+
+### 驗證
+- `pnpm run build:api` 綠、`pnpm typecheck`（全 monorepo 15/15）綠
+- `twse-market-overview.test.ts` 18/18 全綠（含新增 4 條 T7 系列）
+- 完整 `pnpm test` 1896/1898（2 個 pre-existing 跟本次無關的 `finmind-client.test.ts` 失敗，
+  已連續三輪確認零改動該檔案）
+- `apps/web` vitest 695/695 綠（未受影響，本輪為純後端修復）
+- W6 本機 6/6 PASS；secret regression 0 findings
+
+### 下一步交給 Elva 裁決
+1. Review + merge 本輪指數 stale regression 修復（風險低、已驗證、直接解決確認過的
+   regression）
+2. **裁決熱力圖/強勢股排行是否要犧牲 per-symbol 韌性換取全頁日期一致**——裁決後我才能
+   對那條管線動手，避免猜錯方向重工
+3. Merge 後請用 owner session 複驗：首頁大盤指數應顯示 42,671.27／-6.47%／標 07/17，
+   不再是 45,624.98／07/16
+
 ## 升級背景
 PR #1297（3707 no_data 歸類 + banner 日期優先序修正）部署後，Elva 用 owner session + curl
 TWSE MIS 官方源複驗，抓到兩個殘留：
