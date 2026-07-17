@@ -135,6 +135,12 @@ export function tickerDirection(value: number | null | undefined): TickerDirecti
  *    but were missing from this list, so the ticker's own pathname gate never
  *    skipped them even though CSS already hides sidebar/header-dock there via
  *    `body:has(.login-route)`).
+ *  - `/settings` — 2026-07-18 全產品走查抓到：`/settings/account`、
+ *    `/settings/broker`、`/settings/subscription` 這三頁內容跟大盤/個股行情
+ *    完全無關（帳號密碼、券商連線、訂閱方案），但仍套用全站共用 layout 所以吃
+ *    到這顆市場行情跑馬燈；當 `getMarketDataOverview()` 暫時性失敗時，這裡會
+ *    冒出一句跟頁面內容無關的「行情資料暫時無法讀取」，使用者會誤以為設定頁本身
+ *    壞了。這幾頁沒有任何行情內容需要顯示，比照 login/register 直接跳過。
  *  - `/final-v031` — every nested route under it (`/final-v031/portfolio`,
  *    `/final-v031/portfolio/kline-frame`, `/final-v031/market-intel`,
  *    `/final-v031/ideas`) renders `<FinalOnlyFrame/>` (see below); all are
@@ -142,7 +148,15 @@ export function tickerDirection(value: number | null | undefined): TickerDirecti
  *    (unlike `/portfolio`, which has a real non-wrapper sibling route —
  *    see EXACT_SKIP_ROUTES).
  */
-const SKIP_ROUTE_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password", "/m", "/final-v031"];
+const SKIP_ROUTE_PREFIXES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/m",
+  "/settings",
+  "/final-v031",
+];
 
 /**
  * Exact-match-only skip routes (do NOT prefix-match — each has at least one

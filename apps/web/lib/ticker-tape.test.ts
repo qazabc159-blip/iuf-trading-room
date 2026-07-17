@@ -161,6 +161,12 @@ describe("shouldRenderTickerTape", () => {
     expect(shouldRenderTickerTape("/reset-password")).toBe(false);
   });
 
+  it("skips every /settings sub-page (2026-07-18 全產品走查: account/broker/subscription 內容跟行情無關, 冒出的 empty-state 錯誤字樣會讓使用者誤判設定頁壞掉)", () => {
+    expect(shouldRenderTickerTape("/settings/account")).toBe(false);
+    expect(shouldRenderTickerTape("/settings/broker")).toBe(false);
+    expect(shouldRenderTickerTape("/settings/subscription")).toBe(false);
+  });
+
   it("skips the homepage (already has its own real-data .tac-ticker)", () => {
     expect(shouldRenderTickerTape("/")).toBe(false);
   });

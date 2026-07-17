@@ -376,10 +376,15 @@ describe("final-v031 paper ticket price gate", () => {
     expect(frameSource).toContain('left: 252px;');
     expect(frameSource).toContain('width: calc(100vw - 252px);');
     expect(frameSource).toContain('max-width: calc(100vw - 252px);');
-    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock');
+    // 2026-07-18: header-dock 隱藏規則已從只鎖 paper-trading-room 擴大到不分
+    // data-final-screen 值（見 FinalOnlyFrame.tsx 同日註解）——market-intel/
+    // desk-exact 用的 final-v031 變體同樣是頂到頂部的 100dvh iframe，沒有留白
+    // 給這顆浮動列，會壓住頁面自己的右上角內容（Elva 全產品走查 P1-b）。
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame) .header-dock');
     expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar {');
     expect(frameSource).toContain('z-index: 2147483001 !important;');
     expect(frameSource).not.toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .app-sidebar,\n        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .source-badge');
+    expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .source-badge');
     expect(frameSource).toContain('body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .command-palette');
     expect(ticketHtml).toContain("scrollbar-width:none;");
     expect(ticketHtml).toContain("contain:size layout paint;");

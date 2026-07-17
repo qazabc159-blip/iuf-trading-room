@@ -72,10 +72,24 @@ export function FinalOnlyFrame({ src, title }: FinalOnlyFrameProps) {
         }
 
         body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .source-badge,
-        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .command-palette,
-        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock,
-        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock-scrim,
-        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .header-dock-drawer {
+        body:has(.iuf-final-content-frame[data-final-screen="paper-trading-room"]) .command-palette {
+          visibility: hidden !important;
+          display: none !important;
+          pointer-events: none !important;
+        }
+
+        /* 2026-07-18 全產品走查：header-dock（通知鈴鐺／系統／帳號的 fixed
+           浮動列）是 root layout 全站元件，不知道自己疊在哪個頁面內容之上。
+           之前只有 data-final-screen="paper-trading-room"（/portfolio）隱藏
+           它；但 /market-intel、/desk-exact 用的是同一個 FinalOnlyFrame 元件
+           的另一種變體（data-final-screen="final-v031"），同樣是頂到頂部的
+           100dvh iframe，沒有留白給這顆浮動列——結果它壓在 /market-intel 右上
+           角統計列、/desk-exact 的五檔盤口上面（收合態就已經蓋住，非只有展開
+           下拉才蓋）。既然這個元件在任何 FinalOnlyFrame 內容裡都沒有安全的
+           落點，不分 data-final-screen 值一律隱藏，跟 /portfolio 既有做法一致。 */
+        body:has(.iuf-final-content-frame) .header-dock,
+        body:has(.iuf-final-content-frame) .header-dock-scrim,
+        body:has(.iuf-final-content-frame) .header-dock-drawer {
           visibility: hidden !important;
           display: none !important;
           pointer-events: none !important;

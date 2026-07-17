@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { apiGetMe, apiLogout } from "@/lib/auth-client";
+import { getMarketDataOverview } from "@/lib/api";
 import {
   CANONICAL_PRODUCT_SURFACES,
   INTERNAL_ADMIN_SURFACES,
@@ -28,6 +29,8 @@ import {
   type WebSurface,
   type WorkspaceRole,
 } from "@/lib/canonical-surfaces";
+import { dataStateLabel, dataStateTone } from "@/lib/data-state-copy";
+import { deriveTickerDisplay } from "@/lib/ticker-tape";
 
 type NavItem = {
   path: string;
@@ -82,6 +85,12 @@ export function Sidebar() {
   const navRef = useRef<HTMLElement>(null);
   const [mounted, setMounted] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  // 2026-07-18 全產品走查修復：這顆「資料健康 / 風控狀態」原本是全站每頁恆顯示
+  // 同一句靜態文字（無任何資料來源、永遠套用 --tac-ok 綠色），跟頁面真實狀態
+  // 無關——等於永遠謊報「健康」，違反「不假綠」的產品鐵律。改成跟 TickerTape
+  // 同一支既有 `GET /api/v1/market-data/overview` 端點（零新後端）真的算出
+  // live/close/delayed/empty 四態；抓不到就走 `empty` 誠實安靜態，不再假綠。
+  const [marketHealth, setMarketHealth] = useState<ReturnType<typeof deriveTickerDisplay> | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -94,6 +103,24 @@ export function Sidebar() {
       if (cancelled) return;
       setUserRole(result.ok ? result.user.role : null);
     });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getMarketDataOverview({ includeStale: true, topLimit: 1 })
+      .then((response) => {
+        if (cancelled) return;
+        setMarketHealth(deriveTickerDisplay(response.data));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMarketHealth((current) => current ?? deriveTickerDisplay(null));
+      });
 
     return () => {
       cancelled = true;
@@ -191,7 +218,10 @@ export function Sidebar() {
         <span className="tac-mini-radar" />
         <div>
           <small>MARKET INTEL</small>
-          <b>資料健康 / 風控狀態</b>
+          <b style={{ color: dataStateTone(marketHealth?.dataState ?? "empty").color }}>
+            資料健康：{marketHealth ? dataStateLabel({ state: marketHealth.dataState, asOf: marketHealth.asOf, reason: marketHealth.reason }) : "查詢中"}
+          </b>
+          <em>風控：Real Order 鎖定．僅 Paper/SIM</em>
         </div>
       </div>
       <button type="button" className="tac-sidebar-logout" onClick={handleLogout}>
