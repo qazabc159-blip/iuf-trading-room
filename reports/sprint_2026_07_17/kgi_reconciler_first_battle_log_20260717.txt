@@ -1,0 +1,2 @@
+[kgi-permanent-subscribe] reachable=true alreadyLive=0 newlySubscribed=^TWII,^TPEX,3707,2426,6205,2486,2330,2317,2454,2882,2881,2308,2412,2891,2886,6505,3711,2207,3008,2002,1303 failed=none
+Captured via: railway logs --service api --since 2026-07-17T00:15:00Z --until 2026-07-17T00:35:00Z (UTC window = 08:15-08:35 Taipei, gateway EventBridge boot window)

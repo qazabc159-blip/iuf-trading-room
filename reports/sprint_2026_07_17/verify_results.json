@@ -1,0 +1,70 @@
+{
+  "1a_desk_matrix_controls_present": {
+    "verdict": "PASS",
+    "detail": "cond=[\"現股\",\"融資\",\"融券\",\"當沖\",\"現股\",\"融資\",\"融券\",\"當沖\"] tif=[\"ROD\",\"IOC\",\"FOK\",\"ROD\",\"IOC\",\"FOK\"] otype=[\"限價\",\"市價\"]"
+  },
+  "1b_market_otype_gates_rod": {
+    "verdict": "PASS",
+    "detail": "rodBtn.disabled=true, activeTifAfterSwitch=ioc"
+  },
+  "1c_limit_otype_ungates_rod": {
+    "verdict": "PASS",
+    "detail": "rodBtn.disabled after revert to limit=false"
+  },
+  "1d_desk_chart_iframe_present": {
+    "verdict": "PASS",
+    "detail": "nested chart iframe count=2, chartTabsFound=true, tabSample=[\"登出\",\"通知中心有 23 則未讀23\",\"\",\"\",\"均線\",\"MA5\",\"MA10\",\"MA20\",\"MA60\",\"VWAP\",\"量價支撐/壓力\",\"計畫點位\",\"RSI\",\"MACD\",\"日K\"]"
+  },
+  "1e_desk_submit_guard_message": {
+    "verdict": "PASS",
+    "detail": "msg=\"未通過：交易時段、單筆金額 ≤ 上限\" class=\"oneclick err\""
+  },
+  "1f_desk_console_errors": {
+    "verdict": "INFO",
+    "detail": "[\"Failed to load resource: the server responded with a status of 422 ()\"]"
+  },
+  "1g_desk_mobile_matrix_present": {
+    "verdict": "PASS",
+    "detail": "[\"現股\",\"融資\",\"融券\",\"當沖\",\"現股\",\"融資\",\"融券\",\"當沖\"]"
+  },
+  "2_market_intel_content": {
+    "verdict": "PASS",
+    "detail": "loadMs=2699, bodyLen=246, iframeLen=2549, iframeSample=市場情報\n\n今日重點、來源狀態與 AI 精選訊息\n\n今日訊息\n10\nAI 精選\n10\n來源正常\n2 / 3\n下次抓取\n55 分鐘後\n研究模式\n本頁僅做研究判讀，不下單、不顯示目標價或勝率。下一步請進 AI 推薦。\nRESEARCH\nAI selector 已完成今日篩選。\n知道了\nAI 精選 · 今日重點\nAI 精選已回傳\n看全部 ›\n全部\n10\nAI 硬體\n1\n半導體\n1\n金融\n0\n電動車\n0\n"
+  },
+  "3_home_heatmap_toggle": {
+    "verdict": "PASS",
+    "detail": "allLinkCount=1, toggled=DOM_CHANGED"
+  },
+  "3b_home_afterhours_banner": {
+    "verdict": "PASS",
+    "detail": "banner text search on full body, found=true"
+  },
+  "4a_company_2330_institutional_rows": {
+    "verdict": "PASS",
+    "detail": "hasDaily=true, has30d=true"
+  },
+  "4b_company_2330_no_placeholder_cards": {
+    "verdict": "PASS",
+    "detail": "placeholder text matches=0"
+  },
+  "4c_company_3661_no_crash": {
+    "verdict": "PASS",
+    "detail": "error text matches=0"
+  },
+  "6a_register_no_invite_gate": {
+    "verdict": "PASS",
+    "detail": "gate text present=true"
+  },
+  "6a0_invite_generation": {
+    "verdict": "PASS",
+    "detail": "inviteRes.status=201, token present=true"
+  },
+  "6a_register_with_invite_form": {
+    "verdict": "PASS",
+    "detail": "input count with real invite=4"
+  },
+  "6b_quant_strategies_loads": {
+    "verdict": "PASS",
+    "detail": "crash text matches=0"
+  }
+}
