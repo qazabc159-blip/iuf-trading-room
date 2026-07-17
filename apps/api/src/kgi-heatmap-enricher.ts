@@ -17,10 +17,14 @@
  *
  * 2026-07-17 data-honesty gating (楊董抓到熱力圖「一堆 0% 一堆空缺」): any
  * tile whose changePct cannot be determined — Tier 2.5's structural gap
- * above, or a Tier 2 row with an implausible exact-zero Change contradicted
- * by our own prior-day cache (see isZeroChangePlausible) — is reported as
- * sourceState="no_data", never as a normal tier with a fabricated 0%/blank
- * %. See reports/sprint_2026_07_17/HEATMAP_DATA_HONESTY_GATING_2026_07_17.md.
+ * above, or a Tier 2 row with an implausible exact-zero Change that fails
+ * INDEPENDENT cross-validation (see ./market-data-integrity-gate.ts,
+ * crossValidateWithIndependentSource — a same-source self-check was tried
+ * first and proven insufficient by the 2395 case; see that module's doc for
+ * the full root-cause chain) — is reported as sourceState="no_data", never
+ * as a normal tier with a fabricated 0%/blank %.
+ * See reports/sprint_2026_07_17/HEATMAP_DATA_HONESTY_GATING_2026_07_17.md
+ * and reports/sprint_2026_07_17/MARKET_DATA_INTEGRITY_GATE_DESIGN_2026_07_17.md.
  *
  * Hard lines:
  *   - Never drops tiles: always returns >= 0 tiles with sourceState set
@@ -34,6 +38,11 @@ import type { KgiHeatmapTile } from "./kgi-subscription-manager.js";
 import { parseTwseNumber, type StockDayAllRow } from "./data-sources/twse-openapi-client.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
 import type { LastCloseResult } from "./quote-last-close-store.js";
+import {
+  crossValidateWithIndependentSource,
+  isPriceMagnitudePlausible,
+  needsIndependentCrossCheck,
+} from "./market-data-integrity-gate.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -128,35 +137,6 @@ export function isPlausibleChangePct(pct: number | null): boolean {
   return Number.isFinite(pct) && Math.abs(pct) <= 10.5;
 }
 
-/**
- * 2026-07-17 data-honesty gating fix (楊董抓到熱力圖「一堆 0%」): a TWSE
- * STOCK_DAY_ALL row reporting an EXACT Change="0.0000" is ambiguous — it
- * could be a genuinely flat trading day, or an upstream batch-processing
- * artifact where the per-symbol Change field had not been computed yet at
- * the moment the row was published (confirmed via TWSE MIS cross-check on
- * 2026-07-17: symbol 2395 showed price=513/change=0 in STOCK_DAY_ALL while
- * MIS's own prevClose was 519 — i.e. a real -1.16% move, not flat — see
- * reports/sprint_2026_07_17/HEATMAP_DATA_HONESTY_GATING_2026_07_17.md).
- * Cross-check an exact zero against our OWN last-known prior-day close (if
- * any) before trusting it: a genuinely flat day's close must equal
- * yesterday's cached close (within rounding); if it doesn't, the "0" is not
- * trustworthy and must be treated as missing, not a fabricated flat move.
- * Known limitation: with no prior cache entry yet (e.g. right after a
- * deploy restart, before any TWSE fetch has populated the cache), there is
- * no ground truth to contradict a zero, so it is accepted — belt-and-
- * suspenders, not a complete fix for every possible timing window.
- */
-export function isZeroChangePlausible(
-  priorEntry: LastCloseEntry | undefined,
-  close: number,
-  dateTag: string
-): boolean {
-  if (!priorEntry) return true; // no ground truth available — can't disprove it
-  if (!(priorEntry.dateTag < dateTag)) return true; // not actually a PRIOR date — nothing to compare
-  const tolerance = Math.max(0.01, priorEntry.price * 0.001);
-  return Math.abs(priorEntry.price - close) <= tolerance;
-}
-
 /** Update last-known-close from a live KGI tick (Tier 1 write-through). */
 export function updateLastCloseFromTick(
   symbol: string,
@@ -173,14 +153,18 @@ export function updateLastCloseFromTick(
 /**
  * Update last-known-close entries from a TWSE STOCK_DAY_ALL batch.
  *
- * @param priorSnapshot Optional cache snapshot taken BEFORE this call (see
- *   isZeroChangePlausible doc) — used to cross-check a suspicious exact-zero
- *   Change value against our own prior-day ground truth. Callers that don't
- *   pass one simply skip that extra guard (existing callers unaffected).
+ * @param independentPrevCloseMap Optional symbol -> TWSE MIS previousClose
+ *   (an INDEPENDENT source, never the same STOCK_DAY_ALL feed this batch
+ *   itself came from — see market-data-integrity-gate.ts's 2395 root-cause
+ *   doc for why a same-source cross-check is unable to catch a bug in that
+ *   same source). Used to fail-closed-verify an ambiguous exact-zero Change
+ *   value. Callers that don't pass one simply get "unconfirmed ⇒ rejected"
+ *   for any exact-zero row (existing callers that never hit that case are
+ *   unaffected).
  */
 export function updateLastCloseFromTwse(
   rows: StockDayAllRow[],
-  priorSnapshot?: ReadonlyMap<string, LastCloseEntry>
+  independentPrevCloseMap?: ReadonlyMap<string, number>
 ): void {
   for (const row of rows) {
     const code = row.Code?.trim();
@@ -196,6 +180,14 @@ export function updateLastCloseFromTwse(
     // be treated as a real price=0 tile at this call site either.
     if (close === null || close <= 0) continue;
 
+    // 2026-07-17 market-data-integrity-gate #2: reject a close whose
+    // magnitude is implausible vs our own last-known-good reference — a
+    // defense-in-depth guard independent of (and in addition to) the
+    // ±10.5%-band check below, catching a corrupted price even if some
+    // future parse bug also corrupts `change` in a way that coincidentally
+    // divides out to something inside the band.
+    if (!isPriceMagnitudePlausible(close, _lastCloseCache.get(code)?.price)) continue;
+
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     let pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
     // Defense-in-depth: a pctRaw outside the ±10% daily limit band means this
@@ -208,12 +200,16 @@ export function updateLastCloseFromTwse(
     // Derive ISO date from TWSE ROC date "114/05/18" → "2026-05-18"
     const dateTag = parseTwseDate(row.Date ?? "");
 
-    // 2026-07-17 data-honesty fix #2: don't cache a fabricated flat move —
-    // see isZeroChangePlausible doc.
+    // 2026-07-17 market-data-integrity-gate #3 (fail-CLOSED, 2395 lesson):
+    // an exact-zero Change is ambiguous by construction — only an
+    // INDEPENDENT source (TWSE MIS) can confirm it's genuinely flat.
     let cachedChange = changeVal;
-    if (pctRaw === 0 && priorSnapshot && !isZeroChangePlausible(priorSnapshot.get(code), close, dateTag)) {
-      pctRaw = null;
-      cachedChange = null;
+    if (needsIndependentCrossCheck(pctRaw)) {
+      const { trustworthy } = crossValidateWithIndependentSource(close, independentPrevCloseMap?.get(code));
+      if (!trustworthy) {
+        pctRaw = null;
+        cachedChange = null;
+      }
     }
 
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
@@ -275,6 +271,33 @@ function buildSourceLabel(sourceState: TileSourceState, ts: string | null): stri
 const MIS_ENTRY_MAX_AGE_MS = 30 * 60 * 1000; // 30 min — MIS cron refreshes every 15-45s while running
 
 /**
+ * Scans a TWSE STOCK_DAY_ALL batch for symbols (restricted to the ones
+ * actually in kgiTiles — the 40-symbol core universe, not the whole market)
+ * whose Change value needs an independent MIS cross-check before the
+ * exact-zero case can be trusted (see market-data-integrity-gate.ts's
+ * needsIndependentCrossCheck / 2395 root cause doc). The route handler
+ * (server.ts) calls this BEFORE enrichHeatmapTiles() to know which symbols
+ * to fetch getTwseMisQuoteSnapshot() for — typically 0 or a handful, never
+ * all 40, so this stays cheap even though the cross-check itself is a live
+ * network call.
+ */
+export function symbolsNeedingCrossCheck(kgiTiles: KgiHeatmapTile[], twseRows: StockDayAllRow[]): string[] {
+  const kgiSymbols = new Set(kgiTiles.map((t) => t.symbol));
+  const out: string[] = [];
+  for (const row of twseRows) {
+    const code = row.Code?.trim();
+    if (!code || !kgiSymbols.has(code)) continue;
+    const close = parseTwseNumber(row.ClosingPrice);
+    if (close === null || close <= 0) continue;
+    const changeVal = parseTwseNumber(row.Change);
+    const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
+    const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    if (needsIndependentCrossCheck(pctRaw)) out.push(code);
+  }
+  return out;
+}
+
+/**
  * Enrich KGI heatmap tiles using 4-tier fallback.
  *
  * Tier 1  (live):              KGI gateway tick — market hours, EC2 running
@@ -290,6 +313,13 @@ const MIS_ENTRY_MAX_AGE_MS = 30 * 60 * 1000; // 30 min — MIS cron refreshes ev
  * @param dbCloseMap   quote_last_close DB rows (Tier 2.5) — only passed in by the
  *                     route handler when after-hours (see server.ts); undefined
  *                     during market hours or when DB unavailable
+ * @param independentPrevCloseMap symbol -> TWSE MIS previousClose (see
+ *                     symbolsNeedingCrossCheck() below) — an INDEPENDENT
+ *                     source used to fail-closed-verify an ambiguous
+ *                     exact-zero Change (market-data-integrity-gate.ts).
+ *                     Route handler fetches this only for the symbols
+ *                     symbolsNeedingCrossCheck() flags (typically 0-few of
+ *                     the 40), never the whole universe.
  * @returns            Fully enriched tiles with sourceState for every tile
  */
 export function enrichHeatmapTiles(
@@ -297,19 +327,20 @@ export function enrichHeatmapTiles(
   twseRows: StockDayAllRow[],
   misCache?: Map<string, MisTileEntry>,
   sectorMap?: Map<string, string | null>,
-  dbCloseMap?: Map<string, LastCloseResult>
+  dbCloseMap?: Map<string, LastCloseResult>,
+  independentPrevCloseMap?: Map<string, number>
 ): EnrichedHeatmapResult {
-  // 2026-07-17 data-honesty fix #2: snapshot the cache BEFORE the
-  // write-through mutation below so we retain a pre-update "prior day"
-  // ground truth to cross-check a suspicious exact-zero Change value
-  // against (see isZeroChangePlausible doc). Shallow copy is sufficient —
-  // LastCloseEntry values are always replaced wholesale via .set(), never
-  // mutated in place.
+  // Snapshot the cache BEFORE the write-through mutation below so the
+  // magnitude-plausibility check (isPriceMagnitudePlausible) always compares
+  // against a genuinely PRIOR reference, never a value this same call just
+  // wrote for the same symbol (which would make the check a self-referencing
+  // no-op). Shallow copy is sufficient — LastCloseEntry values are always
+  // replaced wholesale via .set(), never mutated in place.
   const priorCloseSnapshot = new Map(_lastCloseCache);
 
   // Update last-close cache from TWSE data (write-through for future requests)
   if (twseRows.length > 0) {
-    updateLastCloseFromTwse(twseRows, priorCloseSnapshot);
+    updateLastCloseFromTwse(twseRows, independentPrevCloseMap);
   }
 
   // Build per-symbol TWSE lookup map.
@@ -326,17 +357,23 @@ export function enrichHeatmapTiles(
     // Belt-and-suspenders (Pete review 🔴#1): a no-trade EOD row's empty
     // ClosingPrice must never surface as a real price=0 tile.
     if (close === null || close <= 0) continue;
+    // market-data-integrity-gate #2: magnitude anomaly, checked against the
+    // PRE-mutation snapshot (see priorCloseSnapshot doc above).
+    if (!isPriceMagnitudePlausible(close, priorCloseSnapshot.get(code)?.price)) continue;
     const changeVal = parseTwseNumber(row.Change);
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     let pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
     if (pctRaw !== null && !isPlausibleChangePct(pctRaw)) continue;
     const dateTag = parseTwseDate(row.Date ?? "");
-    // 2026-07-17 data-honesty fix #2: don't serve a fabricated flat move —
-    // see isZeroChangePlausible doc above.
+    // market-data-integrity-gate #3 (fail-CLOSED, 2395 lesson): an exact-zero
+    // Change needs INDEPENDENT confirmation, never same-source self-checks.
     let change = changeVal;
-    if (pctRaw === 0 && !isZeroChangePlausible(priorCloseSnapshot.get(code), close, dateTag)) {
-      pctRaw = null;
-      change = null;
+    if (needsIndependentCrossCheck(pctRaw)) {
+      const { trustworthy } = crossValidateWithIndependentSource(close, independentPrevCloseMap?.get(code));
+      if (!trustworthy) {
+        pctRaw = null;
+        change = null;
+      }
     }
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
     twseMap.set(code, { price: close, change, changePct: pctRaw, ts });
@@ -508,7 +545,7 @@ export function enrichHeatmapTiles(
         // 2026-07-17 data-honesty gating fix #1: same reclassification as
         // Tier 2/2.5 above — a cached entry that never had a usable
         // changePct (e.g. cached from a TWSE row lacking a Change field, or
-        // nulled out by the isZeroChangePlausible guard) must not surface as
+        // nulled out by the crossValidateWithIndependentSource guard) must not surface as
         // a normal "cache" tile with a blank %.
         if (cachedChangePct === null) {
           return {
