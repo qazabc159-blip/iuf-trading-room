@@ -11867,6 +11867,16 @@ body:has(.tactical-dashboard) .app-sidebar {
   font: 900 11px/1.25 var(--mono);
 }
 
+/* 2026-07-18: 風控狀態這行是獨立於資料健康的第二個誠實事實
+   （Real Order 目前確實鎖定，見 CLAUDE.md 真金下單路徑硬擋），非動態抓取。 */
+.tac-sidebar-radar em {
+  display: block;
+  margin-top: 4px;
+  color: var(--tac-fg-3);
+  font: 700 9px/1.3 var(--mono);
+  font-style: normal;
+}
+
 .tac-sidebar-clock b {
   display: block;
   margin-top: 7px;

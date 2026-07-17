@@ -52,19 +52,28 @@ export function TickerTape() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    async function load() {
+    // 2026-07-18 全產品走查：一次 fetch 失敗就立刻在頁頂冒出「行情資料暫時無法
+    // 讀取」，在快速跨頁走查（或單純一次網路瞬斷）時會在每一頁都留下一次性的
+    // 錯誤殘影，讀起來像是系統性故障。單次瞬斷先安靜重試一次（短延遲），只有
+    // 連續兩次都失敗才真的宣告誠實空態——而且措辭沿用 EMPTY_DISPLAY 既有的
+    // 平靜語彙（「尚無盤面資料」），不用「無法讀取」這種偏向故障的字眼。
+    async function load(isRetry = false) {
       try {
         const response = await getMarketDataOverview({ includeStale: true, topLimit: 15 });
         if (cancelled) return;
         setDisplay(deriveTickerDisplay(response.data));
       } catch {
         if (cancelled) return;
+        if (!isRetry) {
+          timer = setTimeout(() => void load(true), 1500);
+          return;
+        }
         // Keep last known-good display on transient failure (stale-while-error);
         // only fall back to an honest empty state if we never had data.
         setDisplay((current) =>
           current ?? {
             dataState: "empty",
-            reason: "行情資料暫時無法讀取",
+            reason: "尚無盤面資料",
             asOf: null,
             index: null,
             stocks: [],
