@@ -1,0 +1,293 @@
+{
+  "holdings_price_range": [
+    {
+      "symbol": "2492",
+      "n": 3,
+      "min_entry": "440.0000",
+      "max_entry": "577.0000",
+      "max_exit": "565.0000"
+    },
+    {
+      "symbol": "8454",
+      "n": 1,
+      "min_entry": "426.5000",
+      "max_entry": "426.5000",
+      "max_exit": "321.0000"
+    },
+    {
+      "symbol": "6449",
+      "n": 1,
+      "min_entry": "382.0000",
+      "max_entry": "382.0000",
+      "max_exit": "345.0000"
+    },
+    {
+      "symbol": "8261",
+      "n": 1,
+      "min_entry": "342.0000",
+      "max_entry": "342.0000",
+      "max_exit": "307.0000"
+    },
+    {
+      "symbol": "6173",
+      "n": 1,
+      "min_entry": "287.0000",
+      "max_entry": "287.0000",
+      "max_exit": "285.0000"
+    },
+    {
+      "symbol": "6890",
+      "n": 1,
+      "min_entry": "274.0000",
+      "max_entry": "274.0000",
+      "max_exit": "227.5000"
+    },
+    {
+      "symbol": "1303",
+      "n": 1,
+      "min_entry": "210.0000",
+      "max_entry": "210.0000",
+      "max_exit": null
+    },
+    {
+      "symbol": "2478",
+      "n": 1,
+      "min_entry": "207.0000",
+      "max_entry": "207.0000",
+      "max_exit": "223.5000"
+    },
+    {
+      "symbol": "8033",
+      "n": 1,
+      "min_entry": "207.0000",
+      "max_entry": "207.0000",
+      "max_exit": "264.0000"
+    },
+    {
+      "symbol": "6654",
+      "n": 1,
+      "min_entry": "199.0000",
+      "max_entry": "199.0000",
+      "max_exit": "185.0000"
+    }
+  ],
+  "holdings_overall_max": [
+    {
+      "overall_max_entry": "577.0000",
+      "overall_max_exit": "565.0000"
+    }
+  ],
+  "holdings_tiny_prices": [],
+  "nav_all": [
+    {
+      "nav_date": "2026-06-02T00:00:00.000Z",
+      "equity_twd": "9993586.00",
+      "return_pct": "-0.0641",
+      "week_num": 1,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-03T00:00:00.000Z",
+      "equity_twd": "9905186.00",
+      "return_pct": "-0.9481",
+      "week_num": 1,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-04T00:00:00.000Z",
+      "equity_twd": "9791086.00",
+      "return_pct": "-2.0891",
+      "week_num": 1,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-05T00:00:00.000Z",
+      "equity_twd": "9750036.00",
+      "return_pct": "-2.4996",
+      "week_num": 1,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-08T00:00:00.000Z",
+      "equity_twd": "9485186.00",
+      "return_pct": "-5.1481",
+      "week_num": 1,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-09T00:00:00.000Z",
+      "equity_twd": "9648177.00",
+      "return_pct": "-3.5182",
+      "week_num": 2,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-10T00:00:00.000Z",
+      "equity_twd": "9493657.00",
+      "return_pct": "-5.0634",
+      "week_num": 2,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-11T00:00:00.000Z",
+      "equity_twd": "9397267.00",
+      "return_pct": "-6.0273",
+      "week_num": 2,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-12T00:00:00.000Z",
+      "equity_twd": "9380607.00",
+      "return_pct": "-6.1939",
+      "week_num": 2,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-15T00:00:00.000Z",
+      "equity_twd": "9446547.00",
+      "return_pct": "-5.5345",
+      "week_num": 2,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-16T00:00:00.000Z",
+      "equity_twd": "9536229.00",
+      "return_pct": "-4.6377",
+      "week_num": 3,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-17T00:00:00.000Z",
+      "equity_twd": "9684529.00",
+      "return_pct": "-3.1547",
+      "week_num": 3,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-18T00:00:00.000Z",
+      "equity_twd": "9851329.00",
+      "return_pct": "-1.4867",
+      "week_num": 3,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-22T00:00:00.000Z",
+      "equity_twd": "9757229.00",
+      "return_pct": "-2.4277",
+      "week_num": 3,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-23T00:00:00.000Z",
+      "equity_twd": "9505838.00",
+      "return_pct": "-4.9416",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-24T00:00:00.000Z",
+      "equity_twd": "9393538.00",
+      "return_pct": "-6.0646",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-25T00:00:00.000Z",
+      "equity_twd": "9379138.00",
+      "return_pct": "-6.2086",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-26T00:00:00.000Z",
+      "equity_twd": "9106938.00",
+      "return_pct": "-8.9306",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-29T00:00:00.000Z",
+      "equity_twd": "9094038.00",
+      "return_pct": "-9.0596",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-30T00:00:00.000Z",
+      "equity_twd": "9263514.00",
+      "return_pct": "-7.3649",
+      "week_num": 5,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-07-03T00:00:00.000Z",
+      "equity_twd": "10426350.00",
+      "return_pct": "4.2635",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-06T00:00:00.000Z",
+      "equity_twd": "10532600.00",
+      "return_pct": "5.3260",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-07T00:00:00.000Z",
+      "equity_twd": "9790150.00",
+      "return_pct": "-2.0985",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-08T00:00:00.000Z",
+      "equity_twd": "9905800.00",
+      "return_pct": "-0.9420",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-09T00:00:00.000Z",
+      "equity_twd": "9814150.00",
+      "return_pct": "-1.8585",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-13T00:00:00.000Z",
+      "equity_twd": "9945450.00",
+      "return_pct": "-0.5455",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-14T00:00:00.000Z",
+      "equity_twd": "10211500.00",
+      "return_pct": "2.1150",
+      "week_num": 7,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-15T00:00:00.000Z",
+      "equity_twd": "10358600.00",
+      "return_pct": "3.5860",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-16T00:00:00.000Z",
+      "equity_twd": "10306750.00",
+      "return_pct": "3.0675",
+      "week_num": 7,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-17T00:00:00.000Z",
+      "equity_twd": "10014550.00",
+      "return_pct": "0.1455",
+      "week_num": 7,
+      "source": "live_eod"
+    }
+  ]
+}

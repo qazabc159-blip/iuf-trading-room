@@ -1,0 +1,1708 @@
+{
+  "qlc_total": [
+    {
+      "n": 31270,
+      "min_d": "2026-06-30T00:00:00.000Z",
+      "max_d": "2026-07-17T00:00:00.000Z"
+    }
+  ],
+  "qlc_by_source": [
+    {
+      "source": "mis_close",
+      "n": 2,
+      "min_d": "2026-07-08T00:00:00.000Z",
+      "max_d": "2026-07-13T00:00:00.000Z"
+    },
+    {
+      "source": "ohlcv_fallback",
+      "n": 1,
+      "min_d": "2026-07-13T00:00:00.000Z",
+      "max_d": "2026-07-13T00:00:00.000Z"
+    },
+    {
+      "source": "tpex_eod",
+      "n": 23804,
+      "min_d": "2026-06-30T00:00:00.000Z",
+      "max_d": "2026-07-17T00:00:00.000Z"
+    },
+    {
+      "source": "twse_eod",
+      "n": 7463,
+      "min_d": "2026-06-30T00:00:00.000Z",
+      "max_d": "2026-07-17T00:00:00.000Z"
+    }
+  ],
+  "five_symbols": [
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "1880.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-13T15:26:08.869Z"
+    },
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "1890.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-14T17:19:51.060Z"
+    },
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "1855.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-15T16:06:48.940Z"
+    },
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "1890.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T18:22:53.969Z"
+    },
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "1905.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T21:22:11.675Z"
+    },
+    {
+      "symbol": "2308",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "1740.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-17T10:47:08.879Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "2415.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-13T15:26:08.869Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "2440.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-14T17:19:51.060Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "2420.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-15T16:06:48.940Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "2440.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T18:22:53.969Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "2470.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T21:22:11.675Z"
+    },
+    {
+      "symbol": "2330",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "2290.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-17T10:47:08.879Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "3925.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-13T15:26:08.919Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "3825.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-14T17:19:51.117Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "3660.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-15T16:06:48.987Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "3740.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T18:22:54.033Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "3700.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T21:22:11.741Z"
+    },
+    {
+      "symbol": "2454",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "3370.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-17T10:47:08.929Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "3950.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-13T15:26:08.919Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "4345.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-14T17:19:51.117Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "4265.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-15T16:06:48.987Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "4040.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T18:22:54.033Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "4260.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T21:22:11.741Z"
+    },
+    {
+      "symbol": "3008",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "4010.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-17T10:47:08.929Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "5040.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-13T15:26:08.965Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "4960.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-14T17:19:51.168Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "4905.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-15T16:06:49.036Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "5095.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T18:22:54.082Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "5115.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-16T21:22:11.792Z"
+    },
+    {
+      "symbol": "6669",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "4620.00",
+      "source": "twse_eod",
+      "updated_at": "2026-07-17T10:47:08.969Z"
+    }
+  ],
+  "self_ref_corruption": [],
+  "holdings_symbols": [
+    {
+      "symbol": "1303"
+    },
+    {
+      "symbol": "1435"
+    },
+    {
+      "symbol": "1447"
+    },
+    {
+      "symbol": "1530"
+    },
+    {
+      "symbol": "1563"
+    },
+    {
+      "symbol": "1568"
+    },
+    {
+      "symbol": "1617"
+    },
+    {
+      "symbol": "1714"
+    },
+    {
+      "symbol": "1718"
+    },
+    {
+      "symbol": "2061"
+    },
+    {
+      "symbol": "2071"
+    },
+    {
+      "symbol": "2302"
+    },
+    {
+      "symbol": "2434"
+    },
+    {
+      "symbol": "2466"
+    },
+    {
+      "symbol": "2478"
+    },
+    {
+      "symbol": "2483"
+    },
+    {
+      "symbol": "2484"
+    },
+    {
+      "symbol": "2492"
+    },
+    {
+      "symbol": "2630"
+    },
+    {
+      "symbol": "3021"
+    },
+    {
+      "symbol": "3114"
+    },
+    {
+      "symbol": "3191"
+    },
+    {
+      "symbol": "3230"
+    },
+    {
+      "symbol": "3285"
+    },
+    {
+      "symbol": "3481"
+    },
+    {
+      "symbol": "3537"
+    },
+    {
+      "symbol": "3624"
+    },
+    {
+      "symbol": "4556"
+    },
+    {
+      "symbol": "4707"
+    },
+    {
+      "symbol": "4716"
+    },
+    {
+      "symbol": "4939"
+    },
+    {
+      "symbol": "5227"
+    },
+    {
+      "symbol": "5345"
+    },
+    {
+      "symbol": "5348"
+    },
+    {
+      "symbol": "5426"
+    },
+    {
+      "symbol": "5468"
+    },
+    {
+      "symbol": "5489"
+    },
+    {
+      "symbol": "5701"
+    },
+    {
+      "symbol": "6173"
+    },
+    {
+      "symbol": "6182"
+    },
+    {
+      "symbol": "6226"
+    },
+    {
+      "symbol": "6449"
+    },
+    {
+      "symbol": "6654"
+    },
+    {
+      "symbol": "6890"
+    },
+    {
+      "symbol": "7402"
+    },
+    {
+      "symbol": "8033"
+    },
+    {
+      "symbol": "8042"
+    },
+    {
+      "symbol": "8261"
+    },
+    {
+      "symbol": "8454"
+    }
+  ],
+  "holdings_vs_qlc_anomaly": [],
+  "holdings_overlap_5": [],
+  "nav_recent": [
+    {
+      "nav_date": "2026-07-17T00:00:00.000Z",
+      "equity_twd": "10014550.00",
+      "return_pct": "0.1455",
+      "week_num": 7,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-16T00:00:00.000Z",
+      "equity_twd": "10306750.00",
+      "return_pct": "3.0675",
+      "week_num": 7,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-15T00:00:00.000Z",
+      "equity_twd": "10358600.00",
+      "return_pct": "3.5860",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-14T00:00:00.000Z",
+      "equity_twd": "10211500.00",
+      "return_pct": "2.1150",
+      "week_num": 7,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-13T00:00:00.000Z",
+      "equity_twd": "9945450.00",
+      "return_pct": "-0.5455",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-09T00:00:00.000Z",
+      "equity_twd": "9814150.00",
+      "return_pct": "-1.8585",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-08T00:00:00.000Z",
+      "equity_twd": "9905800.00",
+      "return_pct": "-0.9420",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-07T00:00:00.000Z",
+      "equity_twd": "9790150.00",
+      "return_pct": "-2.0985",
+      "week_num": 6,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-06T00:00:00.000Z",
+      "equity_twd": "10532600.00",
+      "return_pct": "5.3260",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-07-03T00:00:00.000Z",
+      "equity_twd": "10426350.00",
+      "return_pct": "4.2635",
+      "week_num": 5,
+      "source": "live_eod"
+    },
+    {
+      "nav_date": "2026-06-30T00:00:00.000Z",
+      "equity_twd": "9263514.00",
+      "return_pct": "-7.3649",
+      "week_num": 5,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-29T00:00:00.000Z",
+      "equity_twd": "9094038.00",
+      "return_pct": "-9.0596",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-26T00:00:00.000Z",
+      "equity_twd": "9106938.00",
+      "return_pct": "-8.9306",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-25T00:00:00.000Z",
+      "equity_twd": "9379138.00",
+      "return_pct": "-6.2086",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    },
+    {
+      "nav_date": "2026-06-24T00:00:00.000Z",
+      "equity_twd": "9393538.00",
+      "return_pct": "-6.0646",
+      "week_num": 4,
+      "source": "backfill_dry_run"
+    }
+  ],
+  "broad_small_values": [
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "8.79",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "8.87",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "8.80",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "8.95",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "9.02",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00712",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.06",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.90",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.94",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.91",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "14.97",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.86",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00717",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "14.77",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00882",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.97",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00882",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.86",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00882",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.84",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00882",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "14.56",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.51",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "11.14",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "11.17",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "11.14",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "11.24",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00897",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "11.02",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "9.54",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "9.35",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "9.34",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "9.37",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "9.46",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00898",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.22",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.04",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.70",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.74",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.04",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.79",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00902",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.28",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.53",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.37",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.15",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.34",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.28",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00940",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "11.88",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00946",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.97",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00946",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.83",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00946",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.78",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00946",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "14.25",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00955",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.18",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "00955",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.24",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "00955",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "14.58",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "00955",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.53",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "00955",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "14.10",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.53",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.46",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.61",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.75",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.48",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00956",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.33",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.69",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.67",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.61",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.75",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.52",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00961",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.34",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.81",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.74",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.49",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "14.61",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.62",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00962",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "13.93",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.75",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.83",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.95",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.99",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.94",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00963",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "13.04",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.15",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.05",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.00",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "14.21",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "14.05",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "00964",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "13.71",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.09",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "13.12",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "13.12",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.31",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13.22",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009800",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.84",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.37",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.43",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.42",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.65",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.61",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009801",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.15",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009806",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.45",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009806",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "13.48",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009806",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.56",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009806",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13.61",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009806",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "13.46",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.05",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "13.08",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "13.10",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.20",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13.32",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009811",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "13.08",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "12.45",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "12.40",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.54",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "12.65",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "12.56",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009812",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.11",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.14",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "11.16",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "11.18",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "11.27",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "11.35",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009813",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "11.16",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009814",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.20",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009814",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "11.25",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009814",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "11.32",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009814",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "11.30",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009814",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "11.19",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009815",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.25",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009815",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "11.35",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009815",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "11.47",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009815",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "11.57",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009815",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "11.22",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009816",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "14.97",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009816",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "14.28",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "9.03",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "9.05",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "9.09",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "9.16",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "9.06",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009817",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.12",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "10.16",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "10.16",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "10.09",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.17",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "10.07",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009819",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.74",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "9.86",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "10.00",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "9.95",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.21",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "10.11",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009820",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.68",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.35",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "13.34",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "13.08",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.39",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13.13",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009821",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.51",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009822",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "9.73",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009822",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "9.61",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009822",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "9.72",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009822",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "9.85",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009822",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.53",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009823",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "10.30",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009823",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "10.35",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009823",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.41",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009823",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "10.43",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009823",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "10.32",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "10.05",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "10.10",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "10.11",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.34",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "10.28",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009824",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.94",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "009825",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.63",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020027",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.05",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020027",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "10.24",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020027",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.65",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "10.15",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "9.80",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "9.36",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "9.59",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "9.45",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020031",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "8.82",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020032",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "10.26",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020032",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "10.25",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020032",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "10.29",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020032",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "9.73",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020033",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "3.76",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020033",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "3.69",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020033",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "3.79",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020033",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "3.89",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020033",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "3.65",
+      "source": "tpex_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13.93",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "13.51",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12.72",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13.49",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13.24",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020034",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12.29",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020036",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "9.92",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020037",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "11.03",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020037",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "11.02",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020037",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "11.02",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020037",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "10.93",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020038",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "14.28",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020038",
+      "trade_date": "2026-07-13T00:00:00.000Z",
+      "close_price": "14.15",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020038",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "13.66",
+      "source": "twse_eod"
+    },
+    {
+      "symbol": "020038",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "14.00",
+      "source": "twse_eod"
+    }
+  ]
+}

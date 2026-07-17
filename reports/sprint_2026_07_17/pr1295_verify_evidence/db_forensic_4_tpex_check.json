@@ -1,0 +1,109 @@
+{
+  "tpex_eod_max": [
+    {
+      "maxp": "13905.00"
+    }
+  ],
+  "tpex_eod_over_500": [
+    {
+      "symbol": "5274",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "13905.00"
+    },
+    {
+      "symbol": "5274",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "13900.00"
+    },
+    {
+      "symbol": "5274",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "13665.00"
+    },
+    {
+      "symbol": "5274",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "12985.00"
+    },
+    {
+      "symbol": "5274",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "12950.00"
+    },
+    {
+      "symbol": "6223",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "7080.00"
+    },
+    {
+      "symbol": "6223",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "6340.00"
+    },
+    {
+      "symbol": "6223",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "6330.00"
+    },
+    {
+      "symbol": "6223",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "6220.00"
+    },
+    {
+      "symbol": "6223",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "5600.00"
+    },
+    {
+      "symbol": "3131",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "3305.00"
+    },
+    {
+      "symbol": "3131",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "3255.00"
+    },
+    {
+      "symbol": "3131",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "3205.00"
+    },
+    {
+      "symbol": "7734",
+      "trade_date": "2026-07-16T00:00:00.000Z",
+      "close_price": "3160.00"
+    },
+    {
+      "symbol": "7734",
+      "trade_date": "2026-07-15T00:00:00.000Z",
+      "close_price": "3045.00"
+    },
+    {
+      "symbol": "3131",
+      "trade_date": "2026-07-14T00:00:00.000Z",
+      "close_price": "3045.00"
+    },
+    {
+      "symbol": "3131",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "2930.00"
+    },
+    {
+      "symbol": "6510",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "2855.00"
+    },
+    {
+      "symbol": "7734",
+      "trade_date": "2026-07-17T00:00:00.000Z",
+      "close_price": "2850.00"
+    },
+    {
+      "symbol": "7734",
+      "trade_date": "2026-07-09T00:00:00.000Z",
+      "close_price": "2835.00"
+    }
+  ]
+}
