@@ -23,6 +23,7 @@
 
 import { isKgiTradingHours } from "./kgi-trading-hours";
 import { formatAsOfDate } from "./data-state-copy";
+import { taipeiCalendarDate } from "./taipei-date";
 
 export type DataFreshness = "live" | "eod" | "cache";
 
@@ -47,11 +48,18 @@ export function deriveFreshness(now: Date): DataFreshness {
  *
  * Returns null when the input is missing/unparseable — callers must NOT
  * invent a fallback date (see P0-5 fix note above).
+ *
+ * 2026-07-18 fix: the weekday used to be derived from `isoDate.slice(0, 10)`
+ * (same naive-UTC-slice bug as the old `formatAsOfDate` — see
+ * `taipei-date.ts`), which could disagree with `mmdd` above for UTC "Z"
+ * timestamps that roll into the next Taipei day. Both the date and its
+ * weekday must come from the SAME Taipei-calendar-date derivation.
  */
 export function formatTradeDateWithWeekday(isoDate: string | null | undefined): string | null {
   const mmdd = formatAsOfDate(isoDate);
-  if (!mmdd || !isoDate) return null;
-  const datePart = isoDate.length >= 10 ? isoDate.slice(0, 10) : isoDate;
+  if (!mmdd) return null;
+  const datePart = taipeiCalendarDate(isoDate);
+  if (!datePart) return mmdd;
   const parsed = new Date(`${datePart}T12:00:00+08:00`); // noon Taipei avoids UTC day-shift
   if (Number.isNaN(parsed.getTime())) return mmdd;
   const dow = new Intl.DateTimeFormat("en-US", { timeZone: TAIPEI_TZ, weekday: "short" }).format(parsed);

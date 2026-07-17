@@ -314,6 +314,20 @@ body{
    down toward CJK min-content (can wrap to a single character per line)
    once viewport width drops below ~640px. Stack instead of side-by-side. */
 @media (max-width:640px){
+  /* .row2's second column is a fixed 320px — CSS grid items default to
+     min-width:auto (content min-size), so at narrow viewports this fixed
+     track can't shrink and instead blows out the WHOLE .app grid past the
+     viewport (right rail panels — 資料來源狀態/AI 精選訊息 — rendered fully
+     off-screen, body scrollWidth ~734 at a 390px viewport). Stack into a
+     single column so the right-rail panels flow below the feed panel
+     instead of beside it. */
+  .row2{grid-template-columns:1fr}
+  /* Grid items default to min-width:auto (their content's min-content
+     size), which lets a wide-but-wrappable internal row (e.g. .filterbar's
+     5 topic buttons + search box) force the panel itself past the 1-column
+     track width even after the stack-to-1-column fix above. min-width:0
+     lets the panel shrink to the track and its own content wrap normally. */
+  .row2 > *{min-width:0}
   .feedrow{
     grid-template-columns:44px 1fr;
     grid-template-areas:
