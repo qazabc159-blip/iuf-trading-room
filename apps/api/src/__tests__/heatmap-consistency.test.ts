@@ -8,7 +8,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { enrichHeatmapTiles, _resetLastCloseCache, isZeroChangePlausible, type MisTileEntry } from "../kgi-heatmap-enricher.js";
+import { enrichHeatmapTiles, symbolsNeedingCrossCheck, _resetLastCloseCache, type MisTileEntry } from "../kgi-heatmap-enricher.js";
 import type { KgiHeatmapTile } from "../kgi-subscription-manager.js";
 import type { StockDayAllRow } from "../data-sources/twse-openapi-client.js";
 import {
@@ -186,71 +186,71 @@ test("kgi-core heatmap: an OTC symbol resolved only via quote_last_close (Tier 2
   assert.equal(tile.change, null);
 });
 
-test("kgi-core heatmap: an implausible exact-zero Change contradicted by our own prior-day close must not surface as a fake flat move (2395 prod repro)", () => {
-  // Prod repro (2026-07-17, TWSE MIS cross-check confirmed real prevClose
-  // was 519, real close 513, real change ≈ -1.16%): TWSE STOCK_DAY_ALL
-  // served ClosingPrice=513/Change="0.0000" — an upstream batch-processing
-  // artifact, not a genuine flat day. Cross-checking the implied prevClose
-  // (513, since change=0) against our OWN cached prior-day close (519,
-  // cached from an earlier fetch) catches the contradiction.
+test("kgi-core heatmap: an exact-zero Change with NO independent MIS confirmation must fall to no_data — fail CLOSED, not open (2395 Round 2 fix)", () => {
+  // Round 1 (#1297) tried cross-checking an exact-zero Change against our
+  // OWN prior-day cache — proven insufficient in prod: 2395's cache had no
+  // genuine prior-day entry yet (fresh deploy), so the first bad "0" got a
+  // free pass and then self-confirmed on every subsequent same-day poll.
+  // Round 2 requires INDEPENDENT confirmation (TWSE MIS) and fails CLOSED
+  // (no_data) whenever that's unavailable — never "accept by default".
   _resetLastCloseCache();
   const kgiTiles: KgiHeatmapTile[] = [
     { symbol: "2395", name: "研華", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
   ];
-  // Day 1: seed the cache with a real prior close via a normal fetch.
-  enrichHeatmapTiles(kgiTiles, [stockRow("2395", "519", "1", "1150716")]);
-
-  // Day 2: implausible exact-zero Change.
+  // No independentPrevCloseMap passed at all — simulates the MIS fetch
+  // having failed/timed out, or simply not being wired up.
   const result = enrichHeatmapTiles(kgiTiles, [stockRow("2395", "513", "0", "1150717")]);
   const tile = result.tiles[0]!;
-  assert.equal(tile.sourceState, "no_data", `implausible zero must fall to no_data, got ${tile.sourceState}`);
-  assert.equal(tile.price, 513, "price (513, matches MIS ground truth) is still trustworthy — only the % is suspect");
+  assert.equal(tile.sourceState, "no_data", `unconfirmed exact-zero must fall to no_data, got ${tile.sourceState}`);
+  assert.equal(tile.price, 513, "price is still honestly returned");
   assert.equal(tile.changePct, null);
   assert.equal(tile.change, null);
 });
 
-test("kgi-core heatmap: a genuine flat day (close matches our own prior-day cache) is still honestly reported as changePct=0 (regression guard — don't over-reject real flats)", () => {
+test("kgi-core heatmap: an exact-zero Change contradicted by independent MIS previousClose must fall to no_data (2395 prod repro, exact numbers)", () => {
+  // Prod repro (2026-07-17): TWSE STOCK_DAY_ALL served
+  // ClosingPrice=513/Change='0.0000' for 2395; TWSE MIS getStockInfo.jsp
+  // (INDEPENDENT source) showed y(prevClose)=519 — a real -1.16% move, not
+  // flat. The MIS-derived previousClose is what the route handler
+  // (server.ts) would have fetched via getTwseMisQuoteSnapshot() and passed
+  // in as independentPrevCloseMap.
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2395", name: "研華", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
+  ];
+  const independentPrevCloseMap = new Map([["2395", 519]]);
+  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2395", "513", "0", "1150717")], undefined, undefined, undefined, independentPrevCloseMap);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `MIS-contradicted zero must fall to no_data, got ${tile.sourceState}`);
+  assert.equal(tile.price, 513, "price (matches MIS z=513 ground truth) is still trustworthy — only the % is suspect");
+  assert.equal(tile.changePct, null);
+  assert.equal(tile.change, null);
+});
+
+test("kgi-core heatmap: a genuine flat day CONFIRMED by independent MIS previousClose is honestly reported as changePct=0 (regression guard — don't over-reject real flats)", () => {
   _resetLastCloseCache();
   const kgiTiles: KgiHeatmapTile[] = [
     { symbol: "2354", name: "鴻準", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
   ];
-  enrichHeatmapTiles(kgiTiles, [stockRow("2354", "56.4", "0.5", "1150716")]); // seeds prior close = 56.4
-
-  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2354", "56.4", "0", "1150717")]); // genuinely flat
+  const independentPrevCloseMap = new Map([["2354", 56.4]]); // MIS confirms genuinely flat
+  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2354", "56.4", "0", "1150717")], undefined, undefined, undefined, independentPrevCloseMap);
   const tile = result.tiles[0]!;
-  assert.equal(tile.sourceState, "twse_eod", `genuine flat must still be twse_eod, got ${tile.sourceState}`);
+  assert.equal(tile.sourceState, "twse_eod", `MIS-confirmed genuine flat must still be twse_eod, got ${tile.sourceState}`);
   assert.equal(tile.changePct, 0);
   assert.equal(tile.change, 0);
 });
 
-test("kgi-core heatmap: an exact-zero Change with no prior cache entry yet (first-ever fetch) is accepted — no ground truth to contradict it (documented limitation)", () => {
-  _resetLastCloseCache();
+test("symbolsNeedingCrossCheck: flags only the exact-zero-change symbols among the kgi tile universe, never the whole market", () => {
   const kgiTiles: KgiHeatmapTile[] = [
-    { symbol: "2412", name: "中華電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+    { symbol: "2395", name: "研華", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
+    { symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
   ];
-  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2412", "138", "0", "1150717")]);
-  const tile = result.tiles[0]!;
-  assert.equal(tile.sourceState, "twse_eod");
-  assert.equal(tile.changePct, 0);
-});
-
-test("isZeroChangePlausible: unit coverage of the cross-check helper", () => {
-  assert.equal(isZeroChangePlausible(undefined, 513, "2026-07-17"), true, "no ground truth — accept");
-  assert.equal(
-    isZeroChangePlausible({ price: 519, change: 1, changePct: 0.19, ts: "x", dateTag: "2026-07-16" }, 513, "2026-07-17"),
-    false,
-    "prior close (519) contradicts the exact-zero claim (would need close===519)"
-  );
-  assert.equal(
-    isZeroChangePlausible({ price: 56.4, change: 0.5, changePct: 0.89, ts: "x", dateTag: "2026-07-16" }, 56.4, "2026-07-17"),
-    true,
-    "prior close matches — genuinely flat"
-  );
-  assert.equal(
-    isZeroChangePlausible({ price: 513, change: 0, changePct: 0, ts: "x", dateTag: "2026-07-17" }, 513, "2026-07-17"),
-    true,
-    "same-date entry is not a PRIOR date — nothing to compare, accept"
-  );
+  const rows = [
+    stockRow("2395", "513", "0", "1150717"),   // needs cross-check
+    stockRow("2330", "1000", "-30", "1150717"), // real move, no cross-check needed
+    stockRow("9999", "50", "0", "1150717"),     // exact-zero but NOT a kgi tile symbol — excluded
+  ];
+  assert.deepEqual(symbolsNeedingCrossCheck(kgiTiles, rows), ["2395"]);
 });
 
 test("PERF: fetchKgiLatestTick short-circuits when the gateway is scheduled off", () => {

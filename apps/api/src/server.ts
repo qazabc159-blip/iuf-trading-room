@@ -13340,9 +13340,40 @@ app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
       console.warn("[market/heatmap/kgi-core] sector lookup failed (non-fatal):", err instanceof Error ? err.message : String(err));
     }
 
+    // 2026-07-17 market-data-integrity-gate: an exact-zero Change (2395
+    // prod repro) is ambiguous by construction and can NEVER be trusted via
+    // a same-source self-check (see market-data-integrity-gate.ts's 2395
+    // root-cause doc) — cross-validate against TWSE MIS, an INDEPENDENT
+    // source, for just the handful of symbols that actually need it (never
+    // the whole 40-symbol universe). Bounded + fail-open: if MIS itself is
+    // slow/unreachable, the affected symbol(s) simply fall through to
+    // no_data (fail CLOSED on the ambiguous value, never blocks the
+    // endpoint — same pattern as the DB timeouts above).
+    let independentPrevCloseMap: Map<string, number> | undefined;
+    try {
+      const { symbolsNeedingCrossCheck } = await import("./kgi-heatmap-enricher.js");
+      const suspectSymbols = symbolsNeedingCrossCheck(kgiResult.tiles, twseRows);
+      if (suspectSymbols.length > 0) {
+        const { getTwseMisQuoteSnapshot } = await import("./data-sources/twse-mis-quote-client.js");
+        const results = await withDbTimeout(
+          Promise.allSettled(suspectSymbols.map((sym) => getTwseMisQuoteSnapshot(sym))),
+          5_000,
+          "misZeroChangeCrossCheck"
+        );
+        independentPrevCloseMap = new Map();
+        results.forEach((r, i) => {
+          if (r.status === "fulfilled" && r.value?.previousClose != null) {
+            independentPrevCloseMap!.set(suspectSymbols[i], r.value.previousClose);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[market/heatmap/kgi-core] MIS zero-change cross-check failed (non-fatal, affected symbols fall to no_data):", err instanceof Error ? err.message : String(err));
+    }
+
     // 5-tier enrichment: live → mis_intraday → twse_eod → db_close (盤後) → cache → no_data (never drops tiles)
     const { enrichHeatmapTiles } = await import("./kgi-heatmap-enricher.js");
-    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache, sectorMap, dbCloseMap);
+    const enriched = enrichHeatmapTiles(kgiResult.tiles, twseRows, _misTileCache, sectorMap, dbCloseMap, independentPrevCloseMap);
 
     return c.json(enriched);
   } catch (err) {

@@ -36,7 +36,7 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
-import { isNewerTaipeiTradeDate } from "@/lib/index-snapshot-freshness";
+import { resolveAuthoritativeTradeDate } from "@/lib/index-snapshot-freshness";
 import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-rows";
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -835,28 +835,31 @@ function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market
 
   const twse = data?.twseOverview?.taiex ?? null;
   if (twse && finite(twse.value) !== null) {
-    // 2026-07-17 fix: prefer marketContext.index (the SAME backend response
+    // 2026-07-17 market-data-integrity-gate: /market/overview/twse
+    // (MI_INDEX-derived) and marketContext.index (the SAME backend response
     // that produces marketContext.heatmap, i.e. the data behind the visible
-    // heatmap tiles) when it is genuinely a newer trade date than the
-    // separately-fetched twseOverview snapshot — keeps the banner date the
-    // user reads from disagreeing with the tiles they're looking at. Never
+    // heatmap tiles) are independently-fetched TWSE upstream datasets that
+    // can disagree by a whole session. resolveAuthoritativeTradeDate() picks
+    // whichever is genuinely newer — the SAME gate function
+    // <MarketStateBanner lastCloseDate={...}> is fed from below, so the
+    // banner and this index display structurally cannot disagree. Never
     // mixes a price from one snapshot with a date from the other (that
     // would reintroduce the 6/10 sign-contradiction bug class).
     const contextIndex = market.data?.marketContext?.index;
-    if (
-      contextIndex &&
-      contextIndex.last !== null &&
-      contextIndex.state !== "EMPTY" &&
-      isNewerTaipeiTradeDate(contextIndex.timestamp, twse.ts)
-    ) {
+    const contextIndexUsable = contextIndex && contextIndex.last !== null && contextIndex.state !== "EMPTY";
+    const resolved = resolveAuthoritativeTradeDate([
+      { source: "twse_overview", tradeDate: twse.ts },
+      { source: "market_context_index", tradeDate: contextIndexUsable ? contextIndex!.timestamp : null },
+    ]);
+    if (contextIndexUsable && resolved.chosenSource === "market_context_index") {
       return {
-        sym: contextIndex.symbol ?? "TAIEX",
-        name: contextIndex.name,
-        price: contextIndex.last,
-        chg: contextIndex.change,
-        pct: contextIndex.changePct,
-        updatedAt: contextIndex.timestamp,
-        label: closeLabel(contextIndex.timestamp),
+        sym: contextIndex!.symbol ?? "TAIEX",
+        name: contextIndex!.name,
+        price: contextIndex!.last,
+        chg: contextIndex!.change,
+        pct: contextIndex!.changePct,
+        updatedAt: contextIndex!.timestamp,
+        label: closeLabel(contextIndex!.timestamp),
         source: "close",
       };
     }
@@ -1690,6 +1693,25 @@ async function NewsTapeSection() {
   return <NewsTape intel={intel} />;
 }
 
+// 2026-07-17 市場資料完整性閘門（楊董升級）：<MarketStateBanner> 舊版本在
+// HomePage 直接同步呼叫、不帶任何 prop，落入元件自己的「無 prop 時自行
+// client-side fetch getMarketDataOverview()」分支——這是跟頁面其餘所有版面
+// （HeroBandSection 等）完全獨立、解耦的第二次獨立請求，時序上可能跟
+// server-rendered 的 market/tiles 資料落在不同時間點，正是 banner「07/16」
+// vs 磚「07/17」不一致的真根因（非 #1297 Round 1 誤判的 readMarketIndex 本
+// 身）。改用同一組 cache() 記憶化過的 cachedMarket()/cachedRealtimeMarket()
+// （HeroBandSection 已經在用同一個 request-scoped 記憶化 promise，這裡再呼叫
+// 一次不會多打一次後端），透過 resolveAuthoritativeTradeDate() 算出跟熱力圖
+// 磚同一個 resolved trade-date，直接以 lastCloseDate prop 餵給元件——結構上
+// banner 日期不可能再跟磚/指數日期分岔。獨立 Suspense 包裹，不阻塞 mast 靜態
+// 殼／其他版面的 streaming 節奏（fallback=null，休市 banner 本來就非 P0 內容
+// ——見元件自身文件「banner is cosmetic」）。
+async function MarketStateBannerSection() {
+  const [market, realtimeMarket] = await Promise.all([cachedMarket(), cachedRealtimeMarket()]);
+  const twii = readMarketIndex(realtimeMarket, market);
+  return <MarketStateBanner lastCloseDate={twii.updatedAt} />;
+}
+
 // ── Page entry point — 靜態殼同步輸出，各版面各自 Suspense stream ──────────
 export default async function HomePage({
   searchParams,
@@ -1705,7 +1727,9 @@ export default async function HomePage({
     <div className="home-ledger-shell">
       <style>{skeletonStyleTag()}</style>
       <HomeZoomController />
-      <MarketStateBanner />
+      <Suspense fallback={null}>
+        <MarketStateBannerSection />
+      </Suspense>
       <div className="tac-ledger">
         <header className="mast">
           <MastStatic />

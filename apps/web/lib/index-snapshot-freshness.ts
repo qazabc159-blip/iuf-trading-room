@@ -19,6 +19,21 @@
  * sign-contradiction bug class — see heatmap-consistency.test.ts on the
  * API side), and keeps the banner date consistent with the tiles the user
  * is actually looking at (both come from the same request).
+ *
+ * 2026-07-17 Round 2 (楊董升級 — 治本閘門, not another single-symbol patch):
+ * the SAME date-mismatch disease also hit `<MarketStateBanner />`, called
+ * with NO props at page.tsx — it fell back to its OWN independent
+ * client-side `getMarketDataOverview()` fetch, entirely decoupled from the
+ * server-rendered `market`/`realtimeMarket` data everything else on the
+ * page already uses. `resolveAuthoritativeTradeDate()` below is the
+ * frontend half of the mirror-image backend gate
+ * (`apps/api/src/market-data-integrity-gate.ts`) — the ONE trade date every
+ * consumer (banner text, index panel, heatmap tiles) must derive from, so
+ * they cannot structurally disagree. `readMarketIndex()` now uses this
+ * n-way resolver (superseding the old pairwise isNewerTaipeiTradeDate call
+ * site), and its resolved `updatedAt` is passed directly into
+ * `<MarketStateBanner lastCloseDate={...} />`, eliminating the redundant
+ * independent fetch entirely.
  */
 
 const TAIPEI_TZ = "Asia/Taipei";
@@ -45,4 +60,26 @@ export function isNewerTaipeiTradeDate(
   if (!candidateDate) return false;
   if (!currentDate) return true;
   return candidateDate > currentDate;
+}
+
+/**
+ * The single authoritative trade date every display surface must derive
+ * from (mirror of `resolveAuthoritativeTradeDate()` in
+ * `apps/api/src/market-data-integrity-gate.ts`). Picks the candidate with
+ * the newest known-valid Taipei calendar date; a candidate with no
+ * parseable date is never chosen over one that has one. Returns `null`
+ * (never a wall-clock guess) when no candidate has a valid date.
+ */
+export function resolveAuthoritativeTradeDate(
+  candidates: Array<{ source: string; tradeDate: string | null | undefined }>
+): { tradeDate: string | null; chosenSource: string | null } {
+  let best: { source: string; dateKey: string; tradeDate: string } | null = null;
+  for (const candidate of candidates) {
+    const key = taipeiCalendarDate(candidate.tradeDate);
+    if (!key || !candidate.tradeDate) continue;
+    if (!best || key > best.dateKey) {
+      best = { source: candidate.source, dateKey: key, tradeDate: candidate.tradeDate };
+    }
+  }
+  return best ? { tradeDate: best.tradeDate, chosenSource: best.source } : { tradeDate: null, chosenSource: null };
 }

@@ -7,7 +7,7 @@
  * tiles the user is looking at.
  */
 import { describe, expect, it } from "vitest";
-import { isNewerTaipeiTradeDate } from "./index-snapshot-freshness";
+import { isNewerTaipeiTradeDate, resolveAuthoritativeTradeDate } from "./index-snapshot-freshness";
 
 describe("isNewerTaipeiTradeDate", () => {
   it("candidate one day newer than current → true (the 07/16 banner vs 07/17 tiles repro)", () => {
@@ -41,5 +41,51 @@ describe("isNewerTaipeiTradeDate", () => {
     // 2026-07-16T17:00:00Z = 2026-07-17 01:00 Taipei — a day past the other's
     // 2026-07-16T15:00:00Z = 2026-07-16 23:00 Taipei.
     expect(isNewerTaipeiTradeDate("2026-07-16T17:00:00.000Z", "2026-07-16T15:00:00.000Z")).toBe(true);
+  });
+});
+
+// ── 2026-07-17 Round 2 (楊董升級 — 治本閘門): the single authoritative
+// trade-date resolver that <MarketStateBanner>/readMarketIndex() both feed
+// from, so the banner and the heatmap tiles/index panel cannot structurally
+// disagree the way "banner 07/16 vs tiles 07/17" did.
+describe("resolveAuthoritativeTradeDate", () => {
+  it("picks the source with the genuinely newer trade date (the 07/16 banner vs 07/17 tiles repro)", () => {
+    const result = resolveAuthoritativeTradeDate([
+      { source: "twse_overview", tradeDate: "2026-07-16T08:00:00.000Z" },
+      { source: "market_context_index", tradeDate: "2026-07-17T05:30:00.000Z" },
+    ]);
+    expect(result.tradeDate).toBe("2026-07-17T05:30:00.000Z");
+    expect(result.chosenSource).toBe("market_context_index");
+  });
+
+  it("a source with no date is never chosen over one that has a valid date", () => {
+    const result = resolveAuthoritativeTradeDate([
+      { source: "a", tradeDate: null },
+      { source: "b", tradeDate: "2026-07-17T05:30:00.000Z" },
+    ]);
+    expect(result.tradeDate).toBe("2026-07-17T05:30:00.000Z");
+    expect(result.chosenSource).toBe("b");
+  });
+
+  it("all sources missing a date resolves to null — never guesses from the wall clock (P0-5 lineage)", () => {
+    const result = resolveAuthoritativeTradeDate([
+      { source: "a", tradeDate: null },
+      { source: "b", tradeDate: undefined },
+    ]);
+    expect(result.tradeDate).toBeNull();
+    expect(result.chosenSource).toBeNull();
+  });
+
+  it("order-independent: same result regardless of candidate array order", () => {
+    const forward = resolveAuthoritativeTradeDate([
+      { source: "a", tradeDate: "2026-07-16T08:00:00.000Z" },
+      { source: "b", tradeDate: "2026-07-17T05:30:00.000Z" },
+    ]);
+    const reversed = resolveAuthoritativeTradeDate([
+      { source: "b", tradeDate: "2026-07-17T05:30:00.000Z" },
+      { source: "a", tradeDate: "2026-07-16T08:00:00.000Z" },
+    ]);
+    expect(forward.chosenSource).toBe("b");
+    expect(reversed.chosenSource).toBe("b");
   });
 });
