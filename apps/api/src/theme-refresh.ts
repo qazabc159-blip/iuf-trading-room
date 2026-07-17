@@ -152,16 +152,25 @@ async function loadThemeMembers(themeId: string): Promise<ThemeMemberRow[]> {
   // Mark to market from the shared STOCK_DAY_ALL cache (latest published EOD)
   let changeByTicker = new Map<string, number>();
   try {
-    const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+    const { getStockDayAllRows, parseTwseNumber } = await import("./data-sources/twse-openapi-client.js");
+    const { isPlausibleChangePct } = await import("./kgi-heatmap-enricher.js");
     const stockRows = await getStockDayAllRows();
     changeByTicker = new Map(
       stockRows
         .map((r) => {
-          const close = parseFloat(r.ClosingPrice);
-          const chg = parseFloat(String(r.Change ?? "").trim());
-          const prev = isFinite(close) && isFinite(chg) && close - chg !== 0 ? close - chg : null;
-          const pct = prev !== null ? Math.round((chg / prev) * 10000) / 100 : null;
-          return [r.Code?.trim() ?? "", pct] as const;
+          // 2026-07-17 P1 fix (Pete review, PR #1295 🔴#2): same
+          // comma-truncation bug as the kgi-core heatmap — bare parseFloat()
+          // on ClosingPrice truncates at TWSE's thousands-comma for
+          // >=1,000-priced theme members, corrupting the changePct fed into
+          // the theme's LLM narrative prompt below.
+          const close = parseTwseNumber(r.ClosingPrice);
+          const chg = parseTwseNumber(r.Change);
+          const prev = close !== null && close > 0 && chg !== null && close - chg !== 0 ? close - chg : null;
+          const pct = prev !== null ? Math.round((chg! / prev) * 10000) / 100 : null;
+          // Defense-in-depth: drop an implausible computed pct entirely
+          // rather than feeding a garbage % move into the LLM prompt.
+          const safePct = pct !== null && isPlausibleChangePct(pct) ? pct : null;
+          return [r.Code?.trim() ?? "", safePct] as const;
         })
         .filter((entry): entry is readonly [string, number] => Boolean(entry[0]) && entry[1] !== null)
     );

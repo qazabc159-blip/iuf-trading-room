@@ -23147,7 +23147,10 @@ test("STOCKDAYALL-SELFHEAL-6: s1-sim-runner.ts tier 1b routes through the shared
     "utf-8"
   );
   assert.ok(
-    runnerSrc.includes("const { getStockDayAllRows, getTpexMainboardCloseRows } = await import(\"./data-sources/twse-openapi-client.js\");"),
+    // 2026-07-17 P1 fix (PR #1295 🔴#2) added parseTwseNumber to this same
+    // destructured import (comma-safe close parsing) — still the one shared
+    // data-sources client, not a separate fetch path.
+    runnerSrc.includes("const { getStockDayAllRows, getTpexMainboardCloseRows, parseTwseNumber } = await import(\"./data-sources/twse-openapi-client.js\");"),
     "STOCKDAYALL-SELFHEAL-6: tier 1b must import getStockDayAllRows from the shared data-sources client (the self-healing function), not a separate fetch"
   );
 });

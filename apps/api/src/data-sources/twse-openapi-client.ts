@@ -676,9 +676,19 @@ const INDEX_CONSISTENCY_TOLERANCE_PCT = 0.15;
 // of the kgi-core heatmap "price corrupted to a single digit" bug for
 // higher-priced tiles (2330/2454/2308/3008/6669). kgi-heatmap-enricher.ts
 // reuses this instead of duplicating comma-stripping logic.
+//
+// 2026-07-17 Pete review (PR #1295) 🔴#1: an empty/whitespace-only string
+// (a no-trade EOD row's ClosingPrice can legitimately be "") must return
+// `null`, NOT `0` — `Number("")` and `Number("  ")` both evaluate to `0`,
+// which `Number.isFinite` happily accepts, silently turning "no data" into
+// a fake `price:0` at every call site. Explicitly reject the empty-after-
+// strip case before the `Number()` call so "no data" and "zero" can never
+// be confused — the exact bug class this function exists to prevent.
 export function parseTwseNumber(value: unknown): number | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
-  const parsed = Number(String(value).replace(/,/g, "").trim());
+  const stripped = String(value).replace(/,/g, "").trim();
+  if (stripped === "") return null;
+  const parsed = Number(stripped);
   return Number.isFinite(parsed) ? parsed : null;
 }
 

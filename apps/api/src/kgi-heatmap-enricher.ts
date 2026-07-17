@@ -135,7 +135,10 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
     // reports/sprint_2026_07_17/KGI_CORE_HEATMAP_PRICE_CORRUPTION_2026_07_17.md
     const close = parseTwseNumber(row.ClosingPrice);
     const changeVal = parseTwseNumber(row.Change);
-    if (close === null) continue;
+    // Belt-and-suspenders (Pete review 🔴#1): don't trust parseTwseNumber's
+    // return value alone — a no-trade EOD row's empty ClosingPrice must never
+    // be treated as a real price=0 tile at this call site either.
+    if (close === null || close <= 0) continue;
 
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
@@ -247,7 +250,9 @@ export function enrichHeatmapTiles(
     const code = row.Code?.trim();
     if (!code) continue;
     const close = parseTwseNumber(row.ClosingPrice);
-    if (close === null) continue;
+    // Belt-and-suspenders (Pete review 🔴#1): a no-trade EOD row's empty
+    // ClosingPrice must never surface as a real price=0 tile.
+    if (close === null || close <= 0) continue;
     const changeVal = parseTwseNumber(row.Change);
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;

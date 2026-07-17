@@ -1235,7 +1235,7 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
       // TPEX closes via the shared cached getter — the 6/11 inline fetch used
       // a 3s timeout on the ~4MB payload, which silently timed out from
       // Railway (europe-west4) and left OTC symbols unpriced with no trace.
-      const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
+      const { getStockDayAllRows, getTpexMainboardCloseRows, parseTwseNumber } = await import("./data-sources/twse-openapi-client.js");
 
       const [stockRows, tpexRows] = await Promise.all([
         getStockDayAllRows(),
@@ -1293,20 +1293,29 @@ export async function buildS1PositionsSnapshot(): Promise<S1PositionsSnapshot> {
           );
         }
 
-        const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseFloat(r.ClosingPrice)]));
+        // 2026-07-17 P1 fix (Pete review, PR #1295 🔴#2): bare parseFloat() on
+        // ClosingPrice/Close truncates at TWSE/TPEX's thousands-comma
+        // (">=1,000" prices, e.g. "2,470.0000" -> 2) — the same bug class as
+        // the kgi-core heatmap corruption, but here it feeds S1 SIM
+        // mark-to-market (last_price/market_value_twd/unrealized_pnl_twd) and
+        // the persisted quote_last_close write below. parseTwseNumber() is
+        // comma-safe and returns null (not a truncated/garbage finite number)
+        // for anything unparseable, so it can never silently slip past the
+        // `close > 0` guard already in place below.
+        const closeBySymbol = new Map(stockRows.map((r) => [r.Code?.trim(), parseTwseNumber(r.ClosingPrice)]));
         if (tpexFresh) {
           for (const row of tpexRows) {
             const code = row.SecuritiesCompanyCode?.trim();
             if (!code || closeBySymbol.has(code)) continue; // TWSE takes precedence
-            const close = parseFloat(row.Close ?? "");
-            if (isFinite(close)) closeBySymbol.set(code, close);
+            const close = parseTwseNumber(row.Close ?? "");
+            if (close !== null) closeBySymbol.set(code, close);
           }
         }
 
         let marked = 0;
         for (const p of positions) {
           const close = closeBySymbol.get(p.symbol);
-          if (close !== undefined && isFinite(close) && close > 0) {
+          if (close != null && close > 0) {
             p.last_price = close;
             p.market_value_twd = Math.round(p.shares * close);
             if (p.avg_cost > 0) p.unrealized_pnl_twd = Math.round((close - p.avg_cost) * p.shares);

@@ -2856,7 +2856,8 @@ app.get("/api/v1/realtime/snapshot", async (c) => {
   }
 
   const { quoteSnapshotResponseSchema } = await import("@iuf-trading-room/contracts");
-  const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
+  const { getStockDayAllRows, parseTwseNumber } = await import("./data-sources/twse-openapi-client.js");
+  const { isPlausibleChangePct } = await import("./kgi-heatmap-enricher.js");
 
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
@@ -2878,18 +2879,30 @@ app.get("/api/v1/realtime/snapshot", async (c) => {
   for (const row of eodRows) {
     const code = row.Code?.trim();
     if (!code) continue;
-    const close = parseFloat(row.ClosingPrice);
-    if (!isFinite(close)) continue;
-    const chgRaw = parseFloat(row.Change?.trim() ?? "");
-    const chg = isFinite(chgRaw) ? chgRaw : null;
-    const open = isFinite(parseFloat(row.OpeningPrice)) ? parseFloat(row.OpeningPrice) : null;
-    const high = isFinite(parseFloat(row.HighestPrice)) ? parseFloat(row.HighestPrice) : null;
-    const low = isFinite(parseFloat(row.LowestPrice)) ? parseFloat(row.LowestPrice) : null;
-    const vol = isFinite(parseFloat(row.TradeVolume)) ? parseFloat(row.TradeVolume) : null;
-    const prevClose = chg != null ? close - chg : null;
-    const changePct = prevClose != null && prevClose !== 0
+    // 2026-07-17 P1 fix (Pete review, PR #1295 🔴#2): this canonical
+    // snapshot endpoint had the same bare-parseFloat comma-truncation bug as
+    // the kgi-core heatmap (TWSE formats ClosingPrice/etc with a thousands
+    // comma once >=1,000, e.g. "2,470.0000" → parseFloat returns just `2`).
+    // parseTwseNumber() strips commas AND rejects empty/whitespace strings
+    // (Number("")===0 would otherwise silently turn "no trade" into
+    // price:0). Belt-and-suspenders: also reject close<=0 explicitly rather
+    // than trusting the parse result alone.
+    const close = parseTwseNumber(row.ClosingPrice);
+    if (close === null || close <= 0) continue;
+    const chg = parseTwseNumber(row.Change);
+    const open = parseTwseNumber(row.OpeningPrice);
+    const high = parseTwseNumber(row.HighestPrice);
+    const low = parseTwseNumber(row.LowestPrice);
+    const vol = parseTwseNumber(row.TradeVolume);
+    const prevClose = chg != null && (close - chg) !== 0 ? close - chg : null;
+    const changePctRaw = prevClose != null
       ? Math.round((chg! / prevClose) * 10000) / 100
       : null;
+    // Same defense-in-depth as the heatmap enricher: an implausible computed
+    // changePct means this whole row is malformed upstream — drop it rather
+    // than serving a corrupted price on this canonical endpoint.
+    if (changePctRaw !== null && !isPlausibleChangePct(changePctRaw)) continue;
+    const changePct = changePctRaw;
 
     // Derive ISO source_time from TWSE ROC date "114/05/18" or "1140518" →
     // "2026-05-18T13:30:00+08:00". 2026-07-10 sweep fix (Pete review,
