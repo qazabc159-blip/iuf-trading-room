@@ -13378,7 +13378,17 @@ test("HEATMAP-GARBAGE-1: isPlausibleChangePct rejects impossible daily swings, a
   assert.equal(isPlausibleChangePct(NaN), false, "HEATMAP-GARBAGE-1: NaN is never plausible");
 });
 
-test("HEATMAP-GARBAGE-2: updateLastCloseFromTwse nulls an implausible computed pct instead of caching garbage", async () => {
+test("HEATMAP-GARBAGE-2: Tier2 (TWSE EOD) with an implausible computed pct falls through instead of nulling pct but keeping a corrupted price", async () => {
+  // 2026-07-17 P1 fix: this test previously asserted the opposite — that
+  // Tier2 should still serve `price` with only `changePct` nulled out. That
+  // is EXACTLY the shape of the 2026-07-17 prod bug (kgi-core heatmap served
+  // 2330/2454/2308/3008/6669 as `price:2, changePct:null` — a thousands-comma
+  // in ClosingPrice, e.g. "2,470.0000", silently truncated by a bare
+  // parseFloat()). An implausible pct is evidence the WHOLE row is malformed
+  // upstream, not just the pct field, so it must fall through to the next
+  // tier (here: no_data, since no cache/db/MIS entry exists in this test) —
+  // now consistent with HEATMAP-GARBAGE-3's Tier1 behavior below. See
+  // reports/sprint_2026_07_17/KGI_CORE_HEATMAP_PRICE_CORRUPTION_2026_07_17.md
   const { enrichHeatmapTiles, _resetLastCloseCache } = await import("../apps/api/src/kgi-heatmap-enricher.js");
   _resetLastCloseCache();
 
@@ -13391,7 +13401,8 @@ test("HEATMAP-GARBAGE-2: updateLastCloseFromTwse nulls an implausible computed p
   ];
   const result = enrichHeatmapTiles(kgiTiles as any, twseRows as any);
 
-  assert.equal(result.tiles[0]!.sourceState, "twse_eod", "HEATMAP-GARBAGE-2: tile still served from Tier2 (price is real)");
+  assert.equal(result.tiles[0]!.sourceState, "no_data", "HEATMAP-GARBAGE-2: implausible row must not be served from Tier2 at all");
+  assert.equal(result.tiles[0]!.price, null, "HEATMAP-GARBAGE-2: price must never be the corrupted value 10, must be null (no_data)");
   assert.equal(result.tiles[0]!.changePct, null, "HEATMAP-GARBAGE-2: implausible pct must be nulled, never served as garbage");
 });
 
@@ -23136,7 +23147,10 @@ test("STOCKDAYALL-SELFHEAL-6: s1-sim-runner.ts tier 1b routes through the shared
     "utf-8"
   );
   assert.ok(
-    runnerSrc.includes("const { getStockDayAllRows, getTpexMainboardCloseRows } = await import(\"./data-sources/twse-openapi-client.js\");"),
+    // 2026-07-17 P1 fix (PR #1295 🔴#2) added parseTwseNumber to this same
+    // destructured import (comma-safe close parsing) — still the one shared
+    // data-sources client, not a separate fetch path.
+    runnerSrc.includes("const { getStockDayAllRows, getTpexMainboardCloseRows, parseTwseNumber } = await import(\"./data-sources/twse-openapi-client.js\");"),
     "STOCKDAYALL-SELFHEAL-6: tier 1b must import getStockDayAllRows from the shared data-sources client (the self-healing function), not a separate fetch"
   );
 });

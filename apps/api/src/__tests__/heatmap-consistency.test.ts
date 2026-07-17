@@ -8,13 +8,14 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { enrichHeatmapTiles, type MisTileEntry } from "../kgi-heatmap-enricher.js";
+import { enrichHeatmapTiles, _resetLastCloseCache, type MisTileEntry } from "../kgi-heatmap-enricher.js";
 import type { KgiHeatmapTile } from "../kgi-subscription-manager.js";
 import type { StockDayAllRow } from "../data-sources/twse-openapi-client.js";
 import {
   getTwseIndustryHeatmap,
   _resetTwseHeatmapCache,
   _resetStockDayAllCache,
+  parseTwseNumber,
 } from "../data-sources/twse-openapi-client.js";
 
 function todayYmdTaipei(): string {
@@ -82,6 +83,83 @@ test("getTwseIndustryHeatmap serves last-good tiles on transient upstream outage
 
   _resetTwseHeatmapCache();
   _resetStockDayAllCache();
+});
+
+test("kgi-core heatmap: comma-formatted TWSE ClosingPrice (>=1,000) must not truncate to a single digit (2026-07-17 P1 regression)", () => {
+  // Repro of the 2026-07-17 prod bug: TWSE STOCK_DAY_ALL/afterTrading rows
+  // format ClosingPrice with a thousands-comma once price crosses 1,000
+  // ("2,470.0000"). A bare parseFloat() stopped at the comma and returned
+  // just `2` — exactly what Bruce's prod verify caught for 2330/2454/2308/
+  // 3008/6669 (all >=1,000 that day) while the other 35 sub-1,000 tiles
+  // were unaffected.
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  const twseRows = [stockRow("2330", "2,470.0000", "-30.0000", "1150717")];
+
+  const result = enrichHeatmapTiles(kgiTiles, twseRows);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_eod");
+  assert.equal(tile.price, 2470, `price must be the full comma-parsed value, got ${tile.price}`);
+  assert.equal(tile.change, -30);
+  assert.ok(tile.changePct !== null && Math.abs(tile.changePct - -1.2) < 0.05, `changePct ≈ -1.2, got ${tile.changePct}`);
+});
+
+test("kgi-core heatmap: a TWSE row with an implausible changePct must never leak a corrupted price — falls through to no_data", () => {
+  // Defense-in-depth: even if some future/unforeseen parse issue produces a
+  // garbage close price (simulated here directly, independent of the comma
+  // bug above), the resulting pctRaw computation blows past the ±10% daily
+  // limit band. The enricher must drop the WHOLE row (not just null
+  // changePct while still serving the corrupted price) so the tile falls
+  // through to the next tier (here: no_data, since no cache/db/MIS entry
+  // exists for this symbol in this test).
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "3008", name: "大立光", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  // close=2 (garbage), change=-180 (real magnitude) → prevClose=182, pctRaw ≈ -98.9% (implausible)
+  const twseRows = [stockRow("3008", "2", "-180", "1150717")];
+
+  const result = enrichHeatmapTiles(kgiTiles, twseRows);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `corrupted row must not surface as twse_eod, got ${tile.sourceState}`);
+  assert.equal(tile.price, null, `price must never be the corrupted value 2, got ${tile.price}`);
+});
+
+test("parseTwseNumber: empty/whitespace strings must return null, not 0 (Pete review 🔴#1, 2026-07-17)", () => {
+  // Number("") === 0 and Number("  ") === 0 in JS — both pass
+  // Number.isFinite, so a naive comma-safe parse would silently confuse
+  // "no data" with "zero", reintroducing the exact bug class this function
+  // exists to prevent (see kgi-heatmap-enricher.ts tests below).
+  assert.equal(parseTwseNumber(""), null);
+  assert.equal(parseTwseNumber("   "), null);
+  assert.equal(parseTwseNumber(","), null);
+  // Still parses real (including comma-formatted) values correctly.
+  assert.equal(parseTwseNumber("2,470.0000"), 2470);
+  assert.equal(parseTwseNumber("0"), 0);
+  assert.equal(parseTwseNumber("X"), null);
+});
+
+test("kgi-core heatmap: a no-trade EOD row with an empty ClosingPrice must fall through to no_data, never price:0 (Pete review 🔴#1, 2026-07-17)", () => {
+  // Number("") === 0 in JS — a bare comma-safe parse that doesn't explicitly
+  // reject the empty string reintroduces the exact "silently serve a wrong
+  // number" bug class this PR exists to kill, just via a different trigger
+  // string (empty ClosingPrice on a halted/no-trade day instead of a
+  // thousands-comma). Must fall through to no_data, not serve price:0.
+  // Reset first — an earlier test in this file legitimately caches a real
+  // 2330 price via the same symbol, which would otherwise mask this bug as
+  // a "cache" tier hit instead of the "no_data" this test is checking for.
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2330", name: "台積電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  const twseRows = [stockRow("2330", "", "", "1150717")];
+
+  const result = enrichHeatmapTiles(kgiTiles, twseRows);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `empty ClosingPrice must not surface as twse_eod, got ${tile.sourceState}`);
+  assert.equal(tile.price, null, `price must never be 0 for an empty ClosingPrice, got ${tile.price}`);
 });
 
 test("PERF: fetchKgiLatestTick short-circuits when the gateway is scheduled off", () => {

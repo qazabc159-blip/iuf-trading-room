@@ -19,7 +19,7 @@
  */
 
 import type { KgiHeatmapTile } from "./kgi-subscription-manager.js";
-import type { StockDayAllRow } from "./data-sources/twse-openapi-client.js";
+import { parseTwseNumber, type StockDayAllRow } from "./data-sources/twse-openapi-client.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
 import type { LastCloseResult } from "./quote-last-close-store.js";
 
@@ -129,14 +129,25 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
   for (const row of rows) {
     const code = row.Code?.trim();
     if (!code) continue;
-    const close = parseFloat(row.ClosingPrice);
-    const chg = parseFloat(row.Change?.trim() ?? "");
-    if (!isFinite(close)) continue;
+    // 2026-07-17 P1 fix: parseTwseNumber strips thousands-commas
+    // ("2,470.0000") before parsing — a bare parseFloat() here silently
+    // truncated at the comma (returning e.g. `2` for a 2,470 close). See
+    // reports/sprint_2026_07_17/KGI_CORE_HEATMAP_PRICE_CORRUPTION_2026_07_17.md
+    const close = parseTwseNumber(row.ClosingPrice);
+    const changeVal = parseTwseNumber(row.Change);
+    // Belt-and-suspenders (Pete review 🔴#1): don't trust parseTwseNumber's
+    // return value alone — a no-trade EOD row's empty ClosingPrice must never
+    // be treated as a real price=0 tile at this call site either.
+    if (close === null || close <= 0) continue;
 
-    const changeVal = isFinite(chg) ? chg : null;
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
-    const pct = isPlausibleChangePct(pctRaw) ? pctRaw : null;
+    // Defense-in-depth: a pctRaw outside the ±10% daily limit band means this
+    // row is malformed upstream (comma-truncation or any other future parse
+    // failure) — skip the WHOLE row rather than only nulling changePct while
+    // still caching the corrupted price. Serving "price:2, changePct:null"
+    // is exactly the bug this guard closes.
+    if (pctRaw !== null && !isPlausibleChangePct(pctRaw)) continue;
 
     // Derive ISO date from TWSE ROC date "114/05/18" → "2026-05-18"
     const dateTag = parseTwseDate(row.Date ?? "");
@@ -145,7 +156,7 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
     // Only update if entry doesn't exist or is older
     const existing = _lastCloseCache.get(code);
     if (!existing || dateTag > existing.dateTag) {
-      _lastCloseCache.set(code, { price: close, change: changeVal, changePct: pct, ts, dateTag });
+      _lastCloseCache.set(code, { price: close, change: changeVal, changePct: pctRaw, ts, dateTag });
     }
   }
 }
@@ -228,21 +239,27 @@ export function enrichHeatmapTiles(
     updateLastCloseFromTwse(twseRows);
   }
 
-  // Build per-symbol TWSE lookup map
+  // Build per-symbol TWSE lookup map.
+  // 2026-07-17 P1 fix: same comma-safe parse + skip-whole-row-on-implausible-
+  // pct guard as updateLastCloseFromTwse() above — see that function's
+  // comment for the root cause. A row that fails the guard here is simply
+  // absent from twseMap, so Tier 2 falls through to Tier 2.5/cache/no_data
+  // for that symbol instead of serving a corrupted price.
   const twseMap = new Map<string, { price: number; change: number | null; changePct: number | null; ts: string }>();
   for (const row of twseRows) {
     const code = row.Code?.trim();
     if (!code) continue;
-    const close = parseFloat(row.ClosingPrice);
-    if (!isFinite(close)) continue;
-    const chg = parseFloat(row.Change?.trim() ?? "");
-    const changeVal = isFinite(chg) ? chg : null;
+    const close = parseTwseNumber(row.ClosingPrice);
+    // Belt-and-suspenders (Pete review 🔴#1): a no-trade EOD row's empty
+    // ClosingPrice must never surface as a real price=0 tile.
+    if (close === null || close <= 0) continue;
+    const changeVal = parseTwseNumber(row.Change);
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
     const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
-    const pct = isPlausibleChangePct(pctRaw) ? pctRaw : null;
+    if (pctRaw !== null && !isPlausibleChangePct(pctRaw)) continue;
     const dateTag = parseTwseDate(row.Date ?? "");
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
-    twseMap.set(code, { price: close, change: changeVal, changePct: pct, ts });
+    twseMap.set(code, { price: close, change: changeVal, changePct: pctRaw, ts });
   }
 
   // Derive today's date string "YYYYMMDD" in Taipei timezone for MIS freshness check
