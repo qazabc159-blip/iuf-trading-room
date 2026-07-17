@@ -9,17 +9,22 @@
 
 import { useEffect, useState } from "react";
 import { PageFrame } from "@/components/PageFrame";
-import { apiGetMe } from "@/lib/auth-client";
+import { apiGetMe, authErrorMessage } from "@/lib/auth-client";
 import { FAutoSimPanel } from "./FAutoSimPanel";
 
-type RoleState = "loading" | "not-owner" | "ready";
+type RoleState = "loading" | "not-owner" | "session-error" | "ready";
 
 export default function FAutoPage() {
   const [roleState, setRoleState] = useState<RoleState>("loading");
+  const [roleErrorMessage, setRoleErrorMessage] = useState<string>("");
 
   useEffect(() => {
     apiGetMe().then((result) => {
-      if (!result.ok || result.user.role !== "Owner") {
+      if (!result.ok) {
+        // fetch 失敗 / session 過期 ≠ 真的不是 owner；顯示誠實訊息而非假的權限不足。
+        setRoleErrorMessage(authErrorMessage(result.error));
+        setRoleState("session-error");
+      } else if (result.user.role !== "Owner") {
         setRoleState("not-owner");
       } else {
         setRoleState("ready");
@@ -45,6 +50,17 @@ export default function FAutoPage() {
           <div>
             <div className="_fauto-gate-title">此頁面僅限帳號擁有者檢視</div>
             <div className="_fauto-gate-sub">F-AUTO SIM 狀態屬 Owner 限定資料，請使用擁有者帳號登入。</div>
+          </div>
+        </div>
+      )}
+      {roleState === "session-error" && (
+        <div className="_fauto-gate-locked">
+          <div className="_fauto-gate-icon">
+            <span>⟳</span>
+          </div>
+          <div>
+            <div className="_fauto-gate-title">請重新登入</div>
+            <div className="_fauto-gate-sub">{roleErrorMessage}</div>
           </div>
         </div>
       )}

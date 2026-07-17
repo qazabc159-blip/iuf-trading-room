@@ -36,6 +36,8 @@
  * independent fetch entirely.
  */
 
+import { getMarketDataOverview, getTwseMarketOverview } from "./api";
+
 const TAIPEI_TZ = "Asia/Taipei";
 
 function taipeiCalendarDate(value: string | null | undefined): string | null {
@@ -82,4 +84,36 @@ export function resolveAuthoritativeTradeDate(
     }
   }
   return best ? { tradeDate: best.tradeDate, chosenSource: best.source } : { tradeDate: null, chosenSource: null };
+}
+
+/**
+ * 2026-07-18 wave2: `/companies/[symbol]` and `/ai-recommendations` rendered
+ * a bare `<MarketStateBanner />` with no `lastCloseDate` prop, so it fell
+ * back to its own single-source client fetch (`marketContext.index.timestamp`
+ * only) — the same disease `resolveAuthoritativeTradeDate()` fixed for the
+ * homepage banner. This is the lightweight, page-agnostic version of
+ * `MarketStateBannerSection` in `app/page.tsx`: fetch just the two date
+ * sources (no heatmap/kgi machinery those pages don't need), resolve, and
+ * return a `lastCloseDate` prop. Fail-open (never throws — the banner is
+ * cosmetic; a resolution failure should fall back to the component's own
+ * single-source client fetch rather than break the page).
+ */
+export async function resolveBannerLastCloseDate(): Promise<string | null> {
+  const [overview, twse] = await Promise.allSettled([
+    getMarketDataOverview({ includeStale: true, topLimit: 1 }),
+    getTwseMarketOverview(),
+  ]);
+
+  const overviewIndex = overview.status === "fulfilled" ? overview.value.data?.marketContext?.index : null;
+  const overviewUsable = overviewIndex && overviewIndex.last !== null && overviewIndex.state !== "EMPTY";
+  // getTwseMarketOverview() uses requestRaw() (returns the body directly, unlike
+  // request()'s {data: T} envelope) — do not add a redundant `.data` here.
+  const twseTaiex = twse.status === "fulfilled" ? twse.value.taiex : null;
+
+  const resolved = resolveAuthoritativeTradeDate([
+    { source: "market_context_index", tradeDate: overviewUsable ? overviewIndex!.timestamp : null },
+    { source: "twse_overview", tradeDate: twseTaiex?.ts ?? null },
+  ]);
+
+  return resolved.tradeDate;
 }

@@ -124,7 +124,9 @@ export async function apiGetMe(): Promise<AuthSuccess | AuthFailure> {
     });
 
     if (!res.ok) {
-      return { ok: false, error: "unauthenticated" };
+      // 401/403 = 真的未登入或 session 過期；其餘（5xx 等）保留誠實的伺服器錯誤語意，
+      // 不要全部混成同一個 "unauthenticated"，讓呼叫端可以顯示「請重新登入」以外的正確訊息。
+      return { ok: false, error: res.status === 401 || res.status === 403 ? "unauthenticated" : `server_error_${res.status}` };
     }
 
     const body = await res.json() as { user: AuthUser; workspace: AuthWorkspace };

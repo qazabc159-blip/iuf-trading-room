@@ -6,8 +6,18 @@
  * newer trade date so the banner date never disagrees with the heatmap
  * tiles the user is looking at.
  */
-import { describe, expect, it } from "vitest";
-import { isNewerTaipeiTradeDate, resolveAuthoritativeTradeDate } from "./index-snapshot-freshness";
+import { describe, expect, it, vi } from "vitest";
+import { isNewerTaipeiTradeDate, resolveAuthoritativeTradeDate, resolveBannerLastCloseDate } from "./index-snapshot-freshness";
+
+const { getMarketDataOverviewMock, getTwseMarketOverviewMock } = vi.hoisted(() => ({
+  getMarketDataOverviewMock: vi.fn(),
+  getTwseMarketOverviewMock: vi.fn(),
+}));
+
+vi.mock("./api", () => ({
+  getMarketDataOverview: getMarketDataOverviewMock,
+  getTwseMarketOverview: getTwseMarketOverviewMock,
+}));
 
 describe("isNewerTaipeiTradeDate", () => {
   it("candidate one day newer than current → true (the 07/16 banner vs 07/17 tiles repro)", () => {
@@ -87,5 +97,41 @@ describe("resolveAuthoritativeTradeDate", () => {
     ]);
     expect(forward.chosenSource).toBe("b");
     expect(reversed.chosenSource).toBe("b");
+  });
+});
+
+// ── 2026-07-18 wave2: /companies/[symbol] and /ai-recommendations rendered a
+// bare <MarketStateBanner /> with no lastCloseDate prop → fell back to the
+// component's single-source client fetch (banner showed 07/16 while the rest
+// of the page's data was already 07/17). resolveBannerLastCloseDate() is the
+// page-agnostic two-source resolver these pages now feed as a prop.
+describe("resolveBannerLastCloseDate", () => {
+  it("prefers the genuinely newer of the two sources (mirrors readMarketIndex's homepage fix)", async () => {
+    getMarketDataOverviewMock.mockResolvedValueOnce({
+      data: { marketContext: { index: { state: "LIVE", last: 24500, timestamp: "2026-07-17T05:30:00.000Z" } } },
+    });
+    getTwseMarketOverviewMock.mockResolvedValueOnce({
+      taiex: { value: 24500, change: 1, changePct: 0.01, ts: "2026-07-16T08:00:00.000Z" },
+    });
+
+    await expect(resolveBannerLastCloseDate()).resolves.toBe("2026-07-17T05:30:00.000Z");
+  });
+
+  it("falls back to the other source when marketContext.index is EMPTY/unusable", async () => {
+    getMarketDataOverviewMock.mockResolvedValueOnce({
+      data: { marketContext: { index: { state: "EMPTY", last: null, timestamp: null } } },
+    });
+    getTwseMarketOverviewMock.mockResolvedValueOnce({
+      taiex: { value: 24500, change: 1, changePct: 0.01, ts: "2026-07-16T08:00:00.000Z" },
+    });
+
+    await expect(resolveBannerLastCloseDate()).resolves.toBe("2026-07-16T08:00:00.000Z");
+  });
+
+  it("fails open to null (never throws, never guesses) when both sources reject", async () => {
+    getMarketDataOverviewMock.mockRejectedValueOnce(new Error("network"));
+    getTwseMarketOverviewMock.mockRejectedValueOnce(new Error("network"));
+
+    await expect(resolveBannerLastCloseDate()).resolves.toBeNull();
   });
 });

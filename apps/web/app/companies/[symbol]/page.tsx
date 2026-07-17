@@ -17,6 +17,7 @@ import {
   toCompanyDetailView,
 } from "@/lib/company-adapter";
 import { industryLabel } from "@/lib/industry-i18n";
+import { resolveBannerLastCloseDate } from "@/lib/index-snapshot-freshness";
 
 import { CompanyHeroBar }      from "./CompanyHeroBar";
 import { CompanyInfoPanel }    from "./CompanyInfoPanel";
@@ -309,6 +310,11 @@ export default async function CompanyDetailPage({
     );
   }
 
+  // Kick off in parallel with the rest of the page's fetches — feeds
+  // <MarketStateBanner lastCloseDate> so the banner date can't disagree with
+  // the heatmap/index date shown elsewhere (see index-snapshot-freshness.ts).
+  const lastCloseDatePromise = resolveBannerLastCloseDate().catch(() => null);
+
   // ── Phase 1: fetch OHLCV (needed for kbarDate) ──────────────────────────────
   let ohlcvErrorMsg: string | null = null;
   const from = new Date();
@@ -426,6 +432,7 @@ export default async function CompanyDetailPage({
   // 市值 / PBR: from full-profile (already fetched)
   const heroMarketCap: number | null = fullProfile?.marketIntel?.marketValue?.latest?.marketValue ?? null;
   const heroPBR:       number | null = fullProfile?.marketIntel?.valuation?.latest?.pbr ?? null;
+  const lastCloseDate = await lastCloseDatePromise;
 
   return (
     <PageFrame
@@ -435,7 +442,7 @@ export default async function CompanyDetailPage({
       note={`公司板 / ${company.ticker} / ${industryLabel(company.chainPosition)} / ${tierLabel[company.beneficiaryTier] ?? company.beneficiaryTier}`}
     >
       <CompanyPageStyleBlock />
-      <MarketStateBanner />
+      <MarketStateBanner lastCloseDate={lastCloseDate} />
       <div className="co-v3-page">
       <div style={{ marginBottom: 10 }}>
         <a href="/companies" className="_co-back-btn">
