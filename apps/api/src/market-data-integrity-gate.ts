@@ -82,7 +82,9 @@ export type IntegrityRejectionReason =
   | "changePct_exceeds_daily_limit"
   | "price_magnitude_anomaly"
   | "independent_source_unavailable"
-  | "independent_source_mismatch";
+  | "independent_source_mismatch"
+  | "price_above_daily_high"
+  | "price_below_daily_low";
 
 export interface VerifiedQuoteTuple {
   verified: true;
@@ -222,6 +224,35 @@ export function resolveAuthoritativeTradeDate(
     }
   }
   return best ? { tradeDate: best.tradeDate, chosenSource: best.source } : { tradeDate: null, chosenSource: null };
+}
+
+/**
+ * Structural invariant #6 (2026-07-18 — company page P0: 最新價 2,470.0 >
+ * 當日最高 2,395.0 for 2330, true close 2,290 backed out from the mismatched
+ * -7.29%): a candidate's own last/close price must fall within its own
+ * day's [low, high] band. This is a DIFFERENT check from `verifyQuoteTuple()`
+ * (which only verifies close/change/changePct are internally arithmetically
+ * consistent with EACH OTHER) — a close can be perfectly self-consistent
+ * arithmetically and still be physically impossible if it's paired with a
+ * high/low from a DIFFERENT trading day (exactly what happened here: a stale
+ * previous-day close served as "最新價" alongside a newer day's already-lower
+ * high/low). Returns `valid:true` when either bound is unavailable (can't
+ * disprove, not a false accusation — same convention as
+ * `isPriceMagnitudePlausible()`).
+ */
+export function verifyPriceWithinDailyRange(
+  close: number | null | undefined,
+  high: number | null | undefined,
+  low: number | null | undefined
+): { valid: boolean; reason: IntegrityRejectionReason | null } {
+  if (close == null || !Number.isFinite(close)) return { valid: true, reason: null };
+  if (high != null && Number.isFinite(high) && close > high) {
+    return { valid: false, reason: "price_above_daily_high" };
+  }
+  if (low != null && Number.isFinite(low) && close < low) {
+    return { valid: false, reason: "price_below_daily_low" };
+  }
+  return { valid: true, reason: null };
 }
 
 const TAIPEI_TZ = "Asia/Taipei";

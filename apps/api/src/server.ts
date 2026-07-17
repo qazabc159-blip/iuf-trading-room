@@ -7840,6 +7840,7 @@ app.get("/internal/market/health", async (c) => {
 
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
 import { getTwseOpenApiClient } from "./data-sources/twse-openapi-client.js";
+import { resolveAuthoritativeTradeDate } from "./market-data-integrity-gate.js";
 import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
 import {
   runMonthlyRevenueSync,
@@ -10082,6 +10083,127 @@ export function _resetRealtimeSubscribeCache(): void {
   _realtimeSubscribedSymbols.clear();
 }
 
+// Module-level (not route-closure-local) so `mergeEodFallbackWithPersistedBars()`
+// below is a pure, independently-unit-testable function — see its own doc comment.
+export type EodFallbackResult = {
+  lastPrice: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  prevClose: number | null;
+  changePct: number | null;
+  volume: number | null;
+  source: "twse_openapi_eod" | "tpex_openapi_eod" | "companies_ohlcv_eod";
+  state: "STALE" | "NO_DATA";
+  freshness: "stale" | "not-available";
+  note: string;
+  /** ISO trading date of the EOD row (may be 1-2 sessions behind on publish lag). */
+  dataDate: string | null;
+  marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+  referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
+};
+
+export type PersistedOhlcvBar = {
+  dt: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+};
+
+/**
+ * Latest persisted `companies_ohlcv` daily bars (newest first) for the
+ * authoritative-trade-date cross-check in `mergeEodFallbackWithPersistedBars()`
+ * below. `dt` is explicitly cast to `text` in SQL (not read as a JS `Date`) —
+ * postgres-js parses a bare `date` column into a JS `Date` object, and
+ * formatting THAT via `String()`/slicing yields a locale timestamp string, not
+ * an ISO date; same convention already used for `companies_ohlcv` reads
+ * elsewhere in this file (freq=1d kbar path). Fail-open to `[]` on any DB
+ * error — this is a best-effort cross-check, never a hard dependency of the
+ * realtime-quote path.
+ */
+export async function _queryLatestPersistedOhlcvBars(
+  companyId: string,
+  limit: number
+): Promise<PersistedOhlcvBar[]> {
+  if (!isDatabaseMode()) return [];
+  try {
+    const db = getDb();
+    if (!db) return [];
+    const result = await db.execute(drizzleSql`
+      SELECT dt::text AS dt, open, high, low, close, volume FROM companies_ohlcv
+      WHERE company_id = ${companyId} AND interval = '1d'
+      ORDER BY dt DESC LIMIT ${limit}
+    `);
+    const rows = dbExecRows<Record<string, unknown>>(result);
+    return rows.map((r) => ({
+      dt: String(r["dt"] ?? "").slice(0, 10),
+      open: r["open"] != null ? Number(r["open"]) : null,
+      high: r["high"] != null ? Number(r["high"]) : null,
+      low: r["low"] != null ? Number(r["low"]) : null,
+      close: r["close"] != null ? Number(r["close"]) : null,
+      volume: r["volume"] != null ? Number(r["volume"]) : null,
+    }));
+  } catch (e) {
+    console.warn(`[realtime] persisted ohlcv cross-check query failed for ${companyId}:`, e instanceof Error ? e.message : String(e));
+    return [];
+  }
+}
+
+/**
+ * 2026-07-18 P0 fix (Elva prod verify caught 2330/3661 self-contradiction:
+ * 最新價 2,470.0 > 當日最高 2,395.0, true close 2,290 backed out from the
+ * mismatched -7.29%): a live TWSE/TPEX EOD fetch (`live`) can legitimately lag
+ * one session behind — same publish-lag disease as #1299's index headline
+ * regression — while `companies_ohlcv` (populated by the separate EOD
+ * ingestion cron, and what `/companies/:id/ohlcv` + the company hero bar's
+ * 最高/最低 already read from) has ALREADY landed the newer trading day.
+ * Serving the live fetch's stale close as "最新價" alongside an
+ * already-advanced 漲跌幅/最高/最低 mixes two different trading dates in one
+ * KPI strip. Cross-validates both candidates through the shared
+ * `resolveAuthoritativeTradeDate()` gate (market-data-integrity-gate.ts, the
+ * same one #1299 introduced) and supersedes `live` with the persisted bar
+ * ONLY when the persisted bar is a STRICTLY newer trading day — same-day ties
+ * keep `live` (it can carry same-day open/high/low detail the persisted bar
+ * may not yet reflect), and a persisted bar that is equal-or-older never
+ * overrides a live result. Pure function (no I/O) — independently
+ * unit-tested in `__tests__/quote-realtime-persisted-supersede.test.ts`.
+ */
+export function mergeEodFallbackWithPersistedBars(
+  live: EodFallbackResult,
+  persisted: PersistedOhlcvBar[]
+): EodFallbackResult {
+  if (persisted.length === 0) return live;
+  const [latest, prior] = persisted;
+  const resolved = resolveAuthoritativeTradeDate([
+    { source: "live_eod", tradeDate: live.dataDate },
+    { source: "persisted_ohlcv", tradeDate: latest!.dt },
+  ]);
+  if (resolved.chosenSource !== "persisted_ohlcv") return live;
+  const close = latest!.close;
+  const prevClose = prior?.close ?? live.prevClose ?? null;
+  const changePct = close !== null && prevClose !== null && prevClose > 0
+    ? Math.round(((close - prevClose) / prevClose) * 10000) / 100
+    : null;
+  return {
+    lastPrice: close,
+    open: latest!.open,
+    high: latest!.high,
+    low: latest!.low,
+    prevClose,
+    changePct,
+    volume: latest!.volume,
+    source: "companies_ohlcv_eod",
+    state: close !== null ? "STALE" : "NO_DATA",
+    freshness: close !== null ? "stale" : "not-available",
+    note: `persisted_ohlcv_supersedes_live_eod date=${latest!.dt} (live_eod_date=${live.dataDate ?? "none"})`,
+    dataDate: latest!.dt,
+    marketSession: live.marketSession,
+    referenceReason: live.referenceReason,
+  };
+}
+
 app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   // 1. Resolve company
   const company = await resolveCompany(c.get("repo"), c.req.param("id"), {
@@ -10237,23 +10359,9 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   // twse-eod-cron persist block, source=tpex_eod) has the row. Now picks primary source
   // from `market`, then tries the other exchange before giving up (mirrors the MIS
   // tse/otc fallback above — company.market can be mistagged).
-  type EodFallbackResult = {
-    lastPrice: number | null;
-    open: number | null;
-    high: number | null;
-    low: number | null;
-    prevClose: number | null;
-    changePct: number | null;
-    volume: number | null;
-    source: "twse_openapi_eod" | "tpex_openapi_eod";
-    state: "STALE" | "NO_DATA";
-    freshness: "stale" | "not-available";
-    note: string;
-    /** ISO trading date of the EOD row (may be 1-2 sessions behind on publish lag). */
-    dataDate: string | null;
-    marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
-    referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
-  };
+  // (`EodFallbackResult` type now lives at module scope — see above the route —
+  // so `mergeEodFallbackWithPersistedBars()` can be a pure, independently
+  // unit-tested function; unchanged usage here.)
   const _parseEodNum = (value?: string | null) => {
     const n = Number(String(value ?? "").replace(/,/g, "").trim().replace(/^\+/, ""));
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -10304,7 +10412,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       referenceReason: _eodReferenceReason(blockReason),
     };
   }
-  async function _twseEodFallback(sym: string, market: string, blockReason?: string | null): Promise<EodFallbackResult> {
+  async function _twseEodFallbackLive(sym: string, market: string, blockReason?: string | null): Promise<EodFallbackResult> {
     try {
       const { getStockDayAllRows, getTpexMainboardCloseRows } = await import("./data-sources/twse-openapi-client.js");
       const isOtc = _misPrefixForMarket(market) === "otc";
@@ -10328,6 +10436,19 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       console.warn(`[realtime] EOD fallback failed for ${sym}:`, e instanceof Error ? e.message : String(e));
       return { lastPrice: null, open: null, high: null, low: null, prevClose: null, changePct: null, volume: null, source: "twse_openapi_eod", state: "NO_DATA", freshness: "not-available", note: "twse_fetch_failed", dataDate: null, marketSession, referenceReason: _eodReferenceReason(blockReason) };
     }
+  }
+
+  // 2026-07-18 P0 fix (Elva prod verify caught 2330/3661 self-contradiction —
+  // see `mergeEodFallbackWithPersistedBars()`'s doc comment at module scope
+  // above for the full root-cause writeup): cross-checks the live EOD fetch's
+  // trading date against the persisted `companies_ohlcv` bars for this exact
+  // company before returning, so a publish-lagged live fetch never mixes a
+  // stale close with an already-advanced changePct/high/low.
+  const _companyIdForPersistedLookup = company.id;
+  async function _twseEodFallback(sym: string, market: string, blockReason?: string | null): Promise<EodFallbackResult> {
+    const live = await _twseEodFallbackLive(sym, market, blockReason);
+    const persisted = await _queryLatestPersistedOhlcvBars(_companyIdForPersistedLookup, 2);
+    return mergeEodFallbackWithPersistedBars(live, persisted);
   }
 
   // Legacy alias — used in KGI blocked paths below (kept for call-site brevity).
