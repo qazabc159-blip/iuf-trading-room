@@ -10,6 +10,7 @@ import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lu
 
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
+import { resolveBannerLastCloseDate } from "@/lib/index-snapshot-freshness";
 import { getAiRecommendationsV3, getAiRecPerformance, getRecommendationsToday, type AiRecommendationV3Response, type AiRecPerformance, type RecommendationListResponse } from "@/lib/api";
 import {
   buildRecommendationPrefillHref,
@@ -662,10 +663,11 @@ function PerfScorecard({ perf }: { perf: AiRecPerformance | null }) {
 }
 
 export default async function AiRecommendationsPage() {
-  const [todayResult, v3Result, perf] = await Promise.all([
+  const [todayResult, v3Result, perf, lastCloseDate] = await Promise.all([
     loadRecommendations(),
     loadRecommendationsV3(),
     getAiRecPerformance(),
+    resolveBannerLastCloseDate().catch(() => null),
   ]);
   const { data, error } = todayResult;
   const items = data?.items ?? [];
@@ -700,7 +702,7 @@ export default async function AiRecommendationsPage() {
       sub="今日投研助理"
       note="推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。"
     >
-      <MarketStateBanner />
+      <MarketStateBanner lastCloseDate={lastCloseDate} />
       {v3MarketScores ? <MarketStateBadge scores={v3MarketScores} /> : <MarketStateBadgePlaceholder />}
       <PerfScorecard perf={perf} />
       <style>{`

@@ -109,26 +109,55 @@ function calcSMA(closes: number[], period: number): (number | null)[] {
   return result;
 }
 
+// Daily bars have no natural intraday "session" boundary to reset a cumulative
+// VWAP on — matches backend /api/v1/companies/:id/technical's "last 22 bars" window.
+const VWAP_ROLLING_WINDOW = 22;
+
 function calcVWAP(bars: ChartBar[]): (number | null)[] {
   const result: (number | null)[] = new Array(bars.length).fill(null);
-  let cumulativeValue = 0;
-  let cumulativeVolume = 0;
-  let currentSession = "";
+  const isIntraday = bars.some((bar) => bar.source === "finmind-kbar");
 
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i];
-    const session = bar.source === "finmind-kbar" ? bar.dt.slice(0, 10) : "range";
-    if (session !== currentSession) {
-      currentSession = session;
-      cumulativeValue = 0;
-      cumulativeVolume = 0;
+  if (isIntraday) {
+    // Real intraday bars carry a genuine trading session — VWAP correctly resets
+    // at the start of each session (date).
+    let cumulativeValue = 0;
+    let cumulativeVolume = 0;
+    let currentSession = "";
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
+      const session = bar.dt.slice(0, 10);
+      if (session !== currentSession) {
+        currentSession = session;
+        cumulativeValue = 0;
+        cumulativeVolume = 0;
+      }
+      if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
+      const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+      cumulativeValue += typicalPrice * bar.volume;
+      cumulativeVolume += bar.volume;
+      if (cumulativeVolume > 0) {
+        result[i] = Number((cumulativeValue / cumulativeVolume).toFixed(3));
+      }
     }
-    if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
-    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
-    cumulativeValue += typicalPrice * bar.volume;
-    cumulativeVolume += bar.volume;
-    if (cumulativeVolume > 0) {
-      result[i] = Number((cumulativeValue / cumulativeVolume).toFixed(3));
+    return result;
+  }
+
+  // Daily bars: unbounded cumulative sum over the whole loaded history (up to
+  // ~2438 bars) diverges wildly from the current price (bug: VWAP 592 vs close
+  // 2290, +286%). Use a trailing rolling window instead.
+  for (let i = 0; i < bars.length; i++) {
+    const start = Math.max(0, i - VWAP_ROLLING_WINDOW + 1);
+    let windowValue = 0;
+    let windowVolume = 0;
+    for (let j = start; j <= i; j++) {
+      const bar = bars[j];
+      if (!Number.isFinite(bar.volume) || bar.volume <= 0) continue;
+      const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+      windowValue += typicalPrice * bar.volume;
+      windowVolume += bar.volume;
+    }
+    if (windowVolume > 0) {
+      result[i] = Number((windowValue / windowVolume).toFixed(3));
     }
   }
 

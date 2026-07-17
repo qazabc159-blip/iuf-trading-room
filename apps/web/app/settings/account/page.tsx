@@ -283,9 +283,9 @@ export default function AccountSettingsPage() {
             disabled={busy}
             style={{
               width: "100%",
-              border: "1px solid rgba(200,148,63,0.55)",
-              background: "rgba(200,148,63,0.16)",
-              color: "var(--accent, #c8943f)",
+              border: "1px solid var(--gold, #c8943f)",
+              background: "var(--gold, #c8943f)",
+              color: "var(--night, #080b10)",
               padding: "11px 14px",
               fontSize: 13,
               fontWeight: 900,

@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { apiGetMe } from "@/lib/auth-client";
+import { apiGetMe, authErrorMessage } from "@/lib/auth-client";
 import {
   buildCompanyAiAnalystPrompt,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
@@ -69,6 +69,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 type PanelPhase =
   | { kind: "role-loading" }
   | { kind: "not-owner" }
+  | { kind: "session-error"; message: string }
   | { kind: "idle" }             // never generated
   | { kind: "submitting" }       // POST in flight
   | { kind: "polling"; run_id: string }
@@ -188,7 +189,12 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
     async function checkRole() {
       const result = await apiGetMe();
       if (cancelled) return;
-      if (!result.ok || result.user.role !== "Owner") {
+      if (!result.ok) {
+        // fetch 失敗 / session 過期 ≠ 真的不是 owner；顯示誠實訊息而非假的權限不足。
+        setPhase({ kind: "session-error", message: authErrorMessage(result.error) });
+        return;
+      }
+      if (result.user.role !== "Owner") {
         setPhase({ kind: "not-owner" });
         return;
       }
@@ -325,6 +331,19 @@ export function AiAnalystReportPanel({ ticker }: { ticker: string }) {
           <div className="_ai-lock-icon">🔒</div>
           <div className="_ai-lock-msg">需要分析權限</div>
           <div className="_ai-lock-sub dim">目前帳號無法生成深度報告；頁面不顯示假分析內容。</div>
+        </div>
+      </section>
+    );
+  }
+
+  if (phase.kind === "session-error") {
+    return (
+      <section className="panel hud-frame _ai-report-panel" aria-label="AI 分析師報告">
+        <AiPanelHeader />
+        <div className="_ai-owner-lock">
+          <div className="_ai-lock-icon">⟳</div>
+          <div className="_ai-lock-msg">請重新登入</div>
+          <div className="_ai-lock-sub dim">{phase.message}</div>
         </div>
       </section>
     );

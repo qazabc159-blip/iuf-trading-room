@@ -309,6 +309,28 @@ body{
 /* feedrow click flash — instant feedback */
 .feedrow.flash{background:var(--brand-bg)!important;transition:background .35s}
 
+/* ============ Mobile: collapse feed row to single column ============
+   grid-template-columns:62px 1fr auto auto squeezes the "why" auto-track
+   down toward CJK min-content (can wrap to a single character per line)
+   once viewport width drops below ~640px. Stack instead of side-by-side. */
+@media (max-width:640px){
+  .feedrow{
+    grid-template-columns:44px 1fr;
+    grid-template-areas:
+      "sym body"
+      "why why"
+      "age arr";
+    row-gap:8px;
+    column-gap:12px;
+    align-items:start;
+  }
+  .feedrow .sym{grid-area:sym}
+  .feedrow .body{grid-area:body}
+  .feedrow .why{grid-area:why;max-width:none}
+  .feedrow .age{grid-area:age;text-align:left}
+  .feedrow .arr{grid-area:arr;justify-self:end}
+}
+
 /* === reduced motion respect === */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
