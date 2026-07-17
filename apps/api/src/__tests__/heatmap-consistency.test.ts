@@ -8,7 +8,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { enrichHeatmapTiles, _resetLastCloseCache, type MisTileEntry } from "../kgi-heatmap-enricher.js";
+import { enrichHeatmapTiles, _resetLastCloseCache, isZeroChangePlausible, type MisTileEntry } from "../kgi-heatmap-enricher.js";
 import type { KgiHeatmapTile } from "../kgi-subscription-manager.js";
 import type { StockDayAllRow } from "../data-sources/twse-openapi-client.js";
 import {
@@ -160,6 +160,97 @@ test("kgi-core heatmap: a no-trade EOD row with an empty ClosingPrice must fall 
   const tile = result.tiles[0]!;
   assert.equal(tile.sourceState, "no_data", `empty ClosingPrice must not surface as twse_eod, got ${tile.sourceState}`);
   assert.equal(tile.price, null, `price must never be 0 for an empty ClosingPrice, got ${tile.price}`);
+});
+
+// ── 2026-07-17 data-honesty gating fixes (楊董抓到熱力圖「一堆 0% 一堆空缺」) ──
+
+test("kgi-core heatmap: an OTC symbol resolved only via quote_last_close (Tier 2.5) must not surface as a normal twse_eod tile with a blank % (3707 prod repro)", () => {
+  // 3707 (漢磊) is TPEX/OTC-listed — it never appears in TWSE STOCK_DAY_ALL at
+  // all, so twseRows has nothing for it; only Tier 2.5 (quote_last_close,
+  // written by a separate TPEX EOD cron) has a price. quote_last_close's
+  // schema has no prevClose/change column, so changePct is structurally
+  // unavailable — this must be reported as "no_data", not "twse_eod" (prod
+  // showed price=68.7/changePct=null/sourceState="twse_eod", the exact
+  // "看起來像正常格但缺漲跌幅" bug 楊董 caught).
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "3707", name: "漢磊", price: null, change: null, changePct: null, tier: "strategy", ts: null, source: "kgi_tick" },
+  ];
+  const dbCloseMap = new Map([["3707", { closePrice: 68.7, tradeDate: "2026-07-17", source: "tpex_eod" }]]);
+
+  const result = enrichHeatmapTiles(kgiTiles, [], undefined, undefined, dbCloseMap);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `OTC price-only tile must be no_data, got ${tile.sourceState}`);
+  assert.equal(tile.price, 68.7, "price must still be honestly returned for API completeness");
+  assert.equal(tile.changePct, null);
+  assert.equal(tile.change, null);
+});
+
+test("kgi-core heatmap: an implausible exact-zero Change contradicted by our own prior-day close must not surface as a fake flat move (2395 prod repro)", () => {
+  // Prod repro (2026-07-17, TWSE MIS cross-check confirmed real prevClose
+  // was 519, real close 513, real change ≈ -1.16%): TWSE STOCK_DAY_ALL
+  // served ClosingPrice=513/Change="0.0000" — an upstream batch-processing
+  // artifact, not a genuine flat day. Cross-checking the implied prevClose
+  // (513, since change=0) against our OWN cached prior-day close (519,
+  // cached from an earlier fetch) catches the contradiction.
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2395", name: "研華", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
+  ];
+  // Day 1: seed the cache with a real prior close via a normal fetch.
+  enrichHeatmapTiles(kgiTiles, [stockRow("2395", "519", "1", "1150716")]);
+
+  // Day 2: implausible exact-zero Change.
+  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2395", "513", "0", "1150717")]);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "no_data", `implausible zero must fall to no_data, got ${tile.sourceState}`);
+  assert.equal(tile.price, 513, "price (513, matches MIS ground truth) is still trustworthy — only the % is suspect");
+  assert.equal(tile.changePct, null);
+  assert.equal(tile.change, null);
+});
+
+test("kgi-core heatmap: a genuine flat day (close matches our own prior-day cache) is still honestly reported as changePct=0 (regression guard — don't over-reject real flats)", () => {
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2354", name: "鴻準", price: null, change: null, changePct: null, tier: "core_display", ts: null, source: "kgi_tick" },
+  ];
+  enrichHeatmapTiles(kgiTiles, [stockRow("2354", "56.4", "0.5", "1150716")]); // seeds prior close = 56.4
+
+  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2354", "56.4", "0", "1150717")]); // genuinely flat
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_eod", `genuine flat must still be twse_eod, got ${tile.sourceState}`);
+  assert.equal(tile.changePct, 0);
+  assert.equal(tile.change, 0);
+});
+
+test("kgi-core heatmap: an exact-zero Change with no prior cache entry yet (first-ever fetch) is accepted — no ground truth to contradict it (documented limitation)", () => {
+  _resetLastCloseCache();
+  const kgiTiles: KgiHeatmapTile[] = [
+    { symbol: "2412", name: "中華電", price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" },
+  ];
+  const result = enrichHeatmapTiles(kgiTiles, [stockRow("2412", "138", "0", "1150717")]);
+  const tile = result.tiles[0]!;
+  assert.equal(tile.sourceState, "twse_eod");
+  assert.equal(tile.changePct, 0);
+});
+
+test("isZeroChangePlausible: unit coverage of the cross-check helper", () => {
+  assert.equal(isZeroChangePlausible(undefined, 513, "2026-07-17"), true, "no ground truth — accept");
+  assert.equal(
+    isZeroChangePlausible({ price: 519, change: 1, changePct: 0.19, ts: "x", dateTag: "2026-07-16" }, 513, "2026-07-17"),
+    false,
+    "prior close (519) contradicts the exact-zero claim (would need close===519)"
+  );
+  assert.equal(
+    isZeroChangePlausible({ price: 56.4, change: 0.5, changePct: 0.89, ts: "x", dateTag: "2026-07-16" }, 56.4, "2026-07-17"),
+    true,
+    "prior close matches — genuinely flat"
+  );
+  assert.equal(
+    isZeroChangePlausible({ price: 513, change: 0, changePct: 0, ts: "x", dateTag: "2026-07-17" }, 513, "2026-07-17"),
+    true,
+    "same-date entry is not a PRIOR date — nothing to compare, accept"
+  );
 });
 
 test("PERF: fetchKgiLatestTick short-circuits when the gateway is scheduled off", () => {

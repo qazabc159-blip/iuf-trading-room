@@ -36,6 +36,7 @@ import {
 import { friendlyDataError } from "@/lib/friendly-error";
 import { hasProductHeatmapCoverage } from "@/lib/heatmap-product-coverage";
 import { heatmapIndustryLabel } from "@/lib/heatmap-industry-label";
+import { isNewerTaipeiTradeDate } from "@/lib/index-snapshot-freshness";
 import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-rows";
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
@@ -834,6 +835,31 @@ function readMarketIndex(feed: LoadState<RealtimeMarketDashboard | null>, market
 
   const twse = data?.twseOverview?.taiex ?? null;
   if (twse && finite(twse.value) !== null) {
+    // 2026-07-17 fix: prefer marketContext.index (the SAME backend response
+    // that produces marketContext.heatmap, i.e. the data behind the visible
+    // heatmap tiles) when it is genuinely a newer trade date than the
+    // separately-fetched twseOverview snapshot — keeps the banner date the
+    // user reads from disagreeing with the tiles they're looking at. Never
+    // mixes a price from one snapshot with a date from the other (that
+    // would reintroduce the 6/10 sign-contradiction bug class).
+    const contextIndex = market.data?.marketContext?.index;
+    if (
+      contextIndex &&
+      contextIndex.last !== null &&
+      contextIndex.state !== "EMPTY" &&
+      isNewerTaipeiTradeDate(contextIndex.timestamp, twse.ts)
+    ) {
+      return {
+        sym: contextIndex.symbol ?? "TAIEX",
+        name: contextIndex.name,
+        price: contextIndex.last,
+        chg: contextIndex.change,
+        pct: contextIndex.changePct,
+        updatedAt: contextIndex.timestamp,
+        label: closeLabel(contextIndex.timestamp),
+        source: "close",
+      };
+    }
     return { sym: "TAIEX", name: "加權指數", price: finite(twse.value), chg: finite(twse.change), pct: finite(twse.changePct), updatedAt: twse.ts, label: closeLabel(twse.ts), source: "close" };
   }
 

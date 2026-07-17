@@ -3,12 +3,24 @@
  *
  * Tier 1 (live):       KGI gateway tick   — market hours, EC2 running
  * Tier 2 (twse_eod):   TWSE STOCK_DAY_ALL — per-symbol EOD price + changePct
- * Tier 2.5 (twse_eod): quote_last_close DB table — 盤後 fallback, survives
- *                      deploy restarts (unlike Tier 3's in-process cache).
- *                      Only populated by the caller when after-hours (see
- *                      server.ts's after-hours gate using lib/trading-calendar).
+ * Tier 2.5 (no_data):  quote_last_close DB table — 盤後 price-only fallback,
+ *                      survives deploy restarts (unlike Tier 3's in-process
+ *                      cache). Only populated by the caller when after-hours
+ *                      (see server.ts's after-hours gate using
+ *                      lib/trading-calendar). 2026-07-17: this tier's schema
+ *                      structurally has no prevClose/change data, so it can
+ *                      never supply a real % move — reported as "no_data"
+ *                      (not "twse_eod") so the frontend never renders a
+ *                      fabricated/blank % for it; price is still returned.
  * Tier 3 (cache):      In-process last-known-close — survives off-hours gap
  *                      within a single process lifetime
+ *
+ * 2026-07-17 data-honesty gating (楊董抓到熱力圖「一堆 0% 一堆空缺」): any
+ * tile whose changePct cannot be determined — Tier 2.5's structural gap
+ * above, or a Tier 2 row with an implausible exact-zero Change contradicted
+ * by our own prior-day cache (see isZeroChangePlausible) — is reported as
+ * sourceState="no_data", never as a normal tier with a fabricated 0%/blank
+ * %. See reports/sprint_2026_07_17/HEATMAP_DATA_HONESTY_GATING_2026_07_17.md.
  *
  * Hard lines:
  *   - Never drops tiles: always returns >= 0 tiles with sourceState set
@@ -46,8 +58,13 @@ export interface EnrichedHeatmapTile {
    * previously always undefined — this endpoint carried no sector at all,
    * so the frontend could not group the 40 heatmap tiles by industry. */
   sector: string | null;
-  /** null only when sourceState="no_data" */
+  /** 2026-07-17: price MAY be populated even when sourceState="no_data" —
+   * e.g. an OTC/TPEX symbol resolved via Tier 2.5 (quote_last_close), which
+   * structurally has no change/prevClose data. "no_data" means "do not
+   * render as a valid %-move tile", not "literally nothing is known". */
   price: number | null;
+  /** null whenever sourceState="no_data" (see price doc above) — a tile
+   * must never mix a known price with a fabricated or missing % move. */
   change: number | null;
   changePct: number | null;
   tier: string;
@@ -76,7 +93,7 @@ export interface EnrichedHeatmapResult {
 // Updated whenever we observe: (a) live KGI tick, (b) TWSE EOD row.
 // TTL: 48h — stale beyond 2 days is not meaningful for Taiwan equities.
 
-interface LastCloseEntry {
+export interface LastCloseEntry {
   price: number;
   change: number | null;
   changePct: number | null;
@@ -111,6 +128,35 @@ export function isPlausibleChangePct(pct: number | null): boolean {
   return Number.isFinite(pct) && Math.abs(pct) <= 10.5;
 }
 
+/**
+ * 2026-07-17 data-honesty gating fix (楊董抓到熱力圖「一堆 0%」): a TWSE
+ * STOCK_DAY_ALL row reporting an EXACT Change="0.0000" is ambiguous — it
+ * could be a genuinely flat trading day, or an upstream batch-processing
+ * artifact where the per-symbol Change field had not been computed yet at
+ * the moment the row was published (confirmed via TWSE MIS cross-check on
+ * 2026-07-17: symbol 2395 showed price=513/change=0 in STOCK_DAY_ALL while
+ * MIS's own prevClose was 519 — i.e. a real -1.16% move, not flat — see
+ * reports/sprint_2026_07_17/HEATMAP_DATA_HONESTY_GATING_2026_07_17.md).
+ * Cross-check an exact zero against our OWN last-known prior-day close (if
+ * any) before trusting it: a genuinely flat day's close must equal
+ * yesterday's cached close (within rounding); if it doesn't, the "0" is not
+ * trustworthy and must be treated as missing, not a fabricated flat move.
+ * Known limitation: with no prior cache entry yet (e.g. right after a
+ * deploy restart, before any TWSE fetch has populated the cache), there is
+ * no ground truth to contradict a zero, so it is accepted — belt-and-
+ * suspenders, not a complete fix for every possible timing window.
+ */
+export function isZeroChangePlausible(
+  priorEntry: LastCloseEntry | undefined,
+  close: number,
+  dateTag: string
+): boolean {
+  if (!priorEntry) return true; // no ground truth available — can't disprove it
+  if (!(priorEntry.dateTag < dateTag)) return true; // not actually a PRIOR date — nothing to compare
+  const tolerance = Math.max(0.01, priorEntry.price * 0.001);
+  return Math.abs(priorEntry.price - close) <= tolerance;
+}
+
 /** Update last-known-close from a live KGI tick (Tier 1 write-through). */
 export function updateLastCloseFromTick(
   symbol: string,
@@ -124,8 +170,18 @@ export function updateLastCloseFromTick(
   _lastCloseCache.set(symbol, { price, change, changePct: safePct, ts, dateTag });
 }
 
-/** Update last-known-close entries from a TWSE STOCK_DAY_ALL batch. */
-export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
+/**
+ * Update last-known-close entries from a TWSE STOCK_DAY_ALL batch.
+ *
+ * @param priorSnapshot Optional cache snapshot taken BEFORE this call (see
+ *   isZeroChangePlausible doc) — used to cross-check a suspicious exact-zero
+ *   Change value against our own prior-day ground truth. Callers that don't
+ *   pass one simply skip that extra guard (existing callers unaffected).
+ */
+export function updateLastCloseFromTwse(
+  rows: StockDayAllRow[],
+  priorSnapshot?: ReadonlyMap<string, LastCloseEntry>
+): void {
   for (const row of rows) {
     const code = row.Code?.trim();
     if (!code) continue;
@@ -141,7 +197,7 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
     if (close === null || close <= 0) continue;
 
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
-    const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    let pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
     // Defense-in-depth: a pctRaw outside the ±10% daily limit band means this
     // row is malformed upstream (comma-truncation or any other future parse
     // failure) — skip the WHOLE row rather than only nulling changePct while
@@ -151,12 +207,21 @@ export function updateLastCloseFromTwse(rows: StockDayAllRow[]): void {
 
     // Derive ISO date from TWSE ROC date "114/05/18" → "2026-05-18"
     const dateTag = parseTwseDate(row.Date ?? "");
+
+    // 2026-07-17 data-honesty fix #2: don't cache a fabricated flat move —
+    // see isZeroChangePlausible doc.
+    let cachedChange = changeVal;
+    if (pctRaw === 0 && priorSnapshot && !isZeroChangePlausible(priorSnapshot.get(code), close, dateTag)) {
+      pctRaw = null;
+      cachedChange = null;
+    }
+
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
 
     // Only update if entry doesn't exist or is older
     const existing = _lastCloseCache.get(code);
     if (!existing || dateTag > existing.dateTag) {
-      _lastCloseCache.set(code, { price: close, change: changeVal, changePct: pctRaw, ts, dateTag });
+      _lastCloseCache.set(code, { price: close, change: cachedChange, changePct: pctRaw, ts, dateTag });
     }
   }
 }
@@ -234,9 +299,17 @@ export function enrichHeatmapTiles(
   sectorMap?: Map<string, string | null>,
   dbCloseMap?: Map<string, LastCloseResult>
 ): EnrichedHeatmapResult {
+  // 2026-07-17 data-honesty fix #2: snapshot the cache BEFORE the
+  // write-through mutation below so we retain a pre-update "prior day"
+  // ground truth to cross-check a suspicious exact-zero Change value
+  // against (see isZeroChangePlausible doc). Shallow copy is sufficient —
+  // LastCloseEntry values are always replaced wholesale via .set(), never
+  // mutated in place.
+  const priorCloseSnapshot = new Map(_lastCloseCache);
+
   // Update last-close cache from TWSE data (write-through for future requests)
   if (twseRows.length > 0) {
-    updateLastCloseFromTwse(twseRows);
+    updateLastCloseFromTwse(twseRows, priorCloseSnapshot);
   }
 
   // Build per-symbol TWSE lookup map.
@@ -255,11 +328,18 @@ export function enrichHeatmapTiles(
     if (close === null || close <= 0) continue;
     const changeVal = parseTwseNumber(row.Change);
     const prevClose = changeVal != null && (close - changeVal) !== 0 ? close - changeVal : null;
-    const pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
+    let pctRaw = prevClose != null ? Math.round((changeVal! / prevClose) * 10000) / 100 : null;
     if (pctRaw !== null && !isPlausibleChangePct(pctRaw)) continue;
     const dateTag = parseTwseDate(row.Date ?? "");
+    // 2026-07-17 data-honesty fix #2: don't serve a fabricated flat move —
+    // see isZeroChangePlausible doc above.
+    let change = changeVal;
+    if (pctRaw === 0 && !isZeroChangePlausible(priorCloseSnapshot.get(code), close, dateTag)) {
+      pctRaw = null;
+      change = null;
+    }
     const ts = dateTag ? `${dateTag}T13:30:00+08:00` : new Date().toISOString();
-    twseMap.set(code, { price: close, change: changeVal, changePct: pctRaw, ts });
+    twseMap.set(code, { price: close, change, changePct: pctRaw, ts });
   }
 
   // Derive today's date string "YYYYMMDD" in Taipei timezone for MIS freshness check
@@ -345,6 +425,29 @@ export function enrichHeatmapTiles(
     // ── Tier 2: TWSE EOD ────────────────────────────────────────────────────
     const twse = twseMap.get(symbol);
     if (twse) {
+      // 2026-07-17 data-honesty gating fix #1 (楊董抓到「一堆空缺」): a row
+      // whose changePct we could not determine (e.g. an implausible-zero row
+      // nulled out above) must not surface as a normal "twse_eod" tile with a
+      // blank %. Reclassify to "no_data" — the frontend already knows to
+      // never render a no_data tile with a fabricated 0%/blank %, and
+      // substitutes a real supplemental company instead (2026-07-14 楊董
+      // 定案：缺角遞補真公司，不留半殘 tile）. Price/ts are still returned
+      // for API completeness (e.g. ops inspection), just not counted toward
+      // twseEodTileCount/dataFreshness="eod" since the % half is missing.
+      if (twse.changePct === null) {
+        return {
+          symbol,
+          name: kgiTile.name,
+          sector,
+          price: twse.price,
+          change: null,
+          changePct: null,
+          tier,
+          ts: twse.ts,
+          sourceState: "no_data" as TileSourceState,
+          sourceLabel: buildSourceLabel("no_data", twse.ts),
+        };
+      }
       twseEodTileCount++;
       return {
         symbol,
@@ -365,15 +468,21 @@ export function enrichHeatmapTiles(
     // lib/trading-calendar, not a bare wall-clock guess) and successfully
     // queried the DB. Durable across deploy restarts — the gap this closes:
     // Tier 2 (live STOCK_DAY_ALL fetch) can lag hours after close, and Tier 3
-    // (in-process cache below) resets to empty on every deploy restart, so
-    // right after a post-close restart every KGI-core tile fell through to
-    // "no_data" until the next successful live TWSE fetch. Reported as
-    // "twse_eod" — quote_last_close's own source values (twse_eod/tpex_eod/
-    // mis_close/ohlcv_fallback) are all official/reconciled "last known
-    // close" provenance, not live ticks, so the same honest label applies.
+    // (in-process cache below) resets to empty on every deploy restart.
+    //
+    // 2026-07-17 data-honesty gating fix #1 (楊董抓到 OTC 股 3707 顯示
+    // price=68.7/changePct=null 混在 twse_eod 桶裡): quote_last_close's
+    // schema only stores close_price (no prevClose/change) — this tier can
+    // NEVER supply a real % move, structurally, for ANY symbol (this is the
+    // dominant path for OTC/TPEX-listed core symbols, which never appear in
+    // TWSE STOCK_DAY_ALL at all, so Tier 2 can never match them either).
+    // Previously mislabeled "twse_eod" — indistinguishable from a real full
+    // EOD tile — which is exactly the "有價無漲跌幅但看起來像正常格" bug.
+    // Reclassified to "no_data" so the frontend's existing no_data handling
+    // (never render as a valid tile; substitute a real supplemental company)
+    // applies here too. Price/ts still returned for API completeness.
     const dbClose = dbCloseMap?.get(symbol);
     if (dbClose) {
-      twseEodTileCount++;
       const ts = `${dbClose.tradeDate}T13:30:00+08:00`;
       return {
         symbol,
@@ -384,8 +493,8 @@ export function enrichHeatmapTiles(
         changePct: null,
         tier,
         ts,
-        sourceState: "twse_eod" as TileSourceState,
-        sourceLabel: buildSourceLabel("twse_eod", ts),
+        sourceState: "no_data" as TileSourceState,
+        sourceLabel: buildSourceLabel("no_data", ts),
       };
     }
 
@@ -395,6 +504,26 @@ export function enrichHeatmapTiles(
       // Check cache age
       const cacheTs = Date.parse(cached.ts);
       if (!isNaN(cacheTs) && Date.now() - cacheTs <= CACHE_MAX_AGE_MS) {
+        const cachedChangePct = isPlausibleChangePct(cached.changePct) ? cached.changePct : null;
+        // 2026-07-17 data-honesty gating fix #1: same reclassification as
+        // Tier 2/2.5 above — a cached entry that never had a usable
+        // changePct (e.g. cached from a TWSE row lacking a Change field, or
+        // nulled out by the isZeroChangePlausible guard) must not surface as
+        // a normal "cache" tile with a blank %.
+        if (cachedChangePct === null) {
+          return {
+            symbol,
+            name: kgiTile.name,
+            sector,
+            price: cached.price,
+            change: null,
+            changePct: null,
+            tier,
+            ts: cached.ts,
+            sourceState: "no_data" as TileSourceState,
+            sourceLabel: buildSourceLabel("no_data", cached.ts),
+          };
+        }
         cacheTileCount++;
         return {
           symbol,
@@ -402,7 +531,7 @@ export function enrichHeatmapTiles(
           sector,
           price: cached.price,
           change: cached.change,
-          changePct: isPlausibleChangePct(cached.changePct) ? cached.changePct : null,
+          changePct: cachedChangePct,
           tier,
           ts: cached.ts,
           sourceState: "cache" as TileSourceState,

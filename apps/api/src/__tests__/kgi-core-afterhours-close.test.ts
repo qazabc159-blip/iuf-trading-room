@@ -22,7 +22,17 @@ function bareTile(symbol: string): KgiHeatmapTile {
   return { symbol, name: `stock-${symbol}`, price: null, change: null, changePct: null, tier: "core", ts: null, source: "kgi_tick" };
 }
 
-test("Tier 2.5: dbCloseMap fills a tile when live/mis/twse all miss", () => {
+test("Tier 2.5: dbCloseMap fills a tile's PRICE when live/mis/twse all miss, but is honestly no_data (2026-07-17 gating fix)", () => {
+  // 2026-07-17: previously labeled "twse_eod" — indistinguishable from a
+  // real full EOD tile with a genuine % move — which is exactly the "有價
+  // 無漲跌幅但看起來像正常格" bug 楊董 caught (OTC symbol 3707: price=68.7,
+  // changePct=null, sourceState="twse_eod"). quote_last_close's schema has
+  // no prevClose/change column, so this tier can NEVER supply a real %
+  // move — it must be reported as "no_data" so the frontend's existing
+  // no_data handling (never render a fabricated/blank %, substitute a real
+  // supplemental company) applies. Price is still returned for API
+  // completeness — see reports/sprint_2026_07_17/
+  // HEATMAP_DATA_HONESTY_GATING_2026_07_17.md.
   const kgiTiles: KgiHeatmapTile[] = [bareTile("2330")];
   const twseRows: StockDayAllRow[] = []; // upstream unreachable / not yet published today
   const dbCloseMap = new Map<string, LastCloseResult>([
@@ -31,11 +41,10 @@ test("Tier 2.5: dbCloseMap fills a tile when live/mis/twse all miss", () => {
 
   const result = enrichHeatmapTiles(kgiTiles, twseRows, undefined, undefined, dbCloseMap);
   const tile = result.tiles[0]!;
-  assert.equal(tile.sourceState, "twse_eod");
-  assert.equal(tile.price, 1015);
+  assert.equal(tile.sourceState, "no_data", "Tier 2.5 hit must not masquerade as twse_eod");
+  assert.equal(tile.price, 1015, "price is still honestly returned");
   assert.equal(tile.ts, "2026-07-14T13:30:00+08:00");
-  assert.equal(result.twseEodTileCount, 1);
-  assert.equal(result.dataFreshness, "eod");
+  assert.equal(result.twseEodTileCount, 0, "no_data must not count toward twseEodTileCount");
   // Never silently invents a change/changePct the DB row doesn't carry.
   assert.equal(tile.change, null);
   assert.equal(tile.changePct, null);
