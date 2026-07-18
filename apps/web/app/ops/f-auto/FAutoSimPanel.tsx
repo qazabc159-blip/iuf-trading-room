@@ -274,7 +274,7 @@ function portfolioFundsState(
       totalEquity: marketValue == null ? null : marketValue + cash,
       currency: "TWD",
       fetchedAt: state.data.as_of,
-      note: `持久化 S1 部位 / ${state.data.data_source} / 部位日 ${state.data.positions_date}`,
+      note: `持久化 S1 部位 / ${fAutoDataSourceLabel(state.data.data_source)} / 部位日 ${state.data.positions_date}`,
     },
   };
 }
@@ -372,7 +372,7 @@ function FAutoSummary({
         <div>
           <span>配置資金（本金）</span>
           <strong>{fmtTwd(capital)}</strong>
-          <small>{data?.capital_source ?? statusData?.capitalSource ?? "--"}</small>
+          <small>{capitalSourceLabel(data?.capital_source ?? statusData?.capitalSource)}</small>
         </div>
 
         {/* Col 2: 總資產（估）— two-line breakdown when unpriced positions exist */}
@@ -429,7 +429,9 @@ function FAutoSummary({
             {holdingDays != null ? `${holdingDays} 天` : (positionsDate ?? "--")}
           </strong>
           <small>
-            {openDateLabel != null ? `開倉 ${openDateLabel}` : (eodData?.dataSource ?? data?.data_source ?? statusData?.eodDataSource ?? "--")}
+            {openDateLabel != null
+              ? `開倉 ${openDateLabel}`
+              : fAutoDataSourceLabel(eodData?.dataSource ?? data?.data_source ?? statusData?.eodDataSource ?? null)}
           </small>
         </div>
       </div>
@@ -534,8 +536,8 @@ function SimFundsPanel({ state }: { state: AsyncState<SimFunds> }) {
                 <span className="_fauto-kv-value">{value}</span>
               </div>
             ))}
-            {state.data.note && (
-              <div className="_fauto-note">{state.data.note}</div>
+            {safeNote(state.data.note) && (
+              <div className="_fauto-note">{safeNote(state.data.note)}</div>
             )}
           </div>
         )}
@@ -597,8 +599,8 @@ function S1StatusPanel({ state }: { state: AsyncState<S1SimStatus> }) {
                 <span className="_fauto-kv-value">{value}</span>
               </div>
             ))}
-            {state.data.failsafeNotes && (
-              <div className="_fauto-note">{state.data.failsafeNotes}</div>
+            {safeNote(state.data.failsafeNotes) && (
+              <div className="_fauto-note">{safeNote(state.data.failsafeNotes)}</div>
             )}
             {state.data.basketSymbols.length > 0 && (
               <div className="_fauto-basket-chips">
@@ -677,8 +679,8 @@ function BasketPanel({
             ) : (
               <PanelEmpty label="訊號籃沒有候選股票" />
             )}
-            {state.data.failsafeNotes && (
-              <div className="_fauto-note" style={{ marginTop: 8 }}>{state.data.failsafeNotes}</div>
+            {safeNote(state.data.failsafeNotes) && (
+              <div className="_fauto-note" style={{ marginTop: 8 }}>{safeNote(state.data.failsafeNotes)}</div>
             )}
           </>
         )}
@@ -740,10 +742,10 @@ function SimOrdersPanel({ state }: { state: AsyncState<KgiSimOrdersResult> }) {
                   </div>
                   {recon.fetch.errors.length > 0 && (
                     <div className="_fauto-note">
-                      券商資料源錯誤：{recon.fetch.errors.map((err) => `${err.source}: ${err.message}`).join(" / ")}
+                      券商連線暫時中斷，委託以稽核帳本重建，待連線恢復後自動對帳。技術原因保留於後端稽核紀錄。
                     </div>
                   )}
-                  {state.data.note && <div className="_fauto-note">{state.data.note}</div>}
+                  {safeNote(state.data.note) && <div className="_fauto-note">{safeNote(state.data.note)}</div>}
                 </div>
               );
             })()}
@@ -863,8 +865,8 @@ function EodReportPanel({
                 </tbody>
               </table>
             )}
-            {state.data.failsafeNotes && (
-              <div className="_fauto-note" style={{ marginTop: 8 }}>{state.data.failsafeNotes}</div>
+            {safeNote(state.data.failsafeNotes) && (
+              <div className="_fauto-note" style={{ marginTop: 8 }}>{safeNote(state.data.failsafeNotes)}</div>
             )}
           </>
         )}
@@ -1051,6 +1053,23 @@ function capitalSourceLabel(source: string | null | undefined): string {
   return source ? "資金來源未標示" : "--";
 }
 
+// P1-3 fix (2026-07-19, product critique): backend free-text notes/
+// failsafe_notes arrays are meant to carry honest narrative caveats, but can
+// also contain raw engineering shorthand (observed: strings shaped like
+// "capital_source:latest_subscription subscription:e5458bb0-...
+// skipped_untradable:2330,2454") — never surface those verbatim. If a note
+// looks like colon-separated engineering tokens rather than prose, replace it
+// with an honest generic notice instead of the raw dump; genuine narrative
+// text (no such tokens) passes through unchanged.
+const RAW_ENGINEERING_TOKEN_RE = /\b[a-z][a-z0-9_]*:[\w.-]+/;
+function safeNote(note: string | null | undefined): string | null {
+  if (!note) return null;
+  if (RAW_ENGINEERING_TOKEN_RE.test(note)) {
+    return "部分明細因資料條件受限已略過，技術原因保留於後端稽核紀錄。";
+  }
+  return note;
+}
+
 // ─── Date selector ────────────────────────────────────────────────────────────
 
 function DateSelector({
@@ -1103,7 +1122,7 @@ export function FAutoSimPanel() {
   const positionsState = portfolioPositionsState(portfolioState, eodState);
   const fundsState = portfolioFundsState(portfolioState, eodState);
   const portfolioSource = portfolioState.phase === "live"
-    ? `${portfolioState.data.data_source} / ${portfolioState.data.positions_date}`
+    ? `${fAutoDataSourceLabel(portfolioState.data.data_source)} / ${portfolioState.data.positions_date}`
     : null;
   const basketDate = portfolioState.phase === "live"
     ? portfolioState.data.positions_date

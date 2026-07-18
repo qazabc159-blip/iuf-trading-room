@@ -1,111 +1,38 @@
-"use client";
-
 /**
  * /ops/f-auto — F-AUTO SIM 觀察面板
  *
- * Owner-only gate (same pattern as AiAnalystReportPanel).
- * Wraps FAutoSimPanel which handles all live API consumption.
+ * Server Component wrapper. Owner-gate + live data consumption all live in
+ * the client boundary (FAutoOwnerGate → FAutoSimPanel); this file's only job
+ * is to own the `dynamic` route segment config.
+ *
+ * P1 fix (2026-07-19, Bruce 3x repro of a frozen header-clock date):
+ * Next.js only reads `dynamic`/`revalidate` route segment config from a
+ * Server Component page file — when this file was itself a client component,
+ * the export was silently ignored (verified via `next build`: the route stayed
+ * "○ Static" and `.next/server/app/ops/f-auto.html` kept being emitted even
+ * with the export present). Because this page previously had zero
+ * server-side dynamic API usage (the owner-gate ran entirely client-side via
+ * apiGetMe() in a useEffect), Next.js's automatic Static Rendering fully
+ * prerendered it ONCE at `next build` time into the Full Route Cache. That
+ * build-time snapshot baked the header's <TaipeiClock /> initial date/time
+ * string into the cached HTML, and Railway/CDN then served that exact
+ * byte-for-byte response (s-maxage=31536000) until the next deploy — so the
+ * header date only ever advanced when a fresh deploy happened to land after
+ * local midnight, which is why it could sit frozen on a stale day while the
+ * ticking seconds inside the same cached string still looked plausible on a
+ * quick glance. Every other PageFrame-consuming route in this app is either
+ * a Server Component reading `searchParams`/dynamic route params (opting out
+ * of static rendering automatically) or already carries this same
+ * `dynamic = "force-dynamic"` export on a Server Component file (e.g. the
+ * sibling /ops/page.tsx one directory up) — this route was the sole
+ * exception. Splitting the client logic into FAutoOwnerGate.tsx and moving
+ * this export onto a genuine Server Component fixes the class of bug (now
+ * verified via `next build`: "ƒ /ops/f-auto" — Dynamic).
  */
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
-import { PageFrame } from "@/components/PageFrame";
-import { apiGetMe, authErrorMessage } from "@/lib/auth-client";
-import { FAutoSimPanel } from "./FAutoSimPanel";
-
-type RoleState = "loading" | "not-owner" | "session-error" | "ready";
+import { FAutoOwnerGate } from "./FAutoOwnerGate";
 
 export default function FAutoPage() {
-  const [roleState, setRoleState] = useState<RoleState>("loading");
-  const [roleErrorMessage, setRoleErrorMessage] = useState<string>("");
-
-  useEffect(() => {
-    apiGetMe().then((result) => {
-      if (!result.ok) {
-        // fetch 失敗 / session 過期 ≠ 真的不是 owner；顯示誠實訊息而非假的權限不足。
-        setRoleErrorMessage(authErrorMessage(result.error));
-        setRoleState("session-error");
-      } else if (result.user.role !== "Owner") {
-        setRoleState("not-owner");
-      } else {
-        setRoleState("ready");
-      }
-    });
-  }, []);
-
-  return (
-    <PageFrame
-      code="FAUTO"
-      title="F-AUTO SIM 觀察台"
-      sub="KGI SIM / S1 策略"
-      note="F-AUTO 10M SIM 自動交易狀態；Owner 限定；所有資料直接來自凱基 SIM 帳戶與 S1 pipeline。"
-    >
-      {roleState === "loading" && (
-        <div className="_fauto-gate-loading">驗證身份中…</div>
-      )}
-      {roleState === "not-owner" && (
-        <div className="_fauto-gate-locked">
-          <div className="_fauto-gate-icon">
-            <span>✕</span>
-          </div>
-          <div>
-            <div className="_fauto-gate-title">此頁面僅限帳號擁有者檢視</div>
-            <div className="_fauto-gate-sub">F-AUTO SIM 狀態屬 Owner 限定資料，請使用擁有者帳號登入。</div>
-          </div>
-        </div>
-      )}
-      {roleState === "session-error" && (
-        <div className="_fauto-gate-locked">
-          <div className="_fauto-gate-icon">
-            <span>⟳</span>
-          </div>
-          <div>
-            <div className="_fauto-gate-title">請重新登入</div>
-            <div className="_fauto-gate-sub">{roleErrorMessage}</div>
-          </div>
-        </div>
-      )}
-      {roleState === "ready" && <FAutoSimPanel />}
-
-      <style>{`
-        ._fauto-gate-loading {
-          padding: 56px 0;
-          text-align: center;
-          font-size: 13px;
-          color: rgba(145,160,181,0.55);
-          font-style: italic;
-        }
-        ._fauto-gate-locked {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 14px;
-          padding: 64px 32px;
-          text-align: center;
-        }
-        ._fauto-gate-icon {
-          width: 52px;
-          height: 52px;
-          border-radius: 50%;
-          background: rgba(230,57,70,0.07);
-          border: 2px solid rgba(230,57,70,0.35);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 20px;
-          color: #ff6b77;
-        }
-        ._fauto-gate-title {
-          font-size: 15px;
-          font-weight: 600;
-          color: #c6d0de;
-          margin-bottom: 6px;
-        }
-        ._fauto-gate-sub {
-          font-size: 13px;
-          color: #566276;
-          line-height: 1.6;
-        }
-      `}</style>
-    </PageFrame>
-  );
+  return <FAutoOwnerGate />;
 }
