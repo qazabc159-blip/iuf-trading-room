@@ -222,7 +222,15 @@ export function CompanyPageStyleBlock() {
 
   /* Theme card text measured 12.5px/10px — bumped for mobile readability.
      !important guards against DOM-order ties with each panel's own inline
-     <style> tag (this block renders earlier in the page than most panels). */
+     style element (this block renders earlier in the page than most panels).
+     NOTE (2026-07-19 jim3): never spell out the style-tag markup literally
+     inside this comment. Writing the four characters open-angle-bracket,
+     s-t-y-l-e, close-angle-bracket inside this block's own text content
+     triggers React's SSR HTML-safety escaping for that sequence, which the
+     RSC hydration payload does not mirror — the two copies of this comment
+     then permanently disagree and React throws a hydration error (#418) on
+     every single page load. Describe the tag in words only, never in
+     angle-bracket form, anywhere in this file's CSS string. */
   ._co-theme-name { font-size: 13px !important; }
   ._co-theme-tier { font-size: 11px !important; }
 
