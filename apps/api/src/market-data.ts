@@ -2901,14 +2901,277 @@ export function _applyOfficialCloseFallback(
   });
 }
 
+// ── round 2 (2026-07-19) ────────────────────────────────────────────────────
+//
+// Prod repro after #1307 merged+deployed: `GET /effective-quotes?symbols=
+// 2330,2454` right after the deploy restart returned `items: []` /
+// `summary.total: 0` — NOT individual "blocked" items. The "零 quote symbol
+// 整個消失" limitation #1307's own test docstring and Pete's review (🟡 #3)
+// had flagged as a rare cold-symbol edge case turned out to BE the main
+// symptom: a deploy restart wipes providerQuoteCache for every symbol in the
+// process, and requested symbols with literally zero cached quotes never get
+// a `grouped` entry in resolveMarketQuotes() at all (see docstring on the
+// existing test file). Round 1's `_applyOfficialCloseFallback` can only
+// augment items that already exist in `effective.items` — it had nothing to
+// work with here.
+//
+// Why loadPersistedQuoteEntries()'s on-restart reload didn't catch this
+// (investigated per Elva's round-2 ask, so we fix the right layer): it isn't
+// a logic bug in that function. `market-data-store.ts`'s
+// getMarketDataStoreDir() falls back to `RAILWAY_VOLUME_MOUNT_PATH` for a
+// persistent path, defaulting to `process.cwd()/runtime-data/market-data`
+// (ephemeral, wiped every deploy) when that env var is absent. Checked
+// directly against prod (`railway variables --service api --kv`,
+// `railway volume list`): `RAILWAY_VOLUME_MOUNT_PATH` is NOT set on the `api`
+// service, and the `api-volume` (mount path `/data`, ~150MB of real
+// historical data already in it) shows as unattached ("Attached to: N/A") —
+// an infra config-drift issue, not a code bug in this file. This means
+// EVERY deploy currently loses the entire persisted-quote-history JSONL
+// (and, separately and more importantly — outside this PR's lane —
+// risk-store.ts uses the exact same `RAILWAY_VOLUME_MOUNT_PATH` fallback
+// pattern for kill-switch/risk-limit state, so that persistence is likely
+// silently ephemeral too; flagged to Elva, not fixed here — reattaching a
+// volume is an infra operation outside this backend-lane PR and touches
+// risk-store.ts's operating assumptions). Practical upshot for THIS fix:
+// quote_last_close is a real Postgres table (not file-backed), so it is
+// immune to this specific ephemeral-volume issue — which is exactly why the
+// fix below reads from it directly instead of depending on the
+// (currently non-functional in prod) JSONL reload path.
+//
+// Round-2 fix: for every REQUESTED symbol that resolveMarketQuotes() produced
+// no item for at all (not just ones present-but-blocked), synthesize a full
+// item from quote_last_close. When quote_last_close also has nothing for a
+// symbol, synthesize an explicit BLOCKED item rather than silently omitting
+// it — see _synthesizeItemForMissingSymbol's docstring for why "always one
+// row per requested symbol" was chosen over "stay silent".
+
+// Mirrors resolveMarketQuotes()'s own symbol-list parsing exactly (comma
+// split, trim, uppercase, dedupe) — kept as a small separate export so "which
+// symbols did the caller actually ask for" is directly testable.
+export function _parseRequestedSymbols(symbols: string): string[] {
+  return [
+    ...new Set(
+      symbols
+        .split(",")
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean)
+    )
+  ];
+}
+
+// Best-effort Market for a symbol we have NEVER cached ANY quote for (so
+// there is no cached Quote.market to read, unlike the round-1 augmentation
+// case). `market` is a required, non-nullable field on
+// effectiveMarketQuoteSchema/quoteSchema — SOME value must be chosen.
+// Preference order: (1) the caller's own `?market=` filter, if given — an
+// explicit single-market request IS a confident signal the caller believes
+// these symbols belong to that market; (2) quote_last_close's own `source`
+// column — `"tpex_eod"` is the only value in LastCloseSource that is
+// TPEX-specific (see quote-last-close-store.ts); (3) TWSE, the overwhelming
+// majority of this desk's symbol universe. This is a documented best-effort
+// default, not a claim of certainty — a genuinely unknown symbol with no
+// market filter and no quote_last_close row could still be mislabeled.
+function _resolveMarketForMissingSymbol(
+  requestedMarket: Market | undefined,
+  lastClose: LastCloseResult | undefined
+): Market {
+  if (requestedMarket) return requestedMarket;
+  if (lastClose?.source === "tpex_eod") return "TPEX";
+  return "TWSE";
+}
+
+// Fully synthesizes an EffectiveMarketQuote for a symbol resolveMarketQuotes()
+// produced NO item for at all (pure function, exported for direct unit
+// testing — same convention as _applyOfficialCloseFallback above).
+//
+// Candidates are built to look structurally identical to what
+// resolveMarketQuotes() would have produced for a symbol that DID get a
+// grouped entry but had zero quotes from any of the 5 known providers (same
+// "missing"/"no_quote" shape) — using each provider's REAL connected/
+// subscribed status (via providerStatuses) rather than a blanket false
+// claim, so this candidate list is honest about provider connectivity even
+// though it's honest about never having seen a quote for this symbol.
+//
+// quote_last_close also has nothing for this symbol: returns a genuinely
+// BLOCKED item rather than omitting the symbol. Chosen over "stay absent"
+// because (a) it gives every requested symbol exactly one row in the
+// response — "query N symbols in, N items out" is a materially safer API
+// contract than "count of items may silently be less than requested, with
+// no way to tell which ones vanished or why" (exactly the confusion this
+// round's prod incident caused), and (b) an explicit blocked item with
+// reasons:["missing_quote", ...] IS this project's "缺資料顯 EMPTY/STALE
+// 真原因，不假綠" rule in its most literal form.
+export function _synthesizeItemForMissingSymbol(input: {
+  symbol: string;
+  market: Market;
+  lastClose: LastCloseResult | undefined;
+  offHours: boolean;
+  providerStatuses: QuoteProviderStatus[];
+}): EffectiveMarketQuote {
+  const statusBySource = new Map(input.providerStatuses.map((status) => [status.source, status]));
+  const baseCandidates = quoteProviderSources.map((source) => {
+    const status = statusBySource.get(source);
+    return quoteResolutionCandidateSchema.parse({
+      source,
+      priority: getSourcePriority(source),
+      providerConnected: status?.connected ?? false,
+      subscribed: (status?.subscribedSymbols ?? []).includes(input.symbol),
+      eligible: false,
+      freshnessStatus: "missing",
+      staleReason: "no_quote",
+      quote: null
+    });
+  });
+
+  if (!input.lastClose) {
+    const fallbackReason: QuoteResolutionFallbackReason = "no_quote";
+    const staleReason: QuoteResolutionStaleReason = "no_quote";
+    return effectiveMarketQuoteSchema.parse({
+      symbol: input.symbol,
+      market: input.market,
+      selectedSource: null,
+      selectedQuote: null,
+      freshnessStatus: "missing",
+      fallbackReason,
+      staleReason,
+      readiness: "blocked",
+      strategyUsable: false,
+      paperUsable: false,
+      liveUsable: false,
+      synthetic: false,
+      providerConnected: false,
+      staleAfterMs: null,
+      sourcePriority: null,
+      reasons: buildEffectiveQuoteReasons({
+        selectedSource: null,
+        fallbackReason,
+        staleReason,
+        synthetic: false,
+        providerConnected: false
+      }),
+      candidates: baseCandidates,
+      closedSnapshotTradeDate: null
+    });
+  }
+
+  const closeTimestampIso = new Date(`${input.lastClose.tradeDate}T13:30:00+08:00`).toISOString();
+  const freshnessStatus: QuoteResolutionFreshnessStatus = input.offHours ? "closed_snapshot" : "stale";
+  const officialCloseQuote = quoteSchema.parse({
+    symbol: input.symbol,
+    market: input.market,
+    source: "official_close",
+    last: input.lastClose.closePrice,
+    bid: null,
+    ask: null,
+    open: null,
+    high: null,
+    low: null,
+    prevClose: null,
+    changePct: null,
+    volume: null,
+    timestamp: closeTimestampIso,
+    ageMs: Math.max(0, Date.now() - new Date(closeTimestampIso).getTime()),
+    isStale: freshnessStatus === "stale"
+  });
+  const fallbackReason: QuoteResolutionFallbackReason = "no_fresh_quote";
+  const staleReason: QuoteResolutionStaleReason = "age_exceeded";
+
+  return effectiveMarketQuoteSchema.parse({
+    symbol: input.symbol,
+    market: input.market,
+    selectedSource: "official_close",
+    selectedQuote: officialCloseQuote,
+    freshnessStatus,
+    fallbackReason,
+    staleReason,
+    readiness: "degraded",
+    strategyUsable: false,
+    paperUsable: false,
+    liveUsable: false,
+    synthetic: false,
+    providerConnected: false,
+    staleAfterMs: null,
+    sourcePriority: getSourcePriority("official_close"),
+    reasons: [
+      ...buildEffectiveQuoteReasons({
+        selectedSource: "official_close",
+        fallbackReason,
+        staleReason,
+        synthetic: false,
+        providerConnected: false
+      }),
+      input.offHours ? "official_close_snapshot" : "official_close_stale_intraday_fallback"
+    ],
+    candidates: [
+      ...baseCandidates,
+      quoteResolutionCandidateSchema.parse({
+        source: "official_close",
+        priority: getSourcePriority("official_close"),
+        providerConnected: false,
+        subscribed: false,
+        eligible: false,
+        freshnessStatus,
+        staleReason: "none",
+        quote: officialCloseQuote
+      })
+    ],
+    closedSnapshotTradeDate: input.lastClose.tradeDate
+  });
+}
+
+// Recomputes the summary block from a final items[] array. Needed because,
+// unlike round 1 (which only ever mutated existing items in place, so
+// summary counts were unaffected), round 2 can APPEND brand-new items for
+// symbols resolveMarketQuotes() never produced at all — leaving
+// effective.summary as-is would silently under-count `total`/`blocked`/etc.
+// Mirrors getEffectiveMarketQuotes()'s own summary shape exactly (same
+// reason-bucket lists), kept as a helper so both call sites stay in sync.
+function _recomputeEffectiveQuotesSummary(items: EffectiveMarketQuote[]) {
+  return {
+    total: items.length,
+    ready: items.filter((item) => item.readiness === "ready").length,
+    degraded: items.filter((item) => item.readiness === "degraded").length,
+    blocked: items.filter((item) => item.readiness === "blocked").length,
+    strategyUsable: items.filter((item) => item.strategyUsable).length,
+    paperUsable: items.filter((item) => item.paperUsable).length,
+    liveUsable: items.filter((item) => item.liveUsable).length,
+    bySource: quoteProviderSources.map((source) => ({
+      source,
+      total: items.filter((item) => item.selectedSource === source).length
+    })),
+    fallbackReasons: [
+      "higher_priority_stale",
+      "higher_priority_missing",
+      "higher_priority_unavailable",
+      "no_fresh_quote",
+      "no_quote"
+    ].map((reason) => ({
+      reason,
+      total: items.filter((item) => item.fallbackReason === reason).length
+    })),
+    staleReasons: [
+      "age_exceeded",
+      "missing_last",
+      "no_quote",
+      "provider_unavailable"
+    ].map((reason) => ({
+      reason,
+      total: items.filter((item) => item.staleReason === reason).length
+    }))
+  };
+}
+
 // Route-level entry point for GET /market-data/effective-quotes only (see
-// server.ts wiring). Thin DB-fetching wrapper around getEffectiveMarketQuotes
-// + _applyOfficialCloseFallback — matches this file's existing convention of
-// leaving thin DB-fetch glue untested and unit-testing the pure function it
-// calls (getLatestOhlcvCloseForTickers/_mapOhlcvRowsToEntries in
-// quote-last-close-store.ts is the same split). Fails open on any DB error
-// or DATABASE mode being off — never blocks or degrades the base
-// getEffectiveMarketQuotes() response.
+// server.ts wiring). Thin wrapper around getEffectiveMarketQuotes +
+// _applyOfficialCloseFallback (existing items) +
+// _synthesizeItemForMissingSymbol (requested symbols with no item at all) —
+// matches this file's existing convention of leaving thin DB-fetch glue
+// untested and unit-testing the pure functions it calls. Fails open on any
+// DB error or DATABASE mode being off: existing-but-blocked items and
+// entirely-missing requested symbols both still get an honest response
+// (official_close-filled when quote_last_close has data, genuinely blocked
+// when it doesn't or DB is unavailable) — this guarantee does NOT require
+// DB availability, only the "fill in real data" part does.
 export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
   session: AppSession;
   symbols: string;
@@ -2917,32 +3180,63 @@ export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
   limit?: number;
 }) {
   const effective = await getEffectiveMarketQuotes(input);
-  if (!isDatabaseMode()) return effective;
 
-  const blockedSymbols = effective.items
+  const requestedSymbols = _parseRequestedSymbols(input.symbols);
+  const presentSymbols = new Set(effective.items.map((item) => item.symbol));
+  const missingSymbols = requestedSymbols.filter((symbol) => !presentSymbols.has(symbol));
+  const blockedExistingSymbols = effective.items
     .filter((item) => item.selectedQuote === null)
     .map((item) => item.symbol);
-  if (blockedSymbols.length === 0) return effective;
 
-  const db = getDb();
-  if (!db) return effective;
-
-  let lastCloseMap: Map<string, LastCloseResult>;
-  try {
-    lastCloseMap = await getLastCloses(db, blockedSymbols);
-  } catch (err) {
-    console.warn(
-      "[market-data/effective-quotes] official_close fallback query failed (non-fatal):",
-      err instanceof Error ? err.message : String(err)
-    );
+  if (missingSymbols.length === 0 && blockedExistingSymbols.length === 0) {
     return effective;
   }
-  if (lastCloseMap.size === 0) return effective;
+
+  // Only fetched when actually needed (missing symbols exist) — this is an
+  // in-memory read (buildCachedProvider.getStatus), not a DB/network call.
+  const providerStatuses = missingSymbols.length > 0
+    ? await listMarketDataProviderStatuses({ session: input.session })
+    : [];
+
+  const lookupSymbols = [...new Set([...blockedExistingSymbols, ...missingSymbols])];
+  let lastCloseMap: Map<string, LastCloseResult> = new Map();
+  if (isDatabaseMode() && lookupSymbols.length > 0) {
+    const db = getDb();
+    if (db) {
+      try {
+        lastCloseMap = await getLastCloses(db, lookupSymbols);
+      } catch (err) {
+        console.warn(
+          "[market-data/effective-quotes] official_close fallback query failed (non-fatal):",
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+  }
+
+  if (lastCloseMap.size === 0 && missingSymbols.length === 0) {
+    // Round-1 shape: nothing to add (no DB data, no missing symbols) — same
+    // fail-open passthrough as before.
+    return effective;
+  }
 
   const offHours = await _isMarketDataOffHours();
+  const augmentedExisting = _applyOfficialCloseFallback(effective.items, lastCloseMap, offHours);
+  const missingItems = missingSymbols.map((symbol) =>
+    _synthesizeItemForMissingSymbol({
+      symbol,
+      market: _resolveMarketForMissingSymbol(input.market, lastCloseMap.get(symbol)),
+      lastClose: lastCloseMap.get(symbol),
+      offHours,
+      providerStatuses
+    })
+  );
+
+  const items = [...augmentedExisting, ...missingItems].slice(0, input.limit ?? 100);
   return {
     ...effective,
-    items: _applyOfficialCloseFallback(effective.items, lastCloseMap, offHours)
+    summary: _recomputeEffectiveQuotesSummary(items),
+    items
   };
 }
 
