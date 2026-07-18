@@ -1253,12 +1253,21 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       return fetchEffectiveQuotes(missing).then(function (fallbackMap) {
         // 清單底部「示意報價」舊標籤是本頁上線初期的靜態占位字（此清單從未真的
         // 顯示過虛構報價，grep 全檔確認——十列只會是真 tick／twse_mis 兜底／
-        // official_close 收盤快照三選一，或誠實 "--"）。#1309 上線後 official_close
-        // 開始把真收盤價灌進這份清單，繼續印「示意」等於反過來說謊；改成隨資料
-        // 態誠實更新：只要有任一檔落在 closed_snapshot，就標「MM/DD 收盤」（同一
-        // 交易日的官方收盤，日期取自任一命中檔即可代表整批）；否則維持「即時報價」
-        // （ticks/twse_mis 都是真報價，非示意）。
+        // official_close 兩態（收盤快照／盤中中斷回補）三選一，或誠實 "--"）。
+        // #1309 上線後 official_close 開始把真收盤價灌進這份清單，繼續印「示意」
+        // 等於反過來說謊；改成隨資料態誠實更新，三選一（優先序由上到下）：
+        //   1. 任一檔是 closed_snapshot（非交易時段的合法收盤）→「MM/DD 收盤」
+        //   2. 任一檔是 official_close 來源但 freshnessStatus:"stale"（盤中即時
+        //      報價全滅、用收盤價回補——見 market-data.ts
+        //      _applyOfficialCloseFallback 的 offHours=false 分支／
+        //      data-reason-copy.ts 的 official_close_stale_intraday_fallback
+        //      token）→ 必須誠實標「即時中斷」，不能落回下面的「即時報價」
+        //      （Pete #1310 review 🔴：這是本輪要修的「假裝即時」病本身，若
+        //      漏這支分支，過期收盤價會被貼上「即時報價」標籤）
+        //   3. 兩者都沒有（ticks/twse_mis 都是真即時報價，非示意）→「即時報價」
         var closedSnapshotDate = null;
+        var staleFallbackDetected = false;
+        var staleFallbackDate = null;
         results.forEach(function (r) {
           if (r.last) {
             var isUp = num(r.last.price_chg) > 0 ? true : num(r.last.price_chg) < 0 ? false : null;
@@ -1276,10 +1285,22 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
           applyWatchlistRow(r.sym, fmtPrice(q.last), fmtPct(q.changePct), isUp);
           if (item.freshnessStatus === "closed_snapshot" && !closedSnapshotDate) {
             closedSnapshotDate = item.closedSnapshotTradeDate;
+          } else if (item.selectedSource === "official_close" && item.freshnessStatus === "stale" && !staleFallbackDetected) {
+            staleFallbackDetected = true;
+            staleFallbackDate = item.closedSnapshotTradeDate;
           }
         });
         var closeDateLabel = fmtCloseDateMD(closedSnapshotDate);
-        setText("wl-caption", closeDateLabel ? (closeDateLabel + " 收盤") : "即時報價");
+        var staleDateLabel = fmtCloseDateMD(staleFallbackDate);
+        if (closeDateLabel) {
+          setText("wl-caption", closeDateLabel + " 收盤");
+        } else if (staleFallbackDetected) {
+          // official_close intraday-stale fallback active — must never say
+          // 即時報價 (that IS the "假裝即時" bug Pete #1310 review 🔴 caught).
+          setText("wl-caption", staleDateLabel ? (staleDateLabel + " 收盤（即時中斷）") : "收盤價（即時中斷）");
+        } else {
+          setText("wl-caption", "即時報價");
+        }
       });
     });
   }

@@ -148,6 +148,43 @@ function closedSnapshotQuoteItem(symbol: string, last: number, tradeDate: string
   };
 }
 
+// official_close 兜底 tier 的另一個分支（offHours=false, market-data.ts
+// _applyOfficialCloseFallback）：盤中即時報價全滅時用收盤價回補，
+// freshnessStatus 是 "stale"（非 "closed_snapshot"）— reasons 帶
+// "official_close_stale_intraday_fallback"。selectedSource 仍是
+// "official_close"，跟一般 twse_mis 的 stale 不同來源，必須誠實標示「即時
+// 中斷」，不能被籠統歸類為「即時報價」（Pete #1310 review 🔴 round 2）。
+function officialCloseStaleQuoteItem(symbol: string, last: number, tradeDate: string) {
+  return {
+    symbol,
+    market: "TW",
+    selectedSource: "official_close",
+    selectedQuote: {
+      symbol,
+      market: "TW",
+      source: "official_close",
+      last,
+      bid: null,
+      ask: null,
+      open: null,
+      high: null,
+      low: null,
+      prevClose: null,
+      volume: null,
+      changePct: null,
+      timestamp: `${tradeDate}T13:30:00+08:00`,
+      ageMs: 999999,
+      isStale: true
+    },
+    freshnessStatus: "stale",
+    closedSnapshotTradeDate: tradeDate,
+    fallbackReason: "none",
+    staleReason: "none",
+    readiness: "degraded",
+    reasons: ["official_close_stale_intraday_fallback"]
+  };
+}
+
 // #1309 round 2「N in N out」合成的誠實 BLOCKED item：兩個真實來源＋
 // quote_last_close 都沒有這檔的任何資料，selectedQuote 保持 null。
 function blockedQuoteItem(symbol: string) {
@@ -651,6 +688,53 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     expect(wlCaption, "must never leak the old placeholder wording once real official_close data is showing").not.toBe("示意報價");
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-closed-snapshot-header-and-caption");
+  });
+
+  // 2026-07-19 Pete #1310 review 🔴 round 2: the SAME official_close fallback
+  // tier also fires intraday when every live feed is dead (offHours=false in
+  // market-data.ts's _applyOfficialCloseFallback) — freshnessStatus is
+  // "stale", not "closed_snapshot". The wl-caption logic's first pass only
+  // branched on "closed_snapshot" and defaulted everything else (including
+  // this case) to "即時報價" — i.e. it labeled a genuinely stale closing
+  // price as live, which is the exact "假裝即時" bug this whole PR exists to
+  // fix. Regression-locks the offHours=false branch.
+  test("official_close intraday-stale fallback (offHours=false): watchlist caption must say 即時中斷, never 即時報價", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    const tradeDate = "2026-07-17";
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "QUOTE_NOT_AVAILABLE" }) });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => officialCloseStaleQuoteItem(sym, 2290 + WL_SYMBOLS.indexOf(sym), tradeDate));
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wlCaption = await frame.locator('[data-slot="wl-caption"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-caption", description: String(wlCaption) });
+
+    expect(symPrice, "the real official close price still renders").toBe((2290 + WL_SYMBOLS.indexOf("2330")).toFixed(2));
+    expect(wlCaption, "must NEVER claim 即時報價 for a stale official_close intraday fallback (the bug this test guards)").not.toBe("即時報價");
+    expect(wlCaption, "must honestly say the live feed is interrupted").toBe("07/17 收盤（即時中斷）");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-official-close-stale-intraday-caption");
   });
 
   // #1309 round 2「N in N out」合成的誠實 BLOCKED item（selectedQuote:null）：
