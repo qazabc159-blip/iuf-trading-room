@@ -1,5 +1,5 @@
 /**
- * effective-quotes-official-close-fallback.test.ts — 2026-07-19
+ * effective-quotes-official-close-fallback.test.ts — 2026-07-19, round 2
  *
  * Bug this fixes: GET /api/v1/market-data/effective-quotes on a weekend, or
  * right after a deploy restart (which wipes the in-memory quote cache), was
@@ -8,26 +8,43 @@
  * quote_last_close (populated daily by twse-eod-cron) already had the last
  * trading day's official close for these symbols.
  *
+ * ROUND 2 CORRECTION (2026-07-19): round 1's own fixtures below (the
+ * "seed a stale manual quote so the item shows up as selectedQuote:null"
+ * tests) were an EASIER scenario than what prod actually hit after #1307
+ * deployed. Elva's prod re-test right after the deploy restart showed
+ * `items: []` / `summary.total: 0` for symbols "2330,2454" — NOT individual
+ * blocked items. resolveMarketQuotes()'s `grouped` map only emits an item for
+ * a symbol once at least one provider has EVER cached a quote for it in this
+ * process's lifetime — a deploy restart wipes providerQuoteCache entirely, so
+ * requested symbols simply vanish from the array rather than appearing
+ * blocked. Round 1's own docstring/Pete's review flagged this as a rare
+ * "cold symbol" edge case; it turned out to BE the main prod symptom. See
+ * the INVARIANT tests below tagged "ROUND 2" for the actual repro + fix
+ * coverage, and _synthesizeItemForMissingSymbol's docstring in market-data.ts
+ * for why this couldn't be caught by loadPersistedQuoteEntries()'s existing
+ * on-restart reload (infra config drift — RAILWAY_VOLUME_MOUNT_PATH is
+ * unset on the api service in prod, confirmed via `railway variables`/
+ * `railway volume list` — not a logic bug in that function).
+ *
  * Scope of these tests: the pure `_applyOfficialCloseFallback()` merge
- * function (INVARIANT tests, no DB needed — same convention as
- * mergeEodFallbackWithPersistedBars in server.ts /
- * quote-realtime-persisted-supersede.test.ts) plus `_isMarketDataOffHours()`
- * and one end-to-end regression check of
+ * function and the new pure `_synthesizeItemForMissingSymbol()` (INVARIANT
+ * tests, no DB needed — same convention as mergeEodFallbackWithPersistedBars
+ * in server.ts / quote-realtime-persisted-supersede.test.ts) plus
+ * `_isMarketDataOffHours()` and end-to-end regression checks of
  * getEffectiveMarketQuotesWithOfficialCloseFallback() itself in memory mode
  * (PERSISTENCE_MODE unset in this test run → isDatabaseMode() is false →
- * the wrapper must be a pure passthrough of getEffectiveMarketQuotes()).
+ * the wrapper must (a) be a pure passthrough when nothing needs fixing, and
+ * (b) still synthesize honest BLOCKED items — never silently drop a
+ * requested symbol — even when quote_last_close itself is unreachable).
  *
- * Note on fixtures: resolveMarketQuotes() only emits an item for a symbol
- * once at least one provider has EVER cached a quote for it (its `grouped`
- * map is built from quotes actually present, not the full symbol
- * universe) — a symbol with zero cached quotes anywhere doesn't appear in
- * the response at all, rather than appearing as a "blocked" item. The prod
- * incident this fixes had stale/reloaded provider quotes present (from
- * before the cache wipe / prior polling cycles) that simply aged past
- * their staleAfterMs window, which is why every candidate showed up with a
- * non-eligible (not necessarily null) quote and selectedQuote:null. These
- * fixtures reproduce that shape: seed a deliberately-stale manual quote so
- * the item is present in the response with selectedQuote:null.
+ * Note on round-1 fixtures below: resolveMarketQuotes() only emits an item
+ * for a symbol once at least one provider has EVER cached a quote for it
+ * (its `grouped` map is built from quotes actually present, not the full
+ * symbol universe) — a symbol with zero cached quotes anywhere doesn't
+ * appear in the response at all, rather than appearing as a "blocked" item.
+ * These particular fixtures reproduce the "present but blocked" shape only
+ * (seed a deliberately-stale manual quote); the round-2 tests below cover
+ * the "absent entirely" shape, which is the one that actually matched prod.
  *
  * Run: node --test --import tsx/esm apps/api/src/__tests__/effective-quotes-official-close-fallback.test.ts
  */
@@ -37,6 +54,8 @@ import test from "node:test";
 import {
   _applyOfficialCloseFallback,
   _isMarketDataOffHours,
+  _parseRequestedSymbols,
+  _synthesizeItemForMissingSymbol,
   getEffectiveMarketQuotes,
   getEffectiveMarketQuotesWithOfficialCloseFallback,
   resetMarketDataWorkspaceState,
@@ -235,4 +254,178 @@ test("_isMarketDataOffHours: weekday outside 09:00-13:30 Taipei session IS off-h
   // 2024-01-09 is a Tuesday. 12:00 UTC = 20:00 Taipei (well after close).
   const tuesdayEveningMs = Date.UTC(2024, 0, 9, 12, 0, 0);
   assert.equal(await _isMarketDataOffHours(tuesdayEveningMs), true);
+});
+
+// ── ROUND 2 (2026-07-19): the actual prod failure mode ──────────────────────
+
+test("ROUND 2 repro: a symbol never cached by any provider does not appear in getEffectiveMarketQuotes() output at all (items.length === 0), matching Elva's prod re-test", async () => {
+  const slug = `official-close-round2-repro-${Date.now()}`;
+  const session = makeSession(slug);
+  resetMarketDataWorkspaceState(slug);
+
+  try {
+    // No manual/paper/kgi/twse_mis quotes upserted at all — this is exactly
+    // the state right after a deploy restart (in-memory cache wiped, and
+    // loadPersistedQuoteEntries()'s on-restart reload is a no-op in prod —
+    // see file header docstring for why).
+    const effective = await getEffectiveMarketQuotes({ session, symbols: "2330,2454" });
+    assert.deepStrictEqual(effective.items, [], "requested symbols vanish entirely, not as blocked items");
+    assert.equal(effective.summary.total, 0);
+  } finally {
+    resetMarketDataWorkspaceState(slug);
+  }
+});
+
+test("ROUND 2 INVARIANT: _parseRequestedSymbols mirrors resolveMarketQuotes()'s own symbol parsing (trim/uppercase/dedupe)", () => {
+  assert.deepStrictEqual(_parseRequestedSymbols(" 2330 ,2454,2330,tsm "), ["2330", "2454", "TSM"]);
+});
+
+test("ROUND 2 INVARIANT: _synthesizeItemForMissingSymbol fills a never-cached symbol from quote_last_close with closed_snapshot freshness, usable flags false", () => {
+  const item = _synthesizeItemForMissingSymbol({
+    symbol: "2330",
+    market: "TWSE",
+    lastClose: { closePrice: 1050, tradeDate: "2026-07-17", source: "twse_eod" },
+    offHours: true,
+    providerStatuses: []
+  });
+
+  assert.equal(item.selectedSource, "official_close");
+  assert.equal(item.selectedQuote?.last, 1050);
+  assert.equal(item.selectedQuote?.source, "official_close");
+  assert.equal(item.freshnessStatus, "closed_snapshot");
+  assert.equal(item.closedSnapshotTradeDate, "2026-07-17");
+  assert.equal(item.strategyUsable, false);
+  assert.equal(item.paperUsable, false);
+  assert.equal(item.liveUsable, false);
+  assert.equal(item.readiness, "degraded");
+  // All 5 known providers must still appear (honestly missing), plus official_close.
+  assert.equal(item.candidates.length, 6);
+  const officialCandidate = item.candidates.find((c) => c.source === "official_close");
+  assert.equal(officialCandidate?.quote?.last, 1050);
+  assert.equal(officialCandidate?.priority, 0);
+});
+
+test("ROUND 2 INVARIANT: _synthesizeItemForMissingSymbol honestly marks intraday-dead-feed fallback as stale, not closed_snapshot", () => {
+  const item = _synthesizeItemForMissingSymbol({
+    symbol: "2330",
+    market: "TWSE",
+    lastClose: { closePrice: 1050, tradeDate: "2026-07-17", source: "twse_eod" },
+    offHours: false,
+    providerStatuses: []
+  });
+  assert.equal(item.freshnessStatus, "stale");
+  assert.equal(item.selectedQuote?.isStale, true);
+  assert.equal(item.strategyUsable, false);
+});
+
+test("ROUND 2 INVARIANT: _synthesizeItemForMissingSymbol returns an explicit BLOCKED item (never silently absent) when quote_last_close also has nothing", () => {
+  const item = _synthesizeItemForMissingSymbol({
+    symbol: "9999",
+    market: "TWSE",
+    lastClose: undefined,
+    offHours: true,
+    providerStatuses: []
+  });
+  assert.equal(item.selectedSource, null);
+  assert.equal(item.selectedQuote, null);
+  assert.equal(item.freshnessStatus, "missing");
+  assert.equal(item.readiness, "blocked");
+  assert.ok(item.reasons.includes("missing_quote"));
+  assert.equal(item.candidates.length, 5, "no official_close candidate when quote_last_close has nothing either");
+  assert.equal(item.closedSnapshotTradeDate, null);
+});
+
+test("ROUND 2 INVARIANT: _synthesizeItemForMissingSymbol honestly reflects a connected provider's status even for a symbol it has no quote for", () => {
+  const item = _synthesizeItemForMissingSymbol({
+    symbol: "2330",
+    market: "TWSE",
+    lastClose: undefined,
+    offHours: true,
+    providerStatuses: [
+      {
+        source: "kgi",
+        connected: true,
+        lastMessageAt: null,
+        latencyMs: null,
+        latestQuoteAgeMs: null,
+        freshnessStatus: "missing",
+        readiness: "blocked",
+        strategyUsable: false,
+        paperUsable: false,
+        liveUsable: false,
+        staleAfterMs: null,
+        subscribedSymbols: ["2454"],
+        reasons: [],
+        errorMessage: null
+      } as any
+    ]
+  });
+  const kgiCandidate = item.candidates.find((c) => c.source === "kgi")!;
+  assert.equal(kgiCandidate.providerConnected, true, "must reflect the real connected status, not a blanket false");
+  assert.equal(kgiCandidate.subscribed, false, "2330 itself is not in kgi's subscribedSymbols list");
+  assert.equal(kgiCandidate.quote, null);
+});
+
+test("ROUND 2 end-to-end: getEffectiveMarketQuotesWithOfficialCloseFallback guarantees one item per requested symbol even when quote_last_close is unreachable (memory mode)", async () => {
+  const slug = `official-close-round2-wrapper-${Date.now()}`;
+  const session = makeSession(slug);
+  resetMarketDataWorkspaceState(slug);
+
+  try {
+    // Never cached at all, and PERSISTENCE_MODE is unset in this test run
+    // (isDatabaseMode() === false) — quote_last_close is unreachable, so
+    // these must come back as honest BLOCKED items, not vanish.
+    const wrapped = await getEffectiveMarketQuotesWithOfficialCloseFallback({
+      session,
+      symbols: "8881,8882",
+    });
+
+    assert.equal(wrapped.items.length, 2, "every requested symbol must get exactly one item");
+    assert.equal(wrapped.summary.total, 2);
+    assert.equal(wrapped.summary.blocked, 2);
+    for (const symbol of ["8881", "8882"]) {
+      const item = wrapped.items.find((i) => i.symbol === symbol);
+      assert.ok(item, `${symbol} must be present`);
+      assert.equal(item?.selectedQuote, null);
+      assert.equal(item?.readiness, "blocked");
+    }
+  } finally {
+    resetMarketDataWorkspaceState(slug);
+  }
+});
+
+test("ROUND 2 regression: getEffectiveMarketQuotesWithOfficialCloseFallback stays a pure passthrough when there is nothing to fix", async () => {
+  const slug = `official-close-round2-passthrough-${Date.now()}`;
+  const session = makeSession(slug);
+  resetMarketDataWorkspaceState(slug);
+
+  try {
+    await upsertManualQuotes({
+      session,
+      quotes: [
+        {
+          symbol: "2330",
+          market: "TWSE",
+          source: "manual",
+          last: 1234,
+          bid: null,
+          ask: null,
+          open: null,
+          high: null,
+          low: null,
+          prevClose: 1200,
+          volume: 1000,
+          changePct: 2.83,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const wrapped = await getEffectiveMarketQuotesWithOfficialCloseFallback({ session, symbols: "2330" });
+    assert.equal(wrapped.items.length, 1);
+    assert.equal(wrapped.items[0]?.selectedSource, "manual");
+    assert.equal(wrapped.summary.total, 1);
+  } finally {
+    resetMarketDataWorkspaceState(slug);
+  }
 });
