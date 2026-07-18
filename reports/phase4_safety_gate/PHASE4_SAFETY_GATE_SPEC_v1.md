@@ -124,7 +124,7 @@
 - **O-2** ✅ **已裁決（楊董 2026-07-03）：照 §5 建議表**（單筆 ≤10 萬/日累計 ≤20 萬/日 ≤5 筆/偏離 ±5% 雙查/盤中限定/冷卻 60s），楊董授權「或研究後合適初值」— 定版維持原表（理由：Phase II 目的=驗管線非賺錢，2330 一股首單 ≈2,400 元，上限給足 40 倍餘裕已夠演練；調升走 §5 的 Owner endpoint＋審計，不用改 spec）。
 - **O-3** ✅ **已裁決並執行（楊董 ACK「套」，2026-07-03 部署＋實測）**：
   - **主防線=PreToolUse hook**（`~/.claude/hooks/protect_real_money_paths.py`，settings.json 掛 `Edit|Write|NotebookEdit`）：**已在 bypassPermissions 全開權限下金絲雀實測攔截成功**（exit 2 硬擋）；正常檔案寫入實測不受影響。要正當修改鎖檔=楊董暫時註解 hook 內對應行，改完加回。
-  - **副防線=permissions deny 16 條**（§7 清單）已裝入 settings.json。誠實標註：deny 單獨測試在本 session 內三種 pattern 均未攔截（與官方文件「deny 在 bypass 下仍強制＋hot-reload」說法不符，疑本版本行為差異）— 故以 hook 為主、deny 為備援層，新 session 可用金絲雀（寫 `deny_test_canary.txt` 應被擋）隨時驗證防線活著。
+  - **副防線=permissions deny 16 條**（§7 清單）已裝入 settings.json。（2026-07-04 實證升級：deny 對 **subagent 確認強制執行** — PR-1 施工 agent 被 deny 硬擋、正確拒絕自改權限並還原乾淨後回報；先前「主 session 內測不到」為 session 級快取行為。雙層防護 hook＋deny 均已實戰驗證，且暫解-恢復程序跑過完整一輪：暫解 F2-O3 → PR #1164 merge → 兩道同日恢復。）新 session 仍可用金絲雀（寫 `deny_test_canary.txt` 應被 hook 擋）驗防線活著。
   - settings.json 原版備份：`~/.claude/backups/settings.json.bak-20260703`。
 - **O-4** ⏳ **狀態（楊董 2026-07-03）：富邦開戶/API 尚未申請** → Stage 1 實作 blocked，楊董 action item=申請富邦開戶＋新一代 API（Neo）權限＋拿測試環境；申請期間工程照走介面凍結件（不 block）。
 - **O-5** ✅ **已裁決（楊董 2026-07-03）：首單=2330 零股 1 股**。
