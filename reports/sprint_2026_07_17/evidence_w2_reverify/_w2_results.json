@@ -1,0 +1,42 @@
+[
+  {
+    "slug": "company2330_w2",
+    "path": "/companies/2330",
+    "httpStatus": 200,
+    "bannerFull": "顯示 07/17 (五) 收盤資料",
+    "vwapNumber": "2,263.96",
+    "vwapContext": "VWAP"
+  },
+  {
+    "slug": "airec_w2",
+    "path": "/ai-recommendations",
+    "httpStatus": 200,
+    "bannerFull": "顯示 07/17 (五) 收盤資料"
+  },
+  {
+    "slug": "market_390_w2",
+    "path": "/market-intel",
+    "httpStatus": 200,
+    "bodyScrollWidth": 390,
+    "docScrollWidth": 390,
+    "viewportWidth": 390,
+    "whyImportantElementCount": 0,
+    "whyImportantWidthsPx": []
+  },
+  {
+    "slug": "company2330_390_w2",
+    "path": "/companies/2330",
+    "httpStatus": 200,
+    "bannerFull": "顯示 07/17 (五) 收盤資料"
+  },
+  {
+    "slug": "settings_account_w2",
+    "path": "/settings/account",
+    "httpStatus": 200,
+    "updatePasswordCta": {
+      "background": "rgb(200, 148, 63)",
+      "color": "rgb(8, 11, 16)",
+      "opacity": "1"
+    }
+  }
+]
