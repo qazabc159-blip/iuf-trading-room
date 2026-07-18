@@ -1726,7 +1726,17 @@ export type EffectiveMarketQuote = {
   market: string;
   selectedSource: QuoteSource | null;
   selectedQuote: Quote | null;
-  freshnessStatus: "fresh" | "stale" | "missing";
+  // "closed_snapshot" (2026-07-19, #1307/#1309): the official_close DB
+  // fallback tier's honest off-hours label — a legitimate closing-price
+  // snapshot (weekend/holiday/outside session/post-deploy cache wipe), never
+  // "fresh", but deliberately distinct from "stale" (which implies a live
+  // feed SHOULD have something newer right now). See
+  // apps/api/src/market-data.ts's QuoteResolutionFreshnessStatus docstring.
+  freshnessStatus: "fresh" | "stale" | "missing" | "closed_snapshot";
+  // Trading date (YYYY-MM-DD) the closed_snapshot price belongs to; null for
+  // every other freshnessStatus. Populated by
+  // _applyOfficialCloseFallback/_synthesizeItemForMissingSymbol.
+  closedSnapshotTradeDate?: string | null;
   fallbackReason:
     | "none"
     | "higher_priority_stale"

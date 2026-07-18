@@ -516,7 +516,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
                   <div class="wrow" data-wl-sym="3443"><span class="sym">3443</span><span class="nm">創意電子</span><div class="px"><div class="v" data-slot="wl-v-3443">--</div><div class="d" data-slot="wl-d-3443">--</div></div></div>
                   <div class="wrow" data-wl-sym="2308"><span class="sym">2308</span><span class="nm">台達電</span><div class="px"><div class="v" data-slot="wl-v-2308">--</div><div class="d" data-slot="wl-d-2308">--</div></div></div>
                 </div>
-                <div class="cap"><span>示意報價</span><span>還可加 5 檔</span></div>
+                <div class="cap"><span data-slot="wl-caption">即時報價</span><span>還可加 5 檔</span></div>
               </div>
 
               <!-- capital summary -->
@@ -998,11 +998,24 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
     }).catch(function () { return {}; });
   }
 
+  // "2026-06-09" → "06/09"（沿用 apps/web/app/quote/page.tsx 的
+  // eodDataDateLabel() 慣例，10 碼以下視為缺日期，不硬拼）。
+  function fmtCloseDateMD(iso) {
+    return (typeof iso === "string" && iso.length >= 10) ? (iso.slice(5, 7) + "/" + iso.slice(8, 10)) : null;
+  }
+
   // Human-language provenance label for a fallback quote — no enum leak
   // (mirrors apps/web/app/quote/page.tsx quoteSourceLabel()/freshnessLabel()).
   // "stale" 專指 13:30 收盤後 twse_mis 仍回應的收盤快照，誠實標示非即時。
+  // "closed_snapshot"（#1307/#1309 official_close 兜底 tier，2026-07-19）是
+  // 非交易時段/deploy 重啟後的合法收盤快照——不是「略舊」（那個字眼暗示應該
+  // 更新而沒更新），標「MM/DD 收盤」誠實標日期。
   function effectiveQuoteStateLabel(item) {
     if (!item || !item.selectedQuote || num(item.selectedQuote.last) == null) return null;
+    if (item.freshnessStatus === "closed_snapshot") {
+      var d = fmtCloseDateMD(item.closedSnapshotTradeDate);
+      return d ? (d + " 收盤") : "收盤快照";
+    }
     var src = item.selectedSource;
     var srcLabel = src === "twse_mis" ? "證交所" : src === "kgi" ? "凱基" : src === "paper" ? "模擬" : src === "manual" ? "手動資料" : "行情";
     return item.freshnessStatus === "fresh" ? (srcLabel + "即時") : (srcLabel + "（略舊）");
@@ -1238,6 +1251,14 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       // endpoint once for all of them instead of leaving the whole watchlist
       // blank (2026-07-16 診斷 #1 病灶).
       return fetchEffectiveQuotes(missing).then(function (fallbackMap) {
+        // 清單底部「示意報價」舊標籤是本頁上線初期的靜態占位字（此清單從未真的
+        // 顯示過虛構報價，grep 全檔確認——十列只會是真 tick／twse_mis 兜底／
+        // official_close 收盤快照三選一，或誠實 "--"）。#1309 上線後 official_close
+        // 開始把真收盤價灌進這份清單，繼續印「示意」等於反過來說謊；改成隨資料
+        // 態誠實更新：只要有任一檔落在 closed_snapshot，就標「MM/DD 收盤」（同一
+        // 交易日的官方收盤，日期取自任一命中檔即可代表整批）；否則維持「即時報價」
+        // （ticks/twse_mis 都是真報價，非示意）。
+        var closedSnapshotDate = null;
         results.forEach(function (r) {
           if (r.last) {
             var isUp = num(r.last.price_chg) > 0 ? true : num(r.last.price_chg) < 0 ? false : null;
@@ -1253,7 +1274,12 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
           var absChg = num(q.last) != null && num(q.prevClose) != null ? q.last - q.prevClose : null;
           var isUp = absChg > 0 ? true : absChg < 0 ? false : null;
           applyWatchlistRow(r.sym, fmtPrice(q.last), fmtPct(q.changePct), isUp);
+          if (item.freshnessStatus === "closed_snapshot" && !closedSnapshotDate) {
+            closedSnapshotDate = item.closedSnapshotTradeDate;
+          }
         });
+        var closeDateLabel = fmtCloseDateMD(closedSnapshotDate);
+        setText("wl-caption", closeDateLabel ? (closeDateLabel + " 收盤") : "即時報價");
       });
     });
   }
