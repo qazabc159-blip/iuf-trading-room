@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull, kgiNextOpenLabel } from "./kgi-trading-hours";
+import {
+  isKgiGatewayScheduledOff,
+  isKgiTradingHours,
+  isTaipeiWeekend,
+  kgiCoreTilesAreNull,
+  kgiNextOpenLabel,
+} from "./kgi-trading-hours";
 
 /**
  * Helper: construct a Date in Asia/Taipei (UTC+8) from explicit local time parts.
@@ -96,6 +102,26 @@ describe("isKgiGatewayScheduledOff", () => {
 
   it("Sunday → true (weekend, no gateway)", () => {
     expect(isKgiGatewayScheduledOff(tst(2026, 5, 17, 10, 0))).toBe(true);
+  });
+});
+
+describe("isTaipeiWeekend", () => {
+  // 2026-07-19 側欄健康 widget 修復 fixture: 2026-07-18 is a Saturday (末交易日
+  // 07-17 資料在架上，非交易日不應判「延遲」——見 ticker-tape.test.ts 的整合測試).
+  it("2026-07-18 Saturday → true", () => {
+    expect(isTaipeiWeekend(tst(2026, 7, 18, 10, 0))).toBe(true);
+  });
+
+  it("Sunday → true", () => {
+    expect(isTaipeiWeekend(tst(2026, 5, 17, 10, 0))).toBe(true);
+  });
+
+  it("weekday (Monday) → false", () => {
+    expect(isTaipeiWeekend(tst(2026, 5, 18, 10, 0))).toBe(false);
+  });
+
+  it("weekday (Friday) → false", () => {
+    expect(isTaipeiWeekend(tst(2026, 5, 15, 23, 59))).toBe(false);
   });
 });
 

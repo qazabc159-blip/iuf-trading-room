@@ -49,6 +49,9 @@ function baseOverview(overrides: Partial<MarketDataOverview["marketContext"]> = 
 
 const MONDAY_TRADING_HOURS = new Date("2026-07-13T02:30:00.000Z"); // 2026-07-13 is a Monday, 10:30 Taipei
 const SUNDAY = new Date("2026-07-12T02:30:00.000Z");
+// 2026-07-19 側欄健康 widget 修復 fixture: 2026-07-18 is a Saturday — Elva 派工
+// 指定的 non-trading-day fixture（末交易日 07/17 資料在架上，不應判「延遲」）。
+const SATURDAY_20260718 = new Date("2026-07-18T02:30:00.000Z"); // 10:30 Taipei
 
 describe("deriveTickerDisplay", () => {
   it("returns empty state with honest reason when overview is null", () => {
@@ -73,13 +76,34 @@ describe("deriveTickerDisplay", () => {
     expect(result.asOf).toBe("2026-07-10T05:00:00.000Z");
   });
 
-  it("maps STALE backend state to 'delayed' with reason", () => {
+  it("maps STALE backend state to 'delayed' with reason on a TRADING day (真的可能是資料同步延遲)", () => {
     const overview = baseOverview();
     overview.marketContext.state = "STALE";
     overview.marketContext.index!.reason = "3/8 檔尚未計價";
     const result = deriveTickerDisplay(overview, MONDAY_TRADING_HOURS);
     expect(result.dataState).toBe("delayed");
     expect(result.reason).toBe("3/8 檔尚未計價");
+  });
+
+  it("2026-07-19 側欄健康 widget 修復: STALE backend state on a NON-trading day (weekend) maps to 'close', never 'delayed' — 末交易日資料在架上是預期中的正常狀態", () => {
+    const overview = baseOverview();
+    overview.marketContext.state = "STALE";
+    overview.marketContext.index!.reason = "official_daily_index";
+    overview.marketContext.index!.timestamp = "2026-07-17T05:30:00.000Z";
+    const result = deriveTickerDisplay(overview, SATURDAY_20260718);
+    expect(result.dataState).toBe("close");
+    expect(result.reason).toBeNull();
+    expect(result.asOf).toBe("2026-07-17T05:30:00.000Z");
+  });
+
+  it("STALE + engineering-shaped reason id (e.g. official_daily_index) is humanized before reaching the display model on a trading day — never the raw dataset id", () => {
+    const overview = baseOverview();
+    overview.marketContext.state = "STALE";
+    overview.marketContext.index!.reason = "official_daily_index";
+    const result = deriveTickerDisplay(overview, MONDAY_TRADING_HOURS);
+    expect(result.dataState).toBe("delayed");
+    expect(result.reason).toBe("使用官方日線指數（非即時報價來源）");
+    expect(result.reason).not.toContain("official_daily_index");
   });
 
   it("maps EMPTY backend state to 'empty' and still passes through nothing fake", () => {

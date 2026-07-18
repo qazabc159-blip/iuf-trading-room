@@ -78,6 +78,25 @@ export function kgiCoreTilesAreNull(tiles: Array<{ pct: number | null; price: nu
 }
 
 /**
+ * True when `now`'s Taipei calendar day is Saturday or Sunday.
+ *
+ * 2026-07-19 側欄健康 widget 修復：`deriveTickerDisplay()` 曾把 backend 的
+ * STALE 狀態無條件譯成「delayed（資料延遲）」，週六/週日（非交易日）也一樣
+ * 判「延遲」——但非交易日本來就不會有新資料，架上的末交易日資料是預期中的正
+ * 常狀態，不是延遲。這支函式只回答「今天是不是週末」，讓呼叫端決定週末時改用
+ * 「收盤」而非「延遲」措辭。
+ *
+ * 跟 `isKgiTradingHours()`/`isKgiGatewayScheduledOff()` 同樣的已知限制：只看
+ * 星期幾，不知道颱風假等臨時休市日（這裡沒有客戶端可查的完整交易日曆來源，
+ * `mostRecentTradingDay` 這類權威判斷只存在於 backend，見
+ * `apps/api/src/data-sources/twse-openapi-client.ts`，前端不可重寫）。
+ */
+export function isTaipeiWeekend(now: Date = new Date()): boolean {
+  const dow = taipeiDow(now);
+  return dow === 0 || dow === 6;
+}
+
+/**
  * True when the KGI SIM gateway (EC2, EventBridge-scheduled) is outside its
  * weekday 08:20-14:10 TST run window. Outside this window, gateway-backed
  * endpoints (e.g. /kgi/quote/ticks) return 422/503 by design — this is the
