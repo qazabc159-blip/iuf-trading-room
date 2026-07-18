@@ -114,6 +114,94 @@ function effectiveQuoteItem(symbol: string, last: number, prevClose: number, fre
   };
 }
 
+// official_close 兜底 tier（#1307/#1309, 2026-07-19）合成的 item：
+// freshnessStatus:"closed_snapshot" + closedSnapshotTradeDate，非交易時段/
+// deploy 重啟後的合法收盤快照，selectedSource 恆為 "official_close"。
+function closedSnapshotQuoteItem(symbol: string, last: number, tradeDate: string) {
+  return {
+    symbol,
+    market: "TW",
+    selectedSource: "official_close",
+    selectedQuote: {
+      symbol,
+      market: "TW",
+      source: "official_close",
+      last,
+      bid: null,
+      ask: null,
+      open: null,
+      high: null,
+      low: null,
+      prevClose: null,
+      volume: null,
+      changePct: null,
+      timestamp: `${tradeDate}T13:30:00+08:00`,
+      ageMs: 999999,
+      isStale: false
+    },
+    freshnessStatus: "closed_snapshot",
+    closedSnapshotTradeDate: tradeDate,
+    fallbackReason: "none",
+    staleReason: "none",
+    readiness: "degraded",
+    reasons: ["official_close_snapshot"]
+  };
+}
+
+// official_close 兜底 tier 的另一個分支（offHours=false, market-data.ts
+// _applyOfficialCloseFallback）：盤中即時報價全滅時用收盤價回補，
+// freshnessStatus 是 "stale"（非 "closed_snapshot"）— reasons 帶
+// "official_close_stale_intraday_fallback"。selectedSource 仍是
+// "official_close"，跟一般 twse_mis 的 stale 不同來源，必須誠實標示「即時
+// 中斷」，不能被籠統歸類為「即時報價」（Pete #1310 review 🔴 round 2）。
+function officialCloseStaleQuoteItem(symbol: string, last: number, tradeDate: string) {
+  return {
+    symbol,
+    market: "TW",
+    selectedSource: "official_close",
+    selectedQuote: {
+      symbol,
+      market: "TW",
+      source: "official_close",
+      last,
+      bid: null,
+      ask: null,
+      open: null,
+      high: null,
+      low: null,
+      prevClose: null,
+      volume: null,
+      changePct: null,
+      timestamp: `${tradeDate}T13:30:00+08:00`,
+      ageMs: 999999,
+      isStale: true
+    },
+    freshnessStatus: "stale",
+    closedSnapshotTradeDate: tradeDate,
+    fallbackReason: "none",
+    staleReason: "none",
+    readiness: "degraded",
+    reasons: ["official_close_stale_intraday_fallback"]
+  };
+}
+
+// #1309 round 2「N in N out」合成的誠實 BLOCKED item：兩個真實來源＋
+// quote_last_close 都沒有這檔的任何資料，selectedQuote 保持 null。
+function blockedQuoteItem(symbol: string) {
+  return {
+    symbol,
+    market: "TW",
+    selectedSource: null,
+    selectedQuote: null,
+    freshnessStatus: "missing",
+    closedSnapshotTradeDate: null,
+    fallbackReason: "no_quote",
+    staleReason: "none",
+    readiness: "blocked",
+    reasons: ["missing_quote"]
+  };
+}
+
 // Deterministic per-symbol fixture price so watchlist rows differ visibly.
 function fallbackPriceFor(symbol: string) {
   const i = WL_SYMBOLS.indexOf(symbol);
@@ -552,5 +640,146 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     expect(Number(ticketPrice), "ticket price still seeds from the stale-but-real tick close").toBeCloseTo(2435, 2);
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-header-stale-tick-snapshot");
+  });
+
+  // 2026-07-19 #1307/#1309 official_close 兜底 tier fast-follow：週末/deploy
+  // 重啟後 KGI ticks 全滅，effective-quotes 用 quote_last_close 合成
+  // freshnessStatus:"closed_snapshot" 的真收盤價——header 必須誠實標「MM/DD 收盤」
+  // （不是「略舊」，那個字眼暗示本該更新而沒更新），watchlist 底部說明文字也要
+  // 從舊的靜態「示意報價」換成同一個收盤日期（coordinator 7/19 追加驗收點）。
+  test("closed_snapshot freshness: header shows honest \"MM/DD 收盤\" label (not 略舊), watchlist caption updates to the same date", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    const tradeDate = "2026-07-17";
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "QUOTE_NOT_AVAILABLE" }) });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => closedSnapshotQuoteItem(sym, 2290 + WL_SYMBOLS.indexOf(sym), tradeDate));
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wlCaption = await frame.locator('[data-slot="wl-caption"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-caption", description: String(wlCaption) });
+
+    expect(symState, "closed_snapshot must be labeled with the honest trade date, not 略舊").toBe("07/17 收盤");
+    expect(symState, "must never say 略舊 for a legitimate off-hours closing snapshot").not.toBe("行情（略舊）");
+    expect(symPrice, "the real official close price still renders").toBe((2290 + WL_SYMBOLS.indexOf("2330")).toFixed(2));
+    expect(wlCaption, "watchlist caption must reflect the real closing date, not the stale static 示意報價 label").toBe("07/17 收盤");
+    expect(wlCaption, "must never leak the old placeholder wording once real official_close data is showing").not.toBe("示意報價");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-closed-snapshot-header-and-caption");
+  });
+
+  // 2026-07-19 Pete #1310 review 🔴 round 2: the SAME official_close fallback
+  // tier also fires intraday when every live feed is dead (offHours=false in
+  // market-data.ts's _applyOfficialCloseFallback) — freshnessStatus is
+  // "stale", not "closed_snapshot". The wl-caption logic's first pass only
+  // branched on "closed_snapshot" and defaulted everything else (including
+  // this case) to "即時報價" — i.e. it labeled a genuinely stale closing
+  // price as live, which is the exact "假裝即時" bug this whole PR exists to
+  // fix. Regression-locks the offHours=false branch.
+  test("official_close intraday-stale fallback (offHours=false): watchlist caption must say 即時中斷, never 即時報價", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    const tradeDate = "2026-07-17";
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "QUOTE_NOT_AVAILABLE" }) });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => officialCloseStaleQuoteItem(sym, 2290 + WL_SYMBOLS.indexOf(sym), tradeDate));
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wlCaption = await frame.locator('[data-slot="wl-caption"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-caption", description: String(wlCaption) });
+
+    expect(symPrice, "the real official close price still renders").toBe((2290 + WL_SYMBOLS.indexOf("2330")).toFixed(2));
+    expect(wlCaption, "must NEVER claim 即時報價 for a stale official_close intraday fallback (the bug this test guards)").not.toBe("即時報價");
+    expect(wlCaption, "must honestly say the live feed is interrupted").toBe("07/17 收盤（即時中斷）");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-official-close-stale-intraday-caption");
+  });
+
+  // #1309 round 2「N in N out」合成的誠實 BLOCKED item（selectedQuote:null）：
+  // header/watchlist 必須維持既有的誠實空狀態，不能因為新欄位（
+  // closedSnapshotTradeDate/reasons 擴充）而崩潰或印出原始字串。
+  test("synthesized BLOCKED item (selectedQuote:null) renders an honest empty state without crashing", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "QUOTE_NOT_AVAILABLE" }) });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => blockedQuoteItem(sym));
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wl2454 = await frame.locator('[data-slot="wl-v-2454"]').first().textContent();
+    const wlCaption = await frame.locator('[data-slot="wl-caption"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-v-2454", description: String(wl2454) });
+    testInfo.annotations.push({ type: "wl-caption", description: String(wlCaption) });
+
+    expect(symState, "a fully blocked synthesized item must show the honest empty state").toBe("尚無報價");
+    expect(symPrice).toBe("--");
+    expect(wl2454, "watchlist rows must show an honest -- for a blocked item, not crash or leak raw tokens").toBe("--");
+    expect(wlCaption, "no closed_snapshot rows exist, so the caption falls back to the honest default").toBe("即時報價");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-blocked-synthesized-item");
   });
 });

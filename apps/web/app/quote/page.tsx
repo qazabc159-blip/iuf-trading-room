@@ -12,6 +12,7 @@ import {
   type OhlcvBar,
 } from "@/lib/api";
 import { friendlyDataError } from "@/lib/friendly-error";
+import { humanizeDataReason } from "@/lib/data-reason-copy";
 import { OhlcvCandlestickChart } from "../companies/[symbol]/OhlcvCandlestickChart";
 
 type KlineState = {
@@ -65,23 +66,34 @@ function quoteSourceLabel(source: EffectiveMarketQuote["selectedSource"]) {
   return source;
 }
 
-function freshnessLabel(status: EffectiveMarketQuote["freshnessStatus"]) {
-  if (status === "fresh") return "即時";
-  if (status === "stale") return "略舊";
+/** "2026-07-18" → "07/18"；缺日期時回傳 null 讓呼叫端自行決定誠實 fallback。 */
+function closedSnapshotDateLabel(tradeDate: string | null | undefined) {
+  if (!tradeDate || tradeDate.length < 10) return null;
+  return `${tradeDate.slice(5, 7)}/${tradeDate.slice(8, 10)}`;
+}
+
+// "closed_snapshot"（#1307/#1309 official_close 兜底 tier）是非交易時段/
+// deploy 重啟後的合法收盤快照——不能沿用「缺資料」或「略舊」措辭，那會把一個
+// 誠實正確的收盤價錯標成問題狀態。
+function freshnessLabel(item: EffectiveMarketQuote) {
+  if (item.freshnessStatus === "fresh") return "即時";
+  if (item.freshnessStatus === "closed_snapshot") {
+    const d = closedSnapshotDateLabel(item.closedSnapshotTradeDate);
+    return d ? `${d} 收盤` : "收盤快照";
+  }
+  if (item.freshnessStatus === "stale") return "略舊";
   return "缺資料";
 }
 
+// 唯一負責把 `item.reasons[]`（buildEffectiveQuoteReasons() 產出的原始工程
+// token，如 "fallback:no_fresh_quote"/"non_live_source"/"official_close_snapshot"）
+// 轉成人話的地方——委派給 apps/web/lib/data-reason-copy.ts 的
+// humanizeDataReason()，不再自己維護一份不完整、對不上實際 token 形狀的
+// 白名單（2026-07-19 #1309 Pete review 🔴：舊版只認裸字串，實際 token 都是
+// `fallback:`/`stale:` 前綴，未命中一律照印原始字串，違反 UI 禁工程語意）。
 function reasonLabel(reason: string) {
   if (reason === "none") return "";
-  if (reason === "no_quote") return "無報價";
-  if (reason === "no_fresh_quote") return "無新鮮報價";
-  if (reason === "age_exceeded") return "資料逾時";
-  if (reason === "missing_last") return "缺成交價";
-  if (reason === "provider_unavailable") return "資料源未連線";
-  if (reason === "higher_priority_stale") return "優先資料略舊";
-  if (reason === "higher_priority_missing") return "優先資料缺漏";
-  if (reason === "higher_priority_unavailable") return "優先資料源未連線";
-  return reason;
+  return humanizeDataReason(reason) ?? "";
 }
 
 function QuoteStatePanel({
@@ -114,7 +126,7 @@ function QuoteSnapshot({ item }: { item: EffectiveMarketQuote }) {
         <span className="source-line" style={{ margin: 0 }}>
           <span className={`badge ${readinessBadge(item.readiness)}`}>{readinessLabel(item.readiness)}</span>
           <span>來源：{quoteSourceLabel(item.selectedSource)}</span>
-          <span>新鮮度：{freshnessLabel(item.freshnessStatus)}</span>
+          <span>新鮮度：{freshnessLabel(item)}</span>
         </span>
       }
     >

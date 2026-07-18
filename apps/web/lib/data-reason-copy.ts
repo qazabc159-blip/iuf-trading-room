@@ -18,7 +18,12 @@
  * `marketContext.index.reason` 的所有已知 token（含 `fallback:`/`stale:` 前綴
  * 的動態組合，對應 `QuoteResolutionFallbackReason`/`QuoteResolutionStaleReason`
  * 兩個 enum 的全部成員），加一個「未知 token」的誠實 fallback——不印原始字串，
- * 但也不假裝知道原因。
+ * 但也不假裝知道原因。這支函式同時是 `apps/web/app/quote/page.tsx` 單一 symbol
+ * 報價頁 `item.reasons[]`（`buildEffectiveQuoteReasons()` 產出）的唯一翻譯層
+ * （2026-07-19 #1309 Pete review 🔴 fast-follow）——`official_close_snapshot`/
+ * `official_close_stale_intraday_fallback` 兩個 token 是 official_close 兜底
+ * tier 專屬（`_applyOfficialCloseFallback`/`_synthesizeItemForMissingSymbol`
+ * 疊加在既有 reasons 之上），一併收錄在下面的 `KNOWN_REASON_LABELS`。
  *
  * 只對「看起來像內部代碼」的字串（純小寫英數字/底線，可選 `prefix:suffix`）動
  * 手；已經是人話的呼叫端輸入（例如 `"3/8 檔尚未計價"`）原樣通過，不在這裡被
@@ -33,6 +38,11 @@ const KNOWN_REASON_LABELS: Record<string, string> = {
   synthetic_source: "來源為推算值，非即時報價",
   non_live_source: "來源非即時報價管道",
   provider_disconnected: "報價來源暫時斷線",
+  // 2026-07-19 (#1309 round 2 fast-follow): official_close fallback tier's own
+  // reason tokens, appended in market-data.ts's _applyOfficialCloseFallback /
+  // _synthesizeItemForMissingSymbol on top of the existing reasons[] entries.
+  official_close_snapshot: "非交易時段，顯示最近收盤價",
+  official_close_stale_intraday_fallback: "盤中即時報價中斷，暫以最近收盤價顯示",
 };
 
 const FALLBACK_SUB_LABELS: Record<string, string> = {

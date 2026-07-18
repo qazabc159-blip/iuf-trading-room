@@ -22,7 +22,7 @@ export type IndustryHeatmapTile = {
   change?: number | null;
   volume?: number | null;
   readiness?: "ready" | "degraded" | "blocked";
-  freshnessStatus?: "fresh" | "stale" | "missing";
+  freshnessStatus?: "fresh" | "stale" | "missing" | "closed_snapshot";
   /** Jason 3-tier backend sourceState: live = KGI tick, twse_eod = TWSE EOD, cache = DB cache, no_data = no data at all */
   sourceState?: "live" | "twse_eod" | "cache" | "no_data";
   /** Human-readable source label from backend (e.g. "5/15 (五) 收盤 (週末休市)") */

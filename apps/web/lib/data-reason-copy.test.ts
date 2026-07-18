@@ -23,6 +23,26 @@ describe("humanizeDataReason", () => {
     expect(humanizeDataReason("stale:provider_unavailable")).toBe("報價來源暫時無法使用");
   });
 
+  // 2026-07-19 #1309 Pete review 🔴: /quote 頁 reasonLabel() 完全沒對到
+  // buildEffectiveQuoteReasons() 實際吐出的字串，這裡直接鎖住 Pete report 點名
+  // 的那組真實 reasons[] 內容（每個都是 apps/web/app/quote/page.tsx 逐一 map
+  // 的單一 token，非 comma-joined 字串，但 humanizeDataReason 對單一 token 一樣
+  // 適用）。
+  it("humanizes every literal token PR #1309's Pete review flagged as leaking raw on /quote (single-token form, as page.tsx consumes them)", () => {
+    expect(humanizeDataReason("fallback:no_fresh_quote")).toBe("沒有最新報價可用");
+    expect(humanizeDataReason("stale:age_exceeded")).toBe("資料已超過新鮮度上限");
+    expect(humanizeDataReason("non_live_source")).toBe("來源非即時報價管道");
+    expect(humanizeDataReason("provider_disconnected")).toBe("報價來源暫時斷線");
+    expect(humanizeDataReason("missing_quote")).toBe("目前沒有可用報價");
+  });
+
+  it("humanizes the official_close fallback-tier's own reason tokens (round 2, 2026-07-19)", () => {
+    expect(humanizeDataReason("official_close_snapshot")).toBe("非交易時段，顯示最近收盤價");
+    expect(humanizeDataReason("official_close_stale_intraday_fallback")).toBe(
+      "盤中即時報價中斷，暫以最近收盤價顯示",
+    );
+  });
+
   it("humanizes comma-joined multi-token reasons (indexRow.item.reasons.join(', ')) and de-dupes repeated labels", () => {
     expect(humanizeDataReason("missing_quote, fallback:no_fresh_quote")).toBe(
       "目前沒有可用報價、沒有最新報價可用",
