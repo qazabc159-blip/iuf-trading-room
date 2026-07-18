@@ -16,7 +16,16 @@ export const quoteSourceSchema = z.enum([
   // still non-live (nonLiveSource !== "kgi") — execution/live-money channel
   // behavior is unchanged; only the paper-mode consumer decision treats it
   // as trustworthy enough to auto-allow.
-  "twse_mis"
+  "twse_mis",
+  // 2026-07-19 effective-quotes weekend/restart blank-desk fix: the
+  // quote_last_close DB table's last-good persisted close (Tier 2.5 in
+  // kgi-heatmap-enricher.ts terms), surfaced as the lowest-priority
+  // display-only candidate in GET /market-data/effective-quotes when every
+  // live feed is missing (weekend/holiday, or a fresh deploy that wiped the
+  // in-memory quote cache). NOT part of quoteProviderSources / the
+  // strategy/paper/execution consumer-decision chain — see
+  // getEffectiveMarketQuotesWithOfficialCloseFallback in market-data.ts.
+  "official_close"
 ]);
 
 export const marketSchema = z.enum([

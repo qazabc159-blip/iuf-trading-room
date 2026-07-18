@@ -151,6 +151,7 @@ import {
   getMarketDataSelectionSummary,
   getMarketQuoteHistoryDiagnostics,
   getEffectiveMarketQuotes,
+  getEffectiveMarketQuotesWithOfficialCloseFallback,
   ingestTradingViewQuote,
   listMarketBars,
   listMarketDataProviderStatuses,
@@ -1079,7 +1080,11 @@ app.get("/api/v1/market-data/resolve", async (c) => {
 app.get("/api/v1/market-data/effective-quotes", async (c) => {
   const query = marketDataEffectiveQuotesQuerySchema.parse(c.req.query());
   return c.json({
-    data: await getEffectiveMarketQuotes({
+    // 2026-07-19: adds the official_close (quote_last_close DB) fallback
+    // tier ONLY for this route — getMarketDataConsumerSummary/
+    // SelectionSummary/DecisionSummary below still call the base
+    // getEffectiveMarketQuotes() directly, unaffected.
+    data: await getEffectiveMarketQuotesWithOfficialCloseFallback({
       session: c.get("session"),
       symbols: query.symbols,
       market: query.market,

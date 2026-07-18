@@ -23,7 +23,7 @@ import {
   type QuoteSource,
   type SymbolMaster
 } from "@iuf-trading-room/contracts";
-import { companiesOhlcv, getDb } from "@iuf-trading-room/db";
+import { companiesOhlcv, getDb, isDatabaseMode } from "@iuf-trading-room/db";
 import type { CompanyLite, TradingRoomRepository } from "@iuf-trading-room/domain";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -31,10 +31,12 @@ import { z } from "zod";
 import { getFinMindClient, getFinMindStats } from "./data-sources/finmind-client.js";
 import { getTaiexDailyCloses } from "./data-sources/twse-openapi-client.js";
 import { runOhlcvFinmindSync } from "./jobs/ohlcv-finmind-sync.js";
+import { isTwTradingDay } from "./lib/trading-calendar.js";
 import {
   appendPersistedQuoteEntries,
   loadPersistedQuoteEntries
 } from "./market-data-store.js";
+import { getLastCloses, type LastCloseResult } from "./quote-last-close-store.js";
 
 type QuoteCacheEntry = Quote & {
   updatedAt: string;
@@ -46,7 +48,17 @@ type QuoteProviderAdapter = {
   getStatus: (workspaceSlug: string) => Promise<QuoteProviderStatus>;
 };
 
-type QuoteResolutionFreshnessStatus = "fresh" | "stale" | "missing";
+// "closed_snapshot" (2026-07-19): the official_close DB fallback tier's
+// honest freshness label — deliberately NOT "fresh" (it never feeds
+// strategyUsable/paperUsable/liveUsable, see
+// getEffectiveMarketQuotesWithOfficialCloseFallback) and deliberately NOT
+// "stale" either when it is legitimately used off-hours/on a non-trading
+// day (a same-day-close snapshot outside trading hours is not "stale
+// data", it is the correct value for that moment). Reserved exclusively for
+// the official_close augmentation below — resolveMarketQuotes() itself
+// never produces this value, so widening this enum does not change any
+// existing resolution behavior.
+type QuoteResolutionFreshnessStatus = "fresh" | "stale" | "missing" | "closed_snapshot";
 type QuoteResolutionFallbackReason =
   | "none"
   | "higher_priority_stale"
@@ -66,7 +78,7 @@ type MarketDataQualityGrade = "strategy_ready" | "reference_only" | "insufficien
 type MarketDataConsumerMode = z.infer<typeof marketDataConsumerModeSchema>;
 type MarketDataSurfaceMetadata = z.infer<typeof marketDataSurfaceMetadataSchema>;
 
-const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing"]);
+const quoteResolutionFreshnessStatusSchema = z.enum(["fresh", "stale", "missing", "closed_snapshot"]);
 const quoteResolutionFallbackReasonSchema = z.enum([
   "none",
   "higher_priority_stale",
@@ -123,7 +135,13 @@ const effectiveMarketQuoteSchema = z.object({
   staleAfterMs: z.number().int().positive().nullable(),
   sourcePriority: z.number().int().nonnegative().nullable(),
   reasons: z.array(z.string()),
-  candidates: z.array(quoteResolutionCandidateSchema)
+  candidates: z.array(quoteResolutionCandidateSchema),
+  // 2026-07-19: set only when selectedSource === "official_close" — the
+  // quote_last_close DB row's own trade_date, honestly labelled (never
+  // relabeled as "today"), so the frontend can render "MM/DD 收盤" the same
+  // way it already does elsewhere (e.g. page.tsx's `${formatDate(...)} 收盤`
+  // convention) instead of implying a live price.
+  closedSnapshotTradeDate: z.string().nullable().default(null)
 });
 
 type EffectiveMarketQuote = z.infer<typeof effectiveMarketQuoteSchema>;
@@ -469,7 +487,13 @@ function getSourcePriorityMap() {
       paper: 1,
       tradingview: 1,
       kgi: 1,
-      twse_mis: 1
+      twse_mis: 1,
+      // official_close is deliberately excluded from quoteProviderSources /
+      // getSourcePriorityOrder (see quoteProviders below) — 0 here is just
+      // the lowest-possible-priority default this map falls back to, used
+      // only when getEffectiveMarketQuotesWithOfficialCloseFallback asks for
+      // this source's priority to label its synthetic candidate entry.
+      official_close: 0
     }
   );
 }
@@ -2001,7 +2025,32 @@ const quoteProviders: Record<QuoteSource, QuoteProviderAdapter> = {
   paper: buildCachedProvider("paper", "Paper quote provider not configured."),
   tradingview: buildCachedProvider("tradingview", "TradingView quote provider not configured."),
   kgi: buildCachedProvider("kgi", "KGI quote provider not configured."),
-  twse_mis: buildCachedProvider("twse_mis", "TWSE MIS quote provider not configured.")
+  twse_mis: buildCachedProvider("twse_mis", "TWSE MIS quote provider not configured."),
+  // official_close is intentionally NOT in quoteProviderSources (the array
+  // that drives resolveMarketQuotes/getEffectiveMarketQuotes/consumer-
+  // summary/selection-summary/decision-summary's candidate race) — it must
+  // never compete for strategy/paper/execution usability, only ever appear
+  // as an explicit last-resort display fallback (see
+  // getEffectiveMarketQuotesWithOfficialCloseFallback). This entry exists
+  // solely so `Record<QuoteSource, QuoteProviderAdapter>` type-checks; it is
+  // never invoked at runtime.
+  official_close: {
+    source: "official_close",
+    async listQuotes() {
+      return [];
+    },
+    async getStatus() {
+      return quoteProviderStatusSchema.parse({
+        source: "official_close",
+        connected: false,
+        lastMessageAt: null,
+        latencyMs: null,
+        subscribedSymbols: [],
+        reasons: ["official_close_not_a_live_provider"],
+        errorMessage: null
+      });
+    }
+  }
 };
 
 function parseSourceFilter(raw?: string) {
@@ -2719,6 +2768,181 @@ export async function getEffectiveMarketQuotes(input: {
       }))
     },
     items
+  };
+}
+
+// ── official_close fallback tier (2026-07-19) ──────────────────────────────
+//
+// Bug this fixes: GET /market-data/effective-quotes on a weekend, or right
+// after a deploy restart (which wipes the in-memory quote cache — see
+// CLAUDE.md's standing warning), returns every symbol as
+// selectedQuote:null/fallbackReason:no_fresh_quote — the desk-exact
+// watchlist and quote header go fully blank even though the
+// quote_last_close DB table (populated daily by twse-eod-cron) already has
+// yesterday's/last trading day's official close for these symbols.
+//
+// Scope, deliberately narrow: this augmentation is applied ONLY by
+// getEffectiveMarketQuotesWithOfficialCloseFallback below (wired to the
+// /effective-quotes HTTP route only). getEffectiveMarketQuotes(),
+// resolveMarketQuotes(), getMarketDataConsumerSummary()/
+// getMarketDataSelectionSummary()/getMarketDataDecisionSummary() — the
+// functions strategy/paper/execution order-time risk checks actually call
+// (see broker/paper-broker.ts, broker/trading-service.ts,
+// broker/execution-gate.ts, domain/trading/paper-risk-bridge.ts, all of
+// which use getMarketDataDecisionSummary) — are completely untouched, so
+// the stale-quote risk guard's behavior cannot regress.
+
+// Returns true when "now" (Taipei wall clock) is outside the 09:00-13:30
+// TWSE trading session OR today is not a TW trading day at all
+// (weekend/holiday, via the shared tw_trading_calendar-backed
+// isTwTradingDay() — never a bare weekday guess). Mirrors
+// _isKgiHeatmapAfterHours() in server.ts (same intent: "is a plain closing
+// price honestly today's/last session's value, or would showing it without
+// a stale warning be misleading right now"). Duplicated rather than
+// imported because server.ts imports FROM market-data.ts already — the
+// reverse import would be circular; only the ~4-line wall-clock window
+// check is duplicated, the actual trading-calendar authority
+// (isTwTradingDay) is reused, not reimplemented.
+export async function _isMarketDataOffHours(nowMs: number = Date.now()): Promise<boolean> {
+  const nowTaipei = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const todayIso = nowTaipei.toISOString().slice(0, 10);
+  const tradingDay = await isTwTradingDay(todayIso).catch(() => true);
+  if (!tradingDay) return true;
+  const minutesOfDay = nowTaipei.getUTCHours() * 60 + nowTaipei.getUTCMinutes();
+  return minutesOfDay < 9 * 60 || minutesOfDay >= 13 * 60 + 30;
+}
+
+// Pure merge function (exported for direct unit testing, same convention as
+// _mapOhlcvRowsToEntries in quote-last-close-store.ts and
+// mergeEodFallbackWithPersistedBars in server.ts): for every item that has
+// NO selectedQuote (i.e. every live/manual/paper source missed), if the
+// quote_last_close DB table has a persisted close for that symbol, surface
+// it as an explicit official_close candidate — never silently override an
+// item that already has a selectedQuote.
+//
+// freshnessStatus semantics (requirement #3 of the 2026-07-19 dispatch):
+//   - offHours=true  → "closed_snapshot": an honest closing-price snapshot,
+//     not a live quote, but also not "stale" — this IS the correct value to
+//     show right now (weekend/holiday/outside session).
+//   - offHours=false → "stale": intraday, all live feeds are dead, so a
+//     persisted close genuinely IS an outdated price for this moment.
+// Either way, freshnessStatus is never "fresh", so strategyUsable/
+// paperUsable/liveUsable (all gated on `freshnessStatus === "fresh"` in
+// getEffectiveMarketQuotes above) stay false automatically — no separate
+// override needed to hold that redline.
+export function _applyOfficialCloseFallback(
+  items: EffectiveMarketQuote[],
+  lastCloseMap: Map<string, LastCloseResult>,
+  offHours: boolean
+): EffectiveMarketQuote[] {
+  return items.map((item) => {
+    if (item.selectedQuote !== null) return item;
+    const lastClose = lastCloseMap.get(item.symbol);
+    if (!lastClose) return item;
+
+    const closeTimestampIso = new Date(`${lastClose.tradeDate}T13:30:00+08:00`).toISOString();
+    const freshnessStatus: QuoteResolutionFreshnessStatus = offHours ? "closed_snapshot" : "stale";
+    const officialCloseQuote = quoteSchema.parse({
+      symbol: item.symbol,
+      market: item.market,
+      source: "official_close",
+      last: lastClose.closePrice,
+      bid: null,
+      ask: null,
+      open: null,
+      high: null,
+      low: null,
+      // Tier 2.5 (quote_last_close) is structurally price-only — no
+      // prevClose/change columns exist on this table (same limitation
+      // documented in kgi-heatmap-enricher.ts for its own Tier 2.5 read of
+      // this identical table). Never fabricate a changePct here.
+      prevClose: null,
+      changePct: null,
+      volume: null,
+      timestamp: closeTimestampIso,
+      ageMs: Math.max(0, Date.now() - new Date(closeTimestampIso).getTime()),
+      isStale: freshnessStatus === "stale"
+    });
+
+    return effectiveMarketQuoteSchema.parse({
+      ...item,
+      selectedSource: "official_close",
+      selectedQuote: officialCloseQuote,
+      freshnessStatus,
+      fallbackReason: item.fallbackReason,
+      staleReason: item.staleReason,
+      readiness: "degraded",
+      strategyUsable: false,
+      paperUsable: false,
+      liveUsable: false,
+      synthetic: false,
+      providerConnected: false,
+      staleAfterMs: item.staleAfterMs,
+      sourcePriority: getSourcePriority("official_close"),
+      closedSnapshotTradeDate: lastClose.tradeDate,
+      reasons: [
+        ...item.reasons,
+        offHours ? "official_close_snapshot" : "official_close_stale_intraday_fallback"
+      ],
+      candidates: [
+        ...item.candidates,
+        quoteResolutionCandidateSchema.parse({
+          source: "official_close",
+          priority: getSourcePriority("official_close"),
+          providerConnected: false,
+          subscribed: false,
+          eligible: false,
+          freshnessStatus,
+          staleReason: "none",
+          quote: officialCloseQuote
+        })
+      ]
+    });
+  });
+}
+
+// Route-level entry point for GET /market-data/effective-quotes only (see
+// server.ts wiring). Thin DB-fetching wrapper around getEffectiveMarketQuotes
+// + _applyOfficialCloseFallback — matches this file's existing convention of
+// leaving thin DB-fetch glue untested and unit-testing the pure function it
+// calls (getLatestOhlcvCloseForTickers/_mapOhlcvRowsToEntries in
+// quote-last-close-store.ts is the same split). Fails open on any DB error
+// or DATABASE mode being off — never blocks or degrades the base
+// getEffectiveMarketQuotes() response.
+export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
+  session: AppSession;
+  symbols: string;
+  market?: Market;
+  includeStale?: boolean;
+  limit?: number;
+}) {
+  const effective = await getEffectiveMarketQuotes(input);
+  if (!isDatabaseMode()) return effective;
+
+  const blockedSymbols = effective.items
+    .filter((item) => item.selectedQuote === null)
+    .map((item) => item.symbol);
+  if (blockedSymbols.length === 0) return effective;
+
+  const db = getDb();
+  if (!db) return effective;
+
+  let lastCloseMap: Map<string, LastCloseResult>;
+  try {
+    lastCloseMap = await getLastCloses(db, blockedSymbols);
+  } catch (err) {
+    console.warn(
+      "[market-data/effective-quotes] official_close fallback query failed (non-fatal):",
+      err instanceof Error ? err.message : String(err)
+    );
+    return effective;
+  }
+  if (lastCloseMap.size === 0) return effective;
+
+  const offHours = await _isMarketDataOffHours();
+  return {
+    ...effective,
+    items: _applyOfficialCloseFallback(effective.items, lastCloseMap, offHours)
   };
 }
 
