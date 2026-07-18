@@ -93,6 +93,13 @@ type DailyBriefDashboard = {
 
 type S1StrategyData = LabStrategySnapshot;
 
+// 首頁量化策略卡只顯示可驗證真值（KGI SIM 前進觀察），不顯示研究回測數字。
+// startDate 取自 track-record nav 曲線首筆日期（觀察起始日）。
+type S1RealSimData = {
+  summary: TrackRecordNavSummary;
+  startDate: string | null;
+};
+
 type IntelItem = CompanyAnnouncement & {
   companyId?: string;
   ticker: string;
@@ -1378,46 +1385,44 @@ function S1Bulletin({
   realSim,
 }: {
   strategy: LoadState<S1StrategyData | null>;
-  realSim: LoadState<TrackRecordNavSummary | null>;
+  realSim: LoadState<S1RealSimData | null>;
 }) {
   const snapshot = strategy.data;
-  const netReturn = snapshot?.headlineMetrics.strategyNetAbsoluteReturnPct ?? null;
-  const maxDrawdown = snapshot?.headlineMetrics.maxDrawdownNetPct ?? snapshot?.headlineMetrics.maxDrawdown ?? null;
-  const realSimReturnPct = realSim.data?.cumulativeReturnPct ?? null;
-  const isLiveVerifiedTrackRecord = snapshot?.isLiveVerifiedTrackRecord ?? false;
+  const realSimReturnPct = realSim.data?.summary.cumulativeReturnPct ?? null;
+  const initialEquity = realSim.data?.summary.initialEquity ?? null;
+  const startDateLabel = formatDate(realSim.data?.startDate ?? null);
   return (
     <Link href="/quant-strategies" className="s1wrap">
-      <div className="tab dim">量化策略 <span className="en">S1 · SIM-ONLY</span></div>
+      <div className="tab dim">量化策略 <span className="en">SIM 前進觀察中</span></div>
       {snapshot ? (
         <div className="s1notice">
           <div className="s1head"><b>S1</b><span>{snapshot.displayName_zh || snapshot.displayName}</span><em>KGI SIM-only</em></div>
           <div className="s1grid">
             <div className="s1cell">
-              <div className="lab"><span className="dot res" />{isLiveVerifiedTrackRecord ? "累積報酬" : "研究回測 · 累積報酬"}</div>
-              <div className={`v ${netReturn == null ? "" : netReturn >= 0 ? "up" : "down"}`}>{netReturn == null ? "--" : `${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}</div>
-              <div className="sub">歷史回測揭露 · 含成本 · 非未來保證</div>
+              <div className="lab"><span className="dot sim" />累積報酬</div>
+              <div className={`v ${realSimReturnPct == null ? "" : realSimReturnPct >= 0 ? "up" : "down"}`}>{realSimReturnPct == null ? "--" : `${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}%`}</div>
+              <div className="sub">KGI SIM 前進觀察 · 真實市況 · 已含成本</div>
             </div>
             <div className="s1cell">
-              <div className="lab"><span className="dot sim" />實盤模擬 · 累積報酬</div>
-              <div className={`v ${realSimReturnPct == null ? "" : realSimReturnPct >= 0 ? "up" : "down"}`}>{realSimReturnPct == null ? "--" : `${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}%`}</div>
-              <div className="sub">KGI SIM 前進觀察 · 真實市況</div>
+              <div className="lab"><span className="dot res" />模擬資金</div>
+              <div className="v">{initialEquity == null ? "--" : formatNumber(initialEquity)}</div>
+              <div className="sub">觀察起始 {startDateLabel}</div>
             </div>
           </div>
           <div className="s1-honest">
-            <b>研究 ≠ 實盤。</b>
+            <b>僅顯示可驗證真值。</b>
             {realSimReturnPct != null
-              ? `實盤模擬 ${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}% 為前進觀察真值，並列不弱化；策略經穩健度折扣後判定偏樂觀。`
-              : "實盤模擬資料目前無法讀取；不以研究回測數字代替。"}
+              ? "以上為 KGI SIM 前進觀察真值，非投資建議；策略經穩健度折扣後判定偏樂觀。"
+              : "實盤模擬資料目前無法讀取；不以其他數字代替。"}
           </div>
           <div className="s1-row2">
-            <div className="k">最大回撤<b className="down">{maxDrawdown == null ? "--" : `${(maxDrawdown * 100).toFixed(2)}%`}</b></div>
             <div className="k">狀態<b style={{ fontFamily: "var(--sans-tc)", color: "var(--lg-amber-hi)" }}>{snapshot.orderState === "paper_allowed" ? "前進觀察中" : "待確認"}</b></div>
           </div>
         </div>
       ) : (
         <div className="tac-empty-line">S1 核准快照目前無法讀取；不顯示其他研究策略或假績效。</div>
       )}
-      <div className="sfoot">唯一正式量化策略；研究快照與 KGI SIM 觀察分開呈現。來源 <code>/quant-strategies</code></div>
+      <div className="sfoot">量化策略・模擬盤前進觀察中；僅呈現可驗證真值，非投資建議。點按查看完整策略頁。</div>
     </Link>
   );
 }
@@ -1566,13 +1571,14 @@ const cachedRecommendations = cache((): Promise<LoadState<AiRecommendationV3Resp
   ));
 const cachedS1Strategy = cache((): Promise<LoadState<S1StrategyData | null>> =>
   load("S1 strategy snapshot", null, async () => await getLabStrategySnapshot("cont_liq_v36"), (value) => value === null, "S1 核准快照目前無法讀取。"));
-const cachedS1RealSim = cache((): Promise<LoadState<TrackRecordNavSummary | null>> =>
+const cachedS1RealSim = cache((): Promise<LoadState<S1RealSimData | null>> =>
   load(
     "S1 F-AUTO SIM 實盤績效",
     null,
     async () => {
       const result = await getTrackRecordNav();
-      return result.ok ? result.data.summary : null;
+      if (!result.ok || !result.data.summary) return null;
+      return { summary: result.data.summary, startDate: result.data.navCurve[0]?.date ?? null };
     },
     (value) => value === null,
     "S1 F-AUTO SIM 實盤績效目前無法讀取。",
