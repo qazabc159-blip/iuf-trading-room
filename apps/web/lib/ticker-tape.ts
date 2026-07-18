@@ -11,8 +11,9 @@
  */
 
 import type { MarketDataOverview } from "./api";
-import { isKgiTradingHours } from "./kgi-trading-hours";
+import { isKgiTradingHours, isTaipeiWeekend } from "./kgi-trading-hours";
 import type { DataState } from "./data-state-copy";
+import { humanizeDataReason } from "./data-reason-copy";
 
 export type TickerIndexItem = {
   key: string;
@@ -87,7 +88,7 @@ export function deriveTickerDisplay(
     }));
 
   const asOf = marketContext.index?.timestamp ?? null;
-  const reason = marketContext.index?.reason ?? null;
+  const reason = humanizeDataReason(marketContext.index?.reason ?? null);
 
   if (marketContext.state === "EMPTY") {
     return { dataState: "empty", reason: reason ?? "目前沒有盤面資料", asOf, index, stocks };
@@ -96,6 +97,14 @@ export function deriveTickerDisplay(
     return { dataState: "empty", reason: reason ?? "行情來源暫時無法讀取", asOf, index, stocks };
   }
   if (marketContext.state === "STALE") {
+    // 2026-07-19 側欄健康 widget 修復：backend 對「用官方日線資料墊檔」的路徑一律
+    // 回報 STALE（見 `apps/api/src/market-data.ts::buildDailyBarMarketContext`），
+    // 這在非交易日（週末）是預期中的正常狀態——架上就是最後一個交易日的資料，
+    // 不是「延遲」。週末改用 close 措辭（用資料自身日期顯示「MM/DD 收盤」），
+    // 平日維持 delayed（真的可能是資料同步延遲的訊號）。
+    if (isTaipeiWeekend(now)) {
+      return { dataState: "close", reason: null, asOf, index, stocks };
+    }
     return { dataState: "delayed", reason: reason ?? "資料同步延遲", asOf, index, stocks };
   }
 
