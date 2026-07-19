@@ -394,6 +394,166 @@ test("ROUND 2 end-to-end: getEffectiveMarketQuotesWithOfficialCloseFallback guar
   }
 });
 
+// ── ROUND 3 (2026-07-20): includeStale=true stale-arbitration bug ───────────
+//
+// Prod repro (Elva, /m mobile watchlist): 2330 showed a stale "行情" quote of
+// 875.00 and 0050 showed a stale "手動資料" quote of 100.15, while the real
+// 7/17 official closes were 2,290 and 201.35. Root cause: /m calls
+// getEffectiveQuotes with includeStale:true (apps/web/app/m/MobileKgiWatchlist.tsx),
+// and resolveMarketQuotes()'s `eligible = quote !== null && (includeStale ||
+// freshnessStatus === "fresh")` makes ANY existing quote object "eligible"
+// once includeStale=true, regardless of age — the candidate list is then
+// picked purely by SOURCE PRIORITY (kgi > twse_mis > tradingview > paper >
+// manual), never by recency. A months-old residual manual/tradingview cache
+// entry from a stale-but-nonzero source therefore wins over resolveMarket-
+// Quotes()'s "no eligible fresh candidate" state — and _applyOfficialClose-
+// Fallback's ORIGINAL guard (`selectedQuote !== null` => never touch) let
+// that ancient value block the official_close fallback entirely, even
+// though quote_last_close has yesterday's real close sitting right there.
+//
+// Fix: _applyOfficialCloseFallback now arbitrates by RECENCY once there is
+// no fresh selection — official_close only replaces an existing stale
+// selectedQuote when official_close's own timestamp is >= the stale
+// selectedQuote's timestamp.
+
+test("ROUND 3: an ancient stale manual quote (months old) loses to a more recent official_close — the exact reported bug", async () => {
+  const slug = `official-close-round3-ancient-manual-${Date.now()}`;
+  const session = makeSession(slug);
+  resetMarketDataWorkspaceState(slug);
+
+  try {
+    const ancientTimestamp = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(); // 90 days old
+    await upsertManualQuotes({
+      session,
+      quotes: [
+        {
+          symbol: "0050",
+          market: "TWSE",
+          source: "manual",
+          last: 100.15,
+          bid: null,
+          ask: null,
+          open: null,
+          high: null,
+          low: null,
+          prevClose: null,
+          volume: null,
+          changePct: null,
+          timestamp: ancientTimestamp,
+        },
+      ],
+    });
+
+    // Reproduces the /m watchlist's exact call shape (includeStale: true).
+    const effective = await getEffectiveMarketQuotes({ session, symbols: "0050", includeStale: true });
+    const before = effective.items.find((item) => item.symbol === "0050")!;
+    assert.equal(before.selectedSource, "manual", "sanity: source-priority picks the ancient manual quote when includeStale=true");
+    assert.notEqual(before.selectedQuote, null, "sanity: this is the bug's precondition — selectedQuote is non-null despite being 90 days old");
+    assert.equal(before.freshnessStatus, "stale");
+
+    const lastCloseMap = new Map([["0050", { closePrice: 201.35, tradeDate: "2026-07-17", source: "twse_eod" }]]);
+    const augmented = _applyOfficialCloseFallback(effective.items, lastCloseMap, /* offHours */ true);
+    const after = augmented.find((item) => item.symbol === "0050")!;
+
+    assert.equal(after.selectedSource, "official_close", "official_close must win over the ancient manual residual");
+    assert.equal(after.selectedQuote?.last, 201.35);
+    assert.equal(after.closedSnapshotTradeDate, "2026-07-17");
+    assert.equal(after.strategyUsable, false);
+    assert.equal(after.paperUsable, false);
+    assert.equal(after.liveUsable, false);
+  } finally {
+    resetMarketDataWorkspaceState(slug);
+  }
+});
+
+test("ROUND 3: a near-fresh stale candidate (timestamped today, just past the staleness threshold) still wins over yesterday's official_close", async () => {
+  // Direct fixture on the pure function (not resolveMarketQuotes) so the
+  // "just barely stale, still today" timestamp is exact and not dependent on
+  // MANUAL_QUOTE_STALE_MS env timing.
+  const todayStaleTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 minutes ago
+  const item = {
+    symbol: "2330",
+    market: "TWSE" as const,
+    selectedSource: "manual" as const,
+    selectedQuote: {
+      symbol: "2330",
+      market: "TWSE" as const,
+      source: "manual" as const,
+      last: 2295,
+      bid: null,
+      ask: null,
+      open: null,
+      high: null,
+      low: null,
+      prevClose: null,
+      changePct: null,
+      volume: null,
+      timestamp: todayStaleTimestamp,
+      ageMs: 5 * 60 * 1000,
+      isStale: true,
+    },
+    freshnessStatus: "stale" as const,
+    fallbackReason: "no_fresh_quote" as const,
+    staleReason: "age_exceeded" as const,
+    readiness: "blocked" as const,
+    strategyUsable: false,
+    paperUsable: false,
+    liveUsable: false,
+    synthetic: false,
+    providerConnected: false,
+    staleAfterMs: 60_000,
+    sourcePriority: 1,
+    reasons: ["stale:age_exceeded"],
+    candidates: [],
+    closedSnapshotTradeDate: null,
+  };
+
+  // Yesterday's official close — strictly older than the 5-minutes-ago stale quote.
+  const lastCloseMap = new Map([["2330", { closePrice: 2290, tradeDate: "2026-07-17", source: "twse_eod" }]]);
+  const augmented = _applyOfficialCloseFallback([item as any], lastCloseMap, false);
+
+  assert.deepStrictEqual(augmented, [item], "a same-day stale quote must still beat yesterday's official close");
+});
+
+test("ROUND 3: fresh live source is never touched even when quote_last_close has a newer-looking timestamp available", async () => {
+  const slug = `official-close-round3-fresh-untouched-${Date.now()}`;
+  const session = makeSession(slug);
+  resetMarketDataWorkspaceState(slug);
+
+  try {
+    await upsertManualQuotes({
+      session,
+      quotes: [
+        {
+          symbol: "2330",
+          market: "TWSE",
+          source: "manual",
+          last: 2295,
+          bid: null,
+          ask: null,
+          open: null,
+          high: null,
+          low: null,
+          prevClose: null,
+          volume: null,
+          changePct: null,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const effective = await getEffectiveMarketQuotes({ session, symbols: "2330", includeStale: true });
+    const live = effective.items.find((item) => item.symbol === "2330")!;
+    assert.equal(live.freshnessStatus, "fresh");
+
+    const lastCloseMap = new Map([["2330", { closePrice: 2290, tradeDate: "2026-07-17", source: "twse_eod" }]]);
+    const augmented = _applyOfficialCloseFallback(effective.items, lastCloseMap, true);
+    assert.deepStrictEqual(augmented, effective.items, "a fresh selection must never be replaced by official_close");
+  } finally {
+    resetMarketDataWorkspaceState(slug);
+  }
+});
+
 test("ROUND 2 regression: getEffectiveMarketQuotesWithOfficialCloseFallback stays a pure passthrough when there is nothing to fix", async () => {
   const slug = `official-close-round2-passthrough-${Date.now()}`;
   const session = makeSession(slug);

@@ -2815,10 +2815,12 @@ export async function _isMarketDataOffHours(nowMs: number = Date.now()): Promise
 // Pure merge function (exported for direct unit testing, same convention as
 // _mapOhlcvRowsToEntries in quote-last-close-store.ts and
 // mergeEodFallbackWithPersistedBars in server.ts): for every item that has
-// NO selectedQuote (i.e. every live/manual/paper source missed), if the
-// quote_last_close DB table has a persisted close for that symbol, surface
-// it as an explicit official_close candidate — never silently override an
-// item that already has a selectedQuote.
+// NO fresh selectedQuote, if the quote_last_close DB table has a persisted
+// close for that symbol, surface it as an explicit official_close
+// candidate — but never silently override an item whose selection is
+// already fresh, and never override an already-selected STALE quote unless
+// official_close is actually the more recent value (see the 2026-07-20
+// recency-arbitration note below).
 //
 // freshnessStatus semantics (requirement #3 of the 2026-07-19 dispatch):
 //   - offHours=true  → "closed_snapshot": an honest closing-price snapshot,
@@ -2836,11 +2838,35 @@ export function _applyOfficialCloseFallback(
   offHours: boolean
 ): EffectiveMarketQuote[] {
   return items.map((item) => {
-    if (item.selectedQuote !== null) return item;
+    // A genuinely fresh selection (live feed, this session) always wins —
+    // this augmentation only ever competes with a stale or missing
+    // selection, never a fresh one.
+    if (item.freshnessStatus === "fresh") return item;
+
     const lastClose = lastCloseMap.get(item.symbol);
     if (!lastClose) return item;
 
     const closeTimestampIso = new Date(`${lastClose.tradeDate}T13:30:00+08:00`).toISOString();
+
+    // 2026-07-20 (Elva prod finding, /m watchlist): resolveMarketQuotes()
+    // called with includeStale=true treats ANY existing quote object as
+    // "eligible" regardless of age, then picks purely by source priority
+    // (kgi > twse_mis > tradingview > paper > manual) — so a months-old
+    // residual manual/tradingview cache entry (source priority 1/3) was
+    // winning over yesterday's real official close, because this
+    // function's original guard (`selectedQuote !== null` => never touch)
+    // let ANY stale selection block the fallback outright, no matter how
+    // ancient. Fix: arbitrate the "no fresh source" case by RECENCY, not
+    // raw source priority — official_close only replaces an existing stale
+    // selection when official_close's own timestamp is at least as recent
+    // as the currently-selected stale quote's timestamp. This keeps a
+    // near-fresh stale tick (e.g. a KGI tick a few seconds past its 5s
+    // threshold, timestamped today) correctly ahead of yesterday's close,
+    // while a genuinely ancient stale candidate (the reported bug) still
+    // loses to official_close.
+    if (item.selectedQuote !== null && item.selectedQuote.timestamp >= closeTimestampIso) {
+      return item;
+    }
     const freshnessStatus: QuoteResolutionFreshnessStatus = offHours ? "closed_snapshot" : "stale";
     const officialCloseQuote = quoteSchema.parse({
       symbol: item.symbol,
@@ -3184,11 +3210,16 @@ export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
   const requestedSymbols = _parseRequestedSymbols(input.symbols);
   const presentSymbols = new Set(effective.items.map((item) => item.symbol));
   const missingSymbols = requestedSymbols.filter((symbol) => !presentSymbols.has(symbol));
-  const blockedExistingSymbols = effective.items
-    .filter((item) => item.selectedQuote === null)
+  // 2026-07-20: broadened from "selectedQuote === null" to "not fresh" —
+  // _applyOfficialCloseFallback now also needs quote_last_close for items
+  // that already have a STALE selectedQuote (so it can arbitrate by
+  // recency, see that function's docstring), not only items with no
+  // selectedQuote at all.
+  const nonFreshExistingSymbols = effective.items
+    .filter((item) => item.freshnessStatus !== "fresh")
     .map((item) => item.symbol);
 
-  if (missingSymbols.length === 0 && blockedExistingSymbols.length === 0) {
+  if (missingSymbols.length === 0 && nonFreshExistingSymbols.length === 0) {
     return effective;
   }
 
@@ -3198,7 +3229,7 @@ export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
     ? await listMarketDataProviderStatuses({ session: input.session })
     : [];
 
-  const lookupSymbols = [...new Set([...blockedExistingSymbols, ...missingSymbols])];
+  const lookupSymbols = [...new Set([...nonFreshExistingSymbols, ...missingSymbols])];
   let lastCloseMap: Map<string, LastCloseResult> = new Map();
   if (isDatabaseMode() && lookupSymbols.length > 0) {
     const db = getDb();
