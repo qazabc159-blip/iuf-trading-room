@@ -61,4 +61,16 @@ describe("quant strategies v9.1 fact-sheet page", () => {
       expect(source).not.toContain("STAGE_BADGES"); // no local re-implementation of the badge table
     }
   });
+
+  // Pete re-review（🔴）：目錄頁 + 詳情頁都吃了 `todayTaipeiDate()` render-
+  // time 依賴（透過 deriveStrategyProgress），兩者都必須宣告
+  // `force-dynamic`，否則 Next.js 會把 render 當下的日期烤進靜態/預先渲染
+  // 的 HTML，凍結在部署當下那一刻——跟 /ops 頁頭時鐘凍結同一類陷阱。詳情頁
+  // 第一輪漏補，這裡用原始碼層級斷言鎖住兩個檔案都要有，不能只靠
+  // `next build` 路由表人工核對。
+  it("目錄頁與詳情頁都宣告 force-dynamic（吃了 today 現算依賴，不能被凍結成靜態 HTML）", () => {
+    for (const source of [pageSource, detailSource]) {
+      expect(source).toMatch(/export const dynamic = ["']force-dynamic["'];/);
+    }
+  });
 });

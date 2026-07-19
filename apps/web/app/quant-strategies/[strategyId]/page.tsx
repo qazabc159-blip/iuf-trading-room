@@ -19,6 +19,14 @@ import styles from "../QuantStrategies.module.css";
 //
 // Pete review #1311 round 2（🔴 must-fix）：badge／下一個動作跟目錄頁一樣改
 // 用 `deriveStrategyProgress()` 現算，不再讀靜態欄位。
+//
+// Pete re-review（🔴）：這裡跟目錄頁一樣吃了 `todayTaipeiDate()` render-time
+// 依賴，卻漏補 `force-dynamic`——這頁是動態路由（`[strategyId]`），沒有
+// `generateStaticParams`，本來就不會被整頁預先渲染成固定 HTML，但明確宣告
+// 才不必依賴這個隱含行為；repo 其他 4 個動態 segment 頁
+// （ai-recommendations/[id]、briefs/[id]、runs/[id]、themes/[short]）全部
+// 都有宣告，這裡補齊避免它是唯一例外。
+export const dynamic = "force-dynamic";
 
 export default async function QuantStrategyDetailPage({
   params,
