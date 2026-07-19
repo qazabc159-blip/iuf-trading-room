@@ -1,21 +1,30 @@
 "use client";
 
 // MobileKgiWatchlist — 手機版 KGI 即時報價 watchlist
-// 15s poll, 4-state (loading/live/blocked/empty), mobile-optimised large numbers.
-// Default watchlist: 0050 / 2330 / 2454 (top-3 liquidity).
-// Hard rule: NO fake / mock data. Shows BLOCKED if gateway unreachable.
+// 15s poll, 6-state (loading/live/closed/stale/blocked/empty), mobile-optimised
+// large numbers. Default watchlist: 0050 / 2330 / 2454 (top-3 liquidity).
+// "closed" = effective-quotes closed_snapshot/official_close+stale fallback (real
+// last-close price, honest "MM/DD 收盤" label) — 2026-07-20, mirrors desk-exact.
+// "stale" = any other effective-quotes source (twse_mis/kgi/manual/tradingview)
+// whose own cached quote isn't fresh — real price, honest "來源（略舊）" label,
+// never "live" (Pete #1313 review 🔴1 — this must never be mislabeled live).
+// Hard rule: NO fake / mock data. Shows BLOCKED if gateway unreachable and no
+// closing-price fallback exists either.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatMobileKgiBlockedReason } from "./mobile-kgi-copy";
+import { deriveEffectiveFallbackCellState } from "./mobile-quote-effective-fallback";
 import { isKgiGatewayScheduledOff } from "@/lib/kgi-trading-hours";
+import { getEffectiveQuotes } from "@/lib/api";
 import { DataStateBadge } from "@/components/DataStateBadge";
 
 type QuoteState =
   | { status: "loading" }
   | { status: "live"; lastPrice: number; priceChg: number; pctChg: number; volume: number; time: string }
+  | { status: "closed"; lastPrice: number; priceChg: number | null; pctChg: number | null; dateLabel: string }
+  | { status: "stale"; lastPrice: number; priceChg: number | null; pctChg: number | null; label: string }
   | { status: "blocked"; reason: string }
-  | { status: "scheduled-off" }
   | { status: "empty" };
 
 type WatchItem = { symbol: string; label: string };
@@ -180,6 +189,34 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
   }
 }
 
+// KGI ticks has no built-in fallback (mirrors apps/web/public/desk-exact/index.html's
+// fetchEffectiveQuotes() — 2026-07-16 診斷 #1). When ticks has nothing usable for a
+// symbol (blocked/empty/scheduled-off), batch-fetch the twse_mis/official_close
+// backed effective-quotes endpoint once for all such symbols instead of leaving the
+// cell on a bare "--". Only overrides symbols where the fallback actually has a
+// usable price — otherwise the original ticks-derived blocked/empty state (with its
+// more specific reason text) stands.
+async function fetchEffectiveQuoteFallback(symbols: string[]): Promise<Record<string, QuoteState>> {
+  if (symbols.length === 0) return {};
+  try {
+    const res = await getEffectiveQuotes({ symbols: symbols.join(","), includeStale: true });
+    const bySymbol = new Map(res.data.items.map((item) => [item.symbol, item]));
+    const map: Record<string, QuoteState> = {};
+    for (const symbol of symbols) {
+      const derived = deriveEffectiveFallbackCellState(bySymbol.get(symbol));
+      if (derived.status === "empty") continue;
+      if (derived.status === "closed" || derived.status === "stale") {
+        map[symbol] = derived;
+      } else {
+        map[symbol] = { status: "live", lastPrice: derived.lastPrice, priceChg: derived.priceChg ?? 0, pctChg: derived.pctChg ?? 0, volume: derived.volume, time: derived.time };
+      }
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 function TickerCell({ item, q }: { item: WatchItem; q: QuoteState }) {
   if (q.status === "loading") {
     return (
@@ -191,13 +228,36 @@ function TickerCell({ item, q }: { item: WatchItem; q: QuoteState }) {
       </div>
     );
   }
-  if (q.status === "scheduled-off") {
+  if (q.status === "closed") {
+    // Off-hours / intraday-interruption fallback (effective-quotes closed_snapshot
+    // or official_close+stale) — real last-close price, honest "MM/DD 收盤" label
+    // in place of the volume line. Never paired with a bare "--" (that pairing was
+    // the pre-2026-07-20 bug: schedule-off state showed no price at all).
+    const tone = q.priceChg != null ? priceTone(q.priceChg) : "flat";
     return (
       <div className="_mob-kgi-ticker-cell">
         <div className="_mob-kgi-symbol">{item.symbol}</div>
-        <div className={`_mob-kgi-price blocked`}>--</div>
-        <div className="_mob-kgi-chg flat">排程關機</div>
-        <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>盤後暫停</div>
+        <div className={`_mob-kgi-price ${tone}`}>{q.lastPrice.toFixed(2)}</div>
+        <div className={`_mob-kgi-chg ${tone}`}>
+          {q.priceChg != null && q.pctChg != null ? `${signed(q.priceChg)} (${signed(q.pctChg)}%)` : "--"}
+        </div>
+        <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>{q.dateLabel}</div>
+      </div>
+    );
+  }
+  if (q.status === "stale") {
+    // Generic non-fresh effective-quotes fallback (twse_mis/kgi/manual/tradingview
+    // whose own cached quote isn't fresh) — real price, honest "來源（略舊）" label.
+    // Pete #1313 review 🔴1: this must never be folded into the "live" branch below.
+    const tone = q.priceChg != null ? priceTone(q.priceChg) : "flat";
+    return (
+      <div className="_mob-kgi-ticker-cell">
+        <div className="_mob-kgi-symbol">{item.symbol}</div>
+        <div className={`_mob-kgi-price ${tone}`}>{q.lastPrice.toFixed(2)}</div>
+        <div className={`_mob-kgi-chg ${tone}`}>
+          {q.priceChg != null && q.pctChg != null ? `${signed(q.priceChg)} (${signed(q.pctChg)}%)` : "--"}
+        </div>
+        <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>{q.label}</div>
       </div>
     );
   }
@@ -232,21 +292,22 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
   const fetchAll = useCallback(async () => {
     // Gateway runs on a weekday 08:20-14:10 TST EventBridge schedule. Outside
     // that window, /kgi/quote/ticks reliably returns 422/503 — skip the call
-    // entirely and show the honest "排程關機中" state instead of noise.
-    if (isKgiGatewayScheduledOff()) {
-      const next: TickerQuotes = Object.fromEntries(watchlist.map(w => [w.symbol, { status: "scheduled-off" as const }]));
-      setQuotes(next);
-      setLiveCount(0);
-      setLastUpdated(new Date().toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" }));
-      return;
-    }
-    const results = await Promise.all(watchlist.map(w => fetchQuoteForSymbol(w.symbol)));
+    // entirely (avoid noise) and go straight to the effective-quotes fallback
+    // below, same as any other symbol ticks couldn't serve.
+    const scheduledOff = isKgiGatewayScheduledOff();
+    const tickResults: QuoteState[] = scheduledOff
+      ? watchlist.map(() => ({ status: "empty" as const }))
+      : await Promise.all(watchlist.map(w => fetchQuoteForSymbol(w.symbol)));
+
     const next: TickerQuotes = {};
+    watchlist.forEach((w, i) => { next[w.symbol] = tickResults[i]; });
+
+    const missing = watchlist.filter(w => next[w.symbol].status !== "live").map(w => w.symbol);
+    const fallback = await fetchEffectiveQuoteFallback(missing);
+    Object.entries(fallback).forEach(([symbol, state]) => { next[symbol] = state; });
+
     let live = 0;
-    watchlist.forEach((w, i) => {
-      next[w.symbol] = results[i];
-      if (results[i].status === "live") live++;
-    });
+    Object.values(next).forEach(state => { if (state.status === "live") live++; });
     setQuotes(next);
     setLiveCount(live);
     setLastUpdated(new Date().toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" }));
@@ -259,7 +320,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
   }, [fetchAll]);
 
   const anyLive = liveCount > 0;
-  const allScheduledOff = Object.values(quotes).every(q => q.status === "scheduled-off");
+  const anyClosed = Object.values(quotes).some(q => q.status === "closed" || q.status === "stale");
 
   return (
     <>
@@ -271,7 +332,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
             {anyLive ? "即時報價" : "報價"}
           </span>
           <span className="_mob-kgi-right">
-            {allScheduledOff ? "排程關機中" : anyLive ? `${liveCount}/${watchlist.length} 活躍` : "離線"}{lastUpdated ? ` · ${lastUpdated}` : ""}
+            {anyLive ? `${liveCount}/${watchlist.length} 活躍` : anyClosed ? "收盤價" : "離線"}{lastUpdated ? ` · ${lastUpdated}` : ""}
           </span>
         </div>
         <div className="_mob-kgi-ticker-row">
