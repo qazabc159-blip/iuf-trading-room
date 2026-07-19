@@ -6,10 +6,11 @@
 // HARD LINE: never import KGI SDK or call broker live submit path.
 
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { PageFrame } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
-import { getCompanyAnnouncements, getCompanyByTicker, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FinMindKBarView, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
+import { getCompanyAnnouncements, getCompanyByTicker, getCompanyFullProfile, getCompanyKBar, getCompanyOhlcv, getCompanyQuoteRealtime, getThemes, type CompanyRealtimeQuote, type FullProfileEnvelope, type OhlcvBar } from "@/lib/api";
 import type { Company, Theme } from "@iuf-trading-room/contracts";
 import {
   quoteFromOhlcvBars,
@@ -226,6 +227,129 @@ function buildSourceStatus(
   ];
 }
 
+// ── Deferred kbar (minute-K) streaming ──────────────────────────────────────
+// getCompanyKBar's default freq=1m path can take several seconds cold (backend
+// loops sequential FinMind calls across candidate trading dates) — it only
+// feeds the *intraday* toggle inside OhlcvCandlestickChart / the tick-stream
+// panel, never the default daily view or the hero price. Kicking the fetch off
+// once (not awaited) and consuming the same promise from a few small Suspense
+// boundaries lets the hero/K-line-daily/rest of the page paint immediately
+// while minute-K streams in behind it. Panel components themselves are
+// unchanged — only *when* they receive kbar props differs.
+type KbarEnvelope = Awaited<ReturnType<typeof getCompanyKBar>>;
+
+async function resolveKbar(kbarPromise: Promise<KbarEnvelope>, fallbackDate: string) {
+  try {
+    const result = await kbarPromise;
+    const kbarView = result.data;
+    return {
+      kbarView,
+      kbarState: kbarView?.state ?? "EMPTY",
+      kbarReason: kbarView?.reason ?? "FinMind 分 K 尚未回傳資料。",
+    } as const;
+  } catch (err) {
+    const msg = friendlyError(err);
+    console.warn("[company-detail] getCompanyKBar failed", { date: fallbackDate, err: msg });
+    return {
+      kbarView: null,
+      kbarState: "BLOCKED" as const,
+      kbarReason: `FinMind 分 K 暫時無法讀取：${msg}`,
+    } as const;
+  }
+}
+
+async function KBarChartSection({
+  kbarPromise,
+  bars,
+  symbol,
+  sourceState,
+  sourceReason,
+  fallbackDate,
+}: {
+  kbarPromise: Promise<KbarEnvelope>;
+  bars: OhlcvBar[];
+  symbol: string;
+  sourceState: "LIVE" | "EMPTY" | "BLOCKED";
+  sourceReason: string;
+  fallbackDate: string;
+}) {
+  const { kbarView, kbarState, kbarReason } = await resolveKbar(kbarPromise, fallbackDate);
+  return (
+    <OhlcvCandlestickChart
+      bars={bars}
+      kbarRows={kbarView?.rows ?? []}
+      kbarState={kbarState}
+      kbarReason={kbarReason}
+      kbarDate={kbarView?.date ?? fallbackDate}
+      symbol={symbol}
+      sourceState={sourceState}
+      sourceReason={sourceReason}
+    />
+  );
+}
+
+async function KBarTickSection({
+  kbarPromise,
+  symbol,
+  fallbackDate,
+}: {
+  kbarPromise: Promise<KbarEnvelope>;
+  symbol: string;
+  fallbackDate: string;
+}) {
+  const { kbarView, kbarState, kbarReason } = await resolveKbar(kbarPromise, fallbackDate);
+  return (
+    <TickStreamPanel
+      symbol={symbol}
+      kbarRows={kbarView?.rows ?? []}
+      kbarState={kbarState}
+      kbarReason={kbarReason}
+    />
+  );
+}
+
+async function KBarSourceStatusSection({
+  kbarPromise,
+  company,
+  bars,
+  ohlcvReason,
+  announcementsSource,
+  fallbackDate,
+}: {
+  kbarPromise: Promise<KbarEnvelope>;
+  company: Company;
+  bars: OhlcvBar[];
+  ohlcvReason: string;
+  announcementsSource: Parameters<typeof buildSourceStatus>[4];
+  fallbackDate: string;
+}) {
+  const { kbarView, kbarState, kbarReason } = await resolveKbar(kbarPromise, fallbackDate);
+  const sources = buildSourceStatus(company, bars, ohlcvReason, {
+    state: kbarState,
+    reason: kbarReason,
+    rows: kbarView?.rows.length ?? 0,
+    date: kbarView?.date ?? fallbackDate,
+  }, announcementsSource);
+  return <SourceStatusCard sources={sources} />;
+}
+
+async function KBarStatusCell({
+  kbarPromise,
+  fallbackDate,
+}: {
+  kbarPromise: Promise<KbarEnvelope>;
+  fallbackDate: string;
+}) {
+  const { kbarView, kbarState } = await resolveKbar(kbarPromise, fallbackDate);
+  const rowCount = kbarView?.rows.length ?? 0;
+  const live = kbarState === "LIVE" && rowCount > 0;
+  return (
+    <div className={`_co-hud-stat-val ${live ? "_co-hud-dn" : ""}`} style={{ fontSize: 11 }}>
+      {live ? `${rowCount.toLocaleString("zh-TW")} 根` : kbarState === "BLOCKED" ? "暫停" : "無資料"}
+    </div>
+  );
+}
+
 export default async function CompanyDetailPage({
   params,
 }: {
@@ -331,30 +455,26 @@ export default async function CompanyDetailPage({
     : "此股票目前沒有可用的正式 K 線資料。";
   const kbarDate = bars.at(-1)?.dt ?? new Date().toISOString().slice(0, 10);
 
-  // ── Phase 2: kbar + themes + announcements + realtime quote + full-profile in parallel ──
-  // Previously 4 concurrent fetches. Now 5 — full-profile for PE / yield / monthly revenue.
+  // Kick off kbar (minute-K) fetch in parallel with Phase 2 below, but do NOT
+  // await it here — it only feeds the intraday chart toggle / tick panel /
+  // source-status badge, never the hero price or default daily chart, and its
+  // default freq=1m path can take several seconds cold. Consumed later via
+  // Suspense boundaries (see KBarChartSection / KBarTickSection /
+  // KBarSourceStatusSection / KBarStatusCell above) so it never blocks first paint.
+  const kbarPromise = getCompanyKBar(company.id, kbarDate, { days: 20 });
+  // Attach a no-op catch so a rejection isn't flagged as unhandled before a
+  // Suspense child awaits kbarPromise (each awaiter below has its own real
+  // try/catch via resolveKbar — this line only silences the raw promise).
+  kbarPromise.catch(() => {});
+
+  // ── Phase 2: themes + announcements + realtime quote + full-profile in parallel ──
   const fetchedAt = new Date().toISOString();
-  const [kbarResult, themesResult, announcementsResult, realtimeResult, fullProfileResult] = await Promise.allSettled([
-    getCompanyKBar(company.id, kbarDate, { days: 20 }),
+  const [themesResult, announcementsResult, realtimeResult, fullProfileResult] = await Promise.allSettled([
     getThemes(),
     getCompanyAnnouncements(company.id, { days: 30 }),
     getCompanyQuoteRealtime(company.id),
     getCompanyFullProfile(company.id),
   ]);
-
-  // kbar
-  let kbarView: FinMindKBarView | null = null;
-  let kbarErrorMsg: string | null = null;
-  if (kbarResult.status === "fulfilled") {
-    kbarView = kbarResult.value.data;
-  } else {
-    kbarErrorMsg = friendlyError(kbarResult.reason);
-    console.warn("[company-detail] getCompanyKBar failed", { id: company.id, date: kbarDate, err: kbarErrorMsg });
-  }
-  const kbarState = kbarErrorMsg ? "BLOCKED" : kbarView?.state ?? "EMPTY";
-  const kbarReason = kbarErrorMsg
-    ? `FinMind 分 K 暫時無法讀取：${kbarErrorMsg}`
-    : kbarView?.reason ?? "FinMind 分 K 尚未回傳資料。";
 
   // themes
   const themeLabelById = new Map<string, string>();
@@ -406,15 +526,7 @@ export default async function CompanyDetailPage({
 
   const detail = toCompanyDetailView(company, symbol, themeLabelById);
   const quote = quoteFromOhlcvBars(bars);
-  const sources = buildSourceStatus(company, bars, ohlcvReason, {
-    state: kbarState,
-    reason: kbarReason,
-    rows: kbarView?.rows.length ?? 0,
-    date: kbarView?.date ?? kbarDate,
-  }, announcementsSource);
   const dailyChangePct = quote?.changePercent ?? null;
-  const kbarRowCount = kbarView?.rows.length ?? 0;
-  const kbarLive = kbarState === "LIVE" && kbarRowCount > 0;
 
   // ── Round 2: Supplemental HUD stats (all from existing payloads — zero new backend calls) ──
   // 振幅: today's (high-low)/prevClose — uses realtimeQuote fields
@@ -496,9 +608,9 @@ export default async function CompanyDetailPage({
         </div>
         <div className="_co-hud-stat-cell">
           <div className="_co-hud-stat-lbl">分K狀態</div>
-          <div className={`_co-hud-stat-val ${kbarLive ? "_co-hud-dn" : ""}`} style={{ fontSize: 11 }}>
-            {kbarLive ? `${kbarRowCount.toLocaleString("zh-TW")} 根` : kbarState === "BLOCKED" ? "暫停" : "無資料"}
-          </div>
+          <Suspense fallback={<div className="_co-hud-stat-val" style={{ fontSize: 11 }}>載入中</div>}>
+            <KBarStatusCell kbarPromise={kbarPromise} fallbackDate={kbarDate} />
+          </Suspense>
         </div>
       </div>
 
@@ -507,16 +619,25 @@ export default async function CompanyDetailPage({
           {/* ── K 線圖：既有 OhlcvCandlestickChart 引擎原封裝入（禁重寫），
                週期/範圍/分K視窗/均線/RSI/MACD 切換皆元件自帶 chrome ── */}
           <div id="sec-kline" className="company-workbench-shell">
-            <OhlcvCandlestickChart
-              bars={bars}
-              kbarRows={kbarView?.rows ?? []}
-              kbarState={kbarState}
-              kbarReason={kbarReason}
-              kbarDate={kbarView?.date ?? kbarDate}
-              symbol={company.ticker}
-              sourceState={ohlcvState}
-              sourceReason={ohlcvReason}
-            />
+            <Suspense
+              fallback={
+                <OhlcvCandlestickChart
+                  bars={bars}
+                  symbol={company.ticker}
+                  sourceState={ohlcvState}
+                  sourceReason={ohlcvReason}
+                />
+              }
+            >
+              <KBarChartSection
+                kbarPromise={kbarPromise}
+                bars={bars}
+                symbol={company.ticker}
+                sourceState={ohlcvState}
+                sourceReason={ohlcvReason}
+                fallbackDate={kbarDate}
+              />
+            </Suspense>
           </div>
 
           {/* ── 五檔委買委賣 | 逐筆即時成交 — 等高並排（DESIGN_NOTES §三 #5/#6） ── */}
@@ -552,12 +673,18 @@ export default async function CompanyDetailPage({
 
           {/* ── 逐筆成交明細 full-width（DESIGN_NOTES §三 #19） ── */}
           <div id="sec-detail">
-            <TickStreamPanel
-              symbol={company.ticker}
-              kbarRows={kbarView?.rows ?? []}
-              kbarState={kbarState}
-              kbarReason={kbarReason}
-            />
+            <Suspense
+              fallback={
+                <TickStreamPanel
+                  symbol={company.ticker}
+                  kbarRows={[]}
+                  kbarState="EMPTY"
+                  kbarReason="分 K 資料載入中…"
+                />
+              }
+            >
+              <KBarTickSection kbarPromise={kbarPromise} symbol={company.ticker} fallbackDate={kbarDate} />
+            </Suspense>
           </div>
 
           {/* ── 重大訊息 full-width（DESIGN_NOTES §三 #18） ── */}
@@ -593,7 +720,27 @@ export default async function CompanyDetailPage({
           <CompanyInfoPanel company={company} />
           <CompanySideNavPanel />
           <div id="company-source-status">
-            <SourceStatusCard sources={sources} />
+            <Suspense
+              fallback={
+                <SourceStatusCard
+                  sources={buildSourceStatus(company, bars, ohlcvReason, {
+                    state: "EMPTY",
+                    reason: "FinMind 分 K 尚未回傳資料。",
+                    rows: 0,
+                    date: kbarDate,
+                  }, announcementsSource)}
+                />
+              }
+            >
+              <KBarSourceStatusSection
+                kbarPromise={kbarPromise}
+                company={company}
+                bars={bars}
+                ohlcvReason={ohlcvReason}
+                announcementsSource={announcementsSource}
+                fallbackDate={kbarDate}
+              />
+            </Suspense>
           </div>
         </aside>
       </div>
