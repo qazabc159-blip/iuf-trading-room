@@ -5612,16 +5612,24 @@ app.get("/api/v1/portfolio/f-auto/nav", async (c) => {
   }
 });
 
-// GET /api/v1/track-record/nav — public whitelisted NAV read (P0-C, Jason 2026-07-05)
+// GET /api/v1/track-record/nav — Owner-only whitelisted NAV read (P0-C, Jason 2026-07-05;
+// tightened to Owner-only 2026-07-20 per Athena §2 / Pete PR #1313 review)
 //
 // Same-source read as /api/v1/portfolio/f-auto/nav above (both call
-// buildFAutoNavFull() in track-record-handlers.ts) — the Owner-only route is
-// NOT loosened; this is a separate, deliberately thinner public surface for
-// the /track-record public scorecard page. Gate = login-only (no role check
-// beyond the global /api/v1/* session middleware), matching G-PUB.
+// buildFAutoNavFull() in track-record-handlers.ts). Originally shipped as a
+// login-only "public whitelisted" surface for the /track-record page
+// (matching G-PUB) — that page itself is now Owner-gated (PR #1313, Athena
+// 7/18 §2: F-AUTO run P&L must not reach non-owner users), so this route
+// must match at the API boundary too; otherwise any logged-in user could
+// still fetch F-AUTO NAV/P&L directly, bypassing the page's SSR gate.
 // Whitelist: navCurve[] (date/equity/source), weeks[], summary (4 top-line
 // fields only) — see toPublicNav() for the exact field list + rationale.
 app.get("/api/v1/track-record/nav", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
   try {
     const { buildFAutoNavFull, toPublicNav } = await import("./track-record-handlers.js");
     const full = await buildFAutoNavFull();
@@ -21832,16 +21840,25 @@ app.get("/api/v1/admin/ai-rec/performance", async (c) => {
   return c.json(perf);
 });
 
-// GET /api/v1/track-record/performance — public whitelisted scorecard read (P0-C, Jason 2026-07-05)
+// GET /api/v1/track-record/performance — Owner-only whitelisted scorecard read
+// (P0-C, Jason 2026-07-05; tightened to Owner-only 2026-07-20 per Athena §2 /
+// Pete PR #1313 review)
 //
 // Same-source read as /api/v1/admin/ai-rec/performance above (both call
-// getAiRecPerformance()) — the Owner-only route is NOT loosened; this is a
-// separate, deliberately thinner public surface for the /track-record public
-// scorecard page. Gate = login-only (no role check beyond the global
-// /api/v1/* session middleware), matching G-PUB. Whitelist: hit-rate/excess/
-// sample-count/date/benchmark fields only — no by_bucket breakdown, no
-// per-pick detail. See toPublicPerformance() for the exact field list.
+// getAiRecPerformance()). Originally shipped as a login-only "public
+// whitelisted" surface for the /track-record page (matching G-PUB) — that
+// page itself is now Owner-gated (PR #1313, Athena 7/18 §2: F-AUTO run P&L
+// must not reach non-owner users), so this route must match at the API
+// boundary too; otherwise any logged-in user could still fetch this
+// scorecard directly, bypassing the page's SSR gate. Whitelist: hit-rate/
+// excess/sample-count/date/benchmark fields only — no by_bucket breakdown,
+// no per-pick detail. See toPublicPerformance() for the exact field list.
 app.get("/api/v1/track-record/performance", async (c) => {
+  const session = c.get("session");
+  if (!session || session.user.role !== "Owner") {
+    return c.json({ error: "OWNER_ONLY" }, 403);
+  }
+
   const { getAiRecPerformance } = await import("./ai-rec-perf-store.js");
   const { toPublicPerformance } = await import("./track-record-handlers.js");
   const perf = await getAiRecPerformance({});

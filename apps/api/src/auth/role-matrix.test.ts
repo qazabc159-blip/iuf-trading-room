@@ -350,6 +350,13 @@ const GATE_CASES: GateOnlyCase[] = [
   { group: "G-PORT", method: "POST", path: "/api/v1/paper/orders", minRole: "Trader" },
   { group: "G-PORT", method: "POST", path: "/api/v1/paper/orders/role-matrix-x/cancel", minRole: "Trader" },
   { group: "G-OWNER", method: "POST", path: "/api/v1/portfolio/kill-mode", minRole: "Owner" },
+  // 2026-07-20 (Pete PR #1313 review — F-AUTO API owner guard, Jason): these
+  // two routes were "login-only, matching G-PUB" (any role passed) until this
+  // fix — tightened to Owner-only so the API boundary matches the /track-record
+  // page's own Owner-only SSR gate (Athena §2: F-AUTO run P&L must not reach
+  // non-owner users).
+  { group: "G-OWNER", method: "GET", path: "/api/v1/track-record/nav", minRole: "Owner" },
+  { group: "G-OWNER", method: "GET", path: "/api/v1/track-record/performance", minRole: "Owner" },
   { group: "G-PORT", method: "POST", path: "/api/v1/paper/submit", minRole: "Trader" },
   { group: "G-RESEARCH", method: "POST", path: "/api/v1/lab/bundles/intake", minRole: "Analyst" },
   { group: "G-RESEARCH", method: "GET", path: "/api/v1/lab/bundles", minRole: "Analyst" },

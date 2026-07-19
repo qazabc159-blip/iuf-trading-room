@@ -22339,26 +22339,34 @@ test("TRK-1: server.ts has both new public track-record routes, calling the same
   );
 });
 
-test("TRK-2: the two new public routes are login-only — no Owner/role gate in their handler bodies", async () => {
+test("TRK-2: the two track-record routes are Owner-only (tightened 2026-07-20, Athena §2 / Pete PR #1313 review)", async () => {
+  // Superseded 2026-07-20: these two routes shipped 2026-07-05 as a
+  // deliberately thinner login-only "public" surface (G-PUB) for the
+  // /track-record page. Pete's PR #1313 review found that the page itself
+  // was tightened to Owner-only (Athena 7/18 §2: F-AUTO run P&L must not
+  // reach non-owner users) while these API routes still let any logged-in
+  // role fetch the same data directly — bypassing the page's SSR gate. This
+  // lock now pins the corrected Owner-only behavior; see role-matrix.test.ts
+  // for the HTTP-boundary owner-200/non-owner-403 coverage.
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(path.resolve(process.cwd(), "apps/api/src/server.ts"), "utf8");
 
   const perfStart = source.indexOf('app.get("/api/v1/track-record/performance"');
   const perfEnd = source.indexOf("\n});", perfStart);
   const perfBody = source.slice(perfStart, perfEnd);
-  assert.equal(
-    /OWNER_ONLY|forbidden_role|role !== "Owner"|requireMinRole/.test(perfBody),
-    false,
-    "TRK-2: /track-record/performance must NOT re-add a role gate — G-PUB is login-only"
+  assert.match(
+    perfBody,
+    /role !== "Owner"/,
+    "TRK-2: /track-record/performance must be Owner-only"
   );
 
   const navStart = source.indexOf('app.get("/api/v1/track-record/nav"');
   const navEnd = source.indexOf("\n});", navStart);
   const navBody = source.slice(navStart, navEnd);
-  assert.equal(
-    /OWNER_ONLY|forbidden_role|role !== "Owner"|requireMinRole/.test(navBody),
-    false,
-    "TRK-2: /track-record/nav must NOT re-add a role gate — G-PUB is login-only"
+  assert.match(
+    navBody,
+    /role !== "Owner"/,
+    "TRK-2: /track-record/nav must be Owner-only"
   );
 });
 
