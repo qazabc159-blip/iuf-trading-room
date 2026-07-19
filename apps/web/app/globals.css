@@ -12494,24 +12494,14 @@ body:has(.tactical-dashboard) .app-sidebar {
 /* ── S1 佈告 + 排行（footband） ───────────────────────────────────── */
 .tac-ledger .s1wrap { padding: 14px 14px 16px; border-right: 1px solid var(--lg-line); min-width: 0; }
 .tac-ledger .s1notice { border: 1px solid var(--lg-amber-dim); outline: 1px solid var(--lg-line2); outline-offset: 3px; padding: 10px 12px; margin-top: 10px; }
-.tac-ledger .s1head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
-.tac-ledger .s1head b { font-size: 15px; color: var(--lg-amber-hi); letter-spacing: .06em; }
-.tac-ledger .s1head span { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); }
-.tac-ledger .s1head em { margin-left: auto; font-style: normal; font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 6px; white-space: nowrap; }
-.tac-ledger .s1grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--lg-line); border-bottom: 1px solid var(--lg-line); }
-.tac-ledger .s1cell { padding: 8px 10px 9px; min-width: 0; }
-.tac-ledger .s1cell + .s1cell { border-left: 1px solid var(--lg-line); }
-.tac-ledger .s1cell .lab { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .04em; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
-.tac-ledger .s1cell .lab .dot { width: 6px; height: 6px; flex: none; display: inline-block; }
-.tac-ledger .s1cell .lab .dot.res { background: var(--lg-amber-dim); }
-.tac-ledger .s1cell .lab .dot.sim { background: var(--lg-down); }
-.tac-ledger .s1cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: var(--lg-ink); }
-.tac-ledger .s1cell .sub { font-family: var(--sans-tc); font-size: 8.5px; color: var(--lg-ink-faint); margin-top: 4px; line-height: 1.35; }
-.tac-ledger .s1-honest { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.5; margin-top: 8px; border-left: 2px solid var(--lg-amber-dim); padding: 2px 0 2px 9px; }
-.tac-ledger .s1-honest b { color: var(--lg-amber); }
-.tac-ledger .s1-row2 { display: flex; gap: 16px; margin-top: 8px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
-.tac-ledger .s1-row2 .k { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); }
-.tac-ledger .s1-row2 .k b { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--lg-ink); margin-top: 2px; font-weight: 700; white-space: nowrap; }
+/* v9.1（2026-07-19）：首頁量化卡改為里程碑迷你卡（0 運行績效數字，Athena
+   §2）——每條策略一列：中文名稱 / 現況狀態 badge / 下一個動作日期＋文案。 */
+.tac-ledger .s1mini { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 7px 0; }
+.tac-ledger .s1mini + .s1mini { border-top: 1px solid var(--lg-line); }
+.tac-ledger .s1miniName { font-size: 13.5px; font-weight: 700; color: var(--lg-ink); }
+.tac-ledger .s1miniBadge { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-amber-hi); border: 1px solid var(--lg-amber-dim); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.tac-ledger .s1miniNext { margin-left: auto; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); white-space: nowrap; }
+.tac-ledger .s1miniNext b { font-family: var(--mono); color: var(--lg-amber-hi); font-weight: 700; }
 
 .tac-ledger .rkwrap { padding: 14px 14px 16px; min-width: 0; }
 .tac-ledger .rk { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-top: 10px; }

@@ -1,11 +1,19 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { PageFrame, Panel } from "@/components/PageFrame";
+import {
+  QUANT_COMPLIANCE_FOOTER,
+  QUANT_GOVERNANCE_NOTES,
+  formatMilestoneDate,
+  getQuantStrategyContent,
+} from "@/lib/quant-strategies-content";
+import { MilestoneTrack } from "../MilestoneTrack";
 import styles from "../QuantStrategies.module.css";
-import { loadQuantStrategy } from "../live-strategy-data";
-import { StrategyDetailClient } from "./StrategyDetailClient";
 
-export const dynamic = "force-dynamic";
+// v9.1（2026-07-19）：詳情頁沿用既有 PageFrame QNT- 家族 routing pattern，內容
+// 改為純 fact-sheet（0 運行績效數字），不再打後端 basket/subscribe API。
 
 export default async function QuantStrategyDetailPage({
   params,
@@ -13,40 +21,57 @@ export default async function QuantStrategyDetailPage({
   params: Promise<{ strategyId: string }>;
 }) {
   const { strategyId } = await params;
-  const strategy = await loadQuantStrategy(strategyId);
+  const strategy = getQuantStrategyContent(strategyId);
   if (!strategy) notFound();
 
   return (
-    <main className={styles.shell}>
-      <div className={styles.topbar}>
-        <div>
-          <p className={styles.eyebrow}>IUF QUANT STRATEGY</p>
-          <h1 className={styles.title}>{strategy.name}</h1>
-          <p className={styles.sub}>
-            {strategy.role} / {strategy.cadence} / {strategy.basketSize}
-          </p>
+    <PageFrame
+      code="QNT-D"
+      title={strategy.name}
+      sub={strategy.oneLiner}
+      note="里程碑進度 · 非即時績效"
+    >
+      <Panel
+        code="QNT-D01"
+        title={strategy.statusBadge}
+        sub={`下一個動作 · ${strategy.nextAction.label} · ${formatMilestoneDate(strategy.nextAction.date)}`}
+      >
+        <div className={styles.chips}>
+          {strategy.chips.map((chip) => (
+            <span key={chip} className={styles.chip}>
+              {chip}
+            </span>
+          ))}
         </div>
-        <div className={styles.statusRail} aria-label="S1 strategy status">
-          <div className={styles.statusCell}>
-            <span>狀態</span>
-            <strong>{strategy.current.status}</strong>
-          </div>
-          <div className={styles.statusCell}>
-            <span>最新 basket</span>
-            <strong>{strategy.holdings.length}</strong>
-          </div>
-          <div className={styles.statusCell}>
-            <span>研究樣本</span>
-            <strong>{strategy.metrics.sampleCount ?? "--"}</strong>
-          </div>
+
+        <MilestoneTrack milestones={strategy.milestones} />
+
+        <div className={styles.band}>
+          <h2>策略說明</h2>
+          <p className={styles.signal}>{strategy.detail.summary}</p>
+          <ul className={styles.list}>
+            {strategy.detail.mechanics.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </div>
-      </div>
 
-      <StrategyDetailClient strategy={strategy} />
+        <div className={styles.navPlaceholder}>淨值曲線 · 將揭露</div>
 
-      <Link href="/quant-strategies" className={styles.cta} style={{ maxWidth: 180, marginTop: 10 }}>
-        返回量化策略
+        <div className={styles.governanceBand}>
+          <h3>治理與保護</h3>
+          <ul className={styles.list}>
+            {QUANT_GOVERNANCE_NOTES.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+        <p className={styles.complianceFooter}>{QUANT_COMPLIANCE_FOOTER}</p>
+      </Panel>
+
+      <Link href="/quant-strategies" className={styles.cta} style={{ maxWidth: 200, marginTop: 16 }}>
+        <ArrowLeft size={16} strokeWidth={1.9} /> 返回量化策略
       </Link>
-    </main>
+    </PageFrame>
   );
 }

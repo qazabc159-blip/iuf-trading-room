@@ -13,7 +13,6 @@ import {
   getContentDrafts,
   getKgiCoreHeatmap,
   getKgiMarketOverview,
-  getLabStrategySnapshot,
   getMarketDataOverview,
   getMarketIntelAnnouncements,
   getNewsTop10,
@@ -24,7 +23,6 @@ import {
   type KgiCoreHeatmap,
   type KgiCoreHeatmapTile,
   type KgiMarketOverview,
-  type LabStrategySnapshot,
   type MarketDataOverview,
   type MarketDataOverviewLeader,
   type NewsAiItem,
@@ -40,8 +38,8 @@ import { resolveAuthoritativeTradeDate } from "@/lib/index-snapshot-freshness";
 import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-rows";
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
-import { getTrackRecordNav, type TrackRecordNavSummary } from "@/lib/fauto-sim-api";
 import { MISSING_COMPANY_NAME_LABEL } from "@/lib/ui-vocab";
+import { QUANT_STRATEGIES_CONTENT, formatMilestoneDate } from "@/lib/quant-strategies-content";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
 import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
@@ -89,15 +87,6 @@ type DailyBriefDashboard = {
   todayBrief: DailyBrief | null;
   draftCount: number;
   reason?: string;
-};
-
-type S1StrategyData = LabStrategySnapshot;
-
-// 首頁量化策略卡只顯示可驗證真值（KGI SIM 前進觀察），不顯示研究回測數字。
-// startDate 取自 track-record nav 曲線首筆日期（觀察起始日）。
-type S1RealSimData = {
-  summary: TrackRecordNavSummary;
-  startDate: string | null;
 };
 
 type IntelItem = CompanyAnnouncement & {
@@ -1380,49 +1369,27 @@ function BriefColumn({ brief }: { brief: LoadState<DailyBriefDashboard> }) {
   );
 }
 
-function S1Bulletin({
-  strategy,
-  realSim,
-}: {
-  strategy: LoadState<S1StrategyData | null>;
-  realSim: LoadState<S1RealSimData | null>;
-}) {
-  const snapshot = strategy.data;
-  const realSimReturnPct = realSim.data?.summary.cumulativeReturnPct ?? null;
-  const initialEquity = realSim.data?.summary.initialEquity ?? null;
-  const startDateLabel = formatDate(realSim.data?.startDate ?? null);
+// v9.1（2026-07-19，楊董 ACK）：Athena 授權邊界 §2 — F-AUTO 運行績效（報酬%／
+// NAV／本金／持倉）不得對一般使用者揭露，只能在 owner-only 的 /ops/f-auto 呈
+// 現。首頁量化卡因此不再打任何策略績效 API，改成純內容的里程碑迷你卡（策略
+// 名稱／狀態／下一個動作），內容集中在 lib/quant-strategies-content.ts，這裡
+// 不重複硬編碼日期。
+function QuantMiniCard() {
   return (
     <Link href="/quant-strategies" className="s1wrap">
-      <div className="tab dim">量化策略 <span className="en">SIM 前進觀察中</span></div>
-      {snapshot ? (
-        <div className="s1notice">
-          <div className="s1head"><b>S1</b><span>{snapshot.displayName_zh || snapshot.displayName}</span><em>KGI SIM-only</em></div>
-          <div className="s1grid">
-            <div className="s1cell">
-              <div className="lab"><span className="dot sim" />累積報酬</div>
-              <div className={`v ${realSimReturnPct == null ? "" : realSimReturnPct >= 0 ? "up" : "down"}`}>{realSimReturnPct == null ? "--" : `${realSimReturnPct >= 0 ? "+" : ""}${realSimReturnPct.toFixed(2)}%`}</div>
-              <div className="sub">KGI SIM 前進觀察 · 真實市況 · 已含成本</div>
-            </div>
-            <div className="s1cell">
-              <div className="lab"><span className="dot res" />模擬資金</div>
-              <div className="v">{initialEquity == null ? "--" : formatNumber(initialEquity)}</div>
-              <div className="sub">觀察起始 {startDateLabel}</div>
+      <div className="tab dim">量化策略 <span className="en">STRATEGIES</span></div>
+      <div className="s1notice">
+        {QUANT_STRATEGIES_CONTENT.map((strategy) => (
+          <div className="s1mini" key={strategy.id}>
+            <div className="s1miniName">{strategy.name}</div>
+            <div className="s1miniBadge">{strategy.statusBadge}</div>
+            <div className="s1miniNext">
+              下一步 <b>{formatMilestoneDate(strategy.nextAction.date)}</b> {strategy.nextAction.label}
             </div>
           </div>
-          <div className="s1-honest">
-            <b>僅顯示可驗證真值。</b>
-            {realSimReturnPct != null
-              ? "以上為 KGI SIM 前進觀察真值，非投資建議；策略經穩健度折扣後判定偏樂觀。"
-              : "實盤模擬資料目前無法讀取；不以其他數字代替。"}
-          </div>
-          <div className="s1-row2">
-            <div className="k">狀態<b style={{ fontFamily: "var(--sans-tc)", color: "var(--lg-amber-hi)" }}>{snapshot.orderState === "paper_allowed" ? "前進觀察中" : "待確認"}</b></div>
-          </div>
-        </div>
-      ) : (
-        <div className="tac-empty-line">S1 核准快照目前無法讀取；不顯示其他研究策略或假績效。</div>
-      )}
-      <div className="sfoot">量化策略・模擬盤前進觀察中；僅呈現可驗證真值，非投資建議。點按查看完整策略頁。</div>
+        ))}
+      </div>
+      <div className="sfoot">兩條月頻選股策略・里程碑進度，非即時績效。查看量化策略 →</div>
     </Link>
   );
 }
@@ -1569,20 +1536,6 @@ const cachedRecommendations = cache((): Promise<LoadState<AiRecommendationV3Resp
     (value) => (value.items?.length ?? 0) === 0,
     "今日 AI 推薦 v3 批次尚未回傳正式清單。",
   ));
-const cachedS1Strategy = cache((): Promise<LoadState<S1StrategyData | null>> =>
-  load("S1 strategy snapshot", null, async () => await getLabStrategySnapshot("cont_liq_v36"), (value) => value === null, "S1 核准快照目前無法讀取。"));
-const cachedS1RealSim = cache((): Promise<LoadState<S1RealSimData | null>> =>
-  load(
-    "S1 F-AUTO SIM 實盤績效",
-    null,
-    async () => {
-      const result = await getTrackRecordNav();
-      if (!result.ok || !result.data.summary) return null;
-      return { summary: result.data.summary, startDate: result.data.navCurve[0]?.date ?? null };
-    },
-    (value) => value === null,
-    "S1 F-AUTO SIM 實盤績效目前無法讀取。",
-  ));
 const cachedIntel = cache((): Promise<LoadState<MarketIntelDashboard>> => loadMarketIntelDashboard());
 
 // timedFetch 的 race-against-timeout 包一層：逾時回真的 BLOCKED LoadState
@@ -1681,14 +1634,10 @@ async function LeadBandSection() {
 }
 
 async function FootBandSection() {
-  const [s1Strategy, s1RealSim, market] = await Promise.all([
-    timedLoad("s1_strategy", FETCH_PRODUCT_MS, cachedS1Strategy, null),
-    timedLoad("s1_real_sim", FETCH_PRODUCT_MS, cachedS1RealSim, null),
-    timedLoad("market", FETCH_MARKET_MS, cachedMarket, null),
-  ]);
+  const market = await timedLoad("market", FETCH_MARKET_MS, cachedMarket, null);
   return (
     <div className="footband">
-      <S1Bulletin strategy={s1Strategy} realSim={s1RealSim} />
+      <QuantMiniCard />
       <RankColumns market={market} />
     </div>
   );
