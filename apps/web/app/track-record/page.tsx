@@ -1,10 +1,11 @@
 import { PageFrame, Panel } from "@/components/PageFrame";
 import { DataStateBadge } from "@/components/DataStateBadge";
-import { getTrackRecordPerformance, type TrackRecordPerformance, type TrackRecordPerformanceResult } from "@/lib/api";
+import { getCurrentUserSession, getTrackRecordPerformance, type TrackRecordPerformance, type TrackRecordPerformanceResult } from "@/lib/api";
 import { getTrackRecordNav } from "@/lib/fauto-sim-api";
 import { FAutoNavPanel } from "@/app/ops/f-auto/FAutoNavPanel";
 import { formatFractionPct, formatSignedFractionPct, signTone } from "@/lib/weekly-review-format";
 import { adaptTrackRecordNavForPanel, buildTrackRecordScoreWindows, formatTrackRecordRangeText } from "@/lib/track-record-format";
+import { isTrackRecordOwnerSession } from "./track-record-owner-gate";
 
 // Both sections do a per-request SSR fetch that forwards the visiting user's
 // session cookie (see requestRaw / apiFetch in lib/api.ts + lib/fauto-sim-api.ts).
@@ -25,7 +26,38 @@ export const dynamic = "force-dynamic";
  * 白名單欄位的 login-only 公開版本。本頁改吃這兩支新端點；任何已登入角色皆可讀。
  * 欄位比 Owner 版本瘦（見 `lib/api.ts` / `lib/fauto-sim-api.ts` 的型別註解），
  * NAV 曲線缺的 returnPct/weekNum 由 `adaptTrackRecordNavForPanel()` 在前端補算。
+ *
+ * 2026-07-20 owner gate（治理急救，Elva 裁）：這支「login-only 公開」端點的
+ * B 區塊仍會渲染「S1 F-AUTO SIM」內部代號與 F-AUTO 累計報酬/損益數字，撞
+ * Athena 7/18 授權 §2（F-AUTO 運行績效不得對一般使用者揭露）。第一步保守處置
+ * 是整頁 owner-only gate（非 owner 顯示誠實的「此頁尚未開放」，不再嘗試呼叫
+ * 這兩支資料端點）；內容整改（讓一般使用者也能看到某種瘦身版）留待另案。
+ * Owner 判定在 Server Component 內完成（`getCurrentUserSession()`，forwards
+ * SSR cookie），故意不用 `/ops/f-auto` 那套 client-side `apiGetMe()` gate——
+ * 那個模式讓資料先在伺服器算出、序列化進 RSC payload 送到瀏覽器，才由 client
+ * state 決定要不要畫出來；對 `/ops/f-auto` 是安全的，因為它的資料本身就是
+ * client fetch 才發生（gate 通過後才打 API）。但本頁兩支資料端點是 SSR 內
+ * 直接 fetch，若複製同一套 client gate，未過關的使用者一樣會在網路層收到
+ * F-AUTO 數字（只是沒畫出來）——不符合 §2 要求。故此改為 Server Component
+ * 內在做任何資料 fetch 之前先擋。
  */
+
+function TrackRecordNotYetOpen() {
+  return (
+    <PageFrame code="TRK" title="公開績效記帳" sub="每個 AI 判斷都被記帳，好壞都攤在這裡">
+      <style>{TRACK_RECORD_LOCK_CSS}</style>
+      <div className="_trk-lock-wrap">
+        <div className="_trk-lock-icon">
+          <span>✕</span>
+        </div>
+        <div>
+          <div className="_trk-lock-title">此頁尚未開放</div>
+          <div className="_trk-lock-sub">公開績效記帳頁內容正在調整，暫時僅限帳號擁有者檢視。</div>
+        </div>
+      </div>
+    </PageFrame>
+  );
+}
 
 function AuthIssueNotice({ code, title, sub }: { code: string; title: string; sub: string }) {
   return (
@@ -144,6 +176,11 @@ function StrategyGateSection() {
 }
 
 export default async function TrackRecordPage() {
+  const session = await getCurrentUserSession();
+  if (!isTrackRecordOwnerSession(session)) {
+    return <TrackRecordNotYetOpen />;
+  }
+
   const aiRecResult = await getTrackRecordPerformance();
 
   return (
@@ -160,6 +197,40 @@ export default async function TrackRecordPage() {
     </PageFrame>
   );
 }
+
+const TRACK_RECORD_LOCK_CSS = `
+._trk-lock-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 64px 32px;
+  text-align: center;
+}
+._trk-lock-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(230,57,70,0.07);
+  border: 2px solid rgba(230,57,70,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #ff6b77;
+}
+._trk-lock-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #c6d0de;
+  margin-bottom: 6px;
+}
+._trk-lock-sub {
+  font-size: 13px;
+  color: #566276;
+  line-height: 1.6;
+}
+`;
 
 const TRACK_RECORD_CSS = `
 ._trk-sections {

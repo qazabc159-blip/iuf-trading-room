@@ -82,6 +82,14 @@ function requestMethod(init?: RequestInit) {
 const SAME_ORIGIN_GET_PROXY_PATHS = [
   /^\/api\/v1\/companies(?:\?|$|\/)/,
   /^\/api\/v1\/kgi\/quote\/(?:bidask|ticks)(?:\?|$)/,
+  // 2026-07-20: already allowlisted server-side in
+  // app/api/ui-final-v031/backend/route.ts (added for desk-exact's own
+  // apiFetch(), which always same-origin-proxies) — this client-side gate
+  // just hadn't been told to use it yet. Without this, getEffectiveQuotes()
+  // does a raw cross-origin fetch that CI's PR preview (web on
+  // 127.0.0.1:3300, API on the real api.eycvector.com — see ci.yml) can't
+  // complete: 127.0.0.1:3300 isn't in the backend's CORS_ORIGINS allowlist.
+  /^\/api\/v1\/market-data\/effective-quotes(?:\?|$)/,
 ];
 
 function shouldUseSameOriginBackendProxy(path: string, init?: RequestInit) {
@@ -181,6 +189,24 @@ export async function getThemes() {
 
 export async function getSession() {
   return request<AppSession>("/api/v1/session");
+}
+
+/**
+ * Server-safe "who's logged in" check for gating a whole Server Component page
+ * before any owner-only-adjacent data fetch happens (2026-07-20, /track-record
+ * owner gate). Unlike `apps/web/lib/auth-client.ts`'s `apiGetMe()` (browser-only —
+ * relies on the browser attaching cookies automatically), this uses `requestRaw()`
+ * so the SSR request-cookie forwarding already wired up for every other
+ * `lib/api.ts` call works here too. `/auth/me` lives at the API root, not under
+ * `/api/v1`, matching every other call site in `lib/auth-client.ts`.
+ */
+export async function getCurrentUserSession(): Promise<{ ok: true; role: string } | { ok: false }> {
+  try {
+    const body = await requestRaw<{ user: { role: string } }>("/auth/me", { cache: "no-store" });
+    return { ok: true, role: body.user.role };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export async function getMyEntitlements() {

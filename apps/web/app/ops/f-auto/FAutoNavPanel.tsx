@@ -75,7 +75,9 @@ function sourceAnnotation(navCurve: NavCurvePoint[]): string | null {
   if (firstLive) {
     return `${fmtNavDate(navCurve[0].navDate)} – ${fmtNavDate(firstLive.navDate)} 為歷史回補（依審計紀錄重建），${fmtNavDate(firstLive.navDate)} 起為 live 帳本記錄。`;
   }
-  return "本曲線為歷史回補（依審計紀錄重建），尚無 live 帳本記錄。";
+  // 2026-07-20: 帳本自 6/2 起已是 live 記錄，「尚無 live 帳本記錄」措辭已過時
+  // （即使本次查詢窗口內恰好只看到回補段，帳本本身早已持續記帳中）。
+  return "本曲線依審計紀錄逐日記帳重建。";
 }
 
 // ─── SVG NAV Chart ───────────────────────────────────────────────────────────
