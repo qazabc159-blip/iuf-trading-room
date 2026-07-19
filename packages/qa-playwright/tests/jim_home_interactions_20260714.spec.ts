@@ -130,17 +130,19 @@ test.describe("/ home-exact interactions", () => {
     expect(page.url()).toContain(`/companies/${symbol}`);
   });
 
-  test("S1 panel click navigates top-level to /quant-strategies", async ({ page }, testInfo) => {
+  test("quant strategy mini card click navigates top-level to /quant-strategies", async ({ page }, testInfo) => {
+    // v9.1（2026-07-19）renamed this wrapper class away from the old S1
+    // internal codename — see quant_v91_factsheet_content_pivot memory.
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
 
-    await frame.locator(".s1wrap").first().waitFor({ state: "attached", timeout: 15000 });
+    await frame.locator(".qmini-wrap").first().waitFor({ state: "attached", timeout: 15000 });
     await page.waitForTimeout(500);
 
-    await frame.locator(".s1wrap").first().click();
+    await frame.locator(".qmini-wrap").first().click();
     await page.waitForURL(/\/quant-strategies/, { timeout: 10000 });
-    testInfo.annotations.push({ type: "url-after-s1-click", description: page.url() });
+    testInfo.annotations.push({ type: "url-after-quant-mini-click", description: page.url() });
     expect(page.url()).toContain("/quant-strategies");
   });
 

@@ -12491,27 +12491,19 @@ body:has(.tactical-dashboard) .app-sidebar {
 .tac-ledger .seg .sh { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-amber); font-weight: 700; letter-spacing: .14em; margin-bottom: 2px; }
 .tac-ledger .seg .sx { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); line-height: 1.55; overflow-wrap: anywhere; }
 
-/* ── S1 佈告 + 排行（footband） ───────────────────────────────────── */
-.tac-ledger .s1wrap { padding: 14px 14px 16px; border-right: 1px solid var(--lg-line); min-width: 0; }
-.tac-ledger .s1notice { border: 1px solid var(--lg-amber-dim); outline: 1px solid var(--lg-line2); outline-offset: 3px; padding: 10px 12px; margin-top: 10px; }
-.tac-ledger .s1head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
-.tac-ledger .s1head b { font-size: 15px; color: var(--lg-amber-hi); letter-spacing: .06em; }
-.tac-ledger .s1head span { font-family: var(--sans-tc); font-size: 11px; color: var(--lg-ink); }
-.tac-ledger .s1head em { margin-left: auto; font-style: normal; font-family: var(--sans-tc); font-size: 9px; color: var(--lg-ink-dim); border: 1px solid var(--lg-line2); padding: 2px 6px; white-space: nowrap; }
-.tac-ledger .s1grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--lg-line); border-bottom: 1px solid var(--lg-line); }
-.tac-ledger .s1cell { padding: 8px 10px 9px; min-width: 0; }
-.tac-ledger .s1cell + .s1cell { border-left: 1px solid var(--lg-line); }
-.tac-ledger .s1cell .lab { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); letter-spacing: .04em; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
-.tac-ledger .s1cell .lab .dot { width: 6px; height: 6px; flex: none; display: inline-block; }
-.tac-ledger .s1cell .lab .dot.res { background: var(--lg-amber-dim); }
-.tac-ledger .s1cell .lab .dot.sim { background: var(--lg-down); }
-.tac-ledger .s1cell .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; color: var(--lg-ink); }
-.tac-ledger .s1cell .sub { font-family: var(--sans-tc); font-size: 8.5px; color: var(--lg-ink-faint); margin-top: 4px; line-height: 1.35; }
-.tac-ledger .s1-honest { font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); line-height: 1.5; margin-top: 8px; border-left: 2px solid var(--lg-amber-dim); padding: 2px 0 2px 9px; }
-.tac-ledger .s1-honest b { color: var(--lg-amber); }
-.tac-ledger .s1-row2 { display: flex; gap: 16px; margin-top: 8px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
-.tac-ledger .s1-row2 .k { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-ink-dim); }
-.tac-ledger .s1-row2 .k b { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--lg-ink); margin-top: 2px; font-weight: 700; white-space: nowrap; }
+/* ── 量化策略迷你卡 + 排行（footband） ───────────────────────────────
+   v9.1（2026-07-19）：class 命名跟著內容一起去掉舊 S1 內部代號（Pete review
+   #1311 round 2 🟡2）——`.s1wrap`/`.s1notice`/`.s1mini*` → `.qmini-*`，純命
+   名整潔，非行為變更。 */
+.tac-ledger .qmini-wrap { padding: 14px 14px 16px; border-right: 1px solid var(--lg-line); min-width: 0; }
+.tac-ledger .qmini-panel { border: 1px solid var(--lg-amber-dim); outline: 1px solid var(--lg-line2); outline-offset: 3px; padding: 10px 12px; margin-top: 10px; }
+/* 每條策略一列：中文名稱 / 現況狀態 badge / 下一個動作日期＋文案。 */
+.tac-ledger .qmini-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 7px 0; }
+.tac-ledger .qmini-row + .qmini-row { border-top: 1px solid var(--lg-line); }
+.tac-ledger .qmini-name { font-size: 13.5px; font-weight: 700; color: var(--lg-ink); }
+.tac-ledger .qmini-badge { font-family: var(--sans-tc); font-size: 9.5px; color: var(--lg-amber-hi); border: 1px solid var(--lg-amber-dim); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.tac-ledger .qmini-next { margin-left: auto; font-family: var(--sans-tc); font-size: 10px; color: var(--lg-ink-dim); white-space: nowrap; }
+.tac-ledger .qmini-next b { font-family: var(--mono); color: var(--lg-amber-hi); font-weight: 700; }
 
 .tac-ledger .rkwrap { padding: 14px 14px 16px; min-width: 0; }
 .tac-ledger .rk { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-top: 10px; }
@@ -12585,18 +12577,18 @@ body:has(.tactical-dashboard) .app-sidebar {
   .tac-ledger .recwrap { order: 2; }
   .tac-ledger .briefcol { order: 3; }
   .tac-ledger .heatzone { order: 4; }
-  .tac-ledger .s1wrap { order: 5; }
+  .tac-ledger .qmini-wrap { order: 5; }
   .tac-ledger .rkwrap { order: 6; }
   .tac-ledger .idxanchor,
   .tac-ledger .recwrap,
   .tac-ledger .briefcol,
   .tac-ledger .heatzone,
-  .tac-ledger .s1wrap,
+  .tac-ledger .qmini-wrap,
   .tac-ledger .rkwrap { border-bottom: 1px solid var(--lg-line2); }
   .tac-ledger .idxanchor { padding: 16px 14px 14px; border-right: none; }
   .tac-ledger .idxanchor .giant { font-size: 54px; margin-top: 12px; }
   .tac-ledger .idxanchor .giant sub { font-size: 23px; }
-  .tac-ledger .s1wrap,
+  .tac-ledger .qmini-wrap,
   .tac-ledger .recwrap { border-right: none; }
   .tac-ledger .rk { grid-template-columns: 1fr; }
 }
@@ -12639,9 +12631,9 @@ body:has(.tactical-dashboard) .app-sidebar {
   background: none; border: none; border-bottom: 1px dashed var(--lg-amber-dim); cursor: pointer; padding: 0; white-space: nowrap; flex: none;
 }
 
-/* S1 佈告整塊改為可點擊 <Link>（帶去 /quant-strategies），錨點預設
+/* 量化策略迷你卡整塊改為可點擊 <Link>（帶去 /quant-strategies），錨點預設
    display:inline 會讓 block 子元素排版跑掉，這裡明確設回 block。 */
-.tac-ledger a.s1wrap { display: block; }
+.tac-ledger a.qmini-wrap { display: block; }
 
 .tac-panel {
   position: relative;

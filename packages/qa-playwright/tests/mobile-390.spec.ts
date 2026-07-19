@@ -82,14 +82,16 @@ const ROUTES: MobileRoute[] = [
     label: "量化策略",
     assertVisible: async (page) => {
       await expect(page.locator(".page-frame")).toBeVisible();
-      await expect(page.locator("._qnt-tabs")).toBeVisible();
+      await expect(page.getByText("基本面動能")).toBeVisible();
     },
   },
   {
-    path: "/quant-strategies/cont_liq_v36",
+    // v9.1（2026-07-19）redesign renamed the detail slug away from the old
+    // internal codename `cont_liq_v36` — see quant-strategies-content.ts.
+    path: "/quant-strategies/fundamental-momentum",
     label: "量化策略詳情",
     assertVisible: async (page) => {
-      await expect(page.getByText("IUF QUANT STRATEGY")).toBeVisible();
+      await expect(page.getByText("基本面動能")).toBeVisible();
     },
   },
   {
