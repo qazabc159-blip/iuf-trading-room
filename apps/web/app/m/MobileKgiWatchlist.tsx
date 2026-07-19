@@ -1,10 +1,13 @@
 "use client";
 
 // MobileKgiWatchlist — 手機版 KGI 即時報價 watchlist
-// 15s poll, 5-state (loading/live/closed/blocked/empty), mobile-optimised large numbers.
-// Default watchlist: 0050 / 2330 / 2454 (top-3 liquidity).
+// 15s poll, 6-state (loading/live/closed/stale/blocked/empty), mobile-optimised
+// large numbers. Default watchlist: 0050 / 2330 / 2454 (top-3 liquidity).
 // "closed" = effective-quotes closed_snapshot/official_close+stale fallback (real
 // last-close price, honest "MM/DD 收盤" label) — 2026-07-20, mirrors desk-exact.
+// "stale" = any other effective-quotes source (twse_mis/kgi/manual/tradingview)
+// whose own cached quote isn't fresh — real price, honest "來源（略舊）" label,
+// never "live" (Pete #1313 review 🔴1 — this must never be mislabeled live).
 // Hard rule: NO fake / mock data. Shows BLOCKED if gateway unreachable and no
 // closing-price fallback exists either.
 
@@ -20,6 +23,7 @@ type QuoteState =
   | { status: "loading" }
   | { status: "live"; lastPrice: number; priceChg: number; pctChg: number; volume: number; time: string }
   | { status: "closed"; lastPrice: number; priceChg: number | null; pctChg: number | null; dateLabel: string }
+  | { status: "stale"; lastPrice: number; priceChg: number | null; pctChg: number | null; label: string }
   | { status: "blocked"; reason: string }
   | { status: "empty" };
 
@@ -201,7 +205,7 @@ async function fetchEffectiveQuoteFallback(symbols: string[]): Promise<Record<st
     for (const symbol of symbols) {
       const derived = deriveEffectiveFallbackCellState(bySymbol.get(symbol));
       if (derived.status === "empty") continue;
-      if (derived.status === "closed") {
+      if (derived.status === "closed" || derived.status === "stale") {
         map[symbol] = derived;
       } else {
         map[symbol] = { status: "live", lastPrice: derived.lastPrice, priceChg: derived.priceChg ?? 0, pctChg: derived.pctChg ?? 0, volume: derived.volume, time: derived.time };
@@ -238,6 +242,22 @@ function TickerCell({ item, q }: { item: WatchItem; q: QuoteState }) {
           {q.priceChg != null && q.pctChg != null ? `${signed(q.priceChg)} (${signed(q.pctChg)}%)` : "--"}
         </div>
         <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>{q.dateLabel}</div>
+      </div>
+    );
+  }
+  if (q.status === "stale") {
+    // Generic non-fresh effective-quotes fallback (twse_mis/kgi/manual/tradingview
+    // whose own cached quote isn't fresh) — real price, honest "來源（略舊）" label.
+    // Pete #1313 review 🔴1: this must never be folded into the "live" branch below.
+    const tone = q.priceChg != null ? priceTone(q.priceChg) : "flat";
+    return (
+      <div className="_mob-kgi-ticker-cell">
+        <div className="_mob-kgi-symbol">{item.symbol}</div>
+        <div className={`_mob-kgi-price ${tone}`}>{q.lastPrice.toFixed(2)}</div>
+        <div className={`_mob-kgi-chg ${tone}`}>
+          {q.priceChg != null && q.pctChg != null ? `${signed(q.priceChg)} (${signed(q.pctChg)}%)` : "--"}
+        </div>
+        <div className="_mob-kgi-vol" style={{ color: "#ffb800", fontSize: 9 }}>{q.label}</div>
       </div>
     );
   }
@@ -300,7 +320,7 @@ export function MobileKgiWatchlist({ watchlist = DEFAULT_WATCHLIST }: { watchlis
   }, [fetchAll]);
 
   const anyLive = liveCount > 0;
-  const anyClosed = Object.values(quotes).some(q => q.status === "closed");
+  const anyClosed = Object.values(quotes).some(q => q.status === "closed" || q.status === "stale");
 
   return (
     <>
