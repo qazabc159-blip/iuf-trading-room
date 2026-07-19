@@ -71,7 +71,7 @@ test.describe("/ homepage LEDGER RSC", () => {
     expect(deskHref).toMatch(/^\/desk-exact\?symbol=.+&side=buy$/);
   });
 
-  test("rank row and S1 panel are real navigable links", async ({ page }) => {
+  test("rank row and quant strategy mini card are real navigable links", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -80,8 +80,9 @@ test.describe("/ homepage LEDGER RSC", () => {
     const rankHref = await page.locator(".rk .r").first().getAttribute("href");
     expect(rankHref).toMatch(/^\/companies\//);
 
-    const s1Href = await page.locator("a.s1wrap").first().getAttribute("href");
-    expect(s1Href).toBe("/quant-strategies");
+    // v9.1（2026-07-19）renamed away from the old S1 internal codename.
+    const quantMiniHref = await page.locator("a.qmini-wrap").first().getAttribute("href");
+    expect(quantMiniHref).toBe("/quant-strategies");
   });
 
   test("brief expand toggle reveals full text (real truncation, not CSS clamp)", async ({ page }, testInfo) => {

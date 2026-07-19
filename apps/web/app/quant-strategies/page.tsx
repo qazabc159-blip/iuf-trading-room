@@ -7,7 +7,9 @@ import {
   QUANT_GOVERNANCE_NOTES,
   QUANT_PAGE_HEADER,
   QUANT_STRATEGIES_CONTENT,
-  formatMilestoneDate,
+  deriveStrategyProgress,
+  formatNextAction,
+  todayTaipeiDate,
   type QuantStrategyContent,
 } from "@/lib/quant-strategies-content";
 import { MilestoneTrack } from "./MilestoneTrack";
@@ -15,15 +17,26 @@ import { QuantSectionTag } from "./QuantSectionTag";
 import styles from "./QuantStrategies.module.css";
 
 // v9.1（2026-07-19，楊董 ACK）：本頁改為純內容的策略 fact-sheet，不再打任何
-// 後端績效 API（0 運行績效數字，Athena §2）。沒有 per-request 資料，頁面本身
-// 不需要 force-dynamic。
+// 後端績效 API（0 運行績效數字，Athena §2）。
+//
+// Pete review #1311 round 2（🔴 must-fix）：badge／下一個動作不准再存靜態
+// 欄位，一律用 `deriveStrategyProgress(strategy, today)` 現算（見
+// lib/quant-strategies-content.ts 檔頭註記）。**但這代表本頁不再是零依賴的
+// 純靜態內容**——`todayTaipeiDate()` 是 render-time 值，若沒有
+// `force-dynamic`，Next.js 會在 build 當下把日期烤進靜態 HTML（`next build`
+// 路由表原本顯示 `○ Static`），跟 /ops 家族頁頭時鐘凍結那次事故（PR #1308）
+// 是同一個陷阱，只是從「永遠不會更新」換成「凍結在部署當下那一刻」——一樣
+// 會製造 Pete 這輪抓到的自相矛盾。加這行讓路由表改回 `ƒ Dynamic`，每次
+// request 都重新算 today。
+export const dynamic = "force-dynamic";
 
-function StrategyFactCard({ strategy }: { strategy: QuantStrategyContent }) {
+function StrategyFactCard({ strategy, today }: { strategy: QuantStrategyContent; today: string }) {
+  const progress = deriveStrategyProgress(strategy, today);
   return (
     <article className={styles.card} data-testid="quant-strategy-card">
       <div className={styles.cardHead}>
         <h2>{strategy.name}</h2>
-        <span className={styles.badge}>{strategy.statusBadge}</span>
+        <span className={styles.badge}>{progress.badge}</span>
       </div>
       <p className={styles.oneLiner}>{strategy.oneLiner}</p>
       <div className={styles.chips}>
@@ -35,11 +48,9 @@ function StrategyFactCard({ strategy }: { strategy: QuantStrategyContent }) {
       </div>
       <div className={styles.nextAction}>
         <span>下一個動作</span>
-        <strong>
-          {strategy.nextAction.label} · {formatMilestoneDate(strategy.nextAction.date)}
-        </strong>
+        <strong>{formatNextAction(progress)}</strong>
       </div>
-      <MilestoneTrack milestones={strategy.milestones} />
+      <MilestoneTrack milestones={strategy.milestones} today={today} />
       <div className={styles.navPlaceholder}>淨值曲線 · 將揭露</div>
       <Link className={styles.cta} href={`/quant-strategies/${strategy.id}`}>
         查看策略詳情 <ArrowRight size={16} strokeWidth={1.9} />
@@ -49,13 +60,14 @@ function StrategyFactCard({ strategy }: { strategy: QuantStrategyContent }) {
 }
 
 export default function QuantStrategiesPage() {
+  const today = todayTaipeiDate();
   return (
     <PageFrame code="QNT" title={QUANT_PAGE_HEADER.title} sub={QUANT_PAGE_HEADER.subtitle} note={QUANT_PAGE_HEADER.note}>
       <Panel code="QNT-01" title="策略總覽" sub="里程碑進度 · 非即時績效">
         <QuantSectionTag zh="策略總覽" en="STRATEGY OVERVIEW" />
         <div className={styles.grid}>
           {QUANT_STRATEGIES_CONTENT.map((strategy) => (
-            <StrategyFactCard key={strategy.id} strategy={strategy} />
+            <StrategyFactCard key={strategy.id} strategy={strategy} today={today} />
           ))}
         </div>
         <div className={styles.governanceBand}>

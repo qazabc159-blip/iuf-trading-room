@@ -39,7 +39,11 @@ import { deriveHomeAiRecommendationCards } from "@/lib/home-ai-recommendation-ro
 import { isKgiGatewayScheduledOff, isKgiTradingHours, kgiCoreTilesAreNull } from "@/lib/kgi-trading-hours";
 import { cleanExternalHeadline, cleanNarrativeText } from "@/lib/operator-copy";
 import { MISSING_COMPANY_NAME_LABEL } from "@/lib/ui-vocab";
-import { QUANT_STRATEGIES_CONTENT, formatMilestoneDate } from "@/lib/quant-strategies-content";
+import {
+  QUANT_STRATEGIES_CONTENT,
+  deriveStrategyProgress,
+  formatMilestoneDate,
+} from "@/lib/quant-strategies-content";
 import { buildV3PanelState } from "./ai-recommendations/v3-view";
 import { formatRecommendationTimestamp } from "./ai-recommendations/source-trail-time";
 import type { DailyBrief } from "@iuf-trading-room/contracts";
@@ -1374,20 +1378,36 @@ function BriefColumn({ brief }: { brief: LoadState<DailyBriefDashboard> }) {
 // 現。首頁量化卡因此不再打任何策略績效 API，改成純內容的里程碑迷你卡（策略
 // 名稱／狀態／下一個動作），內容集中在 lib/quant-strategies-content.ts，這裡
 // 不重複硬編碼日期。
+//
+// Pete review #1311 round 2：①🔴 must-fix — badge／下一個動作改用
+// `deriveStrategyProgress(strategy, today)` 現算，不再讀靜態欄位，避免日期
+// 經過後跟 /quant-strategies 頁的 MilestoneTrack 自相矛盾。②🟡2 —
+// class 命名去掉舊 S1 內部代號（`.s1wrap`/`.s1notice`/`.s1mini*` →
+// `.qmini-*`）。
 function QuantMiniCard() {
+  const today = todayTaipeiDate();
   return (
-    <Link href="/quant-strategies" className="s1wrap">
+    <Link href="/quant-strategies" className="qmini-wrap">
       <div className="tab dim">量化策略 <span className="en">STRATEGIES</span></div>
-      <div className="s1notice">
-        {QUANT_STRATEGIES_CONTENT.map((strategy) => (
-          <div className="s1mini" key={strategy.id}>
-            <div className="s1miniName">{strategy.name}</div>
-            <div className="s1miniBadge">{strategy.statusBadge}</div>
-            <div className="s1miniNext">
-              下一步 <b>{formatMilestoneDate(strategy.nextAction.date)}</b> {strategy.nextAction.label}
+      <div className="qmini-panel">
+        {QUANT_STRATEGIES_CONTENT.map((strategy) => {
+          const progress = deriveStrategyProgress(strategy, today);
+          return (
+            <div className="qmini-row" key={strategy.id}>
+              <div className="qmini-name">{strategy.name}</div>
+              <div className="qmini-badge">{progress.badge}</div>
+              <div className="qmini-next">
+                {progress.nextAction == null ? (
+                  "里程碑已全數達成"
+                ) : (
+                  <>
+                    下一步 <b>{formatMilestoneDate(progress.nextAction.date)}</b> {progress.nextAction.label}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="sfoot">兩條月頻選股策略・里程碑進度，非即時績效。查看量化策略 →</div>
     </Link>

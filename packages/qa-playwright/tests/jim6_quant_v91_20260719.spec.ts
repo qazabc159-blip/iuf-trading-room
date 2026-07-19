@@ -7,9 +7,15 @@ import { extractFrame } from "./helpers";
  * 楊董 ACK：內容照 v9.1 fact-sheet 定稿（0 運行績效數字），視覺借首頁「戰情
  * 台」語言。本檔驗證：①目錄頁兩張策略卡都真的渲染 ②三個里程碑日期
  * （07/13／08/03／08/12）確實出現在畫面上 ③首頁新的里程碑迷你卡點擊仍然
- * 正確導向 /quant-strategies（沿用既有 `.s1wrap` 選擇器，未改動 href）。
+ * 正確導向 /quant-strategies（`.qmini-wrap`，v9.1 命名整潔後的 class）。
+ *
+ * Pete review #1311 round 2 🟡1：補 `@smoke` tag——CI `qa:playwright:smoke`
+ * 只跑 `--grep @smoke`（`.github/workflows/ci.yml` Playwright P0 job），PR
+ * 事件會先在本機 `next dev -p 3300` 起一份「這個 PR 自己的程式碼」再跑，跟
+ * 本檔案本機驗證方式（`next start` + prod API + owner session）同一套流程，
+ * 掛 tag 前已用同款流程本機驗證過三個測試皆綠。
  */
-test.describe("/quant-strategies v9.1 fact-sheet", () => {
+test.describe("/quant-strategies v9.1 fact-sheet @smoke", () => {
   test("directory page renders both v9.1 strategy cards with milestone dates", async ({ page }) => {
     await page.goto("/quant-strategies", { waitUntil: "domcontentloaded" });
 
@@ -43,10 +49,10 @@ test.describe("/quant-strategies v9.1 fact-sheet", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     const frame = extractFrame(page);
 
-    await frame.locator(".s1wrap").first().waitFor({ state: "attached", timeout: 15000 });
-    await expect(frame.locator(".s1wrap").first().getByText("基本面動能")).toBeVisible();
+    await frame.locator(".qmini-wrap").first().waitFor({ state: "attached", timeout: 15000 });
+    await expect(frame.locator(".qmini-wrap").first().getByText("基本面動能")).toBeVisible();
 
-    await frame.locator(".s1wrap").first().click();
+    await frame.locator(".qmini-wrap").first().click();
     await page.waitForURL(/\/quant-strategies/, { timeout: 10000 });
     testInfo.annotations.push({ type: "url-after-click", description: page.url() });
     expect(page.url()).toContain("/quant-strategies");

@@ -6,14 +6,19 @@ import { PageFrame, Panel } from "@/components/PageFrame";
 import {
   QUANT_COMPLIANCE_FOOTER,
   QUANT_GOVERNANCE_NOTES,
-  formatMilestoneDate,
+  deriveStrategyProgress,
+  formatNextAction,
   getQuantStrategyContent,
+  todayTaipeiDate,
 } from "@/lib/quant-strategies-content";
 import { MilestoneTrack } from "../MilestoneTrack";
 import styles from "../QuantStrategies.module.css";
 
 // v9.1（2026-07-19）：詳情頁沿用既有 PageFrame QNT- 家族 routing pattern，內容
 // 改為純 fact-sheet（0 運行績效數字），不再打後端 basket/subscribe API。
+//
+// Pete review #1311 round 2（🔴 must-fix）：badge／下一個動作跟目錄頁一樣改
+// 用 `deriveStrategyProgress()` 現算，不再讀靜態欄位。
 
 export default async function QuantStrategyDetailPage({
   params,
@@ -24,6 +29,9 @@ export default async function QuantStrategyDetailPage({
   const strategy = getQuantStrategyContent(strategyId);
   if (!strategy) notFound();
 
+  const today = todayTaipeiDate();
+  const progress = deriveStrategyProgress(strategy, today);
+
   return (
     <PageFrame
       code="QNT-D"
@@ -33,8 +41,8 @@ export default async function QuantStrategyDetailPage({
     >
       <Panel
         code="QNT-D01"
-        title={strategy.statusBadge}
-        sub={`下一個動作 · ${strategy.nextAction.label} · ${formatMilestoneDate(strategy.nextAction.date)}`}
+        title={progress.badge}
+        sub={`下一個動作 · ${formatNextAction(progress)}`}
       >
         <div className={styles.chips}>
           {strategy.chips.map((chip) => (
@@ -44,7 +52,7 @@ export default async function QuantStrategyDetailPage({
           ))}
         </div>
 
-        <MilestoneTrack milestones={strategy.milestones} />
+        <MilestoneTrack milestones={strategy.milestones} today={today} />
 
         <div className={styles.band}>
           <h2>策略說明</h2>

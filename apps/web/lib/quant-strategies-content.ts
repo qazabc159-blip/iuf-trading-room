@@ -12,6 +12,15 @@
  *
  * 命名刻意不使用內部代號（S1／cont_liq_v36／F-AUTO 等）——這些是給操作面板
  * （/ops/f-auto）看的工程語彙，不是使用者要看到的策略名稱。
+ *
+ * Pete review #1311 round 2（2026-07-19，🔴 must-fix）：`statusBadge`／
+ * `nextAction` 曾經是這裡的靜態欄位，跟 MilestoneTrack 各自依台北日曆日動
+ * 態算的狀態脫鉤——日期經過後（例如 08/03 一過），卡片 badge／下一個動作
+ * 仍停在過去的靜態文字，跟同一張卡的里程碑時間軸互相矛盾。修法：`milestones`
+ * 只存事實（日期），`statusBadge`／`nextAction` 一律用下面的
+ * `deriveStrategyProgress()` 從 `milestones` + `today` 現算，全站三個渲染
+ * 點（首頁迷你卡／目錄卡／詳情 Panel）都呼叫同一支函式，不得各自複製一份
+ * 邏輯或另外存靜態欄位。
  */
 
 import { taipeiCalendarDate } from "./taipei-date";
@@ -33,11 +42,9 @@ export type QuantStrategyContent = {
   oneLiner: string;
   /** 屬性 chips。 */
   chips: string[];
-  /** 現況狀態 badge 文字。 */
-  statusBadge: string;
-  /** 下一個動作。 */
-  nextAction: { label: string; date: string };
-  /** 里程碑三步（固定樣板：模擬盤觀察起算／排程首組合／真金試點）。 */
+  /** 里程碑三步（固定樣板：模擬盤觀察起算／排程首組合／真金試點）。事實
+   * 只存在這裡——現況 badge／下一個動作一律用 `deriveStrategyProgress()`
+   * 從這份陣列現算，不得另外存靜態欄位（見檔頭 Pete review 註記）。 */
   milestones: Milestone[];
   detail: {
     summary: string;
@@ -52,8 +59,6 @@ export const QUANT_STRATEGIES_CONTENT: QuantStrategyContent[] = [
     name: "基本面動能",
     oneLiner: "篩基本面轉強、動能同步走升的台股，每月檢視一次持股名單。",
     chips: ["月頻決策", "基本面 + 動能", "多頭傾向"],
-    statusBadge: "模擬盤觀察中",
-    nextAction: { label: "真金試點", date: "2026-08-12" },
     milestones: [
       { label: "模擬盤觀察起算", date: "2026-07-13" },
       { label: "排程首組合", date: null },
@@ -74,8 +79,6 @@ export const QUANT_STRATEGIES_CONTENT: QuantStrategyContent[] = [
     name: "趨勢延續",
     oneLiner: "篩趨勢方向明確的台股，順勢持有到訊號轉弱為止，每月檢視一次持股名單。",
     chips: ["月頻決策", "價格趨勢", "順勢持有"],
-    statusBadge: "排程準備中",
-    nextAction: { label: "排程首組合", date: "2026-08-03" },
     milestones: [
       { label: "模擬盤觀察起算", date: null },
       { label: "排程首組合", date: "2026-08-03" },
@@ -128,4 +131,71 @@ export function formatMilestoneDate(date: string | null): string {
   if (date == null) return "待排定";
   const [, month, day] = date.split("-");
   return `${month}/${day}`;
+}
+
+export type StrategyProgress = {
+  /** 現況狀態 badge 文字。 */
+  badge: string;
+  /** 下一個動作；全部里程碑都已到達（終態）時為 null，不再宣稱有下一步。 */
+  nextAction: { label: string; date: string | null } | null;
+};
+
+// badge 依「已到達的里程碑深度」對應固定 3 步樣板的 4 種階段文字（0~3 步
+// 已完成）。跟 `milestones` 陣列順序（起算／首組合／真金試點）一一對應。
+const STAGE_BADGES = ["排程準備中", "模擬盤觀察中", "排程執行中", "真金試點已啟動"];
+
+/**
+ * 從 `milestones` 事實 + 當下日期現算 badge／下一個動作——單一真相來源，
+ * 三個渲染點（首頁迷你卡／目錄卡／詳情 Panel）都必須呼叫這支函式，不得各自
+ * 存一份靜態欄位（Pete review #1311 round 2 🔴 must-fix，見檔頭註記）。
+ *
+ * 邏輯：
+ * 1. 找出陣列中「有日期且已到達（today >= date）」的最後一個 index，視為
+ *    目前已走到的里程碑深度。
+ * 2. 該 index 之後、且尚未到達的里程碑是候選下一步；若其中有已排定日期
+ *    的，取日期最近的一個；若全部都還沒排定日期（`date: null`），取樣板
+ *    順序中的第一個——代表「這步驟還沒被排定，但也沒有更早的已知日期步驟
+ *    擋在前面」。
+ * 3. 候選為空（該 index 之後全部已到達）視為終態：不再宣稱有下一步。
+ *
+ * 這個順序保證了：一個里程碑要嘛尚未排定、要嘛日期還沒到，才可能被選為
+ * 「下一個動作」；已經到達的里程碑（含它前面樣板順序更早的項目）永遠不會
+ * 被誤選為「下一步」，也不會出現「下一步指向過去日期」的自相矛盾。
+ */
+export function deriveStrategyProgress(
+  strategy: Pick<QuantStrategyContent, "milestones">,
+  today: string,
+): StrategyProgress {
+  const { milestones } = strategy;
+
+  let lastResolvedIndex = -1;
+  milestones.forEach((milestone, index) => {
+    if (milestone.date != null && milestoneState(milestone.date, today) === "done") {
+      lastResolvedIndex = index;
+    }
+  });
+
+  const badge = STAGE_BADGES[Math.min(lastResolvedIndex + 1, STAGE_BADGES.length - 1)];
+
+  const remaining = milestones
+    .slice(lastResolvedIndex + 1)
+    .filter((milestone) => milestoneState(milestone.date, today) !== "done");
+
+  if (remaining.length === 0) {
+    return { badge, nextAction: null };
+  }
+
+  const datedRemaining = remaining
+    .filter((milestone): milestone is Milestone & { date: string } => milestone.date != null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const next = datedRemaining[0] ?? remaining[0];
+  return { badge, nextAction: { label: next.label, date: next.date } };
+}
+
+/** 「下一個動作」欄位的顯示文字——終態（3 步都已到達）時不再宣稱有下一
+ * 步，改用誠實的完成語句。三個渲染點共用這支，terminal 文案不再各寫一份。 */
+export function formatNextAction(progress: StrategyProgress): string {
+  if (progress.nextAction == null) return "里程碑已全數達成";
+  return `${progress.nextAction.label} · ${formatMilestoneDate(progress.nextAction.date)}`;
 }
