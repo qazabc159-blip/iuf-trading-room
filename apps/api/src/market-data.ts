@@ -574,7 +574,16 @@ function normalizePersistedEntry(entry: Awaited<ReturnType<typeof loadPersistedQ
   };
 }
 
+const workspaceCacheGeneration = new Map<string, number>();
+function bumpWorkspaceCacheGeneration(workspaceSlug: string) {
+  workspaceCacheGeneration.set(workspaceSlug, (workspaceCacheGeneration.get(workspaceSlug) ?? 0) + 1);
+}
+function getWorkspaceCacheGeneration(workspaceSlug: string) {
+  return workspaceCacheGeneration.get(workspaceSlug) ?? 0;
+}
+
 function pushQuoteEntry(
+  workspaceSlug: string,
   workspaceCache: Map<string, QuoteCacheEntry>,
   workspaceHistory: Map<string, QuoteCacheEntry[]>,
   entry: QuoteCacheEntry
@@ -601,9 +610,11 @@ function pushQuoteEntry(
       history.splice(0, history.length - historyLimit);
     }
     workspaceHistory.set(cacheKey, history);
+    bumpWorkspaceCacheGeneration(workspaceSlug);
     return true;
   }
 
+  bumpWorkspaceCacheGeneration(workspaceSlug);
   return false;
 }
 
@@ -617,26 +628,77 @@ async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
   const workspaceHistory = getQuoteHistoryCacheForWorkspace(workspaceSlug);
 
   for (const persistedEntry of persistedEntries) {
-    pushQuoteEntry(workspaceCache, workspaceHistory, normalizePersistedEntry(persistedEntry));
+    pushQuoteEntry(workspaceSlug, workspaceCache, workspaceHistory, normalizePersistedEntry(persistedEntry));
   }
 
   persistedQuoteHistoryLoaded.add(workspaceSlug);
 }
 
+// 2026-07-20 (overview_latency_20260720 perf regression): getMarketDataOverview
+// independently re-derives the full multi-source quote/history snapshot 3x per
+// request (once via getEffectiveMarketQuotes, again inside
+// getMarketQuoteHistoryDiagnostics, again inside getMarketBarDiagnostics — each
+// re-running resolveMarketQuotes/listMarketQuoteHistory from scratch). Both
+// functions below do an UNFILTERED full-cache scan + per-entry Zod validation
+// (withFreshness -> quoteSchema.parse) + sort — cost scales with total cached
+// entries across the whole symbol universe, not with what the caller actually
+// requested (measured live: identical latency requesting 50 vs 500 symbols).
+// listCachedProviderQuoteHistory in particular can hold up to
+// getQuoteHistoryLimit() (default 512) entries per (source, symbol) key across
+// the full ~2000-symbol universe, making its Zod-parse+sort pass the dominant
+// cost (~4s measured on prod for each of the two callers above).
+//
+// Memo below is gated on BOTH the write generation counter AND a short TTL:
+// - generation alone would let a memo entry outlive its underlying data
+//   going genuinely stale over time with no new writes (the exact "computed
+//   freshness silently wrong" failure shape #1321 fixed elsewhere today —
+//   must not reintroduce it here).
+// - TTL alone served a stale read across a write that had just landed
+//   (caught live: broke a resolveMarketQuotes source-precedence test that
+//   exercises two cache states back-to-back within the same TTL window).
+// Together: a memo entry is only reused when NOTHING has been written to
+// this workspace since it was computed AND it is under 1s old — 1s is well
+// under every source's stale-floor (getQuoteStaleMs() min 5s / getBarStaleMs()
+// 10min / getHistoryStaleMs() 10min), so the bounded staleness window this
+// adds to ageMs/isStale computation is a no-op in practice.
+const CACHED_PROVIDER_MEMO_TTL_MS = 1000;
+const cachedProviderQuotesMemo = new Map<string, { generation: number; expiresAt: number; result: Quote[] }>();
+const cachedProviderQuoteHistoryMemo = new Map<string, { generation: number; expiresAt: number; result: Quote[] }>();
+
 function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
+  const memoKey = `${workspaceSlug}:${source}`;
+  const now = Date.now();
+  const generation = getWorkspaceCacheGeneration(workspaceSlug);
+  const cached = cachedProviderQuotesMemo.get(memoKey);
+  if (cached && cached.generation === generation && cached.expiresAt > now) {
+    return cached.result;
+  }
+
   const cache = getQuoteCacheForWorkspace(workspaceSlug);
-  return [...cache.values()]
+  const result = [...cache.values()]
     .filter((entry) => entry.source === source)
     .map(withFreshness)
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  cachedProviderQuotesMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
+  return result;
 }
 
 function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSource) {
+  const memoKey = `${workspaceSlug}:${source}`;
+  const now = Date.now();
+  const generation = getWorkspaceCacheGeneration(workspaceSlug);
+  const cached = cachedProviderQuoteHistoryMemo.get(memoKey);
+  if (cached && cached.generation === generation && cached.expiresAt > now) {
+    return cached.result;
+  }
+
   const historyCache = getQuoteHistoryCacheForWorkspace(workspaceSlug);
-  return [...historyCache.entries()]
+  const result = [...historyCache.entries()]
     .filter(([key]) => key.startsWith(`${source}:`))
     .flatMap(([, entries]) => entries.map(withFreshness))
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  cachedProviderQuoteHistoryMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
+  return result;
 }
 
 function buildQuoteCacheKey(symbol: string, market: Market, source: QuoteSource) {
@@ -2199,7 +2261,7 @@ async function upsertProviderQuotes(input: {
       updatedAt: new Date().toISOString()
     };
 
-    if (pushQuoteEntry(workspaceCache, workspaceHistory, entry)) {
+    if (pushQuoteEntry(workspaceSlug, workspaceCache, workspaceHistory, entry)) {
       appendedEntries.push(entry);
     }
 
@@ -4077,6 +4139,10 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
     // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
     _dailyBarRowsCache.clear();
+    // 2026-07-20: bump generation so the listCachedProviderQuotes/
+    // listCachedProviderQuoteHistory memo (keyed on generation) can't serve a
+    // pre-reset snapshot after the underlying caches above were just wiped.
+    bumpWorkspaceCacheGeneration(workspaceSlug);
     return;
   }
 
@@ -4084,4 +4150,7 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
   providerQuoteHistoryCache.clear();
   persistedQuoteHistoryLoaded.clear();
   _dailyBarRowsCache.clear();
+  workspaceCacheGeneration.clear();
+  cachedProviderQuotesMemo.clear();
+  cachedProviderQuoteHistoryMemo.clear();
 }
