@@ -623,7 +623,9 @@ async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
     return;
   }
 
+  const _t0 = performance.now();
   const persistedEntries = await loadPersistedQuoteEntries(workspaceSlug);
+  const _t1 = performance.now();
   const workspaceCache = getQuoteCacheForWorkspace(workspaceSlug);
   const workspaceHistory = getQuoteHistoryCacheForWorkspace(workspaceSlug);
 
@@ -632,6 +634,10 @@ async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
   }
 
   persistedQuoteHistoryLoaded.add(workspaceSlug);
+  console.log(
+    `[overview-perf] ensurePersistedQuoteHistoryLoaded(${workspaceSlug}) COLD load: `
+    + `dbFetch=${Math.round(_t1 - _t0)}ms pushLoop=${Math.round(performance.now() - _t1)}ms entries=${persistedEntries.length}`
+  );
 }
 
 // 2026-07-20 (overview_latency_20260720 perf regression): getMarketDataOverview
@@ -671,14 +677,20 @@ function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const generation = getWorkspaceCacheGeneration(workspaceSlug);
   const cached = cachedProviderQuotesMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
+    console.log(`[overview-perf] listCachedProviderQuotes(${source}) MEMO_HIT size=${cached.result.length}`);
     return cached.result;
   }
 
+  const _t0 = performance.now();
   const cache = getQuoteCacheForWorkspace(workspaceSlug);
   const result = [...cache.values()]
     .filter((entry) => entry.source === source)
     .map(withFreshness)
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  console.log(
+    `[overview-perf] listCachedProviderQuotes(${source}) MEMO_MISS rawCacheSize=${cache.size} `
+    + `resultSize=${result.length} scanMs=${Math.round(performance.now() - _t0)}`
+  );
   cachedProviderQuotesMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
   return result;
 }
@@ -689,14 +701,23 @@ function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSour
   const generation = getWorkspaceCacheGeneration(workspaceSlug);
   const cached = cachedProviderQuoteHistoryMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
+    console.log(`[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_HIT size=${cached.result.length}`);
     return cached.result;
   }
 
+  const _t0 = performance.now();
   const historyCache = getQuoteHistoryCacheForWorkspace(workspaceSlug);
+  const rawEntryCount = [...historyCache.entries()].filter(([key]) => key.startsWith(`${source}:`))
+    .reduce((sum, [, entries]) => sum + entries.length, 0);
   const result = [...historyCache.entries()]
     .filter(([key]) => key.startsWith(`${source}:`))
     .flatMap(([, entries]) => entries.map(withFreshness))
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  console.log(
+    `[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_MISS keysForSource=`
+    + `${[...historyCache.entries()].filter(([key]) => key.startsWith(`${source}:`)).length} `
+    + `rawEntryCount=${rawEntryCount} resultSize=${result.length} scanMs=${Math.round(performance.now() - _t0)}`
+  );
   cachedProviderQuoteHistoryMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
   return result;
 }
@@ -3942,6 +3963,15 @@ export async function getMarketDataOverview(input: {
   topLimit?: number;
 }) {
   const topLimit = input.topLimit ?? 5;
+  // 2026-07-20 round 2 (Elva: memo didn't help, need real per-segment
+  // timing, not more theory). Temporary diagnostic instrumentation --
+  // console.log with [overview-perf] prefix so it's easy to grep out of
+  // Railway logs. Remove once the real bottleneck is identified and fixed.
+  const _perfT0 = performance.now();
+  const _perfMark = (label: string, from: number) => {
+    console.log(`[overview-perf] ${label}=${Math.round(performance.now() - from)}ms`);
+    return performance.now();
+  };
   const [providers, companies, quotes] = await Promise.all([
     listMarketDataProviderStatuses({
       session: input.session,
@@ -3954,8 +3984,11 @@ export async function getMarketDataOverview(input: {
       limit: 1000
     })
   ]);
+  let _perfT = _perfMark("providers_companies_quotes", _perfT0);
+  console.log(`[overview-perf] quotes.length=${quotes.length} companies.length=${companies.length}`);
   const symbols = dedupeSymbolMasters(companies);
   const qualitySymbols = [...new Set(quotes.map((quote) => quote.symbol))].join(",");
+  console.log(`[overview-perf] qualitySymbols.count=${qualitySymbols ? qualitySymbols.split(",").length : 0}`);
   const effectiveSelection = quotes.length > 0
     ? await getEffectiveMarketQuotes({
       session: input.session,
@@ -3989,21 +4022,32 @@ export async function getMarketDataOverview(input: {
       },
       items: []
     };
+  _perfT = _perfMark("effectiveSelection", _perfT);
   const [historyQuality, barQuality] = qualitySymbols
     ? await Promise.all([
-      getMarketQuoteHistoryDiagnostics({
-        session: input.session,
-        symbols: qualitySymbols,
-        includeStale: true,
-        limit: Math.max(quotes.length * 4, 100)
-      }),
-      getMarketBarDiagnostics({
-        session: input.session,
-        symbols: qualitySymbols,
-        includeStale: true,
-        interval: "1m",
-        limit: Math.max(quotes.length * 2, 50)
-      })
+      (async () => {
+        const t = performance.now();
+        const r = await getMarketQuoteHistoryDiagnostics({
+          session: input.session,
+          symbols: qualitySymbols,
+          includeStale: true,
+          limit: Math.max(quotes.length * 4, 100)
+        });
+        console.log(`[overview-perf] historyQuality_inner=${Math.round(performance.now() - t)}ms`);
+        return r;
+      })(),
+      (async () => {
+        const t = performance.now();
+        const r = await getMarketBarDiagnostics({
+          session: input.session,
+          symbols: qualitySymbols,
+          includeStale: true,
+          interval: "1m",
+          limit: Math.max(quotes.length * 2, 50)
+        });
+        console.log(`[overview-perf] barQuality_inner=${Math.round(performance.now() - t)}ms`);
+        return r;
+      })()
     ])
     : [
       {
@@ -4017,6 +4061,7 @@ export async function getMarketDataOverview(input: {
         items: []
       }
     ];
+  _perfT = _perfMark("historyQuality_barQuality_promiseall", _perfT);
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
@@ -4062,17 +4107,22 @@ export async function getMarketDataOverview(input: {
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
+  _perfT = _perfMark("sync_compute_gainers_losers_active", _perfT);
+
   const quoteMarketContext = buildMarketContext({
     effectiveItems,
     companies
   });
+  _perfT = _perfMark("buildMarketContext", _perfT);
   const shouldLoadDailyMarketContext = quoteMarketContext.state === "EMPTY" || quoteMarketContext.heatmap.length < MARKET_HEATMAP_LIMIT / 2;
+  console.log(`[overview-perf] shouldLoadDailyMarketContext=${shouldLoadDailyMarketContext} quoteMarketContext.state=${quoteMarketContext.state} heatmap.length=${quoteMarketContext.heatmap.length}`);
   const dailyMarketContext = shouldLoadDailyMarketContext
     ? await buildDailyBarMarketContext({
       session: input.session,
       companies
     })
     : null;
+  _perfT = _perfMark("buildDailyBarMarketContext", _perfT);
   const marketContext = dailyMarketContext && (
     quoteMarketContext.state === "EMPTY" || dailyMarketContext.heatmap.length > quoteMarketContext.heatmap.length
   )
@@ -4094,6 +4144,7 @@ export async function getMarketDataOverview(input: {
   const latestQuoteTimestamp = quotes
     .map((quote) => quote.timestamp)
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
+  console.log(`[overview-perf] TOTAL=${Math.round(performance.now() - _perfT0)}ms`);
 
   return {
     generatedAt: new Date().toISOString(),
