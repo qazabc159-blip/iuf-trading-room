@@ -986,6 +986,32 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
   // 已內建 twse_mis 兜底的 /market-data/effective-quotes，跟盤口同一份真值
   // 對齊 —— 不改 backend fallback 策略本身，KGI 有資料時仍優先用 KGI（見呼叫
   // 端：先打 ticks，只有落空才補打這支）。
+
+  // 2026-07-20 盤中 P0：「落空才補打」原本只認「完全沒有 tick」，沒發現 tick
+  // buffer 裡凍結的舊資料（例如整個週末沒收到新推播、週一盤中還在顯示上週五
+  // 收盤 2,290）也會讓 last.close 有值、被誤判成「有資料可用」，於是永遠不會
+  // 觸發這支 fallback，即使 effective-quotes 早就有 fresh 的 twse_mis 可用。
+  //
+  // 不能只看 envelope 的 isStale boolean 就觸發 fallback：D-W2D-1 的
+  // STALE_THRESHOLD_MS 是 5 秒（kgi-quote-client.ts），盤中安靜幾秒鐘就會翻
+  // true，這樣做會讓每次輪詢幾乎都多打一次 fallback，還會破壞既有 #1310 保護
+  // 的「ops 手動訂閱單一快照」情境（剛抓到的即時資料，本來就會 >5 秒才回來）。
+  // 真正要抓的是「凍結」——staleSince（後端上次真正收到推播的時間戳，跟
+  // stale/freshness 同層級欄位，見 kgi-quote-client.ts classifyFreshness()）
+  // 距今遠超過這個閾值，才代表 buffer 是真的壞掉不是正常抖動。
+  // Mirrors apps/web/app/m/kgi-tick-freshness.ts isKgiTickFreshEnoughToTrust()
+  // — 同一份判斷邏輯，這裡是靜態 HTML 頁面無法 import TS module 的鏡射版本。
+  var KGI_TICK_FROZEN_THRESHOLD_MS = 5 * 60 * 1000;
+  function isTickFreshEnoughToTrust(d) {
+    if (!d) return true;
+    var isStale = d.stale === true || d.freshness === "stale";
+    if (!isStale) return true;
+    if (!d.staleSince) return true;
+    var staleSinceMs = Date.parse(d.staleSince);
+    if (!isFinite(staleSinceMs)) return true;
+    return (Date.now() - staleSinceMs) <= KGI_TICK_FROZEN_THRESHOLD_MS;
+  }
+
   function fetchEffectiveQuotes(symbols) {
     var unique = symbols.filter(function (sym, i) { return symbols.indexOf(sym) === i; });
     if (!unique.length) return Promise.resolve({});
@@ -1144,18 +1170,27 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
       // stale/freshness 是 envelope 層級欄位（跟 d.ticks 同層，非個別 tick 上）。
       var isStale = !!(d && (d.stale === true || d.freshness === "stale"));
 
-      if (last && num(last.close) != null) {
+      if (last && num(last.close) != null && isTickFreshEnoughToTrust(d)) {
         applySymbolHeaderFromTick(last, isStale);
         return;
       }
 
-      // KGI 原生 tick buffer 落空（on_tick 零觸發／斷線）— fallback 到已內建
-      // twse_mis 兜底的官方行情端點，避免頭部報價「尚無報價」而 3 公分外的
-      // 五檔盤口卻是活的（2026-07-16 診斷 #1 病灶）。
+      // KGI 原生 tick buffer 落空、或凍結超過閾值（2026-07-20 盤中 P0，見
+      // isTickFreshEnoughToTrust 註解）— fallback 到已內建 twse_mis 兜底的
+      // 官方行情端點，避免頭部報價卡在舊快照，或（2026-07-16 診斷 #1 病灶）
+      // 3 公分外的五檔盤口卻是活的。
       return fetchEffectiveQuotes([sym]).then(function (map) {
         var item = map[sym];
         var q = item && item.selectedQuote;
         if (!q || num(q.last) == null) {
+          if (last && num(last.close) != null) {
+            // effective-quotes 也沒有更好的值——誠實降級：寧可顯示凍結前的
+            // 真實舊報價＋誠實「略舊」標籤，也不要因為改吃 fallback 落空就
+            // 打回「尚無報價」空狀態（那樣反而比顯示一個舊快照更誤導，同
+            // #1310 精神）。
+            applySymbolHeaderFromTick(last, true);
+            return;
+          }
           applySymbolHeaderEmpty();
           return;
         }
@@ -1242,14 +1277,17 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
         var d = res.ok ? unwrap(res.body) : null;
         var ticks = d && Array.isArray(d.ticks) ? d.ticks : [];
         var last = ticks.length ? ticks[ticks.length - 1] : null;
-        return { sym: sym, last: (last && num(last.close) != null) ? last : null };
+        var hasValue = last && num(last.close) != null;
+        return { sym: sym, last: hasValue ? last : null, trusted: hasValue && isTickFreshEnoughToTrust(d) };
       });
     })).then(function (results) {
-      var missing = results.filter(function (r) { return !r.last; }).map(function (r) { return r.sym; });
-      // Same fallback as renderSymbolHeader(): KGI ticks buffer empty for
-      // these symbols → batch-fetch the twse_mis-backed effective-quotes
-      // endpoint once for all of them instead of leaving the whole watchlist
-      // blank (2026-07-16 診斷 #1 病灶).
+      // Same fallback as renderSymbolHeader(): KGI ticks buffer empty, OR
+      // frozen beyond the threshold (2026-07-20 盤中 P0 — see
+      // isTickFreshEnoughToTrust), for these symbols → batch-fetch the
+      // twse_mis-backed effective-quotes endpoint once for all of them
+      // instead of leaving the whole watchlist blank/frozen (2026-07-16
+      // 診斷 #1 病灶 + 2026-07-20 追加).
+      var missing = results.filter(function (r) { return !r.trusted; }).map(function (r) { return r.sym; });
       return fetchEffectiveQuotes(missing).then(function (fallbackMap) {
         // 清單底部「示意報價」舊標籤是本頁上線初期的靜態占位字（此清單從未真的
         // 顯示過虛構報價，grep 全檔確認——十列只會是真 tick／twse_mis 兜底／
@@ -1269,7 +1307,7 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
         var staleFallbackDetected = false;
         var staleFallbackDate = null;
         results.forEach(function (r) {
-          if (r.last) {
+          if (r.last && r.trusted) {
             var isUp = num(r.last.price_chg) > 0 ? true : num(r.last.price_chg) < 0 ? false : null;
             applyWatchlistRow(r.sym, fmtPrice(r.last.close), fmtPct(r.last.pct_chg), isUp);
             return;
@@ -1277,7 +1315,15 @@ html,body{margin:0;padding:0;overflow-x:hidden;background:#080b10;background-ima
           var item = fallbackMap[r.sym];
           var q = item && item.selectedQuote;
           if (!q || num(q.last) == null) {
-            applyWatchlistRow(r.sym, "--", "--%", null);
+            if (r.last) {
+              // 凍結的 tick + effective-quotes 也拿不到更好的值——誠實降級：
+              // 顯示凍結前的真實舊報價，不要打回 "--"（同 renderSymbolHeader
+              // 的 #1310 精神）。
+              var frozenUp = num(r.last.price_chg) > 0 ? true : num(r.last.price_chg) < 0 ? false : null;
+              applyWatchlistRow(r.sym, fmtPrice(r.last.close), fmtPct(r.last.pct_chg), frozenUp);
+            } else {
+              applyWatchlistRow(r.sym, "--", "--%", null);
+            }
             return;
           }
           var absChg = num(q.last) != null && num(q.prevClose) != null ? q.last - q.prevClose : null;
