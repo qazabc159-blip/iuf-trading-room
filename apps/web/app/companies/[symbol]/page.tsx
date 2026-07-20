@@ -570,6 +570,7 @@ export default async function CompanyDetailPage({
         pe={heroPE}
         dividendYield={heroDividendYield}
         latestRevenue={heroRevenue?.revenue ?? null}
+        serverNowMs={Date.now()}
       />
 
       {/* ── Round 2: HUD Stats Strip — 振幅 / 52週高低 / 市值 / PBR ── */}

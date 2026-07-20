@@ -66,3 +66,62 @@ test.describe("company page — zero hydration errors 2026-07-19 (jim3)", () => 
     }
   }
 });
+
+// ── Round 2 (2026-07-20, jim9) — second, unrelated root cause: intraday-only
+// intermittent #418 (this one WAS timing/session dependent — Elva saw it fire
+// on one run and not the next against the same page). Root cause:
+// CompanyHeroBar.tsx (a "use client" component, but still server-rendered on
+// first load) called `Date.now()` directly inside its render body to compute
+// `freshness_mode` for the FreshnessBadge. `computeFreshnessMode` is
+// age-based — a kgi-gateway-sourced quote flips live<->stale at a tight <=2s
+// cutoff, and the "略舊 Ns" age text re-buckets every second — so the SSR
+// pass (server request instant) and the client's first hydration-render
+// pass (a later, different real instant) could compute two different
+// freshness values for the *same* `realtimeQuote` prop, flipping the
+// badge's DOM branch and throwing #418. This only ever reproduced while a
+// live kgi-gateway quote was in flight (intraday, gateway up) — off-hours
+// quotes are eod/close, which are age-independent, so it never fired after
+// market close, matching the 7/19 fix's "0 errors" result and this bug's
+// "盤中間歇" report.
+//
+// Fix: apps/web/app/companies/[symbol]/CompanyHeroBar.tsx now pins its
+// freshness `nowMs` to a `serverNowMs` prop (captured once by the Server
+// Component in page.tsx at request time) until a post-mount effect swaps it
+// for the client's own live clock — so the SSR output and the client's
+// first render are byte-identical by construction, not by lucky timing. See
+// CompanyHeroBar.test.ts for the source-level lock on that pattern.
+//
+// This E2E test cannot force the exact SSR-vs-hydrate clock race (SSR runs
+// in the Node process, outside Playwright's reach — `page.clock` only
+// controls the browser's Date/timers, not the server's). Instead it widens
+// the *natural* SSR-to-hydrate gap by artificially delaying every JS chunk
+// response, a realistic proxy for a slow client boot (throttled network /
+// low-end device / large bundle) that maximizes the chance of crossing a
+// timing threshold if a bare `Date.now()`-in-render bug were still present
+// anywhere in this render path.
+test.describe("company page — intraday clock-skew hydration safety 2026-07-20 (jim9)", () => {
+  test.describe.configure({ retries: 1 });
+
+  for (const symbol of SYMBOLS) {
+    test(`/companies/${symbol} — 0 pageerrors when client JS boot is artificially delayed`, async ({ page }) => {
+      test.setTimeout(60_000);
+      const pageErrors: string[] = [];
+      page.on("pageerror", (err) => pageErrors.push(err.message));
+
+      // Delay every Next.js JS chunk response so the client's first
+      // hydration-render pass lands several real seconds after the SSR
+      // response was generated — widening the SSR-vs-hydrate clock gap
+      // far past the 2s kgi-gateway live/stale cutoff.
+      await page.route("**/_next/static/**/*.js", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await route.continue();
+      });
+
+      await page.goto(`/companies/${symbol}`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(5000);
+
+      const hydrationErrors = pageErrors.filter((msg) => HYDRATION_ERROR_PATTERN.test(msg));
+      expect(hydrationErrors, `hydration errors on /companies/${symbol} under delayed boot:\n${hydrationErrors.join("\n---\n")}`).toHaveLength(0);
+    });
+  }
+});

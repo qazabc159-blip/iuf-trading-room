@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import type { CompanyDetailQuote, CompanyDetailView } from "@/lib/company-adapter";
 import type { CompanyRealtimeQuote } from "@/lib/api";
@@ -328,6 +329,7 @@ export function CompanyHeroBar({
   pe,
   dividendYield,
   latestRevenue,
+  serverNowMs,
 }: {
   company: CompanyDetailView;
   quote: CompanyDetailQuote | null;
@@ -336,6 +338,19 @@ export function CompanyHeroBar({
   pe?: number | null;
   dividendYield?: number | null;
   latestRevenue?: number | null;
+  /**
+   * Wall-clock instant captured by the server component at request time
+   * (see `page.tsx`). Freshness (`computeFreshnessMode`/`computeFreshness_ms`)
+   * is age-based, so evaluating `Date.now()` directly during render used to
+   * make the SSR pass and the client's first hydration pass compute
+   * different values (kgi-gateway's <=2s live/stale cutoff flips, and the
+   * "略舊 Ns" age text re-buckets) — an intermittent React #418 mismatch
+   * only reproducible intraday while a kgi-gateway quote is in flight.
+   * Fix: the very first client render (before mount) reuses this same
+   * server-captured instant so it byte-matches SSR output; only after the
+   * mount effect fires do we switch to the client's own live clock.
+   */
+  serverNowMs: number;
 }) {
   // Best price: prefer realtime KGI gateway price, fallback to last OHLCV close
   const bestPrice = realtimeQuote?.lastPrice ?? quote?.last ?? null;
@@ -362,12 +377,20 @@ export function CompanyHeroBar({
     ? (isLive ? "即時報價" : eodDateLabel ?? barDateLabel ?? "收盤參考")
     : quote?.source === "kgi" || quote?.source === "finmind" ? (barDateLabel ?? "收盤資料") : null;
 
-  // Compute canonical freshness_mode for FreshnessBadge
+  // Compute canonical freshness_mode for FreshnessBadge. `nowMs` intentionally
+  // stays pinned to `serverNowMs` (identical on SSR and the client's first
+  // hydration render) until the post-mount effect below swaps it for the
+  // client's own live clock — see the `serverNowMs` prop doc comment above.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const nowMs = mounted ? Date.now() : serverNowMs;
   const freshnessMode = realtimeQuote
-    ? computeFreshnessMode(realtimeQuote, Date.now())
+    ? computeFreshnessMode(realtimeQuote, nowMs)
     : "eod";
   const freshnessMs = realtimeQuote
-    ? computeFreshness_ms(realtimeQuote, Date.now())
+    ? computeFreshness_ms(realtimeQuote, nowMs)
     : undefined;
 
   // Volume: prefer realtime
