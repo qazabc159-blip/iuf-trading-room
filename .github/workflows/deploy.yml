@@ -14,14 +14,26 @@ name: Deploy to Railway
 on:
   push:
     branches: [main]
+    # packages/qa-playwright is Playwright test tooling only (not an apps/*
+    # workspace dependency - see packages/qa-playwright/package.json) so a
+    # push that only touches it does not change what runs in prod. Without
+    # this negation, packages/** alone matched it and forced a full
+    # web+api+worker redeploy for pure test-spec changes (e.g. #1320, a spec
+    # hardening commit with zero runtime code touched). Order matters here:
+    # GitHub evaluates path patterns per changed file, last match wins, so
+    # the negation must come after the 'packages/**' positive match.
+    # reports/**, evidence/**, docs, and other non-code paths were already
+    # excluded (never listed below) - this only closes the qa-playwright gap.
     paths:
       - 'apps/**'
       - 'packages/**'
+      - '!packages/qa-playwright/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
       - 'tsconfig*.json'
       - '.npmrc'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       service:
@@ -73,8 +85,68 @@ jobs:
               Write-Host "Skipping ${{ matrix.service }} - manual dispatch targeted '$target'"
               exit 0
             }
+            "skip=false" >> $env:GITHUB_OUTPUT
+            exit 0
           }
-          "skip=false" >> $env:GITHUB_OUTPUT
+
+          # push event: the outer `on.push.paths` filter already proved this
+          # push touches something deploy-relevant. Now scope which of the
+          # web/api/worker matrix entries actually need it, so an apps/api-only
+          # change does not also redeploy web/worker for nothing.
+          #
+          # Fail-open by design: if the before/after compare can't be
+          # resolved or the API call fails, deploy this service rather than
+          # silently skip a real release (same bias as the migration-count
+          # check below in this workflow).
+          $before = "${{ github.event.before }}"
+          $after = "${{ github.sha }}"
+
+          if ([string]::IsNullOrWhiteSpace($before) -or $before -match '^0+$') {
+            Write-Host "No comparable base commit (new branch or force-push) - deploying ${{ matrix.service }} to be safe."
+            "skip=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $changedFiles = @()
+          try {
+            $headers = @{
+              Authorization = "token ${{ github.token }}"
+              Accept        = "application/vnd.github+json"
+            }
+            $compare = Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/compare/$before...$after" -Headers $headers -TimeoutSec 20
+            $changedFiles = @($compare.files | ForEach-Object { $_.filename })
+          } catch {
+            Write-Host "::warning::Could not fetch changed-files compare ($($_.Exception.Message)); deploying ${{ matrix.service }} to be safe."
+            "skip=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          if ($changedFiles.Count -eq 0) {
+            Write-Host "::warning::Compare API returned no changed files; deploying ${{ matrix.service }} to be safe."
+            "skip=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # Anything outside apps/<other-service>/** is treated as shared
+          # (packages/*, root config, workflow file) and deploys all three.
+          $otherServicePrefixes = @("web", "api", "worker") | Where-Object { $_ -ne "${{ matrix.service }}" } | ForEach-Object { "apps/$_/" }
+
+          $relevant = $changedFiles | Where-Object {
+            $f = $_
+            $isOtherServiceOnly = $false
+            foreach ($p in $otherServicePrefixes) {
+              if ($f.StartsWith($p)) { $isOtherServiceOnly = $true }
+            }
+            -not $isOtherServiceOnly
+          }
+
+          if ($relevant.Count -gt 0) {
+            "skip=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Deploying ${{ matrix.service }} - changed files include: $($relevant -join ', ')"
+          } else {
+            "skip=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Skipping ${{ matrix.service }} - all changed files are scoped to other apps/* services: $($changedFiles -join ', ')"
+          }
 
       - name: Checkout
         if: steps.gate.outputs.skip != 'true'
