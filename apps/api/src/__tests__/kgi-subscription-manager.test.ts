@@ -129,6 +129,8 @@ import {
   getKgiCoreHeatmap,
   ensurePermanentSubscriptions,
   _resetSubscriptionManager,
+  _parseKgiRawDatetime,
+  fetchKgiLatestTick,
 } from "../kgi-subscription-manager.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -549,5 +551,79 @@ describe("KGI Subscription Manager", () => {
     const twiiAfter = statusAfter.slots.find((s) => s.symbol === "^TWII");
     assert.strictEqual(twiiAfter?.subscribed, true, "recordTickReceived must flip subscribed:true on a real tick");
     assert.ok(twiiAfter?.lastTickAt, "lastTickAt must be populated");
+  });
+});
+
+// ── P0 2026-07-20: KGI raw `datetime` field poisons downstream freshness ───────
+//
+// Root cause: services/kgi-gateway forwards the KGI SDK's raw tick.datetime
+// verbatim — a 14-digit YYYYMMDDHHmmss string with no separators/timezone
+// (e.g. "20260423090038", see services/kgi-gateway/SCHEMA_MAPPING.md), not an
+// ISO 8601 timestamp. `Date.parse()` on that shape is NaN, which silently
+// poisoned every downstream age computation (ageMs=NaN, `NaN > threshold` is
+// always `false` in JS) — so the kgi source in effective-quotes /
+// order-preview quoteGate was unconditionally classified "fresh" regardless
+// of true tick age. See reports/kgi_false_tick_20260720/ for full RCA.
+describe("_parseKgiRawDatetime (P0 2026-07-20 fix)", () => {
+  it("parses a real KGI raw 14-digit datetime into a valid +08:00 ISO string", () => {
+    const iso = _parseKgiRawDatetime("20260423090038");
+    assert.strictEqual(iso, "2026-04-23T09:00:38+08:00");
+    assert.ok(Number.isFinite(Date.parse(iso!)), "the parsed value must itself be Date.parse()-able");
+  });
+
+  it("returns null (not NaN, not a throw) for malformed/empty input", () => {
+    assert.strictEqual(_parseKgiRawDatetime(""), null);
+    assert.strictEqual(_parseKgiRawDatetime(undefined), null);
+    assert.strictEqual(_parseKgiRawDatetime(null), null);
+    assert.strictEqual(_parseKgiRawDatetime("not-a-date"), null);
+    assert.strictEqual(_parseKgiRawDatetime("2026-04-23T09:00:38Z"), null, "already-ISO input should not be double-encoded — caller falls back to _received_at");
+  });
+
+  it("regression guard: Date.parse() of the raw un-parsed KGI format is NaN (documents the original bug trigger)", () => {
+    assert.ok(Number.isNaN(Date.parse("20260423090038")), "if this ever stops being NaN, the original bug class is gone and this suite's premise should be re-checked");
+  });
+});
+
+describe("fetchKgiLatestTick — freshness must reflect true tick age, not NaN-always-fresh", () => {
+  beforeEach(() => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+  });
+
+  after(() => {
+    installMockGateway();
+  });
+
+  it("a tick with only the raw KGI datetime field (no _received_at) yields a finite, plausible staleSec — never NaN", async () => {
+    // Simulates the real gateway wire shape: services/kgi-gateway's
+    // get_recent_ticks() returns the raw SDK dict which always has `datetime`
+    // (kgi_quote.py _tick_to_dict) — this test's fixture intentionally omits
+    // `_received_at` to isolate the raw-datetime parsing path from the
+    // gateway-authored fallback.
+    // _parseKgiRawDatetime treats the raw string as Taipei (+08:00) wall-clock,
+    // so to build a fixture that decodes to "1 hour before now" we take the
+    // target UTC instant, shift it +8h, and read off UTC components (which
+    // then numerically equal the Taipei wall-clock digits at that instant).
+    const targetInstant = Date.now() - 3_600_000; // 1 hour old
+    const taipeiWallClock = new Date(targetInstant + 8 * 60 * 60 * 1000);
+    const raw = `${taipeiWallClock.getUTCFullYear()}${String(taipeiWallClock.getUTCMonth() + 1).padStart(2, "0")}${String(taipeiWallClock.getUTCDate()).padStart(2, "0")}${String(taipeiWallClock.getUTCHours()).padStart(2, "0")}${String(taipeiWallClock.getUTCMinutes()).padStart(2, "0")}${String(taipeiWallClock.getUTCSeconds()).padStart(2, "0")}`;
+
+    globalThis.fetch = async (url: string | URL | Request) => {
+      const urlStr = String(typeof url === "string" ? url : url instanceof URL ? url.href : (url as Request).url);
+      if (urlStr.includes("/quote/ticks")) {
+        return new Response(
+          JSON.stringify({ ticks: [{ close: 2290, price_chg: 0, pct_chg: 0, datetime: raw }] }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const snapshot = await fetchKgiLatestTick("2330");
+    assert.ok(snapshot.staleSec !== null, "staleSec must be computable, not silently dropped");
+    assert.ok(Number.isFinite(snapshot.staleSec), "staleSec must never be NaN — a NaN age is what let a stale tick masquerade as fresh");
+    // ~1 hour old, computed via UTC components so this doesn't depend on the
+    // test runner's local timezone matching Taipei's +08:00.
+    assert.ok(snapshot.staleSec! > 3000 && snapshot.staleSec! < 3900, `expected ~3600s stale, got ${snapshot.staleSec}`);
   });
 });
