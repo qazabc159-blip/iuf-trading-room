@@ -18365,6 +18365,46 @@ export function _isTwseEodCronTradeDateAlreadyPersisted(
 }
 
 /**
+ * Maps a `companies.market` string to the canonical Market enum used to tag
+ * MIS full-universe-sweep quotes (`_runMisFullSweepSlice` in
+ * TWSE-MIS-QUOTE-CRON below). Extracted to module scope + exported
+ * (2026-07-20, quote_close_0050_forensics_20260720) for direct unit testing
+ * — was a same-named inline closure with an identical body except its
+ * default fell through to "OTHER".
+ *
+ * That default was live-verified wrong for 0050 (元大台灣50 ETF):
+ * `companies.market` holds "ETF" for that row (an instrument-type value,
+ * not an exchange-venue tag — same latent data-quality issue affects 1216
+ * "食品工業" and 9105 "存託憑證", an industry sector and a DR-instrument
+ * label respectively, both leaking into what should be an exchange column).
+ * The unrecognized value fell through to "OTHER" here, while every OTHER
+ * MIS-sweep quote for the same real symbol from any other codepath — and
+ * this exact function's own sibling `_misSwpExPrefix` (which already
+ * defaults unrecognized markets to "tse", i.e. TWSE) — kept tagging it
+ * "TWSE". Two different (symbol, market) identity keys for one real
+ * security made `resolveMarketQuotes()`'s grouping legitimately (per its
+ * own contract) return two separate items for a query that asked for
+ * "0050" once — this is the root cause of the `?symbols=...,0050,...`
+ * duplicate-item bug and the "0050 shows no fresh MIS source" symptom
+ * (a `?market=TWSE`-filtered query silently excludes the "OTHER"-tagged
+ * fresh MIS item, leaving only the always-stale manual/EOD fallback).
+ * Defaulting to "TWSE" instead makes this function's fallback match its
+ * sibling `_misSwpExPrefix`'s — the overwhelming majority of this desk's
+ * symbol universe is TWSE-listed, and a genuinely non-TWSE company's MIS
+ * fetch (`_misSwpExPrefix` already tries the "tse" prefix for it too) will
+ * simply return no data and never reach this mapping at all in practice.
+ */
+export function _mapMisSweepCompanyMarket(
+  m: string
+): "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER" {
+  const upper = m.trim().toUpperCase();
+  if (upper === "TPEX" || upper.includes("上櫃")) return "TPEX";
+  if (upper === "TWO") return "TWO";
+  if (upper === "TW_EMERGING" || upper.includes("EMERGING")) return "TW_EMERGING";
+  return "TWSE";
+}
+
+/**
  * Pure tick → upsertKgiQuotes-item mapping used by KGI-QUOTE-INGEST-CRON.
  * Extracted (2026-07-10 Pete review) so its timestamp-preservation behaviour
  * is directly unit-testable without a live gateway or DB.
@@ -19504,16 +19544,6 @@ function startSchedulers(workspaceSlug: string): void {
       return isFinite(n) && n > 0 ? n : null;
     }
 
-    /** Map company market string to canonical market enum value. */
-    function _misSwpMapMkt(m: string): "TWSE" | "TPEX" | "TWO" | "TW_EMERGING" | "TW_INDEX" | "OTHER" {
-      const upper = m.trim().toUpperCase();
-      if (upper === "TWSE" || upper.includes("上市")) return "TWSE";
-      if (upper === "TPEX" || upper.includes("上櫃")) return "TPEX";
-      if (upper === "TWO") return "TWO";
-      if (upper === "TW_EMERGING" || upper.includes("EMERGING")) return "TW_EMERGING";
-      return "OTHER";
-    }
-
     /**
      * Run one sweep slice: fetch MIS quotes for 50 tickers at current pointer position,
      * inject into manual cache + _misTileCache. Advances pointer by BATCH_SIZE.
@@ -19647,7 +19677,7 @@ function startSchedulers(workspaceSlug: string): void {
           const vol = _misSwpParseNum(msg["v"]);
 
           const companyRow = slice.find((r) => r.ticker.trim() === ticker);
-          const market = _misSwpMapMkt(companyRow?.market ?? "");
+          const market = _mapMisSweepCompanyMarket(companyRow?.market ?? "");
 
           const open = _misSwpParseNum(msg["o"]);
           const high = _misSwpParseNum(msg["h"]);
