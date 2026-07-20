@@ -746,6 +746,37 @@ export async function getKgiMarketOverview(): Promise<{
  * (market-data.ts). No logic change — was previously module-private and
  * only called from `getKgiMarketOverview`/`getKgiCoreHeatmap` below.
  */
+/**
+ * Parse the KGI SDK's raw tick `datetime` field into a proper ISO 8601
+ * timestamp. The gateway forwards this value verbatim from `kgisuperpy`
+ * (`_tick_to_dict()` in services/kgi-gateway/kgi_quote.py) — its documented
+ * shape is a 14-digit `YYYYMMDDHHmmss` string with no separators or
+ * timezone marker, e.g. `"20260423090038"` (see SCHEMA_MAPPING.md), always
+ * Taipei wall-clock (KGI is a Taiwan broker; the SDK has no other timezone
+ * to report in).
+ *
+ * 2026-07-20 P0 fix: this field was previously passed straight into
+ * downstream `new Date(...)`/`Date.parse(...)` calls (this function's own
+ * `staleSec` computation, then `_mapKgiTicksToUpsertQuotes` in server.ts,
+ * then `market-data.ts`'s `withFreshness()`). A bare 14-digit string is not
+ * a format the JS Date parser recognises — `Date.parse("20260423090038")`
+ * is `NaN` (verified empirically, not spec-inferred). `NaN` then poisons
+ * every downstream age computation (`Date.now() - NaN = NaN`), and
+ * `NaN > staleThresholdMs` evaluates to `false` in JavaScript (NaN
+ * comparisons are always false) — so any tick carrying this raw field was
+ * unconditionally classified "fresh" no matter its true age, silently
+ * defeating the freshness gate that `effective-quotes` / the order-preview
+ * `quoteGate` (`broker/execution-gate.ts` → `getMarketDataDecisionSummary`)
+ * both rely on for the `kgi` source. Returns `null` (never throws) if the
+ * input doesn't match the expected shape or fails to parse, so callers fall
+ * back to the gateway's own reliable `_received_at` timestamp instead.
+ */
+export function _parseKgiRawDatetime(raw: string | undefined | null): string | null {
+  if (!raw || !/^\d{14}$/.test(raw)) return null;
+  const iso = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T${raw.slice(8, 10)}:${raw.slice(10, 12)}:${raw.slice(12, 14)}+08:00`;
+  return Number.isFinite(Date.parse(iso)) ? iso : null;
+}
+
 export async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapshot> {
   // Gateway runs on an EventBridge weekday 08:20-14:10 schedule. Off-hours
   // every call would burn the full 3s timeout — /heatmap/kgi-core fans out to
@@ -787,7 +818,7 @@ export async function fetchKgiLatestTick(symbol: string): Promise<KgiTickSnapsho
     // the natural (and only, until 2026-07-16) writer of recordTickReceived().
     recordTickReceived(symbol);
 
-    const ts = tick.datetime ?? tick._received_at ?? null;
+    const ts = _parseKgiRawDatetime(tick.datetime) ?? tick._received_at ?? null;
     const staleSec = ts ? Math.round((Date.now() - Date.parse(ts)) / 1000) : null;
 
     return {

@@ -28,6 +28,19 @@ import type { EffectiveMarketQuote } from "@/lib/api";
  * `effectiveQuoteStateLabel()`, which suffixes every non-fresh, non-closed
  * source with "（略舊）" rather than ever calling it live, and `/quote`
  * page's `freshnessLabel()` fresh→"即時"/stale→"略舊" convention.
+ *
+ * 2026-07-20 盤中 P0 follow-up: fixing the LABEL above turned out to be only
+ * half the bug. `MobileKgiWatchlist.tsx`'s `fetchEffectiveQuoteFallback()`
+ * was still calling this endpoint with `includeStale:true`, which makes
+ * `resolveMarketQuotes()` select the highest-*priority* cached candidate
+ * regardless of age instead of the freshest one — so a stale kgi quote could
+ * still win the VALUE over a genuinely fresh twse_mis quote, just with an
+ * honest "（略舊）" label slapped on the wrong (stale) number. Fixed by
+ * dropping `includeStale:true` from that call site (now matches desk-exact's
+ * `fetchEffectiveQuotes()`, which never passed it) — this function's
+ * "generic stale → honest degraded label" branch above stays as a defensive
+ * fallback but should rarely fire in practice now that the primary
+ * selection only ever returns fresh-or-null.
  */
 
 function fmtCloseDateMD(iso: string | null | undefined): string | null {
