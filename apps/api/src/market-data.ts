@@ -588,13 +588,37 @@ function normalizePersistedEntry(entry: Awaited<ReturnType<typeof loadPersistedQ
 // EVERY source, including the one that didn't actually change. Scoping
 // generation per (workspaceSlug, source) means a manual-source write no
 // longer evicts the twse_mis memo it has nothing to do with.
-const workspaceCacheGeneration = new Map<string, number>();
-function bumpWorkspaceCacheGeneration(workspaceSlug: string, source: QuoteSource) {
+// 2026-07-20 P0 round 5 (real profiling, 3rd time -- see
+// reports/overview_latency_20260720/): round 4's per-source scoping didn't
+// move the needle -- fresh prod logs still showed listCachedProviderQuoteHistory
+// ("twse_mis") missing on BOTH same-request reads. Root cause: the ORIGINAL
+// (round 1) pushQuoteEntry bumped generation on EVERY call, including the
+// isDuplicateHistoryEntry branch where the history array is untouched (only
+// the single-latest-quote `workspaceCache` entry's timestamp legitimately
+// advances -- the append-only history array does NOT change). Live MIS-sweep
+// traffic re-pushes ticks very frequently even when the underlying value is
+// unchanged (duplicate re-sends), each one bumping generation and busting
+// the (expensive, ~1.4s for twse_mis) history memo for no reason. Split into
+// two independent generation counters -- one for the latest-quote cache
+// (bumped whenever workspaceCache.set legitimately happens), one for history
+// (bumped ONLY when history.push actually happens, i.e. !isDuplicateHistoryEntry)
+// -- so a stream of duplicate-valued ticks (which only ever touches the
+// cheap latest-quote cache) stops invalidating the expensive history scan.
+const quotesGeneration = new Map<string, number>();
+const historyGeneration = new Map<string, number>();
+function bumpQuotesGeneration(workspaceSlug: string, source: QuoteSource) {
   const key = `${workspaceSlug}:${source}`;
-  workspaceCacheGeneration.set(key, (workspaceCacheGeneration.get(key) ?? 0) + 1);
+  quotesGeneration.set(key, (quotesGeneration.get(key) ?? 0) + 1);
 }
-function getWorkspaceCacheGeneration(workspaceSlug: string, source: QuoteSource) {
-  return workspaceCacheGeneration.get(`${workspaceSlug}:${source}`) ?? 0;
+function bumpHistoryGeneration(workspaceSlug: string, source: QuoteSource) {
+  const key = `${workspaceSlug}:${source}`;
+  historyGeneration.set(key, (historyGeneration.get(key) ?? 0) + 1);
+}
+function getQuotesGeneration(workspaceSlug: string, source: QuoteSource) {
+  return quotesGeneration.get(`${workspaceSlug}:${source}`) ?? 0;
+}
+function getHistoryGeneration(workspaceSlug: string, source: QuoteSource) {
+  return historyGeneration.get(`${workspaceSlug}:${source}`) ?? 0;
 }
 
 function pushQuoteEntry(
@@ -607,6 +631,7 @@ function pushQuoteEntry(
   const currentCacheEntry = workspaceCache.get(cacheKey);
   if (!currentCacheEntry || currentCacheEntry.timestamp.localeCompare(entry.timestamp) <= 0) {
     workspaceCache.set(cacheKey, entry);
+    bumpQuotesGeneration(workspaceSlug, entry.source);
   }
 
   const history = workspaceHistory.get(cacheKey) ?? [];
@@ -625,11 +650,10 @@ function pushQuoteEntry(
       history.splice(0, history.length - historyLimit);
     }
     workspaceHistory.set(cacheKey, history);
-    bumpWorkspaceCacheGeneration(workspaceSlug, entry.source);
+    bumpHistoryGeneration(workspaceSlug, entry.source);
     return true;
   }
 
-  bumpWorkspaceCacheGeneration(workspaceSlug, entry.source);
   return false;
 }
 
@@ -689,7 +713,7 @@ const cachedProviderQuoteHistoryMemo = new Map<string, { generation: number; exp
 function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const memoKey = `${workspaceSlug}:${source}`;
   const now = Date.now();
-  const generation = getWorkspaceCacheGeneration(workspaceSlug, source);
+  const generation = getQuotesGeneration(workspaceSlug, source);
   const cached = cachedProviderQuotesMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
     console.log(`[overview-perf] listCachedProviderQuotes(${source}) MEMO_HIT size=${cached.result.length}`);
@@ -713,7 +737,7 @@ function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
 function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSource) {
   const memoKey = `${workspaceSlug}:${source}`;
   const now = Date.now();
-  const generation = getWorkspaceCacheGeneration(workspaceSlug, source);
+  const generation = getHistoryGeneration(workspaceSlug, source);
   const cached = cachedProviderQuoteHistoryMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
     console.log(`[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_HIT size=${cached.result.length}`);
@@ -4242,12 +4266,13 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
     // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
     _dailyBarRowsCache.clear();
-    // 2026-07-20: bump generation (now per-source, round 4) so the
-    // listCachedProviderQuotes/listCachedProviderQuoteHistory memo can't
-    // serve a pre-reset snapshot after the underlying caches above were just
-    // wiped.
+    // 2026-07-20: bump both generations (per-source since round 4, split
+    // since round 5) so the listCachedProviderQuotes/
+    // listCachedProviderQuoteHistory memo can't serve a pre-reset snapshot
+    // after the underlying caches above were just wiped.
     for (const source of quoteProviderSources) {
-      bumpWorkspaceCacheGeneration(workspaceSlug, source);
+      bumpQuotesGeneration(workspaceSlug, source);
+      bumpHistoryGeneration(workspaceSlug, source);
     }
     return;
   }
@@ -4256,7 +4281,8 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
   providerQuoteHistoryCache.clear();
   persistedQuoteHistoryLoaded.clear();
   _dailyBarRowsCache.clear();
-  workspaceCacheGeneration.clear();
+  quotesGeneration.clear();
+  historyGeneration.clear();
   cachedProviderQuotesMemo.clear();
   cachedProviderQuoteHistoryMemo.clear();
 }
