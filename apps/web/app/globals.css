@@ -12608,9 +12608,25 @@ body:has(.tactical-dashboard) .app-sidebar {
    置中 margin——鋪滿側欄右緣到視窗右緣，零留白。.tac-ledger 改採固定
    1280px（原稿設計寬）+ CSS zoom 依可用寬度等比縮放，見下方 .tac-ledger
    規則與 home-zoom-controller.tsx（量測本容器寬度寫回 --home-zoom）。 */
+/* 2026-07-20（Jim-10 CI 閘門急修，佇列 #18 收掉）：header-dock 是
+   position:fixed（globals.css `.header-dock`，top:calc(16px+ticker-tape-
+   height) right:16 z-index:120，桌機 ≥821px 恆浮動），底邊落在螢幕頂部
+   下方約 98px 處。.tac-ledger 的 mast 高 44px（≥1001px 斷點再吃
+   --home-zoom 放大），heroband 第一列 .heat-mode-row／.heat-mode-tabs
+   緊接在 mast 之後——收盤後 MarketStateBanner 會在 .tac-ledger 之上多墊
+   一段高度把 heroband 推低於 dock 底邊，但盤中 MarketStateBanner 回傳
+   null（0 高度），heroband 起始 y 只剩這裡的 padding-top，不夠時
+   .heat-mode-tabs 的「全市場熱力圖」連結會真的被 header-dock 蓋住——
+   這是所有滑鼠使用者盤中都會踩到的真點擊阻擋，不是 Playwright 專屬假
+   象（用 jim_home_heatmap_mode_toggle_20260717.spec.ts 盤中復現證實：
+   header-dock 是 position:fixed，捲動頁面不會讓它讓開，spec 端無法用
+   「scroll 避開」解，force-click 又會掩蓋這個真使用者 bug，因此改在這
+   裡把 padding-top 從 16px 提高到 64px，讓 mast+heroband 起始 y 無論
+   MarketStateBanner 是否顯示、無論 --home-zoom 落在 1.0-1.3 哪個值，都
+   保證晚於 header-dock 底邊，一次性解決，不用耦合任何盤中/盤後判斷）。 */
 .home-ledger-shell {
   width: 100%;
-  padding: 16px 0 40px;
+  padding: 64px 0 40px;
   overflow-x: hidden; /* zoom 捨入誤差安全網（±1-2px），非常態遮蓋 */
 }
 
