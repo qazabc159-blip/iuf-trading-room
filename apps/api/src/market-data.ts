@@ -4139,6 +4139,10 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
     // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
     _dailyBarRowsCache.clear();
+    // 2026-07-20: bump generation so the listCachedProviderQuotes/
+    // listCachedProviderQuoteHistory memo (keyed on generation) can't serve a
+    // pre-reset snapshot after the underlying caches above were just wiped.
+    bumpWorkspaceCacheGeneration(workspaceSlug);
     return;
   }
 
@@ -4146,4 +4150,7 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
   providerQuoteHistoryCache.clear();
   persistedQuoteHistoryLoaded.clear();
   _dailyBarRowsCache.clear();
+  workspaceCacheGeneration.clear();
+  cachedProviderQuotesMemo.clear();
+  cachedProviderQuoteHistoryMemo.clear();
 }
