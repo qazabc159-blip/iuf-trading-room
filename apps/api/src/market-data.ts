@@ -739,15 +739,52 @@ function toIso(value?: string) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
+// 2026-07-20 P0 round 2 (real profiling, not theory this time -- see
+// reports/overview_latency_20260720/): live Railway logs from prod showed
+// listCachedProviderQuoteHistory("twse_mis") alone scanning ~932K cached
+// history entries (1826 symbols x up to ~512 ticks each) and taking ~4.5-5s
+// EACH of the (at least) two times it's called per /overview request --
+// this dwarfs everything else and is the actual ~10s. quoteSchema.parse()
+// inside the withFreshness() map over every one of those entries is the
+// per-item cost (a full Zod schema walk x ~1M calls). Round 1's memo didn't
+// help because it doesn't reduce the cost of a MISS, and on a live server
+// with continuous MIS-sweep writes the write-generation gate busts the memo
+// before concurrent historyQuality/barQuality calls can share one computation.
+//
+// `entry` is a QuoteCacheEntry this module already constructed itself --
+// either from pushQuoteEntry (built from an upsert-schema-validated input)
+// or normalizePersistedEntry (a DB row read back through our own writer) --
+// it already satisfies quoteSchema's shape by construction. Every caller
+// that ships a Quote back out over the wire re-validates the ASSEMBLED
+// response at its own schema boundary anyway (effectiveMarketQuoteSchema,
+// marketDataBarDiagnosticsResponseSchema, etc.), so re-validating every
+// individual cached entry here on every read is pure redundant cost with no
+// additional safety -- the plain construction below is the exact same
+// output shape (explicit field list, not a raw `...entry` spread, so
+// QuoteCacheEntry's extra `updatedAt` field is NOT leaked into the `Quote`
+// shape -- quoteSchema.parse silently stripped it before; this preserves
+// that).
 function withFreshness(entry: QuoteCacheEntry): Quote {
   const ageMs = Math.max(0, Date.now() - new Date(entry.timestamp).getTime());
   const isStale = ageMs > getQuoteStaleMs(entry.source);
 
-  return quoteSchema.parse({
-    ...entry,
+  return {
+    symbol: entry.symbol,
+    market: entry.market,
+    source: entry.source,
+    last: entry.last,
+    bid: entry.bid,
+    ask: entry.ask,
+    open: entry.open,
+    high: entry.high,
+    low: entry.low,
+    prevClose: entry.prevClose,
+    volume: entry.volume,
+    changePct: entry.changePct,
+    timestamp: entry.timestamp,
     ageMs,
     isStale
-  });
+  };
 }
 
 function getQuoteHistoryLimit(source: QuoteSource) {
