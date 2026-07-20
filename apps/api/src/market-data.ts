@@ -574,12 +574,27 @@ function normalizePersistedEntry(entry: Awaited<ReturnType<typeof loadPersistedQ
   };
 }
 
+// 2026-07-20 P0 round 4 (real profiling again): keyed per (workspaceSlug,
+// source) rather than just workspaceSlug. Live prod logs from round 3 showed
+// listCachedProviderQuoteHistory("twse_mis") -- the single most expensive
+// scan (~1.6s for ~847K entries even after round 3's Zod-skip fix) -- MISSING
+// its memo BOTH times it's read within the same /overview request (once for
+// historyQuality, once for barQuality), despite the entry count being
+// IDENTICAL both times (847336 == 847336, i.e. twse_mis itself did not
+// receive a new tick in that gap). Cause: the generation counter was scoped
+// to the whole workspace, so a write landing on ANY of the other 4 sources
+// (manual/paper/tradingview/kgi -- all far higher write frequency/lower
+// cost, unrelated to twse_mis) between the two calls busted the memo for
+// EVERY source, including the one that didn't actually change. Scoping
+// generation per (workspaceSlug, source) means a manual-source write no
+// longer evicts the twse_mis memo it has nothing to do with.
 const workspaceCacheGeneration = new Map<string, number>();
-function bumpWorkspaceCacheGeneration(workspaceSlug: string) {
-  workspaceCacheGeneration.set(workspaceSlug, (workspaceCacheGeneration.get(workspaceSlug) ?? 0) + 1);
+function bumpWorkspaceCacheGeneration(workspaceSlug: string, source: QuoteSource) {
+  const key = `${workspaceSlug}:${source}`;
+  workspaceCacheGeneration.set(key, (workspaceCacheGeneration.get(key) ?? 0) + 1);
 }
-function getWorkspaceCacheGeneration(workspaceSlug: string) {
-  return workspaceCacheGeneration.get(workspaceSlug) ?? 0;
+function getWorkspaceCacheGeneration(workspaceSlug: string, source: QuoteSource) {
+  return workspaceCacheGeneration.get(`${workspaceSlug}:${source}`) ?? 0;
 }
 
 function pushQuoteEntry(
@@ -610,11 +625,11 @@ function pushQuoteEntry(
       history.splice(0, history.length - historyLimit);
     }
     workspaceHistory.set(cacheKey, history);
-    bumpWorkspaceCacheGeneration(workspaceSlug);
+    bumpWorkspaceCacheGeneration(workspaceSlug, entry.source);
     return true;
   }
 
-  bumpWorkspaceCacheGeneration(workspaceSlug);
+  bumpWorkspaceCacheGeneration(workspaceSlug, entry.source);
   return false;
 }
 
@@ -674,7 +689,7 @@ const cachedProviderQuoteHistoryMemo = new Map<string, { generation: number; exp
 function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const memoKey = `${workspaceSlug}:${source}`;
   const now = Date.now();
-  const generation = getWorkspaceCacheGeneration(workspaceSlug);
+  const generation = getWorkspaceCacheGeneration(workspaceSlug, source);
   const cached = cachedProviderQuotesMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
     console.log(`[overview-perf] listCachedProviderQuotes(${source}) MEMO_HIT size=${cached.result.length}`);
@@ -698,7 +713,7 @@ function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
 function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSource) {
   const memoKey = `${workspaceSlug}:${source}`;
   const now = Date.now();
-  const generation = getWorkspaceCacheGeneration(workspaceSlug);
+  const generation = getWorkspaceCacheGeneration(workspaceSlug, source);
   const cached = cachedProviderQuoteHistoryMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
     console.log(`[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_HIT size=${cached.result.length}`);
@@ -4227,10 +4242,13 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
     // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
     _dailyBarRowsCache.clear();
-    // 2026-07-20: bump generation so the listCachedProviderQuotes/
-    // listCachedProviderQuoteHistory memo (keyed on generation) can't serve a
-    // pre-reset snapshot after the underlying caches above were just wiped.
-    bumpWorkspaceCacheGeneration(workspaceSlug);
+    // 2026-07-20: bump generation (now per-source, round 4) so the
+    // listCachedProviderQuotes/listCachedProviderQuoteHistory memo can't
+    // serve a pre-reset snapshot after the underlying caches above were just
+    // wiped.
+    for (const source of quoteProviderSources) {
+      bumpWorkspaceCacheGeneration(workspaceSlug, source);
+    }
     return;
   }
 
