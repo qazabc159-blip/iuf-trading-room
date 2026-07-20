@@ -10,11 +10,16 @@
 // never "live" (Pete #1313 review 🔴1 — this must never be mislabeled live).
 // Hard rule: NO fake / mock data. Shows BLOCKED if gateway unreachable and no
 // closing-price fallback exists either.
+// 2026-07-20 盤中 P0: a KGI tick with a frozen buffer (no push since a prior
+// session — see kgi-tick-freshness.ts) is treated the same as a missing tick
+// and routed through the effective-quotes fallback, instead of being shown
+// directly just because it has *a* value.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatMobileKgiBlockedReason } from "./mobile-kgi-copy";
 import { deriveEffectiveFallbackCellState } from "./mobile-quote-effective-fallback";
+import { isKgiTickFreshEnoughToTrust } from "./kgi-tick-freshness";
 import { isKgiGatewayScheduledOff } from "@/lib/kgi-trading-hours";
 import { getEffectiveQuotes } from "@/lib/api";
 import { DataStateBadge } from "@/components/DataStateBadge";
@@ -168,12 +173,30 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
       const txt = await res.text().catch(() => res.statusText);
       return { status: "blocked", reason: formatMobileKgiBlockedReason(res.status, txt) };
     }
-    const data = await res.json() as { symbol: string; ticks: Array<{ close?: number; price_chg?: number; pct_chg?: number; volume?: number; datetime?: string }>; count: number };
+    const data = await res.json() as {
+      symbol: string;
+      ticks: Array<{ close?: number; price_chg?: number; pct_chg?: number; volume?: number; datetime?: string }>;
+      count: number;
+      // Envelope-level staleness (sibling to "ticks", not per-tick — see
+      // apps/api/src/broker/kgi-quote-client.ts classifyFreshness()).
+      stale?: boolean;
+      freshness?: string;
+      staleSince?: string | null;
+    };
     if (!data.ticks || data.ticks.length === 0) {
       return { status: "blocked", reason: "尚無 tick（未訂閱）" };
     }
     const tick = data.ticks[0];
     if (!tick.close) {
+      return { status: "empty" };
+    }
+    // 2026-07-20 盤中 P0: a frozen buffer (no push since a prior session —
+    // e.g. still showing Friday's close on Monday) must NOT be treated as
+    // "live" just because it has a value. Route it through the same
+    // effective-quotes fallback as a missing tick so the (correctly
+    // freshness-arbitrated) twse_mis value wins instead — see
+    // kgi-tick-freshness.ts docstring for why this isn't just `!data.stale`.
+    if (!isKgiTickFreshEnoughToTrust(data)) {
       return { status: "empty" };
     }
     return {
@@ -191,15 +214,27 @@ async function fetchQuoteForSymbol(symbol: string): Promise<QuoteState> {
 
 // KGI ticks has no built-in fallback (mirrors apps/web/public/desk-exact/index.html's
 // fetchEffectiveQuotes() — 2026-07-16 診斷 #1). When ticks has nothing usable for a
-// symbol (blocked/empty/scheduled-off), batch-fetch the twse_mis/official_close
-// backed effective-quotes endpoint once for all such symbols instead of leaving the
-// cell on a bare "--". Only overrides symbols where the fallback actually has a
-// usable price — otherwise the original ticks-derived blocked/empty state (with its
-// more specific reason text) stands.
+// symbol (blocked/empty/scheduled-off/frozen — see kgi-tick-freshness.ts), batch-fetch
+// the twse_mis/official_close backed effective-quotes endpoint once for all such
+// symbols instead of leaving the cell on a bare "--". Only overrides symbols where the
+// fallback actually has a usable price — otherwise the original ticks-derived
+// blocked/empty state (with its more specific reason text) stands.
+//
+// 2026-07-20 盤中 P0 root cause (Pete #1313 review 🔴1 was only half-fixed): this used
+// to pass includeStale:true, which makes resolveMarketQuotes() (apps/api/src/
+// market-data.ts) treat ANY cached quote as eligible regardless of age and select
+// purely by SOURCE PRIORITY, not recency — so a stale higher-priority kgi quote could
+// win over a genuinely fresh lower-priority twse_mis quote (exactly what desk-exact
+// saw: a frozen Friday kgi price with an honest "略舊" label instead of the fresh
+// twse_mis value). Without includeStale, the primary selection only ever picks a
+// FRESH candidate (any source) or nothing — leaving "nothing" to the route-level
+// official_close/closed_snapshot fallback, which already arbitrates by recency
+// correctly (#1315). This matches desk-exact's own fetchEffectiveQuotes(), which never
+// passed includeStale in the first place.
 async function fetchEffectiveQuoteFallback(symbols: string[]): Promise<Record<string, QuoteState>> {
   if (symbols.length === 0) return {};
   try {
-    const res = await getEffectiveQuotes({ symbols: symbols.join(","), includeStale: true });
+    const res = await getEffectiveQuotes({ symbols: symbols.join(",") });
     const bySymbol = new Map(res.data.items.map((item) => [item.symbol, item]));
     const map: Record<string, QuoteState> = {};
     for (const symbol of symbols) {

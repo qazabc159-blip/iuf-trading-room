@@ -27,7 +27,7 @@ function decodeInnerPath(routeUrl: string): { innerPath: string; innerParams: UR
 function tickFixture(
   close: number,
   prevClose: number,
-  opts: { stale?: boolean; datetime?: string } = {}
+  opts: { stale?: boolean; datetime?: string; staleSince?: string } = {}
 ) {
   return {
     data: {
@@ -46,7 +46,13 @@ function tickFixture(
       // envelope-level freshness (三輪終驗 2026-07-16 實測 shape: sibling to
       // "ticks", not per-tick) — ops 手動訂閱打進來的單一快照會是 stale:true.
       freshness: opts.stale ? "stale" : "fresh",
-      stale: opts.stale ?? false
+      stale: opts.stale ?? false,
+      // staleSince (2026-07-20 盤中 P0): real last-received-at ISO timestamp,
+      // only meaningful when stale:true — see kgi-quote-client.ts
+      // classifyFreshness(). Omitted by default (matches every pre-existing
+      // fixture in this file) so old assertions relying on "stale tick still
+      // renders its own value" keep passing unchanged.
+      ...(opts.staleSince ? { staleSince: opts.staleSince } : {})
     }
   };
 }
@@ -640,6 +646,113 @@ test.describe("/desk-exact quote fallback + ticket price seed + today-orders fil
     expect(Number(ticketPrice), "ticket price still seeds from the stale-but-real tick close").toBeCloseTo(2435, 2);
 
     await saveRouteScreenshot(page, testInfo, "desk-exact-header-stale-tick-snapshot");
+  });
+
+  // 2026-07-20 盤中 P0: a FROZEN tick (stale AND staleSince well past the
+  // 5-minute threshold — e.g. still showing Friday's close on Monday) must
+  // defer to /market-data/effective-quotes, not keep displaying the frozen
+  // value with just an honest label (that was the actual reported bug: desk
+  // showed 2,290.00「凱基（略舊）」while effective-quotes already had a
+  // fresh twse_mis value for the same symbol). Distinguishes from the test
+  // above, which has no staleSince and must keep trusting the tick.
+  test("frozen tick (stale, staleSince days old): header + watchlist use the FRESH effective-quotes value instead", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    const frozenSince = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath, innerParams } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        const symbol = innerParams.get("symbol") || "2330";
+        // Every symbol frozen since Friday at the same stale close price,
+        // regardless of what the real current price should be — this is the
+        // exact "凍結的週五收盤" failure mode.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(tickFixture(2290, 2290 - 5, { stale: true, staleSince: frozenSince }))
+        });
+        void symbol;
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        const symbols = (innerParams.get("symbols") || "").split(",").filter(Boolean);
+        const items = symbols.map((sym) => {
+          const { last, prevClose } = fallbackPriceFor(sym);
+          return effectiveQuoteItem(sym, last, prevClose, "fresh");
+        });
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+    const wl2454 = await frame.locator('[data-slot="wl-v-2454"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+    testInfo.annotations.push({ type: "wl-v-2454", description: String(wl2454) });
+
+    const expected2330 = fallbackPriceFor("2330");
+    const expected2454 = fallbackPriceFor("2454");
+    expect(symPrice, "a frozen tick must NOT win over a fresh effective-quotes value").not.toBe("2,290.00");
+    expect(symPrice, "header must use the fresh effective-quotes price instead of the frozen tick").toBe(expected2330.last.toFixed(2));
+    expect(symState, "the fresh fallback value must be labeled honestly as live, not 略舊").toBe("證交所即時");
+    expect(wl2454, "watchlist must also prefer the fresh effective-quotes price over the frozen tick").toBe(expected2454.last.toFixed(2));
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-frozen-tick-prefers-fresh-fallback");
+  });
+
+  // 2026-07-20 盤中 P0 「雙 stale」情境：tick 凍結，且 effective-quotes 也拿不到
+  // fresh 的替代值（例如兩者都指向同一份過期資料）——必須誠實降級顯示凍結前
+  // 的真實舊報價＋略舊標籤，不能打回「尚無報價」空狀態。
+  test("frozen tick + effective-quotes also has nothing fresher: honest degraded label with the real frozen price (not blank)", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== DESKTOP_PROJECT, `runs on the "${DESKTOP_PROJECT}" project.`);
+    const frozenSince = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    await page.route("**/api/ui-final-v031/backend**", async (route: Route) => {
+      const { innerPath } = decodeInnerPath(route.request().url());
+      if (innerPath === "/api/v1/kgi/quote/ticks") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(tickFixture(2290, 2285, { stale: true, staleSince: frozenSince }))
+        });
+        return;
+      }
+      if (innerPath === "/api/v1/market-data/effective-quotes") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { items: [] } }) });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="sym-price"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000);
+
+    const symState = await frame.locator('[data-slot="sym-state"]').first().textContent();
+    const symPrice = await frame.locator('[data-slot="sym-price"]').first().textContent();
+
+    testInfo.annotations.push({ type: "sym-state", description: String(symState) });
+    testInfo.annotations.push({ type: "sym-price", description: String(symPrice) });
+
+    expect(symPrice, "must still show the real frozen price, not a blank state, when nothing fresher exists anywhere").toBe("2,290.00");
+    expect(symState, "must not collapse to 尚無報價 just because the fallback also came up empty").not.toBe("尚無報價");
+    expect(symState, "must not silently claim 即時 tick for a genuinely frozen value").not.toBe("即時 tick");
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-frozen-tick-dual-stale-honest-degrade");
   });
 
   // 2026-07-19 #1307/#1309 official_close 兜底 tier fast-follow：週末/deploy
