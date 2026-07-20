@@ -3187,6 +3187,73 @@ function _recomputeEffectiveQuotesSummary(items: EffectiveMarketQuote[]) {
   };
 }
 
+// 2026-07-20 (Elva prod forensic ticket, quote_close_0050_forensics_20260720):
+// resolveMarketQuotes() groups quotes by buildQuoteIdentityKey(symbol, market)
+// — by design, since (symbol, market) is this project's canonical quote
+// identity elsewhere too (risk-engine.ts, strategy-engine.ts). That design
+// silently breaks when the SAME real-world symbol gets tagged with two
+// different `market` values by different providers — confirmed live for
+// 0050 (元大台灣50 ETF): the full-universe MIS sweep cron
+// (_runMisFullSweepSlice's _misSwpMapMkt in server.ts) reads market from the
+// `companies` table, where 0050's row has `market:"ETF"` (an instrument-type
+// value someone put in what should be an exchange-venue column) — an
+// unrecognized value that function's OLD default fell through to "OTHER",
+// while the TWSE-EOD-QUOTE-CRON's manual/official_close fallback quotes for
+// the same symbol are always tagged "TWSE". Two different (symbol, market)
+// keys for the one real security → resolveMarketQuotes() legitimately (per
+// its own contract) returns TWO separate items for a query that only asked
+// for "0050" once — `?symbols=2330,0050,2454` returning 4 items instead of 3
+// is that group-key split surfacing at the API boundary.
+// server.ts's _misSwpMapMkt default is fixed at the source (same PR) so this
+// won't recur going forward, but this function is the belt-and-suspenders
+// fix at the API response boundary: even if some OTHER future provider bug
+// reintroduces a symbol/market mismatch, `?symbols=X,Y,Z in` must never
+// produce more than one item per requested symbol. When a symbol has
+// multiple items, keeps the most USEFUL one — ranked by freshness (an
+// actually-fresh quote beats a stale/closed-snapshot/missing one — this is
+// also what makes 0050 show its real intraday MIS tick instead of the
+// stale-manual-fallback duplicate that was masking it), then readiness, then
+// source priority, with array order as the final deterministic tiebreak.
+const _dedupeFreshnessRank: Record<QuoteResolutionFreshnessStatus, number> = {
+  fresh: 3,
+  closed_snapshot: 2,
+  stale: 1,
+  missing: 0
+};
+const _dedupeReadinessRank: Record<EffectiveQuoteReadiness, number> = {
+  ready: 2,
+  degraded: 1,
+  blocked: 0
+};
+
+export function _dedupeItemsBySymbol(items: EffectiveMarketQuote[]): EffectiveMarketQuote[] {
+  const bestBySymbol = new Map<string, EffectiveMarketQuote>();
+  for (const item of items) {
+    const existing = bestBySymbol.get(item.symbol);
+    if (!existing) {
+      bestBySymbol.set(item.symbol, item);
+      continue;
+    }
+    const freshnessDelta = _dedupeFreshnessRank[item.freshnessStatus] - _dedupeFreshnessRank[existing.freshnessStatus];
+    const readinessDelta = _dedupeReadinessRank[item.readiness] - _dedupeReadinessRank[existing.readiness];
+    const priorityDelta = (item.sourcePriority ?? -1) - (existing.sourcePriority ?? -1);
+    if (freshnessDelta > 0 || (freshnessDelta === 0 && (readinessDelta > 0 || (readinessDelta === 0 && priorityDelta > 0)))) {
+      bestBySymbol.set(item.symbol, item);
+    }
+  }
+  // Preserve first-seen order among surviving symbols rather than Map
+  // insertion order re-sorting things (a later duplicate winning replaces
+  // the value in place, not the position).
+  const seen = new Set<string>();
+  const result: EffectiveMarketQuote[] = [];
+  for (const item of items) {
+    if (seen.has(item.symbol)) continue;
+    seen.add(item.symbol);
+    result.push(bestBySymbol.get(item.symbol)!);
+  }
+  return result;
+}
+
 // Route-level entry point for GET /market-data/effective-quotes only (see
 // server.ts wiring). Thin wrapper around getEffectiveMarketQuotes +
 // _applyOfficialCloseFallback (existing items) +
@@ -3205,7 +3272,15 @@ export async function getEffectiveMarketQuotesWithOfficialCloseFallback(input: {
   includeStale?: boolean;
   limit?: number;
 }) {
-  const effective = await getEffectiveMarketQuotes(input);
+  const rawEffective = await getEffectiveMarketQuotes(input);
+  // 2026-07-20: dedupe by symbol BEFORE any of the logic below — see
+  // _dedupeItemsBySymbol's docstring. Only rebuilds the object (and
+  // recomputes summary) when dedup actually removed something, so this is a
+  // no-op passthrough in the overwhelmingly common case of clean data.
+  const dedupedItems = _dedupeItemsBySymbol(rawEffective.items);
+  const effective = dedupedItems.length === rawEffective.items.length
+    ? rawEffective
+    : { ...rawEffective, items: dedupedItems, summary: _recomputeEffectiveQuotesSummary(dedupedItems) };
 
   const requestedSymbols = _parseRequestedSymbols(input.symbols);
   const presentSymbols = new Set(effective.items.map((item) => item.symbol));
