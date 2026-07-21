@@ -190,6 +190,24 @@ jobs:
     timeout-minutes: 12
     permissions:
       contents: read
+    # Root cause (2026-07-21, Pete review on jim_home_heatmap_mode_toggle_20260717.spec.ts
+    # blocking 5 PRs over two days): this job hits LIVE PROD unconditionally
+    # (IUF_QA_API_BASE_URL below is always https://api.eycvector.com, even for PR
+    # runs). Two PRs' smoke jobs executing at the same time contend for the same
+    # prod resources and can each independently time out — not a logic bug in the
+    # spec. Job-level concurrency (separate from the workflow-level group above,
+    # which only dedupes re-pushes to the SAME PR) serializes only this job across
+    # DIFFERENT PRs so they queue instead of racing prod.
+    # - cancel-in-progress: false — queue, never cancel. Cancelling a PR's
+    #   in-progress smoke run because another PR started would produce an unfair
+    #   flaky-looking "cancelled" status on an otherwise-passing PR.
+    # - Push-to-main runs (which back post-merge deploy verification, see
+    #   deployment_rules) get their OWN per-run group via github.run_id, so they
+    #   are never queued behind or affected by PR runs — this concurrency group
+    #   only applies within pull_request events.
+    concurrency:
+      group: qa-playwright-smoke-${{ github.event_name == 'pull_request' && 'pr-shared-prod-lane' || github.run_id }}
+      cancel-in-progress: false
     env:
       # Pull requests must validate the checked-out branch, not stale production.
       # Daily Production Smoke and main pushes still cover the live site.
