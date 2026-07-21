@@ -34,12 +34,14 @@ const mockGatewayState = {
   online: true,
   liveTickSymbols: new Set<string>(),
   subscribeCalls: [] as string[],
+  tickCallCount: 0,
 };
 
 function resetMockGateway(opts: { online?: boolean } = {}): void {
   mockGatewayState.online = opts.online ?? true;
   mockGatewayState.liveTickSymbols = new Set<string>();
   mockGatewayState.subscribeCalls = [];
+  mockGatewayState.tickCallCount = 0;
 }
 
 function installMockGateway(): void {
@@ -76,6 +78,7 @@ function installMockGateway(): void {
       );
     }
     if (urlStr.includes("/quote/ticks")) {
+      mockGatewayState.tickCallCount++;
       return new Response(
         JSON.stringify({
           ticks: [
@@ -551,6 +554,45 @@ describe("KGI Subscription Manager", () => {
     const twiiAfter = statusAfter.slots.find((s) => s.symbol === "^TWII");
     assert.strictEqual(twiiAfter?.subscribed, true, "recordTickReceived must flip subscribed:true on a real tick");
     assert.ok(twiiAfter?.lastTickAt, "lastTickAt must be populated");
+  });
+
+  // ── 2026-07-21 P0 home-market-endpoints latency fix ─────────────────────────
+  // Both functions previously fired fresh gateway round-trips on EVERY call
+  // with zero memoization — the homepage hero band's ~11-way concurrent
+  // fan-out meant near-simultaneous callers each paid the full cost
+  // independently. See reports/home_market_endpoints_20260721/.
+
+  it("QM17: concurrent getKgiMarketOverview callers within the TTL window share ONE gateway round-trip", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+
+    assert.strictEqual(mockGatewayState.tickCallCount, 0);
+    const [a, b, c] = await Promise.all([
+      getKgiMarketOverview(),
+      getKgiMarketOverview(),
+      getKgiMarketOverview(),
+    ]);
+    // ^TWII + ^TPEX = 2 real round-trips total, not 6 (3 callers x 2 symbols).
+    assert.strictEqual(mockGatewayState.tickCallCount, 2, "3 concurrent callers must dedupe onto 1 real fetch pair");
+    assert.deepStrictEqual(a, b);
+    assert.deepStrictEqual(b, c);
+
+    // A fresh caller after _resetSubscriptionManager() must NOT reuse a stale memo.
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+    await getKgiMarketOverview();
+    assert.strictEqual(mockGatewayState.tickCallCount, 4, "reset must clear the memo so the next call is a real fetch");
+  });
+
+  it("QM18: concurrent getKgiCoreHeatmap callers within the TTL window share ONE gateway fan-out", async () => {
+    _resetSubscriptionManager();
+    initSubscriptionManager();
+
+    assert.strictEqual(mockGatewayState.tickCallCount, 0);
+    const [a, b] = await Promise.all([getKgiCoreHeatmap(), getKgiCoreHeatmap()]);
+    // 1 real 40-symbol fan-out, not 2 (2 callers x 40 symbols).
+    assert.strictEqual(mockGatewayState.tickCallCount, HEATMAP_CORE_SYMBOLS.length, "2 concurrent callers must dedupe onto 1 real fan-out");
+    assert.deepStrictEqual(a, b);
   });
 });
 
