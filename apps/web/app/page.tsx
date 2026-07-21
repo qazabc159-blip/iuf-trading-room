@@ -1676,14 +1676,28 @@ function NewsTapeSkeleton() {
 // ── 各版面各自獨立 async section — 各自 Suspense，互不卡住 ──────────────────
 // 2026-07-21 楊董急件：大盤指數數字要秒開，跟熱力圖核心磚格拆成兩個獨立
 // Suspense（IdxAnchorSection / HeatZoneSection），各自只 await 自己需要的
-// 資料來源 group，不再共用一個 Promise.all 互相拖累。指數這條路徑刻意不等
-// cachedMarket()（getMarketDataOverview，經量測是全站最慢的單一來源，且只
-// 是 readMarketIndex/readMarketBreadth 的最後一層 fallback）也不等
-// kgi-core-heatmap（唯一真正跟指數無關的慢來源）——readMarketIndex/
-// readMarketBreadth 只是被餵進一個「kgiCoreHeatmap 為 null、market 是待命
-// BLOCKED 佔位、heatmap 陣列為空」的輸入，兩個函式本身邏輯完全沒動：這條
-// 路徑本來就會走它們既有的「此來源暫無資料」fallback 分支，跟這些來源真的
-// 逾時/失敗時走的分支相同，不是新語意。
+// 資料來源 group，不再共用一個 Promise.all 互相拖累。
+//
+// 2026-07-21 Round 2（Pete #1335 review 🔴 blocker 修復）：Round 1 版本無條件
+// 把 readMarketIndex/readMarketBreadth 餵進這個永遠 data:null 的假 BLOCKED
+// 佔位，導致 tier-2 跨源日期整合校驗（resolveAuthoritativeTradeDate，#1297
+// market-data-integrity-gate 機制本體）與 tier-3「昨日收盤」降級在指數這條
+// 路徑上結構性永遠不可達——kgi_overview 缺值（平日 14:10 後到隔日 08:20＋
+// 整個週末，是常態非邊界）時，mast/banner（吃真 cachedMarket()）跟 hero 指數
+// （吃假佔位）會各自落在不同的 resolveAuthoritativeTradeDate 分支，重開「同頁
+// 不同區塊交易日期打架」的回歸窗口。
+//
+// 修法：先用這個佔位餵 readMarketIndex 判斷一次——若 kgi tier-1（`source ===
+// "realtime"`）就能決定指數（盤中常態，kgiOverview 有值），函式本身邏輯完全
+// 不會去讀 market 參數，此時可以安全跳過等待 cachedMarket()（getMarketDataOverview，
+// 經量測是全站最慢的單一來源，Jason 側 overview P0 優化仍在進行中）維持指數
+// 秒開；只有 kgi 缺值、需要落到 tier-2/tier-3 分支時才真正 await 真
+// cachedMarket()（跟 mast/banner 同一個 cache() 記憶化 promise，不多打後端，
+// 只是多等它 resolve）。這樣「指數不等熱力圖」的分軌目標（不等 kgi-core-heatmap
+// 唯一真正跟指數無關的慢來源）維持不變，同時 tier-2/tier-3 分支永遠吃真資料，
+// 跟 mast/banner 结構上不可能再打架。（讀 breadth 的 tier-3 legacyBreadth 在
+// kgi-live 分支下仍可能結構性不可達——Pete review 🟡 suggestion #1 已標記為
+// 可留 tracking note、非 blocker，這裡不額外處理。）
 function pendingMarketOverviewPlaceholder(): LoadState<MarketDataOverview | null> {
   return {
     state: "BLOCKED",
@@ -1696,7 +1710,12 @@ function pendingMarketOverviewPlaceholder(): LoadState<MarketDataOverview | null
 
 async function IdxAnchorSection({ now }: { now: string }) {
   const overviewFeed = await timedLoad("overview_for_idx", FETCH_MARKET_MS, cachedMarketOverviewFeed, null);
-  return <IdxAnchorPanel heatmap={[]} market={pendingMarketOverviewPlaceholder()} realtimeMarket={overviewFeed} now={now} />;
+  const nowDate = new Date(now);
+  const provisionalIndex = readMarketIndex(overviewFeed, pendingMarketOverviewPlaceholder(), nowDate);
+  const market = provisionalIndex.source === "realtime"
+    ? pendingMarketOverviewPlaceholder()
+    : await timedLoad("market_for_idx", FETCH_MARKET_MS, cachedMarket, null);
+  return <IdxAnchorPanel heatmap={[]} market={market} realtimeMarket={overviewFeed} now={now} />;
 }
 
 async function HeatZoneSection({
