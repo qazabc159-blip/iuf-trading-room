@@ -64,7 +64,12 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push'
     runs-on: ${{ vars.USE_SELF_HOSTED == 'false' && 'ubuntu-latest' || fromJSON('["self-hosted", "iuf-taipei"]') }}
-    timeout-minutes: 20
+    # 20 -> 35: the post-deploy "Verify migrations applied" step's retry budget
+    # was widened (2026-07-21) to tolerate slow-but-healthy api boot (pnpm
+    # migrate can take up to ~600s before /health responds). Job timeout must
+    # cover that widened budget with headroom, or a genuinely slow-but-healthy
+    # boot gets killed by the job timeout instead of passing the verify step.
+    timeout-minutes: 35
 
     permissions:
       contents: read
@@ -288,14 +293,23 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Waiting 45s for api to boot after deploy..."
-          Start-Sleep -Seconds 45
+          # 45 -> 60: small cushion before the first health probe. The real
+          # tolerance for a slow-but-healthy boot comes from the widened
+          # login/probe retry loops below, not this fixed sleep.
+          Write-Host "Waiting 60s for api to boot after deploy..."
+          Start-Sleep -Seconds 60
 
+          # 10 -> 30: this /health call is informational only (its own
+          # failure does not exit the step - the login/probe loops below are
+          # what actually gate pass/fail), but a slow-boot api (pnpm migrate
+          # still running) was timing out here at 10s and printing
+          # "UNREACHABLE" even when the api came up healthy moments later,
+          # which read as scarier than it was in the job log.
           try {
-            $health = Invoke-RestMethod -Uri "https://api.eycvector.com/health" -TimeoutSec 10
+            $health = Invoke-RestMethod -Uri "https://api.eycvector.com/health" -TimeoutSec 30
             Write-Host "Health: $($health | ConvertTo-Json -Compress)"
           } catch {
-            Write-Host "Health: UNREACHABLE"
+            Write-Host "Health: UNREACHABLE (informational only - login/probe retries below are authoritative)"
           }
 
           if ([string]::IsNullOrWhiteSpace($env:SEED_OWNER_EMAIL) -or [string]::IsNullOrWhiteSpace($env:SEED_OWNER_PASSWORD)) {
@@ -317,9 +331,19 @@ jobs:
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText($payloadPath, $loginPayload, $utf8NoBom)
 
+          # Retry budget widened 2026-07-21: 6 attempts x (20s max-time + 15s
+          # sleep) gave ~195s of tolerance after the 45s initial sleep - too
+          # tight when pnpm migrate + api boot can legitimately take up to
+          # ~600s. 15 attempts x (25s max-time + 20s sleep) gives ~715s
+          # (with the 60s initial sleep), enough to cover that worst case
+          # with buffer. This does NOT weaken the check itself: any non-200
+          # keeps retrying (except an explicit 401/403 auth failure, which
+          # still fails fast as before), and running out of attempts still
+          # exits 1.
+          $loginMaxAttempts = 15
           $loginResp = $null
           $lastLoginStatus = "unknown"
-          for ($attempt = 1; $attempt -le 6; $attempt++) {
+          for ($attempt = 1; $attempt -le $loginMaxAttempts; $attempt++) {
             $lastLoginStatus = (& $curlBin --silent --show-error --location `
               --request POST "https://api.eycvector.com/auth/login" `
               --header "Content-Type: application/json" `
@@ -327,7 +351,7 @@ jobs:
               --cookie-jar "$cookiePath" `
               --output "$loginBodyPath" `
               --write-out "%{http_code}" `
-              --max-time 20)
+              --max-time 25)
             $curlExit = $LASTEXITCODE
 
             if ($curlExit -eq 0 -and "$lastLoginStatus" -eq "200") {
@@ -340,9 +364,9 @@ jobs:
               exit 1
             }
 
-            if ($attempt -lt 6) {
-              Write-Host "::warning::Post-deploy login attempt $attempt/6 failed with HTTP $lastLoginStatus and curl exit $curlExit; retrying in 15s."
-              Start-Sleep -Seconds 15
+            if ($attempt -lt $loginMaxAttempts) {
+              Write-Host "::warning::Post-deploy login attempt $attempt/$loginMaxAttempts failed with HTTP $lastLoginStatus and curl exit $curlExit; retrying in 20s."
+              Start-Sleep -Seconds 20
             }
           }
 
@@ -351,15 +375,24 @@ jobs:
             exit 1
           }
 
+          # Retry budget widened 2026-07-21 alongside the login loop above:
+          # 4 attempts x (20s max-time + 15s sleep) -> 6 attempts x (25s
+          # max-time + 20s sleep), ~250s of tolerance. By this point login
+          # already succeeded (api is up), so this mainly covers the db-probe
+          # query itself being slow right after migration completes (cold
+          # connection pool / cache). Same non-weakening property as above:
+          # only non-200 retries, 401/403 still fails fast, exhausting
+          # attempts still exits 1.
+          $probeMaxAttempts = 6
           $probeResp = $null
           $lastProbeStatus = "unknown"
-          for ($attempt = 1; $attempt -le 4; $attempt++) {
+          for ($attempt = 1; $attempt -le $probeMaxAttempts; $attempt++) {
             $lastProbeStatus = (& $curlBin --silent --show-error --location `
               "https://api.eycvector.com/api/v1/paper/db-probe" `
               --cookie "$cookiePath" `
               --output "$probeBodyPath" `
               --write-out "%{http_code}" `
-              --max-time 20)
+              --max-time 25)
             $curlExit = $LASTEXITCODE
 
             if ($curlExit -eq 0 -and "$lastProbeStatus" -eq "200") {
@@ -372,9 +405,9 @@ jobs:
               exit 1
             }
 
-            if ($attempt -lt 4) {
-              Write-Host "::warning::DB probe attempt $attempt/4 failed with HTTP $lastProbeStatus and curl exit $curlExit; retrying in 15s."
-              Start-Sleep -Seconds 15
+            if ($attempt -lt $probeMaxAttempts) {
+              Write-Host "::warning::DB probe attempt $attempt/$probeMaxAttempts failed with HTTP $lastProbeStatus and curl exit $curlExit; retrying in 20s."
+              Start-Sleep -Seconds 20
             }
           }
 
