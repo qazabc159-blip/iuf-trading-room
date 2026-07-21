@@ -13477,13 +13477,23 @@ export async function _isKgiHeatmapAfterHours(nowMs: number = Date.now()): Promi
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure heatmap tile data)
 app.get("/api/v1/market/heatmap/kgi-core", async (c) => {
   try {
-    const { initSubscriptionManager, getKgiCoreHeatmap } = await import("./kgi-subscription-manager.js");
+    // 2026-07-21 P0 home-market-endpoints latency: the comment below ("in
+    // parallel") predates the actual code — `getKgiCoreHeatmap()` (up to 40
+    // gateway round-trips) and `getStockDayAllRows()` (TWSE fetch) have no
+    // data dependency on each other, yet were awaited sequentially, paying
+    // the SUM of both instead of the max. Fixed to genuinely run concurrently
+    // — see reports/home_market_endpoints_20260721/RCA_HOME_MARKET_ENDPOINTS_2026_07_21.md.
+    const [{ initSubscriptionManager, getKgiCoreHeatmap }, { getStockDayAllRows }] = await Promise.all([
+      import("./kgi-subscription-manager.js"),
+      import("./data-sources/twse-openapi-client.js"),
+    ]);
     initSubscriptionManager();
-    const kgiResult = await getKgiCoreHeatmap();
 
     // Fetch TWSE STOCK_DAY_ALL in parallel (fail-open: empty array if unreachable)
-    const { getStockDayAllRows } = await import("./data-sources/twse-openapi-client.js");
-    const twseRows = await getStockDayAllRows().catch(() => []);
+    const [kgiResult, twseRows] = await Promise.all([
+      getKgiCoreHeatmap(),
+      getStockDayAllRows().catch(() => []),
+    ]);
 
     // 2026-07-17 P0 fix: both DB calls below were unbounded — a saturated/
     // slow connection pool could hang either one indefinitely, which a plain

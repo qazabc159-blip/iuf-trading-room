@@ -119,6 +119,8 @@ let _initialized = false;
 export function _resetSubscriptionManager(): void {
   _slots = [];
   _initialized = false;
+  _overviewMemo = null;
+  _coreHeatmapMemo = null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -716,11 +718,45 @@ export interface KgiTickSnapshot {
 }
 
 /**
+ * 2026-07-21 P0 home-market-endpoints latency: unlike its TWSE counterpart
+ * (`getTwseMarketOverview` — SWR-cached), this function previously fired 2
+ * fresh gateway HTTP round-trips on EVERY call with zero memoization. The
+ * homepage hero band fans out ~11 concurrent requests on load, and any
+ * near-simultaneous callers (e.g. multiple users/tabs within the same
+ * couple of seconds) each paid their own full round-trip cost, competing for
+ * the same gateway connection/CPU budget and compounding under load — see
+ * reports/home_market_endpoints_20260721/RCA_HOME_MARKET_ENDPOINTS_2026_07_21.md.
+ * A short in-process TTL memo (shorter than the endpoint's own advertised
+ * `staleAfterSec: 5` freshness contract, so served values are never staler
+ * than what the endpoint already promises clients) collapses concurrent
+ * callers onto one real round-trip, mirroring the pattern already validated
+ * in PR #1323/#1333 for market-data.ts. Cleared by `_resetSubscriptionManager()`
+ * for test isolation.
+ */
+const KGI_OVERVIEW_MEMO_TTL_MS = 2_000;
+let _overviewMemo: { at: number; promise: ReturnType<typeof _getKgiMarketOverviewUncached> } | null = null;
+
+/**
  * Build a market overview snapshot from KGI live tick data.
  * Pulls latest tick from gateway for TAIEX (^TWII) and OTC (^TPEX).
  * Returns null fields if gateway unreachable or no tick data.
  */
 export async function getKgiMarketOverview(): Promise<{
+  taiex: KgiTickSnapshot;
+  otc: KgiTickSnapshot;
+  source: "kgi_tick";
+  staleAfterSec: number;
+}> {
+  const now = Date.now();
+  if (_overviewMemo && now - _overviewMemo.at < KGI_OVERVIEW_MEMO_TTL_MS) {
+    return _overviewMemo.promise;
+  }
+  const promise = _getKgiMarketOverviewUncached();
+  _overviewMemo = { at: now, promise };
+  return promise;
+}
+
+async function _getKgiMarketOverviewUncached(): Promise<{
   taiex: KgiTickSnapshot;
   otc: KgiTickSnapshot;
   source: "kgi_tick";
@@ -861,6 +897,20 @@ export interface KgiHeatmapTile {
 }
 
 /**
+ * 2026-07-21 P0 home-market-endpoints latency: this is the largest single
+ * concurrent-fanout cost of the 4 homepage market endpoints — every call
+ * fires up to 40 fresh gateway HTTP round-trips (one per HEATMAP_CORE_SYMBOLS
+ * + holdings symbol) with zero memoization, unlike the TWSE heatmap
+ * counterpart (already cached). Same short-TTL memo pattern as
+ * `getKgiMarketOverview` above — see that function's doc for the full
+ * rationale and the RCA doc. `staleAfterSec` this endpoint advertises is 5s
+ * (live tiles) — a 2s memo TTL never serves a value staler than that
+ * contract already allows.
+ */
+const KGI_CORE_HEATMAP_MEMO_TTL_MS = 2_000;
+let _coreHeatmapMemo: { at: number; promise: ReturnType<typeof _getKgiCoreHeatmapUncached> } | null = null;
+
+/**
  * Build core heatmap from KGI tick data for:
  *   - 前 15 權值股 (CORE_SYMBOLS)
  *   - 策略 holdings (STRATEGY_SYMBOLS)
@@ -876,6 +926,21 @@ export async function getKgiCoreHeatmap(): Promise<{
 }> {
   if (!_initialized) initSubscriptionManager();
 
+  const now = Date.now();
+  if (_coreHeatmapMemo && now - _coreHeatmapMemo.at < KGI_CORE_HEATMAP_MEMO_TTL_MS) {
+    return _coreHeatmapMemo.promise;
+  }
+  const promise = _getKgiCoreHeatmapUncached();
+  _coreHeatmapMemo = { at: now, promise };
+  return promise;
+}
+
+async function _getKgiCoreHeatmapUncached(): Promise<{
+  tiles: KgiHeatmapTile[];
+  source: "kgi_tick";
+  staleAfterSec: number;
+  tileCount: number;
+}> {
   // Use the 40-symbol dashboard universe, then add any current holdings.
   // The subscribed KGI quota set is only 19 symbols (15 core + 4 strategy);
   // using it here made the visible heatmap collapse to a few tiles per sector.
