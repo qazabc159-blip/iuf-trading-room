@@ -14,13 +14,34 @@
 // market-intel-data.ts（獨立於舊 lib/final-v031-live.ts，避免牽動其他三個
 // final-v031 screen 的 hydration 管線）。
 //
+// 2026-07-21 效能急修：原版把 5 支來源全 await 完才回傳一顆 payload，SSR
+// 首屏等於「跟最慢那支同步」——單一來源逾時（20s）就整頁卡 20 秒。改法
+// 比照公司頁 #1312 的 Suspense 串流範式（見 app/companies/[symbol]/page.tsx
+// 的 kbarPromise/KBarChartSection 寫法）：page 本體只「發射」5 支來源
+// promise（不 await），殼（PageFrame/安全提示/下一步 CTA）立即 SSR 回；
+// 5 個資料區（今日訊息統計列 / AI 精選清單 / 來源狀態 / 三大法人 / 產業
+// 熱力圖）各自包一層 Suspense，各自 await 自己需要的來源子集——同一顆
+// promise 可以被多個消費者各自 await，不會重複打上游。每支來源逾時從
+// 20s 砍到 4s，逾時走既有「來源尚未可用」誠實降級分支，不讓任何一支慢源
+// 拖住整頁首屏。
+//
 // 回退：git revert 本次改動即可，舊 /api/ui-final-v031/market-intel route +
 // buildMarketIntelPayload() 完全未刪除、未動（現在沒有頁面連到它，是刻意保留
 // 的孤兒端點，非本輪範圍——見 PR 交付報告）。
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { PageFrame, Panel } from "@/components/PageFrame";
-import { loadMarketIntel, type MarketIntelFeedItem } from "@/app/market-intel/market-intel-data";
+import {
+  startMarketIntelSources,
+  resolveHeroStats,
+  resolveFeedSection,
+  resolveSourceStatusList,
+  resolveHeatmap,
+  resolveInstitutional,
+  type MarketIntelFeedItem,
+  type MarketIntelSources,
+} from "@/app/market-intel/market-intel-data";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -291,8 +312,199 @@ const MARKET_INTEL_CSS = `
 }
 `;
 
-export default async function FinalV031MarketIntelPage() {
-  const intel = await loadMarketIntel();
+// ── 5 個 Suspense 資料區（各自 await 自己需要的來源子集，慢源不拖垮殼）──
+
+type CoreSources = Pick<MarketIntelSources, "news" | "announcements" | "finMind">;
+
+async function HeroStatsRow({ sources }: { sources: CoreSources }) {
+  const stats = await resolveHeroStats(sources);
+  return (
+    <div className="_mi-hero-row">
+      <div className="_mi-hero-main">
+        <span className="_mi-hero-big">{stats.total}</span>
+        <span className="_mi-hero-lbl">今日訊息</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ color: stats.aiSelected > 0 ? "#e2b85c" : "#566276" }}>
+          {stats.aiSelected}
+        </span>
+        <span className="_mi-hero-lbl">AI 精選</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ color: stats.sourceOk === stats.sourceTotal ? "#4adb88" : "#e2b85c" }}>
+          {stats.sourceOk} <small style={{ fontSize: 14, color: "rgba(145,160,181,0.5)" }}>/ {stats.sourceTotal}</small>
+        </span>
+        <span className="_mi-hero-lbl">來源正常</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ fontSize: 16, color: "#c6d0de" }}>{stats.nextRefresh}</span>
+        <span className="_mi-hero-lbl">下次抓取</span>
+      </div>
+    </div>
+  );
+}
+
+function HeroStatsRowFallback() {
+  return (
+    <div className="_mi-hero-row">
+      <div className="_mi-hero-main">
+        <span className="_mi-hero-big" style={{ color: "#566276" }}>--</span>
+        <span className="_mi-hero-lbl">今日訊息</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ color: "#566276" }}>--</span>
+        <span className="_mi-hero-lbl">AI 精選</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ color: "#566276" }}>--</span>
+        <span className="_mi-hero-lbl">來源正常</span>
+      </div>
+      <div className="_mi-hero-cell">
+        <span className="_mi-hero-val" style={{ fontSize: 16, color: "#566276" }}>載入中</span>
+        <span className="_mi-hero-lbl">下次抓取</span>
+      </div>
+    </div>
+  );
+}
+
+async function FeedPanel({ sources }: { sources: CoreSources }) {
+  const { items, feedState } = await resolveFeedSection(sources);
+  return (
+    <Panel
+      code="INT-01"
+      title="AI 精選 · 今日重點"
+      sub={feedState.summary}
+      right={feedState.live ? "AI 篩選" : "備援排序"}
+    >
+      {items.length > 0 ? (
+        <div className="_mi-list">
+          {items.map((item) => (
+            <FeedCard key={item.id} item={item} />
+          ))}
+        </div>
+      ) : (
+        <div className="terminal-note">
+          <span className="tg gold">{feedState.label}</span> {feedState.detail}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function FeedPanelFallback() {
+  return (
+    <Panel code="INT-01" title="AI 精選 · 今日重點" sub="載入中" right="">
+      <div className="terminal-note">
+        <span className="tg gold">載入中</span> 今日重點整理中，稍候即會顯示。
+      </div>
+    </Panel>
+  );
+}
+
+async function SourceStatusPanel({ sources }: { sources: CoreSources }) {
+  const list = await resolveSourceStatusList(sources);
+  return (
+    <Panel code="INT-SRC" title="資料來源狀態" sub="每輪排程巡檢">
+      <div className="_mi-rail">
+        {list.map((source) => (
+          <div className="_mi-src-tile" key={source.name}>
+            <span className={`_mi-src-dot ${source.state}`} />
+            <div className="_mi-src-body">
+              <span className="_mi-src-name">{source.name}</span>
+              <span className="_mi-src-label">{source.label}</span>
+            </div>
+            <div className="_mi-src-right">
+              <div className={`_mi-src-status ${source.state}`}>{source.status}</div>
+              <div className="_mi-src-fresh">{source.fresh}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function SourceStatusPanelFallback() {
+  return (
+    <Panel code="INT-SRC" title="資料來源狀態" sub="每輪排程巡檢">
+      <div className="terminal-note">
+        <span className="tg gold">載入中</span> 來源狀態同步中。
+      </div>
+    </Panel>
+  );
+}
+
+async function InstitutionalPanel({ sources }: { sources: Pick<MarketIntelSources, "institutional"> }) {
+  const institutional = await resolveInstitutional(sources);
+  if (!institutional) return null;
+  return (
+    <Panel code="INT-INS" title="三大法人" sub="今日買賣超（張）">
+      {[
+        { name: "外資", line: institutional.foreign },
+        { name: "投信", line: institutional.invest },
+        { name: "自營商", line: institutional.dealer },
+      ].map(({ name, line }) => (
+        <div className="_mi-inst-block" key={name}>
+          <div className="_mi-inst-name">{name}</div>
+          <div className="_mi-inst-stats">
+            <div className="_mi-inst-stat">
+              <span className="lbl">買進</span>
+              <span className="val buy">{line ? line.buy.toLocaleString("zh-TW") : "--"}</span>
+            </div>
+            <div className="_mi-inst-stat">
+              <span className="lbl">賣出</span>
+              <span className="val sell">{line ? line.sell.toLocaleString("zh-TW") : "--"}</span>
+            </div>
+            <div className="_mi-inst-stat">
+              <span className="lbl">淨額</span>
+              <span className="val" style={{ color: line ? (line.net >= 0 ? "#ff5b6b" : "#4adb88") : undefined }}>
+                {line ? line.net.toLocaleString("zh-TW") : "--"}
+              </span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
+async function HeatmapPanel({ sources }: { sources: Pick<MarketIntelSources, "heatmap"> }) {
+  const heatmap = await resolveHeatmap(sources);
+  return (
+    <Panel code="INT-HEAT" title="產業熱力圖" sub="TWSE 公開資料 / 今日收盤" right="依變動幅度排序">
+      {heatmap.length > 0 ? (
+        <div className="_mi-heat-grid">
+          {heatmap.map((tile) => (
+            <div className="_mi-heat-tile" key={tile.industry}>
+              <span className="_mi-heat-nm">{tile.industry}</span>
+              <span className={`_mi-heat-pct ${toneClass(tile.tone)}`}>{tile.label}</span>
+              <span className="_mi-heat-cnt">{tile.gainerCount} 漲 / {tile.loserCount} 跌 · {tile.stockCount} 檔</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="terminal-note">
+          <span className="tg gold">同步中</span> 產業熱力圖資料尚未回傳。
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function HeatmapPanelFallback() {
+  return (
+    <Panel code="INT-HEAT" title="產業熱力圖" sub="TWSE 公開資料 / 今日收盤" right="依變動幅度排序">
+      <div className="terminal-note">
+        <span className="tg gold">載入中</span> 產業熱力圖同步中。
+      </div>
+    </Panel>
+  );
+}
+
+export default function FinalV031MarketIntelPage() {
+  // 只「發射」5 支來源 promise，不 await——殼 (PageFrame/安全提示/下一步
+  // CTA) 立即 SSR 回，5 個資料區各自用 Suspense 消費自己需要的子集。
+  const sources = startMarketIntelSources();
 
   return (
     <PageFrame
@@ -308,117 +520,29 @@ export default async function FinalV031MarketIntelPage() {
         <span>本頁僅供研究判讀，看完今日重點後請前往 <Link href="/ai-recommendations" style={{ color: "#e2b85c" }}>AI 推薦</Link> 決定觀察或動作。</span>
       </div>
 
-      <div className="_mi-hero-row">
-        <div className="_mi-hero-main">
-          <span className="_mi-hero-big">{intel.stats.total}</span>
-          <span className="_mi-hero-lbl">今日訊息</span>
-        </div>
-        <div className="_mi-hero-cell">
-          <span className="_mi-hero-val" style={{ color: intel.stats.aiSelected > 0 ? "#e2b85c" : "#566276" }}>
-            {intel.stats.aiSelected}
-          </span>
-          <span className="_mi-hero-lbl">AI 精選</span>
-        </div>
-        <div className="_mi-hero-cell">
-          <span className="_mi-hero-val" style={{ color: intel.stats.sourceOk === intel.stats.sourceTotal ? "#4adb88" : "#e2b85c" }}>
-            {intel.stats.sourceOk} <small style={{ fontSize: 14, color: "rgba(145,160,181,0.5)" }}>/ {intel.stats.sourceTotal}</small>
-          </span>
-          <span className="_mi-hero-lbl">來源正常</span>
-        </div>
-        <div className="_mi-hero-cell">
-          <span className="_mi-hero-val" style={{ fontSize: 16, color: "#c6d0de" }}>{intel.stats.nextRefresh}</span>
-          <span className="_mi-hero-lbl">下次抓取</span>
-        </div>
-      </div>
+      <Suspense fallback={<HeroStatsRowFallback />}>
+        <HeroStatsRow sources={sources} />
+      </Suspense>
 
       <div className="_mi-layout">
-        <Panel
-          code="INT-01"
-          title="AI 精選 · 今日重點"
-          sub={intel.feedState.summary}
-          right={intel.feedState.live ? "AI 篩選" : "備援排序"}
-        >
-          {intel.items.length > 0 ? (
-            <div className="_mi-list">
-              {intel.items.map((item) => (
-                <FeedCard key={item.id} item={item} />
-              ))}
-            </div>
-          ) : (
-            <div className="terminal-note">
-              <span className="tg gold">{intel.feedState.label}</span> {intel.feedState.detail}
-            </div>
-          )}
-        </Panel>
+        <Suspense fallback={<FeedPanelFallback />}>
+          <FeedPanel sources={sources} />
+        </Suspense>
 
         <div className="_mi-rail">
-          <Panel code="INT-SRC" title="資料來源狀態" sub="每輪排程巡檢">
-            <div className="_mi-rail">
-              {intel.sources.map((source) => (
-                <div className="_mi-src-tile" key={source.name}>
-                  <span className={`_mi-src-dot ${source.state}`} />
-                  <div className="_mi-src-body">
-                    <span className="_mi-src-name">{source.name}</span>
-                    <span className="_mi-src-label">{source.label}</span>
-                  </div>
-                  <div className="_mi-src-right">
-                    <div className={`_mi-src-status ${source.state}`}>{source.status}</div>
-                    <div className="_mi-src-fresh">{source.fresh}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Panel>
+          <Suspense fallback={<SourceStatusPanelFallback />}>
+            <SourceStatusPanel sources={sources} />
+          </Suspense>
 
-          {intel.institutional && (
-            <Panel code="INT-INS" title="三大法人" sub="今日買賣超（張）">
-              {[
-                { name: "外資", line: intel.institutional.foreign },
-                { name: "投信", line: intel.institutional.invest },
-                { name: "自營商", line: intel.institutional.dealer },
-              ].map(({ name, line }) => (
-                <div className="_mi-inst-block" key={name}>
-                  <div className="_mi-inst-name">{name}</div>
-                  <div className="_mi-inst-stats">
-                    <div className="_mi-inst-stat">
-                      <span className="lbl">買進</span>
-                      <span className="val buy">{line ? line.buy.toLocaleString("zh-TW") : "--"}</span>
-                    </div>
-                    <div className="_mi-inst-stat">
-                      <span className="lbl">賣出</span>
-                      <span className="val sell">{line ? line.sell.toLocaleString("zh-TW") : "--"}</span>
-                    </div>
-                    <div className="_mi-inst-stat">
-                      <span className="lbl">淨額</span>
-                      <span className="val" style={{ color: line ? (line.net >= 0 ? "#ff5b6b" : "#4adb88") : undefined }}>
-                        {line ? line.net.toLocaleString("zh-TW") : "--"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </Panel>
-          )}
+          <Suspense fallback={null}>
+            <InstitutionalPanel sources={sources} />
+          </Suspense>
         </div>
       </div>
 
-      <Panel code="INT-HEAT" title="產業熱力圖" sub="TWSE 公開資料 / 今日收盤" right="依變動幅度排序">
-        {intel.heatmap.length > 0 ? (
-          <div className="_mi-heat-grid">
-            {intel.heatmap.map((tile) => (
-              <div className="_mi-heat-tile" key={tile.industry}>
-                <span className="_mi-heat-nm">{tile.industry}</span>
-                <span className={`_mi-heat-pct ${toneClass(tile.tone)}`}>{tile.label}</span>
-                <span className="_mi-heat-cnt">{tile.gainerCount} 漲 / {tile.loserCount} 跌 · {tile.stockCount} 檔</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="terminal-note">
-            <span className="tg gold">同步中</span> 產業熱力圖資料尚未回傳。
-          </div>
-        )}
-      </Panel>
+      <Suspense fallback={<HeatmapPanelFallback />}>
+        <HeatmapPanel sources={sources} />
+      </Suspense>
 
       <div className="_mi-next">
         <span className="_mi-next-lbl">下一步</span>
