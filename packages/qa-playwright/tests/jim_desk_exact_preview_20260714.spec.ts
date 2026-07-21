@@ -168,6 +168,71 @@ test.describe("/desk-exact preview", () => {
     await saveRouteScreenshot(page, testInfo, "desk-exact-desktop-submit-outcome");
   });
 
+  // Round 5 (2026-07-21，Jim) — 手機下單票真送單 e2e。盤點發現 `.screen.mob`
+  // 早已存在且完整接線（session/orderCond/unit 矩陣、真 K 線、真送單，見
+  // apps/web/public/desk-exact/index.html m2-dock 區塊，2026-07-15~17 陸續
+  // 移植進來）；先前唯一缺口是「沒有任何 Playwright 規格對手機票走過一次真
+  // 送單」，只驗過 render+no-overflow（見上方 mobile 390 測試）。這裡補齊，
+  // 鏡射桌機版同款斷言，selector 換成 m2t-* slot（手機票專屬 data-slot，
+  // 桌機 `t-*` 系列在 `.screen.mob` 內部不存在，不會誤中隱藏元件）。
+  test("mobile 390 ticket real-submits a paper order via /api/v1/trading/orders (honest outcome, market-hours dependent)", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto("/desk-exact", { waitUntil: "domcontentloaded" });
+    const frame = extractFrame(page);
+    await frame.locator('[data-slot="m2-cap-avail"]').first().waitFor({ state: "attached", timeout: 15000 });
+    await page.waitForTimeout(6000); // let capital/accounts hydration land before submit
+
+    // Switch to SHARE unit + qty 1 (smallest possible odd-lot order), same
+    // fixture shape as the desktop test — quantity_unit stays an explicit
+    // user click either way (LOT/SHARE toggle has no server-side default).
+    await frame.locator('[data-slot="m2t-unit"] button[data-unit="SHARE"]').click();
+    const qtyInput = frame.locator('[data-slot="m2t-qty"]');
+    await qtyInput.fill("1");
+    const priceInput = frame.locator('[data-slot="m2t-price"]');
+    await priceInput.fill("1000");
+
+    const submitResponsePromise = page.waitForResponse(
+      (res) => res.url().includes("/api/ui-final-v031/backend") && res.url().includes("path=%2Fapi%2Fv1%2Ftrading%2Forders"),
+      { timeout: 20000 }
+    );
+    await frame.locator('[data-slot="m2t-submit"]').click();
+    const submitResponse = await submitResponsePromise;
+    const submitBody = await submitResponse.json().catch(() => null);
+    const submitStatus = submitResponse.status();
+
+    testInfo.annotations.push({ type: "submit-http-status", description: String(submitStatus) });
+    testInfo.annotations.push({ type: "submit-response-body", description: JSON.stringify(submitBody) });
+
+    await page.waitForTimeout(1500);
+    const submitMsg = await frame.locator('[data-slot="m2t-submit-msg"]').first().textContent();
+    testInfo.annotations.push({ type: "submit-msg-shown-to-user", description: String(submitMsg) });
+
+    // Real backend reached (not a stub) — true regardless of market hours.
+    expect(submitStatus === 201 || submitStatus === 422, "real backend responded (accepted or a legitimate risk-gate block)").toBe(true);
+
+    // The T-3 guard checklist row must also render human-readable reasons,
+    // never raw backend enum tokens (mirrors desktop's honest-message rule).
+    const riskListText = await frame.locator('[data-slot="m2t-risk-list"]').first().textContent();
+    testInfo.annotations.push({ type: "risk-list-after-submit", description: String(riskListText) });
+
+    if (submitStatus === 422) {
+      expect(submitMsg, "blocked reason must be human-readable, not a raw code").not.toMatch(/^[a-z_]+$/);
+      expect(submitMsg, "blocked reason must not be empty").toBeTruthy();
+      expect(riskListText || "", "risk checklist must not leak a raw guard id (e.g. trading_hours/max_per_trade)").not.toMatch(
+        /\btrading_hours\b|\bmax_per_trade\b|\bstale_quote\b|\bmax_single_position\b|\bmax_theme_correlated\b/
+      );
+    } else {
+      // 201 accepted — assert the mobile "今日委託" peek pill count increments
+      // without a full page reload (mobile ticket has no visible ledger table
+      // in-view, only the report peek pill + count badge).
+      const ledgerCount = await frame.locator('[data-slot="m2-ledger-count"]').first().textContent();
+      testInfo.annotations.push({ type: "order-accepted-ledger-count", description: String(ledgerCount) });
+      expect(Number(ledgerCount), "mobile 今日委託 pill count must be >=1 after an accepted order").toBeGreaterThan(0);
+    }
+
+    await saveRouteScreenshot(page, testInfo, "desk-exact-mobile-submit-outcome");
+  });
+
   // Round 4 (2026-07-17 移植) — K 線改走公司頁真實圖表引擎（iframe 內嵌
   // /final-v031/portfolio/kline-frame，同一顆 OhlcvCandlestickChart.tsx）：
   // 分K/日K/週K/月K切換、MA/MACD、量價支撐壓力、游標 read-out 全部真資料，
