@@ -530,30 +530,83 @@ async function loadDailyBriefDashboard(): Promise<LoadState<DailyBriefDashboard>
   );
 }
 
-async function loadRealtimeMarketDashboard(): Promise<LoadState<RealtimeMarketDashboard | null>> {
+// 2026-07-21 楊董急件：大盤指數（.idxanchor）之前跟熱力圖磚格共用同一個
+// Promise.allSettled 合併請求（loadRealtimeMarketDashboard，4 支一起等），
+// 指數 Suspense 邊界因此被最慢的來源拖住。readMarketIndex/readMarketBreadth
+// 讀 kgiOverview/twseOverview（指數＋漲跌家數 tier 1/3）跟 twseHeatmap
+// （readMarketBreadth tier 2 的 buildTwseIndustryRows fallback，見該函式）
+// 三支欄位；真正「磚格專用、指數/漲跌家數完全不需要」的只有 kgiCoreHeatmap
+// 一支（熱力圖核心池 tiles）。拆成兩個各自 cache() 的獨立 fetch group：
+// overview group（kgi-overview/twse-overview/twse-heatmap，3 支穩態
+// 0.35-1.3s，指數＋漲跌家數需要的都在這）＋ heatmap group（只剩
+// kgi-core-heatmap 1 支，唯一真正跟指數無關的慢來源）。第一版拆法漏放
+// twse-heatmap 進 overview group，本機真瀏覽器截圖比對 prod 時抓到漲跌
+// 家數退化成「0 漲 0 平 0 跌‧共 0 檔」（tier 2 fallback 少了 twseHeatmap
+// 資料來源）——非新語意，是舊 fallback 分支被餵到不該給的輸入，這裡改正。
+// RealtimeMarketDashboard 型別/readMarketIndex/readMarketBreadth 本身邏輯
+// 皆未動，只改這裡分開抓、缺的欄位填 null。
+async function loadMarketOverviewFeed(): Promise<LoadState<RealtimeMarketDashboard | null>> {
   return load<RealtimeMarketDashboard | null>(
-    "Main market public/realtime feed",
+    "Main market overview feed (kgi/twse overview + twse heatmap)",
     null,
     async () => {
-      const [kgiOverview, kgiCoreHeatmap, twseOverview, twseHeatmap] = await Promise.allSettled([
+      const [kgiOverview, twseOverview, twseHeatmap] = await Promise.allSettled([
         withTimeout(getKgiMarketOverview(), KGI_MARKET_ENDPOINT_MS, "kgi_overview"),
-        withTimeout(getKgiCoreHeatmap(), KGI_MARKET_ENDPOINT_MS, "kgi_core_heatmap"),
         withTimeout(getTwseMarketOverview(), PUBLIC_MARKET_ENDPOINT_MS, "twse_overview"),
         withTimeout(getTwseMarketHeatmap(), PUBLIC_MARKET_ENDPOINT_MS, "twse_heatmap"),
       ]);
 
       const kgiOverviewValue = kgiOverview.status === "fulfilled" && !isTimeoutSentinel(kgiOverview.value) ? unwrapMaybeData(kgiOverview.value) : null;
-      const kgiCoreHeatmapValue = kgiCoreHeatmap.status === "fulfilled" && !isTimeoutSentinel(kgiCoreHeatmap.value) ? unwrapKgiCoreHeatmap(kgiCoreHeatmap.value) : null;
       const twseOverviewValue = twseOverview.status === "fulfilled" && !isTimeoutSentinel(twseOverview.value) ? twseOverview.value : null;
       const twseHeatmapValue = twseHeatmap.status === "fulfilled" && !isTimeoutSentinel(twseHeatmap.value) ? twseHeatmap.value : null;
-      return { kgiOverview: kgiOverviewValue, kgiCoreHeatmap: kgiCoreHeatmapValue, twseOverview: twseOverviewValue, twseHeatmap: twseHeatmapValue };
+      return { kgiOverview: kgiOverviewValue, kgiCoreHeatmap: null, twseOverview: twseOverviewValue, twseHeatmap: twseHeatmapValue };
     },
     (value) => {
       if (!value) return true;
-      return !value.kgiOverview?.taiex && !value.twseOverview?.taiex && !value.kgiCoreHeatmap?.data?.length && !value.kgiCoreHeatmap?.tiles?.length && !value.twseHeatmap?.data?.length;
+      return !value.kgiOverview?.taiex && !value.twseOverview?.taiex;
     },
     "本日盤後資料",
   );
+}
+
+async function loadMarketHeatmapFeed(): Promise<LoadState<RealtimeMarketDashboard | null>> {
+  return load<RealtimeMarketDashboard | null>(
+    "Main market heatmap feed (kgi core heatmap)",
+    null,
+    async () => {
+      const kgiCoreHeatmap = await withTimeout(getKgiCoreHeatmap(), KGI_MARKET_ENDPOINT_MS, "kgi_core_heatmap");
+      const kgiCoreHeatmapValue = !isTimeoutSentinel(kgiCoreHeatmap) ? unwrapKgiCoreHeatmap(kgiCoreHeatmap) : null;
+      return { kgiOverview: null, kgiCoreHeatmap: kgiCoreHeatmapValue, twseOverview: null, twseHeatmap: null };
+    },
+    (value) => {
+      if (!value) return true;
+      return !value.kgiCoreHeatmap?.data?.length && !value.kgiCoreHeatmap?.tiles?.length;
+    },
+    "本日盤後資料",
+  );
+}
+
+// HeatZoneSection 需要 overview group 的 twseOverview/twseHeatmap（全市場模式
+// sourceLabel／industry rows）＋ heatmap group 的 kgiCoreHeatmap（核心模式
+// tiles），兩個各自 cache() 的 LoadState 合併成 HeatZonePanel 原本預期的單一
+// RealtimeMarketDashboard 形狀；不影響任一來源實際只打一次後端（cache() 已
+// 各自去重）。
+function mergeRealtimeMarketFeeds(...feeds: Array<LoadState<RealtimeMarketDashboard | null>>): LoadState<RealtimeMarketDashboard | null> {
+  const merged: RealtimeMarketDashboard = { kgiOverview: null, kgiCoreHeatmap: null, twseOverview: null, twseHeatmap: null };
+  let anyLive = false;
+  for (const feed of feeds) {
+    const data = loadStateData(feed);
+    merged.kgiOverview = merged.kgiOverview ?? data?.kgiOverview ?? null;
+    merged.kgiCoreHeatmap = merged.kgiCoreHeatmap ?? data?.kgiCoreHeatmap ?? null;
+    merged.twseOverview = merged.twseOverview ?? data?.twseOverview ?? null;
+    merged.twseHeatmap = merged.twseHeatmap ?? data?.twseHeatmap ?? null;
+    if (feed.state === "LIVE") anyLive = true;
+  }
+  const updatedAt = nowIso();
+  const source = "Main market public/realtime feed (merged)";
+  const isEmpty = !merged.kgiOverview?.taiex && !merged.twseOverview?.taiex && !merged.kgiCoreHeatmap?.data?.length && !merged.kgiCoreHeatmap?.tiles?.length && !merged.twseHeatmap?.data?.length;
+  if (isEmpty) return { state: "EMPTY", data: merged, updatedAt, source, reason: "本日盤後資料" };
+  return anyLive ? { state: "LIVE", data: merged, updatedAt, source } : { state: "BLOCKED", data: merged, updatedAt, source, reason: "本日盤後資料載入失敗" };
 }
 
 async function loadMarketIntelDashboard(): Promise<LoadState<MarketIntelDashboard>> {
@@ -1122,7 +1175,7 @@ function MastSkeleton() {
 async function MastDynamic({ now }: { now: string }) {
   const [market, realtimeMarket, brief, intel] = await Promise.all([
     timedLoad("market_for_mast", FETCH_MARKET_MS, cachedMarket, null),
-    timedLoad("realtime_for_mast", FETCH_MARKET_MS, cachedRealtimeMarket, null),
+    timedLoad("overview_for_mast", FETCH_MARKET_MS, cachedMarketOverviewFeed, null),
     timedLoad("brief_for_mast", FETCH_PRODUCT_MS, cachedBrief, buildEmptyBrief()),
     timedLoad("intel_for_mast", FETCH_INTEL_MS, cachedIntel, buildEmptyIntel()),
   ]);
@@ -1546,7 +1599,11 @@ function buildEmptyRecommendations(): AiRecommendationV3Response {
 // 獨立 resolve/stream，不互相卡住。
 const cachedMarket = cache((): Promise<LoadState<MarketDataOverview | null>> =>
   load("Market data overview", null, async () => (await getMarketDataOverview({ includeStale: true, topLimit: 20 })).data, (value) => !hasMarketOverviewData(value), "市場資料總覽目前沒有可用正式資料。"));
-const cachedRealtimeMarket = cache((): Promise<LoadState<RealtimeMarketDashboard | null>> => loadRealtimeMarketDashboard());
+// 指數/熱力圖分軌（見上方 loadMarketOverviewFeed/loadMarketHeatmapFeed 註解）：
+// 兩支各自 cache() 一次，同一次 request 內不論被幾個 Suspense 邊界 await，
+// 實際 fetch 只各打一次。
+const cachedMarketOverviewFeed = cache((): Promise<LoadState<RealtimeMarketDashboard | null>> => loadMarketOverviewFeed());
+const cachedMarketHeatmapFeed = cache((): Promise<LoadState<RealtimeMarketDashboard | null>> => loadMarketHeatmapFeed());
 const cachedBrief = cache((): Promise<LoadState<DailyBriefDashboard>> => loadDailyBriefDashboard());
 const cachedRecommendations = cache((): Promise<LoadState<AiRecommendationV3Response>> =>
   load(
@@ -1575,18 +1632,23 @@ function skeletonStyleTag() {
   return pulse + " " + skelCss + " " + rowCss;
 }
 
-function HeroBandSkeleton() {
-  return (
-    <>
-      <div className="_tac-skel-row" style={{ height: 322 }}>
-        <div className="_tac-skel" style={{ flex: "0 0 454px" }} />
-        <div className="_tac-skel" style={{ flex: 1 }} />
-      </div>
-      <div className="_tac-skel-row" style={{ height: 122, marginTop: 1 }}>
-        <div className="_tac-skel" style={{ flex: 1 }} />
-      </div>
-    </>
-  );
+// 2026-07-21：heroband 兩欄各自獨立 Suspense（見下方 IdxAnchorSection /
+// HeatZoneSection），fallback 也拆成兩個各自填滿自己 grid cell 的 skeleton
+// ——.heroband 本身（display:grid; grid-template-columns:454px 1fr;
+// height:322px）現在是靜態同步輸出的容器（非 async 產物），grid item 預設
+// stretch 自動撐滿欄寬/列高，skeleton 不必再手動指定 454px/1fr/322px。
+// order 值對齊 globals.css 手機斷點 .idxanchor{order:1}/.heatzone{order:4}，
+// 避免 loading 態下 display:contents 攤平時跟最終內容順序不一致造成跳動。
+function IdxAnchorSkeleton() {
+  return <div className="_tac-skel" style={{ order: 1 }} />;
+}
+
+function HeatZoneSkeleton() {
+  return <div className="_tac-skel" style={{ order: 4 }} />;
+}
+
+function IndexHistorySkeleton() {
+  return <div className="_tac-skel-row" style={{ height: 122 }}><div className="_tac-skel" style={{ flex: 1 }} /></div>;
 }
 
 function LeadBandSkeleton() {
@@ -1612,32 +1674,70 @@ function NewsTapeSkeleton() {
 }
 
 // ── 各版面各自獨立 async section — 各自 Suspense，互不卡住 ──────────────────
-async function HeroBandSection({
-  now,
+// 2026-07-21 楊董急件：大盤指數數字要秒開，跟熱力圖核心磚格拆成兩個獨立
+// Suspense（IdxAnchorSection / HeatZoneSection），各自只 await 自己需要的
+// 資料來源 group，不再共用一個 Promise.all 互相拖累。
+//
+// 2026-07-21 Round 2（Pete #1335 review 🔴 blocker 修復）：Round 1 版本無條件
+// 把 readMarketIndex/readMarketBreadth 餵進這個永遠 data:null 的假 BLOCKED
+// 佔位，導致 tier-2 跨源日期整合校驗（resolveAuthoritativeTradeDate，#1297
+// market-data-integrity-gate 機制本體）與 tier-3「昨日收盤」降級在指數這條
+// 路徑上結構性永遠不可達——kgi_overview 缺值（平日 14:10 後到隔日 08:20＋
+// 整個週末，是常態非邊界）時，mast/banner（吃真 cachedMarket()）跟 hero 指數
+// （吃假佔位）會各自落在不同的 resolveAuthoritativeTradeDate 分支，重開「同頁
+// 不同區塊交易日期打架」的回歸窗口。
+//
+// 修法：先用這個佔位餵 readMarketIndex 判斷一次——若 kgi tier-1（`source ===
+// "realtime"`）就能決定指數（盤中常態，kgiOverview 有值），函式本身邏輯完全
+// 不會去讀 market 參數，此時可以安全跳過等待 cachedMarket()（getMarketDataOverview，
+// 經量測是全站最慢的單一來源，Jason 側 overview P0 優化仍在進行中）維持指數
+// 秒開；只有 kgi 缺值、需要落到 tier-2/tier-3 分支時才真正 await 真
+// cachedMarket()（跟 mast/banner 同一個 cache() 記憶化 promise，不多打後端，
+// 只是多等它 resolve）。這樣「指數不等熱力圖」的分軌目標（不等 kgi-core-heatmap
+// 唯一真正跟指數無關的慢來源）維持不變，同時 tier-2/tier-3 分支永遠吃真資料，
+// 跟 mast/banner 结構上不可能再打架。（讀 breadth 的 tier-3 legacyBreadth 在
+// kgi-live 分支下仍可能結構性不可達——Pete review 🟡 suggestion #1 已標記為
+// 可留 tracking note、非 blocker，這裡不額外處理。）
+function pendingMarketOverviewPlaceholder(): LoadState<MarketDataOverview | null> {
+  return {
+    state: "BLOCKED",
+    data: null,
+    updatedAt: nowIso(),
+    source: "Market data overview (deferred — 指數快速路徑不等待)",
+    reason: "指數優先渲染路徑不等市場總覽；市場總覽由頁面其他區塊各自的 Suspense 邊界載入。",
+  };
+}
+
+async function IdxAnchorSection({ now }: { now: string }) {
+  const overviewFeed = await timedLoad("overview_for_idx", FETCH_MARKET_MS, cachedMarketOverviewFeed, null);
+  const nowDate = new Date(now);
+  const provisionalIndex = readMarketIndex(overviewFeed, pendingMarketOverviewPlaceholder(), nowDate);
+  const market = provisionalIndex.source === "realtime"
+    ? pendingMarketOverviewPlaceholder()
+    : await timedLoad("market_for_idx", FETCH_MARKET_MS, cachedMarket, null);
+  return <IdxAnchorPanel heatmap={[]} market={market} realtimeMarket={overviewFeed} now={now} />;
+}
+
+async function HeatZoneSection({
   selectedSectorParam,
   heatmapMode,
 }: {
-  now: string;
   selectedSectorParam: string | null;
   heatmapMode: "core" | "all";
 }) {
-  const [market, realtimeMarket] = await Promise.all([
-    timedLoad("market", FETCH_MARKET_MS, cachedMarket, null),
-    timedLoad("main_market_feed", FETCH_MARKET_MS, cachedRealtimeMarket, null),
+  const [market, overviewFeed, coreHeatmapFeed] = await Promise.all([
+    timedLoad("market_for_heatzone", FETCH_MARKET_MS, cachedMarket, null),
+    timedLoad("overview_for_heatzone", FETCH_MARKET_MS, cachedMarketOverviewFeed, null),
+    timedLoad("core_heatmap_feed", FETCH_MARKET_MS, cachedMarketHeatmapFeed, null),
   ]);
-  const coreHeatmap = buildKgiCoreHeatmap(realtimeMarket);
+  const realtimeMarket = mergeRealtimeMarketFeeds(overviewFeed, coreHeatmapFeed);
   const marketHeatmap = buildHeatmap(market);
-  const hasRepresentativeFeed = hasProductHeatmapCoverage(marketHeatmap);
-  const heatmap = coreHeatmap.length > 0 && hasRepresentativeFeed ? mergeCoreHeatmapWithRepresentativeFeed(coreHeatmap, marketHeatmap) : marketHeatmap;
-  return (
-    <>
-      <div className="heroband">
-        <IdxAnchorPanel heatmap={heatmap} market={market} realtimeMarket={realtimeMarket} now={now} />
-        <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
-      </div>
-      <IndexHistoryBand market={market} />
-    </>
-  );
+  return <HeatZonePanel heatmap={marketHeatmap} market={market} realtimeMarket={realtimeMarket} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />;
+}
+
+async function IndexHistorySection() {
+  const market = await timedLoad("market_for_history", FETCH_MARKET_MS, cachedMarket, null);
+  return <IndexHistoryBand market={market} />;
 }
 
 async function LeadBandSection() {
@@ -1671,19 +1771,21 @@ async function NewsTapeSection() {
 // 2026-07-17 市場資料完整性閘門（楊董升級）：<MarketStateBanner> 舊版本在
 // HomePage 直接同步呼叫、不帶任何 prop，落入元件自己的「無 prop 時自行
 // client-side fetch getMarketDataOverview()」分支——這是跟頁面其餘所有版面
-// （HeroBandSection 等）完全獨立、解耦的第二次獨立請求，時序上可能跟
-// server-rendered 的 market/tiles 資料落在不同時間點，正是 banner「07/16」
-// vs 磚「07/17」不一致的真根因（非 #1297 Round 1 誤判的 readMarketIndex 本
-// 身）。改用同一組 cache() 記憶化過的 cachedMarket()/cachedRealtimeMarket()
-// （HeroBandSection 已經在用同一個 request-scoped 記憶化 promise，這裡再呼叫
-// 一次不會多打一次後端），透過 resolveAuthoritativeTradeDate() 算出跟熱力圖
-// 磚同一個 resolved trade-date，直接以 lastCloseDate prop 餵給元件——結構上
-// banner 日期不可能再跟磚/指數日期分岔。獨立 Suspense 包裹，不阻塞 mast 靜態
-// 殼／其他版面的 streaming 節奏（fallback=null，休市 banner 本來就非 P0 內容
-// ——見元件自身文件「banner is cosmetic」）。
+// 完全獨立、解耦的第二次獨立請求，時序上可能跟 server-rendered 的
+// market/tiles 資料落在不同時間點，正是 banner「07/16」vs 磚「07/17」不一致
+// 的真根因（非 #1297 Round 1 誤判的 readMarketIndex 本身）。改用同一組
+// cache() 記憶化過的 cachedMarket()/cachedMarketOverviewFeed()（2026-07-21：
+// 原本呼叫 cachedRealtimeMarket()，拆分指數/熱力圖 Suspense 後改呼叫只含
+// overview 兩支的 cachedMarketOverviewFeed()——readMarketIndex 本來就只讀
+// kgiOverview/twseOverview，不受影響，其他頁面各自的獨立 Suspense promise
+// 仍是同一組 cache()，不會多打一次後端），透過 resolveAuthoritativeTradeDate()
+// 算出跟熱力圖磚同一個 resolved trade-date，直接以 lastCloseDate prop 餵給
+// 元件——結構上 banner 日期不可能再跟磚/指數日期分岔。獨立 Suspense 包裹，
+// 不阻塞 mast 靜態殼／其他版面的 streaming 節奏（fallback=null，休市 banner
+// 本來就非 P0 內容——見元件自身文件「banner is cosmetic」）。
 async function MarketStateBannerSection() {
-  const [market, realtimeMarket] = await Promise.all([cachedMarket(), cachedRealtimeMarket()]);
-  const twii = readMarketIndex(realtimeMarket, market);
+  const [market, overviewFeed] = await Promise.all([cachedMarket(), cachedMarketOverviewFeed()]);
+  const twii = readMarketIndex(overviewFeed, market);
   return <MarketStateBanner lastCloseDate={twii.updatedAt} />;
 }
 
@@ -1714,8 +1816,20 @@ export default async function HomePage({
         </header>
         <div className="sheet">
           <div className="maincol">
-            <Suspense fallback={<HeroBandSkeleton />}>
-              <HeroBandSection now={now} selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+            {/* 2026-07-21：大盤指數（.idxanchor）跟熱力圖磚格（.heatzone）各自
+                獨立 Suspense——.heroband 容器本身改成靜態同步輸出（原本由
+                HeroBandSection async 產生），指數只等快的 overview 來源，
+                熱力圖各自等慢的 heatmap 來源慢慢填，互不阻塞。 */}
+            <div className="heroband">
+              <Suspense fallback={<IdxAnchorSkeleton />}>
+                <IdxAnchorSection now={now} />
+              </Suspense>
+              <Suspense fallback={<HeatZoneSkeleton />}>
+                <HeatZoneSection selectedSectorParam={selectedSectorParam} heatmapMode={heatmapMode} />
+              </Suspense>
+            </div>
+            <Suspense fallback={<IndexHistorySkeleton />}>
+              <IndexHistorySection />
             </Suspense>
             <Suspense fallback={<LeadBandSkeleton />}>
               <LeadBandSection />
