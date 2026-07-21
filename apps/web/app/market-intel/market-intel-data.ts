@@ -1,10 +1,18 @@
-// /market-intel 房子樣式重做的資料層（2026-07-21）。
+// /market-intel 房子樣式重做的資料層（2026-07-21 建立，2026-07-21 效能急修）。
 //
 // 沿用既有正式端點（見 apps/web/lib/api.ts），映射邏輯改寫自
 // apps/web/lib/final-v031-live.ts 的 buildMarketIntelPayload()（舊 iframe
 // 版用），但那些是模組內未匯出的私有函式、且與其他三個 final-v031 screen
 // 的 hydration script 耦合，不安全直接 import——這裡是獨立、僅供本頁使用
 // 的輕量版本，行為刻意保持一致（分鐘級新鮮度文字、公告來源過濾規則等）。
+//
+// 效能急修（Elva post-deploy 實測）：原版把 5 支來源全部 Promise.allSettled
+// 完才回傳一顆 payload，SSR 對外等於「跟最慢那支同步」——單一來源逾時
+// (20s) 就整頁卡 20 秒。改法：page.tsx 用 startMarketIntelSources() 一次
+// 把 5 支來源都「發射不 await」，個別 Suspense 邊界各自消費各自需要的
+// 子集（同一顆 promise 可以被多個消費者各自 await，不會重複打上游）。
+// 每支來源 timeout 從 20s 砍到 4s——逾時走既有「來源尚未可用」誠實降級
+// 分支，不讓任何一支慢源拖住整頁首屏。
 import {
   getFinMindStatus,
   getMarketIntelAnnouncements,
@@ -16,11 +24,7 @@ import {
 } from "@/lib/api";
 import { industryLabel } from "@/lib/industry-i18n";
 
-// 2026-07-17 P0 教訓（MARKET_INTEL_OUTAGE_RCA）：apps/web/lib/api.ts 的
-// request()/requestRaw() 不帶 AbortSignal，單一上游卡住會讓整頁 SSR 掛住。
-// 用 race 幫每個來源都設一個上限，逾時視同該來源不可用（走既有 empty 分支），
-// 不是放大成整頁 500。
-const UPSTREAM_TIMEOUT_MS = 20_000;
+const UPSTREAM_TIMEOUT_MS = 4_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -254,36 +258,58 @@ export type MarketIntelInstitutional = {
   dealer: MarketIntelInstitutionalLine;
 };
 
-export type MarketIntelPayload = {
-  generatedAt: string;
-  stats: {
-    total: number;
-    aiSelected: number;
-    sourceOk: number;
-    sourceTotal: number;
-    nextRefresh: string;
-  };
-  items: MarketIntelFeedItem[];
-  feedState: MarketIntelFeedState;
-  sources: MarketIntelSource[];
-  heatmap: MarketIntelHeatmapTile[];
-  institutional: MarketIntelInstitutional | null;
+// ── Source fan-out ───────────────────────────────────────────────────────
+// 5 支上游各自 fire-and-forget 起跑，page.tsx 不 await 這個函式本身——
+// 各 Suspense 邊界各自消費自己需要的子集。同一顆 promise 可被多個消費者
+// 各自 await，settle 一次、後續讀取立即拿到值，不會重複打上游。
+type NewsResult = Awaited<ReturnType<typeof getNewsTop10>>;
+type AnnouncementsResult = Awaited<ReturnType<typeof getMarketIntelAnnouncements>>;
+type FinMindResult = Awaited<ReturnType<typeof getFinMindStatus>>;
+type HeatmapResult = Awaited<ReturnType<typeof getTwseMarketHeatmap>>;
+type InstitutionalResult = Awaited<ReturnType<typeof getMarketInstitutionalSummary>>;
+
+export type MarketIntelSources = {
+  news: Promise<NewsResult>;
+  announcements: Promise<AnnouncementsResult>;
+  finMind: Promise<FinMindResult>;
+  heatmap: Promise<HeatmapResult>;
+  institutional: Promise<InstitutionalResult>;
 };
 
-export async function loadMarketIntel(): Promise<MarketIntelPayload> {
-  const [newsResult, announcementsResult, finMindResult, heatmapResult, institutionalResult] = await Promise.allSettled([
-    withTimeout(getNewsTop10(), UPSTREAM_TIMEOUT_MS, "getNewsTop10"),
-    withTimeout(getMarketIntelAnnouncements({ days: 30, limit: 20, scope: "market" }), UPSTREAM_TIMEOUT_MS, "getMarketIntelAnnouncements"),
-    withTimeout(getFinMindStatus(), UPSTREAM_TIMEOUT_MS, "getFinMindStatus"),
-    withTimeout(getTwseMarketHeatmap(), UPSTREAM_TIMEOUT_MS, "getTwseMarketHeatmap"),
-    withTimeout(getMarketInstitutionalSummary(), UPSTREAM_TIMEOUT_MS, "getMarketInstitutionalSummary"),
+export function startMarketIntelSources(): MarketIntelSources {
+  const news = withTimeout(getNewsTop10(), UPSTREAM_TIMEOUT_MS, "getNewsTop10");
+  const announcements = withTimeout(
+    getMarketIntelAnnouncements({ days: 30, limit: 20, scope: "market" }),
+    UPSTREAM_TIMEOUT_MS,
+    "getMarketIntelAnnouncements",
+  );
+  const finMind = withTimeout(getFinMindStatus(), UPSTREAM_TIMEOUT_MS, "getFinMindStatus");
+  const heatmap = withTimeout(getTwseMarketHeatmap(), UPSTREAM_TIMEOUT_MS, "getTwseMarketHeatmap");
+  const institutional = withTimeout(getMarketInstitutionalSummary(), UPSTREAM_TIMEOUT_MS, "getMarketInstitutionalSummary");
+
+  // Pre-attach a noop catch on each raw promise so a timeout/rejection that
+  // lands before a Suspense child actually awaits it doesn't surface as an
+  // unhandled promise rejection — same trick as the company page's
+  // kbarPromise.catch(() => {}) (see app/companies/[symbol]/page.tsx).
+  news.catch(() => {});
+  announcements.catch(() => {});
+  finMind.catch(() => {});
+  heatmap.catch(() => {});
+  institutional.catch(() => {});
+
+  return { news, announcements, finMind, heatmap, institutional };
+}
+
+async function resolveCore(sources: Pick<MarketIntelSources, "news" | "announcements" | "finMind">) {
+  const [newsResult, announcementsResult, finMindResult] = await Promise.allSettled([
+    sources.news,
+    sources.announcements,
+    sources.finMind,
   ]);
 
   const news = settledValue(newsResult)?.data ?? null;
   const announcements = settledValue(announcementsResult)?.data ?? null;
   const finMind = settledValue(finMindResult)?.data ?? null;
-  const heatmapRaw = settledValue(heatmapResult);
-  const institutionalRaw = settledValue(institutionalResult);
 
   const aiItems = news?.items?.map(mapNewsItem) ?? [];
   const announcementItems = announcements?.items?.filter(isOfficialMarketAnnouncement).map(mapAnnouncement) ?? [];
@@ -292,64 +318,90 @@ export async function loadMarketIntel(): Promise<MarketIntelPayload> {
   const finMindLive = !!finMind && (finMind.state === "LIVE_READY" || finMind.datasets?.some((dataset) => dataset.state === "LIVE"));
   const mopsLive = (announcements?.items?.length ?? 0) > 0 && (announcements?.failures ?? 0) === 0;
   const aiLive = !!news?.items?.length && news.ai_call_success !== false;
-  const sourceOkCount = [mopsLive, finMindLive, aiLive].filter(Boolean).length;
 
-  const heatmap = (heatmapRaw?.data ?? [])
+  return { news, announcements, finMind, aiItems, announcementItems, items, finMindLive, mopsLive, aiLive };
+}
+
+export type MarketIntelHeroStats = {
+  total: number;
+  aiSelected: number;
+  sourceOk: number;
+  sourceTotal: number;
+  nextRefresh: string;
+};
+
+export async function resolveHeroStats(sources: Pick<MarketIntelSources, "news" | "announcements" | "finMind">): Promise<MarketIntelHeroStats> {
+  const { news, items, finMindLive, mopsLive, aiLive } = await resolveCore(sources);
+  const sourceOkCount = [mopsLive, finMindLive, aiLive].filter(Boolean).length;
+  return {
+    total: Math.max(news?.input_row_count ?? 0, items.length),
+    aiSelected: news?.items?.length ?? 0,
+    sourceOk: sourceOkCount,
+    sourceTotal: 3,
+    nextRefresh: nextRefreshText(news?.next_refresh_at),
+  };
+}
+
+export type MarketIntelFeedSection = {
+  items: MarketIntelFeedItem[];
+  feedState: MarketIntelFeedState;
+};
+
+export async function resolveFeedSection(sources: Pick<MarketIntelSources, "news" | "announcements" | "finMind">): Promise<MarketIntelFeedSection> {
+  const { news, items, aiItems } = await resolveCore(sources);
+  return { items, feedState: buildFeedState(items, aiItems.length, news?.selection_mode ?? null) };
+}
+
+export async function resolveSourceStatusList(sources: Pick<MarketIntelSources, "news" | "announcements" | "finMind">): Promise<MarketIntelSource[]> {
+  const { news, announcements, finMind, finMindLive, mopsLive, aiLive } = await resolveCore(sources);
+  return [
+    {
+      name: "公開資訊觀測站",
+      label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : "目前無可呈現公告",
+      state: mopsLive ? "ok" : "warn",
+      status: mopsLive ? "正常" : "待確認",
+      fresh: announcements?.items?.[0]?.date ? minutesAgoText(announcements.items[0].date) : "同步中",
+    },
+    {
+      name: "FinMind 市場資料",
+      label: finMindLive ? "市場資料源可用" : "市場資料源同步中",
+      state: finMindLive ? "ok" : "warn",
+      status: finMindLive ? "正常" : "同步中",
+      fresh: finMind?.updatedAt ? minutesAgoText(finMind.updatedAt) : "同步中",
+    },
+    {
+      name: "AI 精選訊息",
+      label: aiLive ? `AI 精選已回傳 ${news?.items?.length ?? 0} 則` : "AI 精選尚無可顯示項目",
+      state: aiLive ? "ok" : "warn",
+      status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
+      fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
+    },
+  ];
+}
+
+export async function resolveHeatmap(sources: Pick<MarketIntelSources, "heatmap">): Promise<MarketIntelHeatmapTile[]> {
+  const [heatmapResult] = await Promise.allSettled([sources.heatmap]);
+  const heatmapRaw = settledValue(heatmapResult);
+  return (heatmapRaw?.data ?? [])
     .map((tile) => mapHeatmapTile(tile.industry, tile.avgChangePct ?? 0, tile.gainerCount ?? 0, tile.loserCount ?? 0, tile.stockCount ?? 0))
     .sort((a, b) => Math.abs(b.avgChangePct) - Math.abs(a.avgChangePct))
     .slice(0, 12);
+}
 
-  let institutional: MarketIntelInstitutional | null = null;
-  if (institutionalRaw) {
-    const institutions = institutionalRaw.institutions ?? [];
-    const line = (matchName: string) => {
-      const found = institutions.find((inst) => inst.name?.includes(matchName));
-      return found ? { buy: found.buy, sell: found.sell, net: found.net } : null;
-    };
-    institutional = {
-      asOf: institutionalRaw.asOf ?? null,
-      totalNet: institutionalRaw.totalNet ?? null,
-      foreign: line("外"),
-      invest: line("投信"),
-      dealer: line("自營"),
-    };
-  }
-
+export async function resolveInstitutional(sources: Pick<MarketIntelSources, "institutional">): Promise<MarketIntelInstitutional | null> {
+  const [institutionalResult] = await Promise.allSettled([sources.institutional]);
+  const institutionalRaw = settledValue(institutionalResult);
+  if (!institutionalRaw) return null;
+  const institutions = institutionalRaw.institutions ?? [];
+  const line = (matchName: string) => {
+    const found = institutions.find((inst) => inst.name?.includes(matchName));
+    return found ? { buy: found.buy, sell: found.sell, net: found.net } : null;
+  };
   return {
-    generatedAt: new Date().toISOString(),
-    stats: {
-      total: Math.max(news?.input_row_count ?? 0, items.length),
-      aiSelected: news?.items?.length ?? 0,
-      sourceOk: sourceOkCount,
-      sourceTotal: 3,
-      nextRefresh: nextRefreshText(news?.next_refresh_at),
-    },
-    items,
-    feedState: buildFeedState(items, aiItems.length, news?.selection_mode ?? null),
-    sources: [
-      {
-        name: "公開資訊觀測站",
-        label: mopsLive ? `官方公告已回傳 ${announcements?.items?.length ?? 0} 則` : "目前無可呈現公告",
-        state: mopsLive ? "ok" : "warn",
-        status: mopsLive ? "正常" : "待確認",
-        fresh: announcements?.items?.[0]?.date ? minutesAgoText(announcements.items[0].date) : "同步中",
-      },
-      {
-        name: "FinMind 市場資料",
-        label: finMindLive ? "市場資料源可用" : "市場資料源同步中",
-        state: finMindLive ? "ok" : "warn",
-        status: finMindLive ? "正常" : "同步中",
-        fresh: finMind?.updatedAt ? minutesAgoText(finMind.updatedAt) : "同步中",
-      },
-      {
-        name: "AI 精選訊息",
-        label: aiLive ? `AI 精選已回傳 ${news?.items?.length ?? 0} 則` : "AI 精選尚無可顯示項目",
-        state: aiLive ? "ok" : "warn",
-        status: aiLive ? (news?.selection_mode === "ai" ? "AI 篩選" : "備援") : "待回傳",
-        fresh: news?.as_of ? minutesAgoText(news.as_of) : "同步中",
-      },
-    ],
-    heatmap,
-    institutional,
+    asOf: institutionalRaw.asOf ?? null,
+    totalNet: institutionalRaw.totalNet ?? null,
+    foreign: line("外"),
+    invest: line("投信"),
+    dealer: line("自營"),
   };
 }
