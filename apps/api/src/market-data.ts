@@ -662,9 +662,7 @@ async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
     return;
   }
 
-  const _t0 = performance.now();
   const persistedEntries = await loadPersistedQuoteEntries(workspaceSlug);
-  const _t1 = performance.now();
   const workspaceCache = getQuoteCacheForWorkspace(workspaceSlug);
   const workspaceHistory = getQuoteHistoryCacheForWorkspace(workspaceSlug);
 
@@ -673,10 +671,6 @@ async function ensurePersistedQuoteHistoryLoaded(workspaceSlug: string) {
   }
 
   persistedQuoteHistoryLoaded.add(workspaceSlug);
-  console.log(
-    `[overview-perf] ensurePersistedQuoteHistoryLoaded(${workspaceSlug}) COLD load: `
-    + `dbFetch=${Math.round(_t1 - _t0)}ms pushLoop=${Math.round(performance.now() - _t1)}ms entries=${persistedEntries.length}`
-  );
 }
 
 // 2026-07-20 (overview_latency_20260720 perf regression): getMarketDataOverview
@@ -716,20 +710,14 @@ function listCachedProviderQuotes(workspaceSlug: string, source: QuoteSource) {
   const generation = getQuotesGeneration(workspaceSlug, source);
   const cached = cachedProviderQuotesMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
-    console.log(`[overview-perf] listCachedProviderQuotes(${source}) MEMO_HIT size=${cached.result.length}`);
     return cached.result;
   }
 
-  const _t0 = performance.now();
   const cache = getQuoteCacheForWorkspace(workspaceSlug);
   const result = [...cache.values()]
     .filter((entry) => entry.source === source)
     .map(withFreshness)
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
-  console.log(
-    `[overview-perf] listCachedProviderQuotes(${source}) MEMO_MISS rawCacheSize=${cache.size} `
-    + `resultSize=${result.length} scanMs=${Math.round(performance.now() - _t0)}`
-  );
   cachedProviderQuotesMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
   return result;
 }
@@ -740,25 +728,46 @@ function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSour
   const generation = getHistoryGeneration(workspaceSlug, source);
   const cached = cachedProviderQuoteHistoryMemo.get(memoKey);
   if (cached && cached.generation === generation && cached.expiresAt > now) {
-    console.log(`[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_HIT size=${cached.result.length}`);
     return cached.result;
   }
 
-  const _t0 = performance.now();
   const historyCache = getQuoteHistoryCacheForWorkspace(workspaceSlug);
-  const rawEntryCount = [...historyCache.entries()].filter(([key]) => key.startsWith(`${source}:`))
-    .reduce((sum, [, entries]) => sum + entries.length, 0);
   const result = [...historyCache.entries()]
     .filter(([key]) => key.startsWith(`${source}:`))
     .flatMap(([, entries]) => entries.map(withFreshness))
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
-  console.log(
-    `[overview-perf] listCachedProviderQuoteHistory(${source}) MEMO_MISS keysForSource=`
-    + `${[...historyCache.entries()].filter(([key]) => key.startsWith(`${source}:`)).length} `
-    + `rawEntryCount=${rawEntryCount} resultSize=${result.length} scanMs=${Math.round(performance.now() - _t0)}`
-  );
   cachedProviderQuoteHistoryMemo.set(memoKey, { generation, expiresAt: now + CACHED_PROVIDER_MEMO_TTL_MS, result });
   return result;
+}
+
+// 2026-07-21 P0 round 6 (architecture fix, not another memo tweak): round 5's
+// own conclusion was that under continuous live MIS-sweep traffic, a genuinely
+// new tick can (and typically does) land in the ~1ms gap between
+// historyQuality's and barQuality's independent calls into
+// listCachedProviderQuoteHistory("twse_mis") -- so the write-generation memo
+// correctly busts almost every time under real load, meaning /overview was
+// still paying for the ~932K-entry scan TWICE per request. No cache-validity
+// strategy (TTL, generation, or any smarter invalidation) can close that gap,
+// because the two calls are genuinely reading at two different instants and
+// the underlying data genuinely changes between them.
+// The actual fix: getMarketDataOverview is the one caller that needs BOTH
+// historyQuality and barQuality to see the SAME per-source history snapshot
+// for the SAME request -- so it now computes that snapshot once, synchronously,
+// before kicking off either sub-call, and threads it down as an explicit
+// `rawHistoryBySource` parameter through listMarketQuoteHistory /
+// getMarketQuoteHistoryDiagnostics / listMarketBars / getMarketBarDiagnostics.
+// This makes sharing a property of the call graph, not of a cache's timing
+// luck. All other (non-overview) callers of those four functions omit the
+// parameter and keep the exact previous per-call-scan behavior untouched.
+function snapshotCachedProviderQuoteHistoryBySource(
+  workspaceSlug: string,
+  sources: readonly QuoteSource[]
+): Map<QuoteSource, Quote[]> {
+  const snapshot = new Map<QuoteSource, Quote[]>();
+  for (const source of sources) {
+    snapshot.set(source, listCachedProviderQuoteHistory(workspaceSlug, source));
+  }
+  return snapshot;
 }
 
 function buildQuoteCacheKey(symbol: string, market: Market, source: QuoteSource) {
@@ -2557,6 +2566,12 @@ export async function listMarketQuoteHistory(input: {
   from?: string;
   to?: string;
   limit?: number;
+  // 2026-07-21 P0 round 6: optional caller-supplied snapshot (see
+  // snapshotCachedProviderQuoteHistoryBySource) so getMarketDataOverview can
+  // share ONE scan of the (potentially ~932K-entry) history cache between its
+  // historyQuality and barQuality sub-calls instead of each triggering its own.
+  // Omitted by every other caller -- falls back to the original per-call scan.
+  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const workspaceSlug = input.session.workspace.slug;
   await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
@@ -2578,9 +2593,9 @@ export async function listMarketQuoteHistory(input: {
   const preferredSourceBySymbol = input.source ? null : getPreferredSourceBySymbol(currentQuotes);
 
   const history = (
-    await Promise.all(
-      sources.map((source) => Promise.resolve(listCachedProviderQuoteHistory(workspaceSlug, source)))
-    )
+    input.rawHistoryBySource
+      ? sources.map((source) => input.rawHistoryBySource!.get(source) ?? [])
+      : sources.map((source) => listCachedProviderQuoteHistory(workspaceSlug, source))
   )
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
@@ -2619,6 +2634,8 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
   from?: string;
   to?: string;
   limit?: number;
+  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
+  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const history = await listMarketQuoteHistory({
     ...input,
@@ -3897,6 +3914,8 @@ export async function listMarketBars(input: {
   from?: string;
   to?: string;
   limit?: number;
+  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
+  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const interval = input.interval ?? "1m";
   const intervalMs = getBarIntervalMs(interval);
@@ -3908,7 +3927,8 @@ export async function listMarketBars(input: {
     includeStale: input.includeStale,
     from: input.from,
     to: input.to,
-    limit: Math.max((input.limit ?? 100) * 8, 200)
+    limit: Math.max((input.limit ?? 100) * 8, 200),
+    rawHistoryBySource: input.rawHistoryBySource
   });
   const groupedQuotes = new Map<string, Quote[]>();
 
@@ -3963,6 +3983,8 @@ export async function getMarketBarDiagnostics(input: {
   from?: string;
   to?: string;
   limit?: number;
+  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
+  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const bars = await listMarketBars({
     ...input,
@@ -4039,15 +4061,6 @@ export async function getMarketDataOverview(input: {
   topLimit?: number;
 }) {
   const topLimit = input.topLimit ?? 5;
-  // 2026-07-20 round 2 (Elva: memo didn't help, need real per-segment
-  // timing, not more theory). Temporary diagnostic instrumentation --
-  // console.log with [overview-perf] prefix so it's easy to grep out of
-  // Railway logs. Remove once the real bottleneck is identified and fixed.
-  const _perfT0 = performance.now();
-  const _perfMark = (label: string, from: number) => {
-    console.log(`[overview-perf] ${label}=${Math.round(performance.now() - from)}ms`);
-    return performance.now();
-  };
   const [providers, companies, quotes] = await Promise.all([
     listMarketDataProviderStatuses({
       session: input.session,
@@ -4060,11 +4073,8 @@ export async function getMarketDataOverview(input: {
       limit: 1000
     })
   ]);
-  let _perfT = _perfMark("providers_companies_quotes", _perfT0);
-  console.log(`[overview-perf] quotes.length=${quotes.length} companies.length=${companies.length}`);
   const symbols = dedupeSymbolMasters(companies);
   const qualitySymbols = [...new Set(quotes.map((quote) => quote.symbol))].join(",");
-  console.log(`[overview-perf] qualitySymbols.count=${qualitySymbols ? qualitySymbols.split(",").length : 0}`);
   const effectiveSelection = quotes.length > 0
     ? await getEffectiveMarketQuotes({
       session: input.session,
@@ -4098,32 +4108,35 @@ export async function getMarketDataOverview(input: {
       },
       items: []
     };
-  _perfT = _perfMark("effectiveSelection", _perfT);
+  // 2026-07-21 P0 round 6: historyQuality and barQuality each independently
+  // re-scan the full per-source quote-history cache (dominant cost for
+  // twse_mis, up to ~932K entries -- see snapshotCachedProviderQuoteHistoryBySource
+  // doc above). Compute that scan ONCE, synchronously, here -- before either
+  // sub-call's own await boundaries give live MIS-sweep writes a chance to
+  // land in between -- and hand both sub-calls the same snapshot so they
+  // never re-derive it.
+  const workspaceSlug = input.session.workspace.slug;
+  await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
+  const rawHistoryBySource = qualitySymbols
+    ? snapshotCachedProviderQuoteHistoryBySource(workspaceSlug, quoteProviderSources)
+    : null;
   const [historyQuality, barQuality] = qualitySymbols
     ? await Promise.all([
-      (async () => {
-        const t = performance.now();
-        const r = await getMarketQuoteHistoryDiagnostics({
-          session: input.session,
-          symbols: qualitySymbols,
-          includeStale: true,
-          limit: Math.max(quotes.length * 4, 100)
-        });
-        console.log(`[overview-perf] historyQuality_inner=${Math.round(performance.now() - t)}ms`);
-        return r;
-      })(),
-      (async () => {
-        const t = performance.now();
-        const r = await getMarketBarDiagnostics({
-          session: input.session,
-          symbols: qualitySymbols,
-          includeStale: true,
-          interval: "1m",
-          limit: Math.max(quotes.length * 2, 50)
-        });
-        console.log(`[overview-perf] barQuality_inner=${Math.round(performance.now() - t)}ms`);
-        return r;
-      })()
+      getMarketQuoteHistoryDiagnostics({
+        session: input.session,
+        symbols: qualitySymbols,
+        includeStale: true,
+        limit: Math.max(quotes.length * 4, 100),
+        rawHistoryBySource: rawHistoryBySource!
+      }),
+      getMarketBarDiagnostics({
+        session: input.session,
+        symbols: qualitySymbols,
+        includeStale: true,
+        interval: "1m",
+        limit: Math.max(quotes.length * 2, 50),
+        rawHistoryBySource: rawHistoryBySource!
+      })
     ])
     : [
       {
@@ -4137,7 +4150,6 @@ export async function getMarketDataOverview(input: {
         items: []
       }
     ];
-  _perfT = _perfMark("historyQuality_barQuality_promiseall", _perfT);
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
@@ -4183,22 +4195,17 @@ export async function getMarketDataOverview(input: {
     .slice(0, topLimit)
     .map((row) => toOverviewLeader(row, resolveName));
 
-  _perfT = _perfMark("sync_compute_gainers_losers_active", _perfT);
-
   const quoteMarketContext = buildMarketContext({
     effectiveItems,
     companies
   });
-  _perfT = _perfMark("buildMarketContext", _perfT);
   const shouldLoadDailyMarketContext = quoteMarketContext.state === "EMPTY" || quoteMarketContext.heatmap.length < MARKET_HEATMAP_LIMIT / 2;
-  console.log(`[overview-perf] shouldLoadDailyMarketContext=${shouldLoadDailyMarketContext} quoteMarketContext.state=${quoteMarketContext.state} heatmap.length=${quoteMarketContext.heatmap.length}`);
   const dailyMarketContext = shouldLoadDailyMarketContext
     ? await buildDailyBarMarketContext({
       session: input.session,
       companies
     })
     : null;
-  _perfT = _perfMark("buildDailyBarMarketContext", _perfT);
   const marketContext = dailyMarketContext && (
     quoteMarketContext.state === "EMPTY" || dailyMarketContext.heatmap.length > quoteMarketContext.heatmap.length
   )
@@ -4220,7 +4227,6 @@ export async function getMarketDataOverview(input: {
   const latestQuoteTimestamp = quotes
     .map((quote) => quote.timestamp)
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
-  console.log(`[overview-perf] TOTAL=${Math.round(performance.now() - _perfT0)}ms`);
 
   return {
     generatedAt: new Date().toISOString(),
