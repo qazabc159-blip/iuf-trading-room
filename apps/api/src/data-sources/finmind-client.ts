@@ -214,6 +214,35 @@ export interface FinMindNewsRow {
   source_name?: string;   // news outlet, may not be present in all tiers
 }
 
+// Raw wire shape returned by FinMind's TaiwanStockNews endpoint.
+// NOTE: FinMind's actual field name is "link", NOT "url" (confirmed via live
+// API response 2026-07-23). Mapping this straight onto FinMindNewsRow.url
+// (as the old code did via a blind cast) silently produced url=undefined for
+// every row — this is the root cause of items[].url going missing on
+// /api/v1/market-intel/news-top10. Map explicitly in getStockNews() below.
+interface FinMindNewsRawRow {
+  date: string;
+  stock_id: string;
+  title: string;
+  link?: string;
+  source_name?: string;
+}
+
+/**
+ * Only pass through http(s) URLs sourced from the external FinMind API.
+ * Anything else (missing, malformed, or non-http(s) protocol such as
+ * javascript:/data:) is dropped rather than persisted or returned.
+ */
+export function sanitizeNewsUrl(rawUrl: string | null | undefined): string | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? rawUrl : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ── Cache TTL constants (seconds) ─────────────────────────────────────────────
 
 const TTL_OHLCV     = 600;    // 10 min — refreshed daily but cache hits during day
@@ -903,12 +932,22 @@ export class FinMindClient {
     // FinMind constraint: TaiwanStockNews rejects requests with end_date parameter
     // (HTTP 400: "the dataset TaiwanStockNews size is too large, we only send one day data,
     // so end_date parameter need be none"). Always omit end_date for this dataset.
-    const rows = await this._fetch<FinMindNewsRow>(
+    const rawRows = await this._fetch<FinMindNewsRawRow>(
       "TaiwanStockNews",
       stockId,
       startDate,
       null   // end_date must be omitted — FinMind constraint
     );
+
+    // Map wire field "link" -> FinMindNewsRow.url, validating protocol on the way in
+    // (external input) — this must happen before the row is ever cached/persisted.
+    const rows: FinMindNewsRow[] = rawRows.map((raw) => ({
+      date: raw.date,
+      stock_id: raw.stock_id,
+      title: raw.title,
+      url: sanitizeNewsUrl(raw.link),
+      source_name: raw.source_name
+    }));
 
     // Short TTL for news — 5 min (reviewer keystone, needs freshness)
     if (rows.length > 0) {
