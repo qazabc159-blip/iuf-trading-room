@@ -784,6 +784,76 @@ export function CompanyPageStyleBlock() {
 .co-v3-page .company-data-table-fit td {
   font-size: 11px;
 }
+
+/* ── Mobile section drawer (_co-mdrawer) — 2026-07-22 mobile collapse pass ──
+   The details element ships with the open attribute present by default
+   (see CompanyMobileDrawer.tsx) — desktop/tablet (>768px) never touch it, so
+   wrapped panels render exactly as they did before this component existed
+   (zero visual change; native details/summary elements carry no default
+   border/margin box model in the UA stylesheet). Only the custom summary
+   header is hidden there (it did not exist before this pass). Mobile
+   (768px and below): a tiny inline script (see CompanyMobileDrawer.tsx)
+   removes the open attribute before paint so the drawer starts collapsed;
+   tapping the native summary re-opens it — zero JS for the toggle itself.
+   The :has(.panel) guard: if every panel inside a drawer returned null
+   (already-established empty-state convention — no placeholder card), the
+   drawer body is empty and the whole drawer hides itself rather than
+   showing a header that promises content that isn't there. */
+._co-mdrawer:not(:has(.panel)) {
+  display: none;
+}
+._co-mdrawer-summary {
+  display: none;
+}
+@media (max-width: 768px) {
+  ._co-mdrawer {
+    display: block;
+    margin-top: 12px;
+    border: 1px solid rgba(220,228,240,0.12);
+    background: rgba(5,8,12,0.34);
+  }
+  ._co-mdrawer-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 12px 14px;
+    cursor: pointer;
+    list-style: none;
+    font-family: var(--mono);
+  }
+  ._co-mdrawer-summary::-webkit-details-marker { display: none; }
+  ._co-mdrawer-summary::marker { content: ""; }
+  ._co-mdrawer-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--night-ink, #e7ecf3);
+  }
+  ._co-mdrawer-meta {
+    font-size: 10.5px;
+    color: var(--night-mid, #91a0b5);
+    margin-left: auto;
+  }
+  ._co-mdrawer-chevron {
+    font-size: 11px;
+    color: var(--gold-bright, #e2b85c);
+    transition: transform 0.16s;
+    flex-shrink: 0;
+  }
+  ._co-mdrawer[open] > ._co-mdrawer-summary ._co-mdrawer-chevron {
+    transform: rotate(180deg);
+  }
+  ._co-mdrawer-body {
+    padding: 2px 12px 14px;
+  }
+  ._co-mdrawer .panel,
+  ._co-mdrawer .co-v3-pairrow {
+    margin-top: 0 !important;
+  }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  ._co-mdrawer-chevron { transition: none; }
+}
     `}</style>
   );
 }
