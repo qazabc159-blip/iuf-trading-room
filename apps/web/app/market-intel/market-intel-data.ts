@@ -388,20 +388,47 @@ export async function resolveHeatmap(sources: Pick<MarketIntelSources, "heatmap"
     .slice(0, 12);
 }
 
+// 後端 /api/v1/market/institutional-summary/finmind 的 institutions[].name 是
+// FinMind 英文 enum（Foreign_Investor / Investment_Trust / Dealer_Hedging /
+// Dealer / Dealer_self 等），不是中文——舊版用中文子字串 `.includes()` 比對
+// 永遠比不到，三大法人 9 格因此恆顯 `--`（2026-07-22 楊董退件走查發現，
+// reports/design_redesign_20260722/ORIGINAL_PAGES_INVENTORY_20260722.md §2.3）。
+// 這裡的分類規則對齊 apps/api/src/server.ts 的 classifyInstitutionalName()
+// （A2 fix 2026-07-12，/chips 與 /full-profile institutional 共用的同一顆分類
+// 函式，同時吃中文與英文標籤）——前後端各自 runtime 不共用模組，故在此複製
+// 同一組 regex，避免各自猜一套會再度分岔。自營商在 FinMind 資料裡會拆成
+// 自行買賣/避險兩列（甚至更多子列），要加總同一 bucket 全部列，不能只取
+// 第一筆命中，否則自營商淨額會被少算。
+function classifyInstitutionalName(name: string | null | undefined): "foreign" | "investmentTrust" | "dealer" | null {
+  const nm = name ?? "";
+  if (/外|陸資|Foreign/i.test(nm)) return "foreign";
+  if (/投信|Trust/i.test(nm)) return "investmentTrust";
+  if (/自營|Dealer/i.test(nm)) return "dealer";
+  return null;
+}
+
 export async function resolveInstitutional(sources: Pick<MarketIntelSources, "institutional">): Promise<MarketIntelInstitutional | null> {
   const [institutionalResult] = await Promise.allSettled([sources.institutional]);
   const institutionalRaw = settledValue(institutionalResult);
   if (!institutionalRaw) return null;
   const institutions = institutionalRaw.institutions ?? [];
-  const line = (matchName: string) => {
-    const found = institutions.find((inst) => inst.name?.includes(matchName));
-    return found ? { buy: found.buy, sell: found.sell, net: found.net } : null;
+  const line = (bucket: "foreign" | "investmentTrust" | "dealer") => {
+    const matched = institutions.filter((inst) => classifyInstitutionalName(inst.name) === bucket);
+    if (matched.length === 0) return null;
+    return matched.reduce(
+      (acc, inst) => ({
+        buy: acc.buy + (inst.buy ?? 0),
+        sell: acc.sell + (inst.sell ?? 0),
+        net: acc.net + (inst.net ?? 0),
+      }),
+      { buy: 0, sell: 0, net: 0 },
+    );
   };
   return {
     asOf: institutionalRaw.asOf ?? null,
     totalNet: institutionalRaw.totalNet ?? null,
-    foreign: line("外"),
-    invest: line("投信"),
-    dealer: line("自營"),
+    foreign: line("foreign"),
+    invest: line("investmentTrust"),
+    dealer: line("dealer"),
   };
 }
