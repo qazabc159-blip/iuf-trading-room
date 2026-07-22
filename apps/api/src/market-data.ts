@@ -211,6 +211,11 @@ export async function getCompaniesLiteCached(
 }
 
 const MARKET_HEATMAP_LIMIT = 180;
+// Cap for buildMarketContext()'s live-quote heatmap below (distinct from
+// MARKET_HEATMAP_LIMIT, which caps buildDailyBarMarketContext()'s heatmap).
+// Comparing the live heatmap's length against the wrong function's cap is the
+// exact bug this constant fixes -- see _shouldLoadDailyMarketContext.
+const OVERVIEW_QUOTE_HEATMAP_LIMIT = 24;
 const DAILY_CONTEXT_SELF_HEAL_DEFAULT_LIMIT = 12;
 const DAILY_CONTEXT_SELF_HEAL_MAX_LIMIT = 30;
 const DAILY_CONTEXT_SELF_HEAL_LOOKBACK_DAYS = 14;
@@ -1470,7 +1475,7 @@ function buildMarketContext(input: {
       if (volumeDelta !== 0) return volumeDelta;
       return Math.abs(quoteChangePctValue(right.quote) ?? 0) - Math.abs(quoteChangePctValue(left.quote) ?? 0);
     })
-    .slice(0, 24)
+    .slice(0, OVERVIEW_QUOTE_HEATMAP_LIMIT)
     .map((row, index) => ({
       symbol: row.quote.symbol,
       market: row.quote.market,
@@ -1540,6 +1545,24 @@ function buildMarketContext(input: {
     },
     heatmap
   };
+}
+
+// Gates getMarketDataOverview()'s call into buildDailyBarMarketContext() (a
+// slow daily-bar fallback path that hits network -- see
+// loadFinMindTaiexIndexContext's unconditional TWSE MI_5MINS_HIST fetch and
+// maybeSelfHealDailyBarRows' FinMind sync). Before this fix, the length check
+// compared quoteMarketContext.heatmap (capped at OVERVIEW_QUOTE_HEATMAP_LIMIT
+// = 24 by buildMarketContext's own .slice) against MARKET_HEATMAP_LIMIT / 2
+// (90) -- a different function's cap -- so the right-hand side was
+// unreachable and this always evaluated true regardless of how complete the
+// live quote heatmap actually was, hitting the network fallback on every
+// /overview call.
+export function _shouldLoadDailyMarketContext(quoteMarketContext: {
+  state: string;
+  heatmap: { length: number };
+}): boolean {
+  return quoteMarketContext.state === "EMPTY"
+    || quoteMarketContext.heatmap.length < OVERVIEW_QUOTE_HEATMAP_LIMIT / 2;
 }
 
 function dateOnly(value: unknown): string {
@@ -4356,7 +4379,7 @@ async function computeMarketDataOverview(input: GetMarketDataOverviewInput) {
     effectiveItems,
     companies
   });
-  const shouldLoadDailyMarketContext = quoteMarketContext.state === "EMPTY" || quoteMarketContext.heatmap.length < MARKET_HEATMAP_LIMIT / 2;
+  const shouldLoadDailyMarketContext = _shouldLoadDailyMarketContext(quoteMarketContext);
   const dailyMarketContext = shouldLoadDailyMarketContext
     ? await buildDailyBarMarketContext({
       session: input.session,

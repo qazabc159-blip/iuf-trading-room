@@ -16824,7 +16824,13 @@ app.get("/api/v1/admin/market/refresh-status", async (c) => {
 
 // =============================================================================
 // Fix 4 — POST /api/v1/admin/companies/seed
-// Idempotently seeds missing canonical companies (1216 統一企業 + 0050 元大台灣50).
+// Idempotently seeds missing canonical companies (1216 統一企業 + 0050 元大台灣50
+// + 4133 亞諾法 + 4178 永笙生技-KY + 6598 Applied BioCode-KY, the latter three
+// added 2026-07-22 to fix overview movers/heatmap rows rendering their raw
+// ticker instead of a name — root cause: these are real, long-listed TWSE
+// tickers (per official TWSE t187ap03_L company registry) simply absent from
+// this canonical seed list, not a bug in market-data.ts's name-resolution
+// fallback).
 // Safe to call multiple times: checks ticker existence before insert.
 // Owner only.  No DB migration required — uses existing companies table.
 // =============================================================================
@@ -16868,6 +16874,45 @@ const CANONICAL_COMPANIES_SEED: Array<{
     exposure: _SEED_EXPOSURE,
     validation: _SEED_VALIDATION,
     notes: "元大台灣50 — 追蹤台灣50指數，前50大市值個股。",
+    themeIds: []
+  },
+  {
+    // Official TWSE 公司簡稱 (t187ap03_L registry): 亞諾法生技股份有限公司.
+    ticker: "4133",
+    name: "亞諾法",
+    market: "生技醫療業",
+    country: "Taiwan",
+    chainPosition: "生技醫療",
+    beneficiaryTier: "Observation",
+    exposure: _SEED_EXPOSURE,
+    validation: _SEED_VALIDATION,
+    notes: "亞諾法 — TWSE 上市 2009/12/28（產業別：生技醫療業）。2026-07-22 補列：先前 overview movers/熱力圖只顯示裸股號無名稱。",
+    themeIds: []
+  },
+  {
+    // Official TWSE 公司簡稱: 永笙-KY（法定中文名：永笙生技股份有限公司）.
+    ticker: "4178",
+    name: "永笙-KY",
+    market: "生技醫療業",
+    country: "Taiwan",
+    chainPosition: "生技醫療",
+    beneficiaryTier: "Observation",
+    exposure: _SEED_EXPOSURE,
+    validation: _SEED_VALIDATION,
+    notes: "永笙-KY（永笙生技股份有限公司） — TWSE 上市 2026/04/30（產業別：生技醫療業）。2026-07-22 補列：先前 overview movers/熱力圖只顯示裸股號無名稱。",
+    themeIds: []
+  },
+  {
+    // Official TWSE 公司簡稱: ABC-KY（登記名稱本身即為英文 Applied BioCode Corporation，無中文法定名）.
+    ticker: "6598",
+    name: "ABC-KY",
+    market: "生技醫療業",
+    country: "Taiwan",
+    chainPosition: "生技醫療",
+    beneficiaryTier: "Observation",
+    exposure: _SEED_EXPOSURE,
+    validation: _SEED_VALIDATION,
+    notes: "ABC-KY（Applied BioCode Corporation） — TWSE 上市 2020/06/09（產業別：生技醫療業）。2026-07-22 補列：先前 overview movers/熱力圖只顯示裸股號無名稱。",
     themeIds: []
   }
 ];
