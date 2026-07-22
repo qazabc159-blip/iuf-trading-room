@@ -23,7 +23,7 @@ test.describe("/ homepage LEDGER RSC", () => {
   // .tac-heat-tile/.idxhist，這些 class 從未出現在實際 markup（現行是
   // .heat-chips/.heatmapgrid .tile/.idxhistband），從這支 spec 建立起就是
   // 假綠斷言、從未真的驗過任何東西——順手修正選擇器對齊真實 DOM。
-  test("desktop 1280 renders heatmap sector chips + tiles + breadth real values + TAIEX chart", async ({ page }, testInfo) => {
+  test("desktop 1280 renders heatmap sector chips + tiles + breadth real values + TAIEX chart @smoke", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
