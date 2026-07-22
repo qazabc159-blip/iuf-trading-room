@@ -85,22 +85,33 @@ def test_missing_quote_without_market_token_returns_clear_error():
 
 
 def test_subscribe_tick_route_returns_503_for_missing_quote_auth():
+    """
+    2026-07-14 (Bruce, path-B pre-deploy fix): the dual-track quote leg
+    (PR #1253 Hunk 1-9) moved /quote/subscribe/tick's auth gate from the
+    trade-leg `session` singleton to the new `quote_session` singleton
+    (app.py:808 `if not quote_session.is_logged_in`). This mock was stale
+    (still patched `gateway_app.session._api`, the trade leg), so
+    quote_session stayed logged-out and the route short-circuited to 401
+    NOT_LOGGED_IN before ever reaching the KGI_QUOTE_AUTH_UNAVAILABLE (503)
+    check this test exists to cover. Pure test-mock update to follow the
+    already-shipped session->quote_session routing; zero app.py change.
+    """
     _clear_buffers()
 
     from fastapi.testclient import TestClient
     import app as gateway_app  # noqa: PLC0415
     import config as cfg  # noqa: PLC0415
 
-    original_api = gateway_app.session._api
+    original_api = gateway_app.quote_session._api
     original_disabled = cfg.settings.QUOTE_DISABLED
-    gateway_app.session._api = SimpleNamespace(_ObjOrder=SimpleNamespace(_URL=SimpleNamespace(token="")))
+    gateway_app.quote_session._api = SimpleNamespace(_ObjOrder=SimpleNamespace(_URL=SimpleNamespace(token="")))
     cfg.settings.QUOTE_DISABLED = False
 
     try:
         client = TestClient(gateway_app.app)
         resp = client.post("/quote/subscribe/tick", json={"symbol": "2330", "odd_lot": False})
     finally:
-        gateway_app.session._api = original_api
+        gateway_app.quote_session._api = original_api
         cfg.settings.QUOTE_DISABLED = original_disabled
 
     assert resp.status_code == 503

@@ -22,8 +22,24 @@ from schemas import Account
 
 _CA_ENV_PATCH_ATTR = "_iuf_ca_env_patch_installed"
 
+# Dual-track quote leg (2026-07-10): thread-local CA override. Trade leg and quote
+# leg are different KGI accounts and may need different CA certificates. When no
+# override is active, _ca_env_values() reads the same two global env vars it always
+# has — trade-leg callers that never pass ca_path/ca_pwd see byte-for-byte identical
+# behaviour to before this patch.
+#
+# Concurrency assumption: the override is installed and removed inside
+# KgiSession.login() around the kgisuperpy.login() call, within the same thread.
+# Sequential logins in one thread are naturally isolated; two CONCURRENT login()
+# calls in the SAME thread cannot happen (login is synchronous). Do not hoist the
+# override outside login() or share it across threads.
+_CA_OVERRIDE = threading.local()
+
 
 def _ca_env_values() -> tuple[str, str]:
+    override = getattr(_CA_OVERRIDE, "value", None)
+    if override is not None:
+        return override
     ca_path = os.environ.get("KGI_CA_PATH", "").strip()
     ca_pwd = (
         os.environ.get("KGI_CA_PWD", "") or os.environ.get("KGI_CA_PW", "")
@@ -307,13 +323,26 @@ class KgiSession:
     # Login
     # ------------------------------------------------------------------
 
-    def login(self, person_id: str, person_pwd: str, simulation: bool = False) -> list[Account]:
+    def login(
+        self,
+        person_id: str,
+        person_pwd: str,
+        simulation: bool = False,
+        ca_path: str = "",
+        ca_pwd: str = "",
+    ) -> list[Account]:
         """
         Call kgisuperpy.login() and cache the api handle + accounts list.
         Returns normalised Account list.
 
         person_id MUST be uppercase — KGI is case-sensitive.
         Source: feedback_kgi_env_var_uppercase_rule.md
+
+        ca_path/ca_pwd (2026-07-10 dual-track): optional per-call CA PFX override.
+        When empty (default — all existing call sites), behaviour is unchanged: the
+        CA patch reads KGI_CA_PATH/KGI_CA_PWD from the process environment exactly
+        as before. Pass explicit values when this session must NOT share the other
+        session's CA credential (quote leg vs trade leg).
 
         Raises:
           KgiPermissionOrCredentialRejected — IsSucceed=False AND RtnCode=78
@@ -335,12 +364,22 @@ class KgiSession:
         )
 
         with self._lock:
-            _install_ca_env_patch_if_configured(_log)
-            login_result = kgisuperpy.login(
-                person_id=person_id.upper(),
-                person_pwd=person_pwd,
-                simulation=simulation,
-            )
+            _ca_override = (ca_path, ca_pwd) if (ca_path or ca_pwd) else None
+            if _ca_override is not None:
+                _CA_OVERRIDE.value = _ca_override
+            try:
+                _install_ca_env_patch_if_configured(_log)
+                login_result = kgisuperpy.login(
+                    person_id=person_id.upper(),
+                    person_pwd=person_pwd,
+                    simulation=simulation,
+                )
+            finally:
+                if _ca_override is not None:
+                    try:
+                        del _CA_OVERRIDE.value
+                    except AttributeError:
+                        pass
 
             # --- Layer 0: outer poll for DLL callback race condition ---
             #
@@ -565,5 +604,14 @@ class KgiSession:
             self._simulation = None
 
 
-# Module-level singleton — shared across all FastAPI route handlers
+# Module-level singleton — shared across all FastAPI route handlers (trade leg, SIM).
 session = KgiSession()
+
+# Dual-track quote leg (2026-07-10 KGI_DUAL_TRACK_PATCH_PLAN_v1.md).
+# Independent KgiSession instance for a SEPARATE, always-live KGI account used ONLY
+# for market-data (quote/tick/bidask/kbar) subscriptions. Never referenced by
+# /order/create, /position, /trades, /deals, /session/set-account — those all stay
+# on `session` above (SIM, unchanged). If quote-leg login fails, quote_session simply
+# stays is_logged_in=False and quote endpoints degrade to KGI_QUOTE_AUTH_UNAVAILABLE /
+# NOT_LOGGED_IN exactly as they do today — the trade leg is never touched.
+quote_session = KgiSession()

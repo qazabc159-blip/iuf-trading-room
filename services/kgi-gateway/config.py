@@ -35,5 +35,23 @@ class Settings:
     # Mirrors Candidate F pattern. Default false (preserves current behaviour).
     QUOTE_DISABLED: bool = os.environ.get("KGI_GATEWAY_QUOTE_DISABLED", "false").lower() == "true"
 
+    # --- Dual-track quote leg (2026-07-10 KGI_DUAL_TRACK_PATCH_PLAN_v1.md) ---
+    # SIM account (KGI_PERSON_ID / KGI_SIMULATION above) has no quote-tier membership —
+    # confirmed via local bisection 2026-07-10 (member ranking level comes back blank,
+    # market-data token never issued). The quote leg logs into a SEPARATE, always-live
+    # KGI account whose sole purpose is market-data subscription. It NEVER touches
+    # /order/create, /position, /trades, /deals, /session/set-account — those all stay
+    # on the trade leg (KGI_PERSON_ID/KGI_SIMULATION above), unchanged.
+    KGI_QUOTE_PERSON_ID: str = os.environ.get("KGI_QUOTE_PERSON_ID", "")
+    KGI_QUOTE_PERSON_PWD: str = os.environ.get("KGI_QUOTE_PERSON_PWD", "")
+    KGI_QUOTE_CA_PATH: str = os.environ.get("KGI_QUOTE_CA_PATH", "").strip()
+    KGI_QUOTE_CA_PWD: str = (
+        os.environ.get("KGI_QUOTE_CA_PWD", "") or os.environ.get("KGI_QUOTE_CA_PW", "")
+    ).strip()
+    # Independent from AUTO_LOGIN (trade leg). Default false — operator must opt in
+    # explicitly once KGI_QUOTE_PERSON_ID/PWD are provisioned, so a half-configured
+    # gateway does not spam failed live-login attempts on every boot.
+    QUOTE_AUTO_LOGIN: bool = os.environ.get("KGI_QUOTE_AUTO_LOGIN", "false").lower() == "true"
+
 
 settings = Settings()
