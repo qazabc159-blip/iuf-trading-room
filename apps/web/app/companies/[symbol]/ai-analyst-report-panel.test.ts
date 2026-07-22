@@ -13,14 +13,23 @@
  * pure helper functions that drive the state machine.
  */
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { ReactRunResult, ReactTraceStep } from "./AiAnalystReportPanel";
-import { assessCompanyAiReportQuality } from "./aiAnalystReportQuality";
+import {
+  assessCompanyAiReportQuality,
+  COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS,
+} from "./aiAnalystReportQuality";
 import {
   buildCompanyAiAnalystPrompt,
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
   COMPANY_AI_ANALYST_REQUIRED_SECTIONS,
 } from "./aiAnalystReportContract";
+
+// Read-only: this file NEVER writes to react-loop.ts. It only reads the
+// backend source text to keep the frontend display-gate regex in parity
+// with the backend synthesis gate (single authority).
+const reactLoopSource = readFileSync(new URL("../../../../api/src/brain/react-loop.ts", import.meta.url), "utf8");
 
 // ── Helpers re-implemented for testing (pure, no React deps) ─────────────────
 
@@ -272,6 +281,76 @@ describe("Company AI analyst report quality gate", () => {
     const quality = assessCompanyAiReportQuality("品質保護版：資料不足，僅提供保守分析版。");
     expect(quality.ok).toBe(false);
     expect(quality.reason).toBe("quality_protected");
+  });
+
+  // ── 2026-07-22 display-gate regression ──────────────────────────────────
+  // AI_PIPELINE_DIAGNOSIS_20260722.md: the backend synthesizer
+  // (apps/api/src/brain/react-loop.ts) already approves a report as long as
+  // each section header loosely matches `##\s*N[.\s]*標題` (react-loop.ts:91-101).
+  // This frontend used to re-check with a strict literal
+  // `.includes("## N. 標題")` against the *prompt template* string — any
+  // header whitespace/punctuation variance in an already-approved real LLM
+  // report got re-blocked here at display time. No real captured sample was
+  // available in this worktree (see PR description), so this fixture is
+  // reverse-derived from the backend regex itself: same 9 headers, but with
+  // no space after "##" and no space before the section title — a format
+  // the backend regex explicitly tolerates (`\s*` = zero or more).
+  const backendApprovedButDifferentlyFormattedReport = [
+    "##1.公司概況與定位",
+    "台積電是全球晶圓代工龍頭，主要業務涵蓋先進製程與封裝，是半導體供應鏈核心角色。",
+    "##2.今日/最近資料狀態",
+    "即時行情顯示最新價 2425 元，日 K 線日期為 2026-07-20，成交量 29219904 股。",
+    "##3.近期事件與新聞",
+    "重大訊息與 TWSE 公告顯示先進封裝產能持續擴充，AI 精選新聞聚焦半導體需求。",
+    "##4.技術結構",
+    "日 K 線與 20 日均線顯示多頭排列，成交量同步放大，僅供觀察不作下單依據。",
+    "##5.籌碼與法人",
+    "三大法人買超延續，融資融券餘額小幅下滑，資料來源為官方籌碼統計。",
+    "##6.主題與產業鏈位置",
+    "公司位於 AI 伺服器與先進封裝供應鏈核心位置，與上下游供應商連動密切。",
+    "##7.主要風險",
+    "價格波動風險、地緣政治事件風險與資料延遲風險皆需留意。",
+    "##8.AI結論與觀察等級",
+    "觀察等級：可追蹤；本段不構成下單建議。",
+    "##9.資料來源與生成時間",
+    "資料來源：即時行情、日 K 線、三大法人、TWSE 公告；生成時間 2026-07-22。",
+  ].join("\n\n");
+
+  it("[FIXED] accepts a backend-approved real-shape report even when header spacing differs from the literal prompt string", () => {
+    const quality = assessCompanyAiReportQuality(backendApprovedButDifferentlyFormattedReport);
+    expect(quality).toEqual({ ok: true, reason: "ok", blockedTerms: [] });
+  });
+
+  it("[documents the pre-fix bug] the old literal .includes(section) compare would have wrongly blocked all 9 sections of that same report", () => {
+    // Re-implements the exact pre-fix logic this file used to run (strict
+    // substring match against the literal prompt-template headers). Kept
+    // here only to prove the bug was real and stays fixed — not live code.
+    const legacyMissingSections = COMPANY_AI_ANALYST_REQUIRED_SECTIONS.filter(
+      (section) => !backendApprovedButDifferentlyFormattedReport.includes(section)
+    );
+    expect(legacyMissingSections).toEqual(COMPANY_AI_ANALYST_REQUIRED_SECTIONS);
+  });
+});
+
+describe("Company AI analyst report quality gate — frontend/backend gate parity", () => {
+  it("keeps the frontend section-completeness regex in exact parity with the backend gate (apps/api/src/brain/react-loop.ts, single authority — never edited from this lane)", () => {
+    const backendBlock = reactLoopSource.match(
+      /COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS = \[([\s\S]*?)\n\];/
+    );
+    if (!backendBlock) {
+      throw new Error(
+        "COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS not found in react-loop.ts — " +
+          "the backend gate was renamed or moved. Update this parity test's parser " +
+          "(and re-sync apps/web/app/companies/[symbol]/aiAnalystReportQuality.ts) before merging."
+      );
+    }
+    const backendPatterns = [...backendBlock[1].matchAll(/pattern:\s*(\/.+?\/[a-z]*)\s*}/g)].map(
+      (m) => m[1]
+    );
+    const frontendPatterns = COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS.map((entry) =>
+      entry.pattern.toString()
+    );
+    expect(frontendPatterns).toEqual(backendPatterns);
   });
 });
 
