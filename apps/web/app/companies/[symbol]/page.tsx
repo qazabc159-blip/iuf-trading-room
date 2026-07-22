@@ -33,6 +33,7 @@ import { SourceStatusCard }    from "./SourceStatusCard";
 import { TickStreamPanel }     from "./TickStreamPanel";
 import { FullProfilePanels }   from "./FullProfilePanels";
 import { CompanyPageStyleBlock } from "./CompanyPageStyleBlock";
+import { CompanyMobileDrawer } from "./CompanyMobileDrawer";
 import { BidAskPanel }           from "./BidAskPanel";
 import { LiveTickStreamPanel }   from "./LiveTickStreamPanel";
 import { InstitutionalPanel }    from "./InstitutionalPanel";
@@ -647,33 +648,40 @@ export default async function CompanyDetailPage({
             <LiveTickStreamPanel symbol={company.ticker} />
           </div>
 
-          {/* ── 財報與估值：既有 7-tab FinancialsPanel（財報/月營收/資產負債/現金流/估值/市值/股利） ── */}
-          <div id="sec-fin">
+          {/* ── 財報與估值：既有 7-tab FinancialsPanel（財報/月營收/資產負債/現金流/估值/市值/股利） ──
+               手機收合：內容量最大的分頁式面板，手機預設收進抽屜（點開才展）。 */}
+          <CompanyMobileDrawer id="sec-fin" title="財報與估值" meta="七分頁">
             <FinancialsPanel companyId={company.id} />
-          </div>
+          </CompanyMobileDrawer>
 
-          {/* ── 知識圖譜 | 上下游圖譜（DESIGN_NOTES §三 #8/#9） ── */}
-          <div id="company-knowledge" className="co-v3-pairrow">
-            <CoverageKnowledgePanel ticker={company.ticker} />
-            <IndustryGraphPanel
-              ticker={company.ticker}
-              companyName={company.name}
-            />
-          </div>
+          {/* ── 知識圖譜 | 上下游圖譜（DESIGN_NOTES §三 #8/#9） ── 手機收合。 */}
+          <CompanyMobileDrawer id="company-knowledge" title="知識 / 上下游圖譜" meta="產業鏈">
+            <div className="co-v3-pairrow">
+              <CoverageKnowledgePanel ticker={company.ticker} />
+              <IndustryGraphPanel
+                ticker={company.ticker}
+                companyName={company.name}
+              />
+            </div>
+          </CompanyMobileDrawer>
 
-          {/* ── 法人籌碼 | 融資融券（DESIGN_NOTES §三 #11/#12） ── */}
-          <div id="sec-chips" className="co-v3-pairrow">
-            <InstitutionalPanel companyId={company.id} />
-            <MarginShortPanel companyId={company.id} />
-          </div>
+          {/* ── 法人籌碼 | 融資融券（DESIGN_NOTES §三 #11/#12） ── 手機收合。 */}
+          <CompanyMobileDrawer id="sec-chips" title="法人籌碼 / 融資融券" meta="籌碼">
+            <div className="co-v3-pairrow">
+              <InstitutionalPanel companyId={company.id} />
+              <MarginShortPanel companyId={company.id} />
+            </div>
+          </CompanyMobileDrawer>
 
           {/* ── 外資持股與分佈（DESIGN_NOTES §三 #17，`#sec-hold`）。2026-07-17 已拆分：
                ChipsPanel 收斂為純外資持股/股權分散單一職責，不再與上方 InstitutionalPanel/
-               MarginShortPanel 的三大法人/融資券 30 日表重複。 ── */}
-          <ChipsPanel companyId={company.id} />
+               MarginShortPanel 的三大法人/融資券 30 日表重複。手機收合。 ── */}
+          <CompanyMobileDrawer title="外資持股 / 股權分散" meta="籌碼">
+            <ChipsPanel companyId={company.id} />
+          </CompanyMobileDrawer>
 
-          {/* ── 逐筆成交明細 full-width（DESIGN_NOTES §三 #19） ── */}
-          <div id="sec-detail">
+          {/* ── 逐筆成交明細 full-width（DESIGN_NOTES §三 #19） ── 手機收合。 */}
+          <CompanyMobileDrawer id="sec-detail" title="逐筆成交明細" meta="逐筆">
             <Suspense
               fallback={
                 <TickStreamPanel
@@ -686,12 +694,12 @@ export default async function CompanyDetailPage({
             >
               <KBarTickSection kbarPromise={kbarPromise} symbol={company.ticker} fallbackDate={kbarDate} />
             </Suspense>
-          </div>
+          </CompanyMobileDrawer>
 
-          {/* ── 重大訊息 full-width（DESIGN_NOTES §三 #18） ── */}
-          <div id="sec-news">
+          {/* ── 重大訊息 full-width（DESIGN_NOTES §三 #18） ── 手機收合。 */}
+          <CompanyMobileDrawer id="sec-news" title="重大訊息" meta="公告">
             <AnnouncementsPanel companyId={company.id} />
-          </div>
+          </CompanyMobileDrawer>
 
           {/* ── AI 分析師深度報告 ── */}
           <div id="company-ai-report">
@@ -748,17 +756,20 @@ export default async function CompanyDetailPage({
 
       {/* 完整資料區 — 沿用既有 FullProfilePanels（[06]-[11] 延伸細表）不動；
           2026-07-12 D5 dedup 已把公告展開 UI 收斂到 AnnouncementsPanel 並保留此區為連結出口，
-          本輪不重複拆解（見 tests/ci.test.ts COMPANY-ANN-DETAIL-UI-1 guard）。 */}
-      <div id="company-full-profile" className="_co-section-banner">
-        <span className="_co-section-banner-title">完整資料區</span>
-        <span className="_co-section-banner-sub">FinMind 11 資料集（[06]–[11]）</span>
-        <div className="_co-section-banner-tags">
-          <span>財報</span><span>月營收</span><span>法人</span><span>融資券</span><span>股利</span><span>公告</span>
+          本輪不重複拆解（見 tests/ci.test.ts COMPANY-ANN-DETAIL-UI-1 guard）。手機收合：
+          全站最重的延伸表格區，收進抽屜。 */}
+      <CompanyMobileDrawer id="company-full-profile" title="完整資料區" meta="FinMind [06]-[11]">
+        <div className="_co-section-banner">
+          <span className="_co-section-banner-title">完整資料區</span>
+          <span className="_co-section-banner-sub">FinMind 11 資料集（[06]–[11]）</span>
+          <div className="_co-section-banner-tags">
+            <span>財報</span><span>月營收</span><span>法人</span><span>融資券</span><span>股利</span><span>公告</span>
+          </div>
+          <div className="_co-section-banner-desc">財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；資料源狀態不足時會誠實顯示無資料或暫停，不補假。</div>
         </div>
-        <div className="_co-section-banner-desc">財報、月營收、法人籌碼、融資融券、股利政策、重大訊息；資料源狀態不足時會誠實顯示無資料或暫停，不補假。</div>
-      </div>
 
-      <FullProfilePanels companyId={company.id} />
+        <FullProfilePanels companyId={company.id} />
+      </CompanyMobileDrawer>
       </div>
 
     </PageFrame>
