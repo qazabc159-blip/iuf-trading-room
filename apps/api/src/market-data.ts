@@ -42,10 +42,16 @@ type QuoteCacheEntry = Quote & {
   updatedAt: string;
 };
 
+// 2026-07-22 P0 round 7 (home concurrency CPU, see snapshotCachedProviderQuotesBySource
+// below): both methods accept an optional pre-computed `rawQuotesOverride` --
+// when the caller already scanned the cache for this source (once, shared
+// across the whole request), skip the redundant re-scan. Omitted by every
+// caller that doesn't have a shared snapshot to offer -- falls back to the
+// original per-call listCachedProviderQuotes() scan, zero behavior change.
 type QuoteProviderAdapter = {
   source: QuoteSource;
-  listQuotes: (workspaceSlug: string) => Promise<Quote[]>;
-  getStatus: (workspaceSlug: string) => Promise<QuoteProviderStatus>;
+  listQuotes: (workspaceSlug: string, rawQuotesOverride?: Quote[]) => Promise<Quote[]>;
+  getStatus: (workspaceSlug: string, rawQuotesOverride?: Quote[]) => Promise<QuoteProviderStatus>;
 };
 
 // "closed_snapshot" (2026-07-19): the official_close DB fallback tier's
@@ -766,6 +772,30 @@ function snapshotCachedProviderQuoteHistoryBySource(
   const snapshot = new Map<QuoteSource, Quote[]>();
   for (const source of sources) {
     snapshot.set(source, listCachedProviderQuoteHistory(workspaceSlug, source));
+  }
+  return snapshot;
+}
+
+// 2026-07-22 P0 round 7 (home concurrency CPU): same architecture as round 6
+// above, applied to the OTHER cache getMarketDataOverview scans repeatedly --
+// listCachedProviderQuotes ("latest tick", one entry per (source,symbol),
+// much smaller than the history cache but still re-scanned independently by
+// FOUR real call-sites within a single /overview request: listMarketDataProviderStatuses
+// (1x per source via getStatus), listMarketQuotes (1x per source via
+// listQuotes), and getEffectiveMarketQuotes's own internal resolveMarketQuotes
+// call (which calls BOTH listQuotes AND getStatus per source again). Under
+// continuous MIS-sweep writes the write-generation memo busts between these
+// calls the same way round 5 found for history (any real tick landing in the
+// gap bumps quotesGeneration), so this one request could pay for the scan up
+// to 4x per source. Computed once, synchronously, before any of the three
+// dependent calls, and threaded through as `rawQuotesBySource`.
+function snapshotCachedProviderQuotesBySource(
+  workspaceSlug: string,
+  sources: readonly QuoteSource[]
+): Map<QuoteSource, Quote[]> {
+  const snapshot = new Map<QuoteSource, Quote[]>();
+  for (const source of sources) {
+    snapshot.set(source, listCachedProviderQuotes(workspaceSlug, source));
   }
   return snapshot;
 }
@@ -2152,13 +2182,13 @@ function buildCachedProvider(
 ): QuoteProviderAdapter {
   return {
     source,
-    async listQuotes(workspaceSlug) {
+    async listQuotes(workspaceSlug, rawQuotesOverride) {
       await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
-      return listCachedProviderQuotes(workspaceSlug, source);
+      return rawQuotesOverride ?? listCachedProviderQuotes(workspaceSlug, source);
     },
-    async getStatus(workspaceSlug) {
+    async getStatus(workspaceSlug, rawQuotesOverride) {
       await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
-      const quotes = await listCachedProviderQuotes(workspaceSlug, source);
+      const quotes = rawQuotesOverride ?? listCachedProviderQuotes(workspaceSlug, source);
       const freshQuotes = quotes.filter((quote) => !quote.isStale);
       const lastMessageAt = quotes[0]?.timestamp ?? null;
       const connected = source === "manual" ? true : freshQuotes.length > 0;
@@ -2242,11 +2272,13 @@ function round(value: number, digits = 2) {
 export async function listMarketDataProviderStatuses(input: {
   session: AppSession;
   sources?: string;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const requestedSources = parseSourceFilter(input.sources);
   return Promise.all(
     requestedSources.map((source) =>
-      quoteProviders[source].getStatus(input.session.workspace.slug)
+      quoteProviders[source].getStatus(input.session.workspace.slug, input.rawQuotesBySource?.get(source))
     )
   );
 }
@@ -2532,6 +2564,8 @@ export async function listMarketQuotes(input: {
   source?: QuoteSource;
   includeStale?: boolean;
   limit?: number;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const workspaceSlug = input.session.workspace.slug;
   const sources = input.source ? [input.source] : [...quoteProviderSources];
@@ -2543,7 +2577,9 @@ export async function listMarketQuotes(input: {
   );
 
   const quotes = (
-    await Promise.all(sources.map((source) => quoteProviders[source].listQuotes(workspaceSlug)))
+    await Promise.all(sources.map((source) =>
+      quoteProviders[source].listQuotes(workspaceSlug, input.rawQuotesBySource?.get(source))
+    ))
   )
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
@@ -2572,6 +2608,10 @@ export async function listMarketQuoteHistory(input: {
   // historyQuality and barQuality sub-calls instead of each triggering its own.
   // Omitted by every other caller -- falls back to the original per-call scan.
   rawHistoryBySource?: Map<QuoteSource, Quote[]>;
+  // 2026-07-22 P0 round 7: same idea, for the "latest tick" cache this
+  // function ALSO scans (for currentQuotes/preferredSourceBySymbol) -- see
+  // snapshotCachedProviderQuotesBySource's doc.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const workspaceSlug = input.session.workspace.slug;
   await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
@@ -2584,7 +2624,9 @@ export async function listMarketQuoteHistory(input: {
   );
 
   const currentQuotes = (
-    await Promise.all(sources.map((source) => quoteProviders[source].listQuotes(workspaceSlug)))
+    await Promise.all(sources.map((source) =>
+      quoteProviders[source].listQuotes(workspaceSlug, input.rawQuotesBySource?.get(source))
+    ))
   )
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
@@ -2636,6 +2678,13 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
   limit?: number;
   // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
   rawHistoryBySource?: Map<QuoteSource, Quote[]>;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc --
+  // this function has TWO of its own additional call-sites (currentQuotes
+  // inside listMarketQuoteHistory below, and the resolveMarketQuotes call
+  // below it for `resolutions`). resolveMarketQuotes's raw per-source scan is
+  // NOT filtered by the `symbols` argument (filtering happens after), so the
+  // same top-level snapshot is valid input for both.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const history = await listMarketQuoteHistory({
     ...input,
@@ -2648,7 +2697,8 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
       symbols: symbols.join(","),
       market: input.market,
       includeStale: true,
-      limit: input.limit ?? 200
+      limit: input.limit ?? 200,
+      rawQuotesBySource: input.rawQuotesBySource
     })
     : [];
   const resolutionByKey = new Map(
@@ -2730,6 +2780,8 @@ export async function resolveMarketQuotes(input: {
   market?: Market;
   includeStale?: boolean;
   limit?: number;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const workspaceSlug = input.session.workspace.slug;
   const includeStale = input.includeStale ?? false;
@@ -2742,10 +2794,14 @@ export async function resolveMarketQuotes(input: {
 
   const [quotesBySource, providerStatuses] = await Promise.all([
     Promise.all(
-      quoteProviderSources.map((source) => quoteProviders[source].listQuotes(workspaceSlug))
+      quoteProviderSources.map((source) =>
+        quoteProviders[source].listQuotes(workspaceSlug, input.rawQuotesBySource?.get(source))
+      )
     ),
     Promise.all(
-      quoteProviderSources.map((source) => quoteProviders[source].getStatus(workspaceSlug))
+      quoteProviderSources.map((source) =>
+        quoteProviders[source].getStatus(workspaceSlug, input.rawQuotesBySource?.get(source))
+      )
     )
   ]);
 
@@ -2855,6 +2911,8 @@ export async function getEffectiveMarketQuotes(input: {
   market?: Market;
   includeStale?: boolean;
   limit?: number;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const resolutions = await resolveMarketQuotes(input);
   const items = resolutions.map((resolution) => {
@@ -3916,6 +3974,8 @@ export async function listMarketBars(input: {
   limit?: number;
   // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
   rawHistoryBySource?: Map<QuoteSource, Quote[]>;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const interval = input.interval ?? "1m";
   const intervalMs = getBarIntervalMs(interval);
@@ -3928,7 +3988,8 @@ export async function listMarketBars(input: {
     from: input.from,
     to: input.to,
     limit: Math.max((input.limit ?? 100) * 8, 200),
-    rawHistoryBySource: input.rawHistoryBySource
+    rawHistoryBySource: input.rawHistoryBySource,
+    rawQuotesBySource: input.rawQuotesBySource
   });
   const groupedQuotes = new Map<string, Quote[]>();
 
@@ -3985,6 +4046,8 @@ export async function getMarketBarDiagnostics(input: {
   limit?: number;
   // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
   rawHistoryBySource?: Map<QuoteSource, Quote[]>;
+  // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
+  rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
   const bars = await listMarketBars({
     ...input,
@@ -4053,24 +4116,114 @@ export async function getMarketBarDiagnostics(input: {
   });
 }
 
-export async function getMarketDataOverview(input: {
+type GetMarketDataOverviewInput = {
   session: AppSession;
   repo: TradingRoomRepository;
   sources?: string;
   includeStale?: boolean;
   topLimit?: number;
-}) {
+};
+
+// 2026-07-22 P0 round 7 (home concurrency CPU, part 2): even after sharing
+// BOTH the quote-cache scan (this round, see snapshotCachedProviderQuotesBySource)
+// and the history-cache scan (round 6) within a single request, this
+// function's OWN downstream computation is CPU-bound and non-trivial at full
+// symbol-universe scale -- specifically resolveMarketQuotes's per-symbol
+// candidate-building + Zod-parse (quoteResolutionCandidateSchema/
+// quoteResolutionSchema), run TWICE per request (once via
+// getEffectiveMarketQuotes, once via getMarketQuoteHistoryDiagnostics's own
+// internal resolveMarketQuotes call). Measured locally (prod-scale seed,
+// ~1826 symbols): tens of ms per resolveMarketQuotes call. Node is
+// single-threaded for JS execution -- N concurrent /overview requests (e.g.
+// N users loading the homepage within the same second) do not parallelize
+// this cost, they SERIALIZE it, and the event loop can't service ANY other
+// callback while that's happening -- including the callbacks for the
+// already-fast, already-TTL-memoized #1334 kgi/twse index endpoints' own
+// fetches. Confirmed empirically: 5 concurrent /overview-equivalent calls at
+// full prod scale block a same-process sibling `setTimeout` callback for
+// 20-34s (see PR body for before/after numbers).
+//
+// This wrapper mirrors the exact pattern already validated 3x in this
+// codebase (#1323's cachedProviderQuotesMemo/cachedProviderQuoteHistoryMemo,
+// #1334's Fix A on getKgiMarketOverview/getKgiCoreHeatmap): a short TTL,
+// Promise-level memo so N concurrent callers with the SAME query params
+// share ONE real computation instead of each paying for their own -- this is
+// what actually bounds total CPU cost under concurrent load; sharing
+// sub-computations (rounds 6/7 above) reduces the cost of each individual
+// call but does not bound it as the number of concurrent callers grows.
+// TTL (1500ms) sits between #1323's/#1334's precedents (1000ms/2000ms) --
+// short enough that no response is served staler than any individual
+// source's own stale-floor (min 5s for quotes).
+//
+// KNOWN, DELIBERATE behavior change (flagged for Pete's review): two callers
+// hitting /overview with the SAME query params within the same ~1.5s window
+// now get the literal same response object (including the same
+// `generatedAt` timestamp), instead of each getting an independently
+// generated snapshot -- that's the intended mechanism (it's what lets
+// concurrent callers share the cost), not a bug. A failed computation is
+// evicted from the memo immediately (not cached) so one error doesn't poison
+// the TTL window for subsequent callers. Server.ts's route handler never
+// mutates the returned object in place (always spreads into new objects
+// downstream), so sharing the same reference across concurrent callers is
+// safe. resetMarketDataWorkspaceState() below clears this memo too (test
+// isolation, matching the existing convention for the other per-workspace
+// memos in this file).
+const overviewMemoTtlMs = 1500;
+const overviewMemo = new Map<
+  string,
+  { expiresAt: number; promise: Promise<Awaited<ReturnType<typeof computeMarketDataOverview>>> }
+>();
+
+function overviewMemoKey(input: GetMarketDataOverviewInput) {
+  return JSON.stringify([
+    input.session.workspace.slug,
+    input.sources ?? "",
+    input.includeStale ?? false,
+    input.topLimit ?? 5
+  ]);
+}
+
+export async function getMarketDataOverview(input: GetMarketDataOverviewInput) {
+  const key = overviewMemoKey(input);
+  const now = Date.now();
+  const cached = overviewMemo.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+
+  const promise = computeMarketDataOverview(input);
+  overviewMemo.set(key, { expiresAt: now + overviewMemoTtlMs, promise });
+  promise.catch(() => {
+    if (overviewMemo.get(key)?.promise === promise) {
+      overviewMemo.delete(key);
+    }
+  });
+  return promise;
+}
+
+async function computeMarketDataOverview(input: GetMarketDataOverviewInput) {
   const topLimit = input.topLimit ?? 5;
+  // 2026-07-22 P0 round 7 (home concurrency CPU): see
+  // snapshotCachedProviderQuotesBySource's doc above. This request scans the
+  // "latest tick" cache via (at least) providers/listMarketQuotes/
+  // getEffectiveMarketQuotes below, PLUS historyQuality/barQuality's own
+  // internal resolveMarketQuotes+currentQuotes call-sites further down --
+  // compute it once, up front, and thread it through everywhere.
+  const workspaceSlug = input.session.workspace.slug;
+  await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
+  const rawQuotesBySource = snapshotCachedProviderQuotesBySource(workspaceSlug, quoteProviderSources);
   const [providers, companies, quotes] = await Promise.all([
     listMarketDataProviderStatuses({
       session: input.session,
-      sources: input.sources
+      sources: input.sources,
+      rawQuotesBySource
     }),
     getCompaniesLiteCached(input.repo, input.session.workspace.slug),
     listMarketQuotes({
       session: input.session,
       includeStale: input.includeStale,
-      limit: 1000
+      limit: 1000,
+      rawQuotesBySource
     })
   ]);
   const symbols = dedupeSymbolMasters(companies);
@@ -4080,7 +4233,8 @@ export async function getMarketDataOverview(input: {
       session: input.session,
       symbols: qualitySymbols,
       includeStale: true,
-      limit: Math.max(quotes.length, 50)
+      limit: Math.max(quotes.length, 50),
+      rawQuotesBySource
     })
     : {
       generatedAt: new Date().toISOString(),
@@ -4114,9 +4268,10 @@ export async function getMarketDataOverview(input: {
   // doc above). Compute that scan ONCE, synchronously, here -- before either
   // sub-call's own await boundaries give live MIS-sweep writes a chance to
   // land in between -- and hand both sub-calls the same snapshot so they
-  // never re-derive it.
-  const workspaceSlug = input.session.workspace.slug;
-  await ensurePersistedQuoteHistoryLoaded(workspaceSlug);
+  // never re-derive it. (workspaceSlug/rawQuotesBySource are already computed
+  // at the top of this function -- round 7 reuses the SAME quotes snapshot
+  // here too, since historyQuality/barQuality each have their own additional
+  // "latest tick" cache call-sites -- see their rawQuotesBySource docs.)
   const rawHistoryBySource = qualitySymbols
     ? snapshotCachedProviderQuoteHistoryBySource(workspaceSlug, quoteProviderSources)
     : null;
@@ -4127,7 +4282,8 @@ export async function getMarketDataOverview(input: {
         symbols: qualitySymbols,
         includeStale: true,
         limit: Math.max(quotes.length * 4, 100),
-        rawHistoryBySource: rawHistoryBySource!
+        rawHistoryBySource: rawHistoryBySource!,
+        rawQuotesBySource
       }),
       getMarketBarDiagnostics({
         session: input.session,
@@ -4135,7 +4291,8 @@ export async function getMarketDataOverview(input: {
         includeStale: true,
         interval: "1m",
         limit: Math.max(quotes.length * 2, 50),
-        rawHistoryBySource: rawHistoryBySource!
+        rawHistoryBySource: rawHistoryBySource!,
+        rawQuotesBySource
       })
     ])
     : [
@@ -4280,6 +4437,15 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
       bumpQuotesGeneration(workspaceSlug, source);
       bumpHistoryGeneration(workspaceSlug, source);
     }
+    // 2026-07-22 P0 round 7: also evict this workspace's getMarketDataOverview
+    // memo entries (see overviewMemo's doc above) -- otherwise a reset
+    // followed immediately by a test/call within the TTL window could still
+    // be served a pre-reset response.
+    for (const key of [...overviewMemo.keys()]) {
+      if (JSON.parse(key)[0] === workspaceSlug) {
+        overviewMemo.delete(key);
+      }
+    }
     return;
   }
 
@@ -4291,4 +4457,5 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
   historyGeneration.clear();
   cachedProviderQuotesMemo.clear();
   cachedProviderQuoteHistoryMemo.clear();
+  overviewMemo.clear();
 }
