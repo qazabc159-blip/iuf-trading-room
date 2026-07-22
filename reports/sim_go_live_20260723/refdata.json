@@ -1,0 +1,386 @@
+{
+  "generated_at_utc": "2026-07-22T14:54:34.704Z",
+  "purpose": "sizing refdata for 2026-07-23 three-sleeve SIM go-live",
+  "finmind_start_date": "2026-03-24",
+  "adv_window_trading_days": 60,
+  "symbols": {
+    "1271": {
+      "last_close": 62,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 7604787.666666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "1808": {
+      "last_close": 31.95,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 49128624.083333336,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2101": {
+      "last_close": 33.6,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 89805239.58333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2348": {
+      "last_close": 78.8,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 57592547.733333334,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2408": {
+      "last_close": 445.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 45243147327.1,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2425": {
+      "last_close": 45.15,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 100688564.48333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2442": {
+      "last_close": 19.4,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 34614851.45,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2451": {
+      "last_close": 241.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 2445121287.616667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2465": {
+      "last_close": 82.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 201407394.91666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "2634": {
+      "last_close": 65,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 1048576804,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2801": {
+      "last_close": 23.85,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 647223515,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2880": {
+      "last_close": 39.9,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 1287179058,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2883": {
+      "last_close": 29.55,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 2580149016,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2886": {
+      "last_close": 48.2,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 1618251327,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2887": {
+      "last_close": 35.15,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 3068697787,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "2892": {
+      "last_close": 33.95,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 1544149313,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "3006": {
+      "last_close": 217.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 4701472283.733334,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "3093": {
+      "last_close": 48.55,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 187954241.95,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "3147": {
+      "last_close": 230,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 213968494.26666668,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "4113": {
+      "last_close": 14.85,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 6180759.466666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "4174": {
+      "last_close": 28.05,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 17733091.766666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "4416": {
+      "last_close": 10.3,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 6835583.75,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "4513": {
+      "last_close": 22.8,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 22565223.033333335,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5267": {
+      "last_close": 47.1,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 13193736.366666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5289": {
+      "last_close": 1360,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 7013059965.5,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5351": {
+      "last_close": 90.4,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 2798080147.266667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5386": {
+      "last_close": 265.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 912533620.5833334,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5508": {
+      "last_close": 51.8,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 54011363.81666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "5522": {
+      "last_close": 66.1,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 103566928.16666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6026": {
+      "last_close": 14.6,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 72310214.48333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6177": {
+      "last_close": 48.3,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 82493625.61666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6219": {
+      "last_close": 14.25,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 5268902.066666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6265": {
+      "last_close": 48,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 511274274.46666664,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6414": {
+      "last_close": 405,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 715306740,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "6419": {
+      "last_close": 141.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 85656938.81666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6423": {
+      "last_close": 71.8,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 20789363.366666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6505": {
+      "last_close": 77.7,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 1167731433,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "6515": {
+      "last_close": 6500,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 3680413108.5,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6533": {
+      "last_close": 234.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 226553250.33333334,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6535": {
+      "last_close": 89.4,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 27795113.383333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6808": {
+      "last_close": 40.1,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 10215294.283333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6885": {
+      "last_close": 20.85,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 10761628.1,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "6901": {
+      "last_close": 17.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 69717522.41666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "7610": {
+      "last_close": 1835,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 988794431.4666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8039": {
+      "last_close": 193,
+      "last_close_date": "2026-07-20",
+      "adv60_twd": 2479996134,
+      "n_days": null,
+      "source": "v34_csv_wm60"
+    },
+    "8047": {
+      "last_close": 43.3,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 6696039.3,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8059": {
+      "last_close": 15.9,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 8527800.2,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8096": {
+      "last_close": 140.5,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 1526889762.5,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8171": {
+      "last_close": 20.9,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 5788352.033333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8299": {
+      "last_close": 1915,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 18103139265.883335,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8383": {
+      "last_close": 83.7,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 225246459.81666666,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8478": {
+      "last_close": 152,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 40343708.86666667,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8926": {
+      "last_close": 64.7,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 713871760.0333333,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    },
+    "8937": {
+      "last_close": 24.75,
+      "last_close_date": "2026-07-22",
+      "adv60_twd": 12586579.9,
+      "n_days": 60,
+      "source": "finmind_taiwanstockprice"
+    }
+  }
+}

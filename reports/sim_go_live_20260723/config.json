@@ -1,0 +1,36 @@
+{
+  "gateway_url": "http://43.213.204.233:8787",
+  "gateway_url_source": "railway variables --service api (queried 2026-07-22 night; KGI_GATEWAY_URL). Taipei EC2 i-03762861d4ce08932 EIP. NOTE: old report kgi_sim_env_e2e_evidence_v1.md shows 54.249.139.28 = killed Tokyo box, DO NOT USE.",
+  "account": "0012826",
+  "person_id": "F131331910",
+  "person_pwd": "0000",
+  "simulation": true,
+  "credentials_note": "SIM-only credentials, already documented in repo reports (kgi_sim_debugging lessons 5/15). Gateway Gate 2 permanently blocks LIVE orders (services/kgi-gateway/app.py L1247-1261).",
+  "qty_unit_sent": "LOT",
+  "qty_unit_evidence": "kgisuperpy Order.create_order docstring: 'qty : int — 委託張數 or 股數' (張數 when odd_lot=False 整股, 股數 when odd_lot=True 零股). Source: KGI_SUPERPY_VERIFY/evidence_2026-04-23/step4_account_probe_v2.log L140-155 (Big5 decoded 2026-07-22) + brokerport_golden_2026-04-23.md L74. Existing runners (s1-sim-runner.ts L869, v51-sim-basket-runner.ts L656) send SHARE counts with odd_lot=false — suspected 1000x oversize; their 7/14 and 7/21 orders were transport-accepted only, zero confirmed fills, so no fill-side counter-evidence exists. This tool sends LOTS (shares/1000).",
+  "throttle_ms": 300,
+  "max_consecutive_failures": 5,
+  "evidence_file": "evidence/orders_20260723.jsonl",
+  "refdata_file": "refdata.json",
+  "participation_cap_pct_of_adv60": 0.05,
+  "sleeves": [
+    {
+      "sleeve": "v51_c1",
+      "csv": "baskets/v51_sim_basket_2026-07-13.csv",
+      "notional_twd": 3000000,
+      "csv_schema": "v51"
+    },
+    {
+      "sleeve": "v51_c3",
+      "csv": "baskets/v51_c3_sim_basket_2026-07-13_backfill.csv",
+      "notional_twd": 3000000,
+      "csv_schema": "v51"
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "csv": "baskets/v34_sim_shakedown_basket_2026-07-21_v2.csv",
+      "notional_twd": 1000000,
+      "csv_schema": "v34"
+    }
+  ]
+}
