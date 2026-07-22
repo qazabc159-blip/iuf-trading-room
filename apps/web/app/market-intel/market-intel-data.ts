@@ -91,6 +91,13 @@ function isTwTicker(value?: string | null) {
   return /^[0-9]{4}[A-Z]?$/.test(String(value ?? "").trim());
 }
 
+// 只在真的是可跳轉的絕對網址時才回傳，不 fake 連結。
+function realSourceUrl(url?: string | null): string | null {
+  const trimmed = String(url ?? "").trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
+}
+
 function companyHref(symbol?: string | null) {
   return isTwTicker(symbol) ? `/companies/${encodeURIComponent(String(symbol))}` : "/companies";
 }
@@ -112,6 +119,12 @@ export type MarketIntelFeedItem = {
   age: string;
   companyHref: string;
   recommendationHref: string;
+  // 2026-07-22 楊董加碼要求：新聞標題可點擊跳轉原文全文。後端型別（NewsAiItem /
+  // CompanyAnnouncement）都有 url 欄位，但 prod 實測 news-top10 目前 10 則全數
+  // 沒有這個欄位（undefined，非空字串）——真實原因待查（見 PR 交付報告的
+  // backend 缺口一行）。這裡誠實透傳：有值才給連結，沒有值就是 null，前端
+  // 絕不 fake 一個連結。
+  sourceUrl: string | null;
 };
 
 // impact_tier 是後端 enum（HIGH/MID/LOW），沒有 tags 時當 fallback 標籤用——
@@ -140,6 +153,7 @@ function mapNewsItem(item: NewsAiItem, index: number): MarketIntelFeedItem {
     age: minutesAgoText(item.date),
     companyHref: companyHref(item.ticker),
     recommendationHref: recommendationHref(item.ticker),
+    sourceUrl: realSourceUrl(item.url),
   };
 }
 
@@ -178,6 +192,7 @@ function mapAnnouncement(item: CompanyAnnouncement, index: number): MarketIntelF
     age: minutesAgoText(item.date),
     companyHref: companyHref(item.ticker),
     recommendationHref: recommendationHref(item.ticker),
+    sourceUrl: realSourceUrl(item.url),
   };
 }
 
