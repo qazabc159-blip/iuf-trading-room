@@ -24,6 +24,7 @@ import {
   COMPANY_AI_ANALYST_REPORT_TEMPLATE_VERSION,
 } from "./aiAnalystReportContract";
 import { assessCompanyAiReportQuality } from "./aiAnalystReportQuality";
+import { renderMarkdownSimple } from "./renderMarkdownSimple";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,67 +77,6 @@ type PanelPhase =
   | { kind: "complete"; result: ReactRunResult }
   | { kind: "over-budget"; result: ReactRunResult }
   | { kind: "error"; message: string };
-
-// ── Markdown renderer (simple, no XSS risk since content is from our own backend) ──
-
-function renderMarkdownSimple(md: string): React.ReactNode[] {
-  const lines = md.split("\n");
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // H1
-    if (line.startsWith("# ")) {
-      nodes.push(<h2 key={i} className="_ai-md-h1">{line.slice(2)}</h2>);
-      i++;
-      continue;
-    }
-    // H2
-    if (line.startsWith("## ")) {
-      nodes.push(<h3 key={i} className="_ai-md-h2">{line.slice(3)}</h3>);
-      i++;
-      continue;
-    }
-    // H3
-    if (line.startsWith("### ")) {
-      nodes.push(<h4 key={i} className="_ai-md-h3">{line.slice(4)}</h4>);
-      i++;
-      continue;
-    }
-    // Bullet
-    if (line.startsWith("- ") || line.startsWith("* ")) {
-      const bullets: string[] = [];
-      while (i < lines.length && (lines[i].startsWith("- ") || lines[i].startsWith("* "))) {
-        bullets.push(lines[i].slice(2));
-        i++;
-      }
-      nodes.push(
-        <ul key={`ul-${i}`} className="_ai-md-ul">
-          {bullets.map((b, j) => <li key={j}>{b}</li>)}
-        </ul>
-      );
-      continue;
-    }
-    // Blank line
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-    // Paragraph
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !lines[i].startsWith("#") && !lines[i].startsWith("- ") && !lines[i].startsWith("* ")) {
-      para.push(lines[i]);
-      i++;
-    }
-    if (para.length > 0) {
-      nodes.push(<p key={`p-${i}`} className="_ai-md-p">{para.join(" ")}</p>);
-    }
-  }
-
-  return nodes;
-}
 
 // ── Trace step icon ───────────────────────────────────────────────────────────
 
