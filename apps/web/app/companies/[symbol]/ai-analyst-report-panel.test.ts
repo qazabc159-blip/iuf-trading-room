@@ -14,8 +14,11 @@
  */
 
 import { readFileSync } from "node:fs";
+import { createElement, Fragment } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ReactRunResult, ReactTraceStep } from "./AiAnalystReportPanel";
+import { renderMarkdownSimple } from "./renderMarkdownSimple";
 import {
   assessCompanyAiReportQuality,
   COMPANY_AI_ANALYST_REQUIRED_SECTION_PATTERNS,
@@ -30,6 +33,88 @@ import {
 // backend source text to keep the frontend display-gate regex in parity
 // with the backend synthesis gate (single authority).
 const reactLoopSource = readFileSync(new URL("../../../../api/src/brain/react-loop.ts", import.meta.url), "utf8");
+
+// ── Shared fixtures ───────────────────────────────────────────────────────────
+//
+// AI_PIPELINE_DIAGNOSIS_20260722.md: the backend synthesizer
+// (apps/api/src/brain/react-loop.ts) already approves a report as long as
+// each section header loosely matches `##\s*N[.\s]*標題` (react-loop.ts:91-101).
+// This frontend used to re-check with a strict literal
+// `.includes("## N. 標題")` against the *prompt template* string — any
+// header whitespace/punctuation variance in an already-approved real LLM
+// report got re-blocked here at display time. No real captured sample was
+// available in this worktree (see PR description), so this fixture is
+// reverse-derived from the backend regex itself: same 9 headers, but with
+// no space after "##" and no space before the section title — a format
+// the backend regex explicitly tolerates (`\s*` = zero or more). This same
+// fixture also exposed a real `renderMarkdownSimple` infinite loop (Pete
+// review, PR #1341 round 2) — see the "renderMarkdownSimple" describe block
+// below.
+const backendApprovedButDifferentlyFormattedReport = [
+  "##1.公司概況與定位",
+  "台積電是全球晶圓代工龍頭，主要業務涵蓋先進製程與封裝，是半導體供應鏈核心角色。",
+  "##2.今日/最近資料狀態",
+  "即時行情顯示最新價 2425 元，日 K 線日期為 2026-07-20，成交量 29219904 股。",
+  "##3.近期事件與新聞",
+  "重大訊息與 TWSE 公告顯示先進封裝產能持續擴充，AI 精選新聞聚焦半導體需求。",
+  "##4.技術結構",
+  "日 K 線與 20 日均線顯示多頭排列，成交量同步放大，僅供觀察不作下單依據。",
+  "##5.籌碼與法人",
+  "三大法人買超延續，融資融券餘額小幅下滑，資料來源為官方籌碼統計。",
+  "##6.主題與產業鏈位置",
+  "公司位於 AI 伺服器與先進封裝供應鏈核心位置，與上下游供應商連動密切。",
+  "##7.主要風險",
+  "價格波動風險、地緣政治事件風險與資料延遲風險皆需留意。",
+  "##8.AI結論與觀察等級",
+  "觀察等級：可追蹤；本段不構成下單建議。",
+  "##9.資料來源與生成時間",
+  "資料來源：即時行情、日 K 線、三大法人、TWSE 公告；生成時間 2026-07-22。",
+].join("\n\n");
+
+const WELL_FORMED_REPORT = [
+  "## 1. 公司概況與定位",
+  "台積電仍是全球先進製程與高階封裝的核心供應商，2330 是半導體權值核心。",
+  "## 2. 今日/最近資料狀態",
+  "即時行情顯示最新價 2,425 元，日 K 線日期為 2026-06-05，成交量 29,219,904 股。",
+  "## 3. 近期事件與新聞",
+  "重大訊息與 TWSE 公告需確認日期與來源，AI 精選新聞顯示半導體需求仍是焦點。",
+  "## 4. 技術結構",
+  "日 K 線與均線可用於判斷趨勢，20 日線與成交量共同確認，不代表下單建議。",
+  "## 5. 籌碼與法人",
+  "法人資料若延遲，需明確標示來源狀態。",
+  "## 6. 主題與產業鏈位置",
+  "公司位於 AI 伺服器與半導體供應鏈關鍵位置。",
+  "## 7. 主要風險",
+  "價格波動、事件延遲與資料缺口都需要列入風險。",
+  "- 優勢：技術領先",
+  "- 風險：地緣政治",
+  "## 8. AI 結論與觀察等級",
+  "觀察等級：中性觀察；這不是下單建議。",
+  "## 9. 資料來源與生成時間",
+  "資料來源：行情、日 K 線、新聞與公司基本資料。",
+].join("\n\n");
+
+/** Runs a synchronous render call with a wall-clock safety net so a
+ * regression that reintroduces a non-advancing loop branch fails this test
+ * with a clear message instead of hanging the whole CI job silently. The
+ * production-side iteration ceiling in `renderMarkdownSimple` itself is what
+ * actually guarantees termination (a same-thread synchronous infinite loop
+ * cannot be preempted by a timer) — this wrapper is defense-in-depth so the
+ * *test* fails fast and legibly if that guarantee is ever broken. */
+async function renderWithTimeoutGuard(md: string, timeoutMs = 2000): Promise<string> {
+  return Promise.race([
+    Promise.resolve().then(() => {
+      const nodes = renderMarkdownSimple(md);
+      return renderToStaticMarkup(createElement(Fragment, null, nodes));
+    }),
+    new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error(`renderMarkdownSimple did not return within ${timeoutMs}ms — possible regression of the 2026-07-22 infinite-loop fix (PR #1341)`)),
+        timeoutMs
+      );
+    }),
+  ]);
+}
 
 // ── Helpers re-implemented for testing (pure, no React deps) ─────────────────
 
@@ -284,38 +369,9 @@ describe("Company AI analyst report quality gate", () => {
   });
 
   // ── 2026-07-22 display-gate regression ──────────────────────────────────
-  // AI_PIPELINE_DIAGNOSIS_20260722.md: the backend synthesizer
-  // (apps/api/src/brain/react-loop.ts) already approves a report as long as
-  // each section header loosely matches `##\s*N[.\s]*標題` (react-loop.ts:91-101).
-  // This frontend used to re-check with a strict literal
-  // `.includes("## N. 標題")` against the *prompt template* string — any
-  // header whitespace/punctuation variance in an already-approved real LLM
-  // report got re-blocked here at display time. No real captured sample was
-  // available in this worktree (see PR description), so this fixture is
-  // reverse-derived from the backend regex itself: same 9 headers, but with
-  // no space after "##" and no space before the section title — a format
-  // the backend regex explicitly tolerates (`\s*` = zero or more).
-  const backendApprovedButDifferentlyFormattedReport = [
-    "##1.公司概況與定位",
-    "台積電是全球晶圓代工龍頭，主要業務涵蓋先進製程與封裝，是半導體供應鏈核心角色。",
-    "##2.今日/最近資料狀態",
-    "即時行情顯示最新價 2425 元，日 K 線日期為 2026-07-20，成交量 29219904 股。",
-    "##3.近期事件與新聞",
-    "重大訊息與 TWSE 公告顯示先進封裝產能持續擴充，AI 精選新聞聚焦半導體需求。",
-    "##4.技術結構",
-    "日 K 線與 20 日均線顯示多頭排列，成交量同步放大，僅供觀察不作下單依據。",
-    "##5.籌碼與法人",
-    "三大法人買超延續，融資融券餘額小幅下滑，資料來源為官方籌碼統計。",
-    "##6.主題與產業鏈位置",
-    "公司位於 AI 伺服器與先進封裝供應鏈核心位置，與上下游供應商連動密切。",
-    "##7.主要風險",
-    "價格波動風險、地緣政治事件風險與資料延遲風險皆需留意。",
-    "##8.AI結論與觀察等級",
-    "觀察等級：可追蹤；本段不構成下單建議。",
-    "##9.資料來源與生成時間",
-    "資料來源：即時行情、日 K 線、三大法人、TWSE 公告；生成時間 2026-07-22。",
-  ].join("\n\n");
-
+  // See the `backendApprovedButDifferentlyFormattedReport` fixture defined
+  // at module scope above (shared with the renderMarkdownSimple safety
+  // tests further down this file).
   it("[FIXED] accepts a backend-approved real-shape report even when header spacing differs from the literal prompt string", () => {
     const quality = assessCompanyAiReportQuality(backendApprovedButDifferentlyFormattedReport);
     expect(quality).toEqual({ ok: true, reason: "ok", blockedTerms: [] });
@@ -351,6 +407,47 @@ describe("Company AI analyst report quality gate — frontend/backend gate parit
       entry.pattern.toString()
     );
     expect(frontendPatterns).toEqual(backendPatterns);
+  });
+});
+
+// ── renderMarkdownSimple: no-space headers no longer hang the tab ────────────
+//
+// Pete review round 2 (PR #1341): relaxing the display-gate regex (this PR's
+// own fix, above) makes `backendApprovedButDifferentlyFormattedReport` — a
+// report the gate now correctly accepts — REACHABLE by
+// `renderMarkdownSimple()` for the first time. Before the loop-invariant fix
+// in `AiAnalystReportPanel.tsx`, that same no-space-header shape caused a
+// synchronous infinite loop (the paragraph branch excluded any line merely
+// `.startsWith("#")`, so a `"##1.標題"` line matched no branch and never
+// advanced `i`). These tests exercise the actual exported renderer function,
+// not just the gate.
+describe("renderMarkdownSimple — safety against non-advancing lines", () => {
+  it("[FIXED] renders the same no-space-header report the gate now accepts, without hanging", async () => {
+    const html = await renderWithTimeoutGuard(backendApprovedButDifferentlyFormattedReport);
+    // All 9 sections' body text should have been consumed as paragraph
+    // content (the heading line itself renders as plain text since it
+    // doesn't match the exact "## " prefix — see AiAnalystReportPanel.tsx
+    // loop-invariant comment — but the render must complete and must not
+    // silently drop the report).
+    expect(html).toContain("台積電是全球晶圓代工龍頭");
+    expect(html).toContain("生成時間 2026-07-22");
+  });
+
+  it("zero regression: a well-formed report with real heading spaces still renders headings/bullets identically", async () => {
+    const html = await renderWithTimeoutGuard(WELL_FORMED_REPORT);
+    // H2 → <h3>, per renderMarkdownSimple's mapping (see AiAnalystReportPanel.tsx).
+    expect(html).toContain("<h3");
+    expect(html).toContain("公司概況與定位");
+    expect(html).toContain("資料來源與生成時間");
+    // Bullet list still renders as <ul>/<li>.
+    expect(html).toContain("<ul");
+    expect(html).toContain("優勢：技術領先");
+    expect(html).toContain("風險：地緣政治");
+  });
+
+  it("does not hang on a lone '#' line with no title and no space at all", async () => {
+    const html = await renderWithTimeoutGuard(["#", "純文字內容，前一行只有一個井字號。"].join("\n"));
+    expect(html).toContain("純文字內容，前一行只有一個井字號");
   });
 });
 
