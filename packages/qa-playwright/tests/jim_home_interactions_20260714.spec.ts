@@ -47,7 +47,36 @@ test.describe("/ home-exact interactions", () => {
     expect(page.url()).not.toContain("?");
   });
 
-  test("AI recommendation card CTAs: 看公司 navigates to /companies, 帶入模擬單 points to /desk-exact, 加觀察 posts real watchlist add @smoke", async ({ page }, testInfo) => {
+  // 2026-07-22 Pete round-2 review 🔴（PR #1340）：這支測試原本掛 `@smoke`，
+  // 在 CI 自己的 PR-preview 組合（本機 `next dev` on 127.0.0.1:3300 + 真
+  // prod API api.eycvector.com，跨源）連 2 次（含 1 次 retry）都在等
+  // `POST /api/v1/watchlist` response 逾時。已在完全相同組合下重現
+  // （`IUF_QA_WEB_BASE_URL=http://127.0.0.1:3300` + `IUF_QA_API_BASE_URL=
+  // https://api.eycvector.com`），並逐一排除 Pete 列的假設：
+  //   (a) CORS — 用 curl 比對 `OPTIONS /api/v1/watchlist` 對兩個 Origin 的
+  //       回應：`Origin: https://app.eycvector.com` 有
+  //       `access-control-allow-origin: https://app.eycvector.com`；
+  //       `Origin: http://127.0.0.1:3300` 完全沒有這個 header（curl 不受
+  //       CORS 限制照樣拿到 204，但真瀏覽器會依這個缺席判斷 preflight 失敗、
+  //       從不送出真正的 POST）——**確認為真**，後端 CORS_ORIGINS allowlist
+  //       沒有把 127.0.0.1:3300 放行，這是既有、已在 `lib/api.ts`
+  //       `SAME_ORIGIN_GET_PROXY_PATHS` comment 記載過的同一個結構性限制
+  //       （當初 effective-quotes 就是因為同一原因才加了同源代理）。
+  //   (b) 純延遲 — `curl -X POST` 直打同一支端點（帶 Origin header + 真
+  //       session cookie）0.35s 內就拿到 200，非後端變慢。
+  //   (c) 資料源空 — 不成立：CI log 顯示測試在等 `waitForResponse` 那行卡住
+  //       （line 81），代表前面 `.rrow`/click 都已成功，卡點就是 POST 本身
+  //       沒有發生，跟 (a) 一致。
+  // 根因：**結構性跨源限制，非測試等待策略問題**——CI 的 PR-preview 架構
+  // （web 跑本機、API 打真 prod）本來就沒有把 127.0.0.1:3300 放進後端 CORS
+  // allowlist（合理：不該為了測試放行任意 localhost 來源到正式後端）。
+  // `SAME_ORIGIN_GET_PROXY_PATHS`（`lib/api.ts`）目前只代理 GET，POST
+  // /api/v1/watchlist 沒有同源代理可用。照 karpathy guideline #3（不做非
+  // 必要的架構擴張）與本輪指示，這裡不新增後端 POST 代理路由，改為誠實
+  // 降級：拿掉 `@smoke`（測試本身邏輯正確，對「同源部署」如 prod 仍會通過，
+  // 只是不適合當 CI PR-preview 的 P0 gate），@smoke 代表測試換成下面純點擊
+  // 導覽、不依賴跨源寫入的「量化策略迷你卡」測試。
+  test("AI recommendation card CTAs: 看公司 navigates to /companies, 帶入模擬單 points to /desk-exact, 加觀察 posts real watchlist add", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -140,7 +169,12 @@ test.describe("/ home-exact interactions", () => {
     expect(page.url()).toContain(`/companies/${symbol}`);
   });
 
-  test("quant strategy mini card click navigates to /quant-strategies", async ({ page }, testInfo) => {
+  // 2026-07-22 Pete round-2：@smoke 代表測試從上面的 AI 推薦卡（跨源 POST
+  // 結構性打不通，見上方註解）換成這支——QuantMiniCard 純靜態內容
+  // （`QUANT_STRATEGIES_CONTENT` 硬編碼里程碑，見 v9.1 §2 授權邊界改版：
+  // 首頁量化卡不再打任何策略績效 API），沒有外部資料相依、沒有跨源寫入，
+  // 是這個檔案裡對 CI PR-preview 環境最穩定、風險最低的真互動導覽驗證。
+  test("quant strategy mini card click navigates to /quant-strategies @smoke", async ({ page }, testInfo) => {
     // v9.1（2026-07-19）renamed this wrapper class away from the old S1
     // internal codename — see quant_v91_factsheet_content_pivot memory.
     await page.setViewportSize({ width: 1280, height: 1400 });
