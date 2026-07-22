@@ -17,6 +17,7 @@ import {
   FinMindClient,
   FinMindRateLimitError,
   _resetFinMindStats,
+  sanitizeNewsUrl,
   type FinMindPriceAdjRow,
   type FinMindFinancialStatementsRow,
   type FinMindMonthRevenueRow,
@@ -396,4 +397,84 @@ test("T11: getStockKBar token missing — returns empty array and does not fetch
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// ── T12-T14: news-top10 URL passthrough (FinMind wire field is "link", not "url") ──
+
+test("T12: getStockNews maps FinMind's raw 'link' field onto FinMindNewsRow.url", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ token: "test-token", redisClient: cache });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = makeFetchMock([
+    buildOkResponse([
+      {
+        date: "2026-07-22 08:00:00",
+        stock_id: "2330",
+        title: "台積電法說會重點",
+        link: "https://example.com/news/1",
+        source_name: "測試媒體"
+      }
+    ])
+  ]);
+
+  try {
+    const rows = await client.getStockNews("2330", "2026-07-22", "2026-07-22");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].url, "https://example.com/news/1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("T13: getStockNews — missing link → url is undefined (not null, not a fabricated string)", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ token: "test-token", redisClient: cache });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = makeFetchMock([
+    buildOkResponse([
+      { date: "2026-07-22 08:00:00", stock_id: "2317", title: "鴻海公告" }
+    ])
+  ]);
+
+  try {
+    const rows = await client.getStockNews("2317", "2026-07-22", "2026-07-22");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].url, undefined);
+    assert.equal("url" in JSON.parse(JSON.stringify(rows[0])), false, "undefined url must be dropped, not serialized as null");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("T14: getStockNews — non-http(s) link is dropped rather than passed through", async () => {
+  const cache = new MemoryCache();
+  const client = new FinMindClient({ token: "test-token", redisClient: cache });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = makeFetchMock([
+    buildOkResponse([
+      { date: "2026-07-22 08:00:00", stock_id: "2454", title: "聯發科新聞", link: "javascript:alert(1)" }
+    ])
+  ]);
+
+  try {
+    const rows = await client.getStockNews("2454", "2026-07-22", "2026-07-22");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].url, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("sanitizeNewsUrl — accepts http(s), rejects other protocols and malformed input", () => {
+  assert.equal(sanitizeNewsUrl("https://example.com/a"), "https://example.com/a");
+  assert.equal(sanitizeNewsUrl("http://example.com/a"), "http://example.com/a");
+  assert.equal(sanitizeNewsUrl(undefined), undefined);
+  assert.equal(sanitizeNewsUrl(null), undefined);
+  assert.equal(sanitizeNewsUrl(""), undefined);
+  assert.equal(sanitizeNewsUrl("javascript:alert(1)"), undefined);
+  assert.equal(sanitizeNewsUrl("data:text/html,hi"), undefined);
+  assert.equal(sanitizeNewsUrl("not a url"), undefined);
 });
