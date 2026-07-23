@@ -384,6 +384,20 @@ describe("FA8: getFinMindMarketNews deduplication", () => {
 // `todayTaipei()`/`mostRecentTradingDayYYYYMMDD()` functions production
 // code uses, rather than re-implementing (and risking drifting from) the
 // Taipei-date/calendar conversion logic.
+//
+// KNOWN GAP (Pete PR #1348 review 🟡 #2, deliberately not covered here):
+// every `nowMs` below is picked in a "safe window" (06:00 UTC = 14:00
+// Taipei, away from the UTC-midnight boundary) specifically to AVOID a
+// pre-existing, out-of-scope quirk in `todayTaipei()` itself — on a
+// non-UTC-TZ host (e.g. a Taipei-timezone dev machine), `getTimezoneOffset()`
+// cancels out the function's own +8h Taipei adjustment for part of the day,
+// so it can silently return the UTC calendar date instead of the Taipei
+// one during roughly UTC 00:00-08:00. Verified (Pete PR #1348 review) that
+// prod (Railway/Nixpacks Node container) runs `TZ=UTC`, so this does NOT
+// affect prod — it only matters if someone runs tests/scripts on a non-UTC
+// host. If `todayTaipei()`'s own implementation is ever touched, add a
+// dedicated boundary-case test here (a nowMs inside UTC 00:00-08:00) rather
+// than continuing to route around it.
 function makeInstitutionalRowsForDate(date: string) {
   return [
     { date, stock_id: "2330", name: "外陸資", buy: 10_000_000, sell: 5_000_000 },

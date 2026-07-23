@@ -49,6 +49,23 @@ const WINDOW_LINES = 40;
  * Returns 1-indexed line numbers of reconcile*() call sites in `source`
  * that have no wireQtyUnit/isOddLot marker within WINDOW_LINES lines
  * (before or after).
+ *
+ * KNOWN LIMITATION (Pete PR #1348 review 🟡 #1, not fixed this round — text/
+ * grep-level, not AST-level): this window check does NOT verify the marker
+ * actually belongs to the SAME call's order object — it only checks that
+ * the marker string appears somewhere nearby. If a future edit adds two
+ * call sites in one of these files less than ~80 lines apart, where one has
+ * a marker and the other doesn't, the unmarked one could silently borrow
+ * its neighbor's marker and pass when it shouldn't. Verified safe as of
+ * 2026-07-23: every real call-site pair in these 4 files today is >180
+ * lines apart (s1-sim-runner.ts 918/1124, v34-sim-runner.ts 816/969,
+ * v51-sim-basket-runner.ts 700/850, server.ts 5856/6136 — actual line
+ * numbers may drift, the >180-line gap is the invariant that matters). If
+ * this guard ever needs to be hardened against that gap (e.g. after adding
+ * a new close-together call site), tighten the window or switch to
+ * matching the marker inside the same `{...}` argument block specifically —
+ * out of scope for this fast-follow, tracked as a queue item, not fixed
+ * here.
  */
 function findUnmarkedCallSites(source: string): number[] {
   const lines = source.split("\n");
