@@ -12,6 +12,9 @@ type AiRecommendationV3Response = {
   items: Array<{
     ticker: string;
     source: string;
+    bucket?: string;
+    totalScore?: number;
+    action?: string;
     entryZone?: { low?: number; high?: number; reason?: string };
     stopLoss?: number;
     tp1?: number;
@@ -21,6 +24,23 @@ type AiRecommendationV3Response = {
     risk?: string[] | string;
   }>;
 };
+
+// Sync source: apps/web/app/ai-recommendations/v3-view.ts::isActionableV3Item
+// (Pete PR #1353 review 💭 nit). The page filters raw backend items through
+// isActionableV3Item + slices to 5 before rendering `.lead`/`.story` — it
+// does NOT render one DOM node per raw payload.items entry. Asserting DOM
+// count against payload.items.length only happened to be correct because
+// today's fixture data has exactly 5 actionable items; if the backend ever
+// returns >5 items or includes a C-bucket/高風險排除 row, this would go
+// stale and false-red (or worse, false-green on a coincidence). Mirroring
+// the same predicate here keeps the assertion honest without importing
+// across the web/qa-playwright package boundary.
+function isActionableItem(item: AiRecommendationV3Response["items"][number]): boolean {
+  if (item.bucket === "C") return false;
+  if ((item.action ?? "").includes("高風險排除")) return false;
+  if (typeof item.totalScore === "number" && item.totalScore < 65) return false;
+  return true;
+}
 
 // 2026-07-23 (Jim, AI 投研晨報 v2 重設計): 舊版每檔一張 `._src-card` 格狀卡片
 // 全部換成「頭版特稿 (.lead, rank #1) + 內頁欄目 (.story, rank #2-5)」的報紙
@@ -32,7 +52,8 @@ test("/ai-recommendations renders 5+ non-fallback v3 cards with full trade plan"
 
   await page.goto("/ai-recommendations", { waitUntil: "domcontentloaded" });
   await expectNoServerError(page);
-  await expect(page.locator(".amb-shell .lead, .amb-shell .story")).toHaveCount(payload.items.length);
+  const expectedCardCount = Math.min(5, payload.items.filter(isActionableItem).length);
+  await expect(page.locator(".amb-shell .lead, .amb-shell .story")).toHaveCount(expectedCardCount);
   // exactly one lead article (rank #1, 頭版特稿)
   await expect(page.locator(".amb-shell article.lead")).toHaveCount(1);
   await saveRouteScreenshot(page, testInfo, "ai-recommendations");

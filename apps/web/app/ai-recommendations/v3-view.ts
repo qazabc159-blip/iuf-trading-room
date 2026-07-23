@@ -352,17 +352,39 @@ export function mapV3ItemToStockRecCard(
   };
 }
 
-export function getV3MarketScores(items: AiRecommendationV3Item[]): MarketStateScores | null {
+export function getV3MarketScores(
+  items: AiRecommendationV3Item[],
+  response?: AiRecommendationV3Response | null,
+): MarketStateScores | null {
   const first = items.find((item) => item.marketScores || item.marketState);
-  if (!first) return null;
-  const scores = first.marketScores ?? {};
-  return {
-    state: first.marketState ?? null,
-    trend_score: asNumber(scores.trend),
-    range_score: asNumber(scores.range),
-    risk_off_score: asNumber(scores.risk_off ?? scores.riskOff),
-    event_label: scores.event_label ?? scores.eventLabel ?? null,
-  };
+  if (first) {
+    const scores = first.marketScores ?? {};
+    return {
+      state: first.marketState ?? null,
+      trend_score: asNumber(scores.trend),
+      range_score: asNumber(scores.range),
+      risk_off_score: asNumber(scores.risk_off ?? scores.riskOff),
+      event_label: scores.event_label ?? scores.eventLabel ?? null,
+    };
+  }
+
+  // market_risk_off short-circuit responses always have items:[] (see
+  // orchestrator-v3.ts runAiRecommendationV3Body) so there is no per-item
+  // score to find above — but the response DOES carry a real top-level
+  // marketState/marketRiskOffScore. Without this fallback the badge fell
+  // back to MarketStateBadgePlaceholder ("等待 v3 後端市場分數接入") on a
+  // risk-off day, which misreports a deliberate SOP skip as missing data.
+  if (response?.marketState) {
+    return {
+      state: response.marketState,
+      trend_score: null,
+      range_score: null,
+      risk_off_score: asNumber(response.marketRiskOffScore),
+      event_label: null,
+    };
+  }
+
+  return null;
 }
 
 function normalizeStepNumber(value: unknown): ReActStep["step"] | null {

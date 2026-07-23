@@ -266,6 +266,28 @@ describe("AI recommendations v3 view mapping", () => {
     });
   });
 
+  it("falls back to the response's top-level marketState/marketRiskOffScore when items is empty (market_risk_off short-circuit always returns items:[])", () => {
+    const scores = getV3MarketScores([], {
+      status: "market_risk_off",
+      items: [],
+      marketState: "risk_off",
+      marketRiskOffScore: 4,
+    });
+
+    expect(scores).toEqual({
+      state: "risk_off",
+      trend_score: null,
+      range_score: null,
+      risk_off_score: 4,
+      event_label: null,
+    });
+  });
+
+  it("returns null (not a fallback guess) when items is empty and the response has no top-level marketState either", () => {
+    expect(getV3MarketScores([], { status: "empty", items: [] })).toBeNull();
+    expect(getV3MarketScores([])).toBeNull();
+  });
+
   it("maps ReAct trace safely and includes source state observations", () => {
     const steps = mapV3TraceSteps([
       { step: 1, label: "市場狀態", observation: { source: "twse_openapi", sourceState: "live" } },

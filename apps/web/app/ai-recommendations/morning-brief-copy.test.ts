@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMarketRiskOffCopy,
   editionDateLabel,
   fmtConfidence,
   fmtMultiplier,
@@ -8,7 +9,9 @@ import {
   fmtScore,
   generationStatusLabel,
   officialAnnouncementLabel,
+  parseReportMarkdownLines,
   rankLabel,
+  resolveMorningBriefBodyMode,
   splitParagraphs,
 } from "./morning-brief-copy";
 
@@ -92,5 +95,98 @@ describe("number formatters — null/undefined never render as fake 0 or blank",
   it("fmtMultiplier", () => {
     expect(fmtMultiplier(0.9)).toBe("0.9");
     expect(fmtMultiplier(null)).toBe("--");
+  });
+});
+
+// Verbatim (whitespace-for-whitespace) reproduction of the real backend
+// template in apps/api/src/ai-recommendation-v2/orchestrator-v3.ts
+// (runAiRecommendationV3Body, market_risk_off short-circuit branch) with
+// S3/S6 not triggered — those two template lines render as empty strings,
+// which is exactly the case this fixture exercises (consecutive bullets with
+// no separating blank-line artifact left behind).
+const REAL_RISK_OFF_MARKDOWN = `## 市場 risk-off — 暫不推薦新倉（系統程式判斷）
+
+系統計算 programmatic risk_off_score = 4/6，達到 ≥3 閘門。
+依楊董 SOP，risk_off_score >= 3 時不開新 beta 倉，待事件過後重新評估。
+
+觸發訊號（4/6）:
+- S1: VIX > 25 ✓
+- S2: VIX 5d 漲 > 30% ✓
+
+- S4: 10Y 20d 漲 > 25bp ✓
+- S5: WTI 10d 漲 > 10% ✓
+`.trim();
+
+describe("parseReportMarkdownLines", () => {
+  it("parses the real backend risk-off report template into heading/bullet/text lines, stripping markdown syntax characters", () => {
+    const lines = parseReportMarkdownLines(REAL_RISK_OFF_MARKDOWN);
+
+    expect(lines[0]).toEqual({ kind: "heading", text: "市場 risk-off — 暫不推薦新倉（系統程式判斷）" });
+    // "##"/"- " markdown syntax characters must not survive into any parsed text
+    for (const line of lines) {
+      expect(line.text.startsWith("#")).toBe(false);
+      expect(line.text.startsWith("- ")).toBe(false);
+    }
+    const bullets = lines.filter((line) => line.kind === "bullet").map((line) => line.text);
+    expect(bullets).toEqual([
+      "S1: VIX > 25 ✓",
+      "S2: VIX 5d 漲 > 30% ✓",
+      "S4: 10Y 20d 漲 > 25bp ✓",
+      "S5: WTI 10d 漲 > 10% ✓",
+    ]);
+  });
+
+  it("returns an empty array for null/undefined/empty markdown (honest empty, not a fake report)", () => {
+    expect(parseReportMarkdownLines(null)).toEqual([]);
+    expect(parseReportMarkdownLines(undefined)).toEqual([]);
+    expect(parseReportMarkdownLines("")).toEqual([]);
+  });
+});
+
+describe("buildMarketRiskOffCopy — 產品鐵律：不准把內部狀態字串秀給使用者", () => {
+  it("includes the real score number when marketRiskOffScore is present", () => {
+    const copy = buildMarketRiskOffCopy(4);
+    expect(copy.subtitle).toContain("4/6");
+    expect(copy.title).not.toMatch(/market_risk_off/i);
+    expect(copy.subtitle).not.toMatch(/market_risk_off/i);
+  });
+
+  it("falls back to an honest score-less sentence when marketRiskOffScore is null (e.g. DB-reconstructed run)", () => {
+    const copy = buildMarketRiskOffCopy(null);
+    expect(copy.subtitle).not.toContain("/6");
+    expect(copy.title).not.toMatch(/market_risk_off/i);
+    expect(copy.subtitle).not.toMatch(/market_risk_off/i);
+  });
+});
+
+describe("resolveMorningBriefBodyMode", () => {
+  it("prioritizes risk_off even when cardCount is 0 and there is no error — must NOT fall into the generic 'engine hasn't returned data' empty branch", () => {
+    expect(
+      resolveMorningBriefBodyMode({ status: "market_risk_off", error: null, cardCount: 0 }),
+    ).toBe("risk_off");
+  });
+
+  it("prioritizes risk_off even if (hypothetically) cardCount were non-zero", () => {
+    expect(
+      resolveMorningBriefBodyMode({ status: "market_risk_off", error: null, cardCount: 3 }),
+    ).toBe("risk_off");
+  });
+
+  it("falls back to empty when cardCount is 0 and status is a normal (non risk-off) status", () => {
+    expect(
+      resolveMorningBriefBodyMode({ status: "complete", error: null, cardCount: 0 }),
+    ).toBe("empty");
+  });
+
+  it("falls back to empty when there is a fetch error, regardless of status", () => {
+    expect(
+      resolveMorningBriefBodyMode({ status: "complete", error: "401 unauthenticated", cardCount: 5 }),
+    ).toBe("empty");
+  });
+
+  it("returns cards for the normal happy path", () => {
+    expect(
+      resolveMorningBriefBodyMode({ status: "complete", error: null, cardCount: 5 }),
+    ).toBe("cards");
   });
 });

@@ -109,3 +109,76 @@ export const SUB_SCORE_ROWS: Array<{ key: SubScoreKey; label: string; max: numbe
   { key: "technical_structure", label: "技術", max: 20 },
   { key: "valuation_event", label: "估值 / 事件", max: 5 },
 ];
+
+// ── market_risk_off 專屬文案（2026-07-23, Pete PR #1352 review 🟡#3 /
+//    PR #1353 review 🟡#1）──────────────────────────────────────────────
+// 後端在 programmatic risk_off_score >= 3 時直接短路（不打 LLM），回傳
+// status="market_risk_off" + items:[] + 一份完整 finalReportMarkdown（見
+// apps/api/src/ai-recommendation-v2/orchestrator-v3.ts
+// runAiRecommendationV3Body 的 "## 市場 risk-off — 暫不推薦新倉（系統程式
+// 判斷）" 報告）。這是楊董 SOP 的保護性決策，不是 pipeline 異常——舊版
+// EmptyState 的兩支泛用分支（未達門檻 / 引擎尚未回傳）都暗示「還沒有資料」，
+// 會讓交易員誤以為引擎掛了。這裡給獨立、正向措辭的狀態文案，並把真報告內容
+// 解析成可讀段落照常顯示（不是空態，不能被泛用分支蓋掉）。
+
+export type ReportMarkdownLine =
+  | { kind: "heading"; text: string }
+  | { kind: "bullet"; text: string }
+  | { kind: "text"; text: string };
+
+/**
+ * 極簡 markdown 行解析——只處理 finalReportMarkdown 這份固定格式報告會用到
+ * 的三種行型（"## " 標題／"- " 條列／純文字段落），把語法符號去掉，不把
+ * "##"/"-" 這種寫法逐字秀給使用者看。刻意不做完整 markdown 規格（無巢狀列
+ * 表/無 H1/H3，這份報告不會用到），需要更完整解析時再擴充，不要現在過度設計。
+ */
+export function parseReportMarkdownLines(markdown: string | null | undefined): ReportMarkdownLine[] {
+  return splitParagraphs(markdown).map((line): ReportMarkdownLine => {
+    if (line.startsWith("## ")) return { kind: "heading", text: line.slice(3).trim() };
+    if (line.startsWith("- ")) return { kind: "bullet", text: line.slice(2).trim() };
+    return { kind: "text", text: line };
+  });
+}
+
+export type MarketRiskOffCopy = {
+  title: string;
+  subtitle: string;
+};
+
+/**
+ * market_risk_off 專屬文案（正向紀律敘事，非資料異常）。禁止把 "market_risk_off"
+ * 這個內部狀態字串本身顯示給使用者——這裡只用真實的 marketRiskOffScore 數字
+ * 拼出人話。marketRiskOffScore 為 null 時（例如舊 run 從 DB 重建，見
+ * orchestrator-v3.ts::loadLatestAiRecommendationV3RunFromDb 目前固定回傳
+ * marketRiskOffScore: null 的已知限制）仍給誠實但不帶數字的版本，不假造分數。
+ */
+export function buildMarketRiskOffCopy(marketRiskOffScore: number | null | undefined): MarketRiskOffCopy {
+  return {
+    title: "風控啟動：今日暫緩新倉",
+    subtitle:
+      marketRiskOffScore != null
+        ? `盤勢風控訊號 ${marketRiskOffScore}/6 觸發，依既定 SOP 主動縮減本輪推薦，屬於保護資金的正常操作，非引擎異常。`
+        : "盤勢風控訊號已觸發，依既定 SOP 主動縮減本輪推薦，屬於保護資金的正常操作，非引擎異常。",
+  };
+}
+
+export type MorningBriefBodyMode = "risk_off" | "cards" | "empty";
+
+/**
+ * 決定 MorningBriefBody 要走哪個分支——market_risk_off 優先於一般
+ * empty/error 判斷：即使 cardCount===0 且 error===null，只要 status 是
+ * market_risk_off 就必須走專屬分支，不可落入泛用「尚未回傳」文案。抽成純
+ * 函式是因為本 repo 的 vitest 無法轉譯 .tsx JSX（tsconfig jsx:"preserve"，
+ * 無 @vitejs/plugin-react），這是唯一能被 unit test 直接釘住的決策點——
+ * 拿掉 page.tsx 裡對應的 JSX 分支不會讓這支測試變紅，但拿掉/改壞這支函式
+ * 的判斷邏輯會。
+ */
+export function resolveMorningBriefBodyMode(input: {
+  status: string | null | undefined;
+  error: string | null;
+  cardCount: number;
+}): MorningBriefBodyMode {
+  if (input.status === "market_risk_off") return "risk_off";
+  if (input.cardCount === 0 || input.error) return "empty";
+  return "cards";
+}
