@@ -1,0 +1,1049 @@
+{
+  "policy": {
+    "surface": {
+      "version": "market-data-v1.11-overview-quality-rollup",
+      "capabilities": {
+        "providers": true,
+        "policy": true,
+        "symbols": true,
+        "quotes": true,
+        "resolve": true,
+        "effectiveQuotes": true,
+        "consumerSummary": true,
+        "selectionSummary": true,
+        "decisionSummary": true,
+        "history": true,
+        "historyDiagnostics": true,
+        "historyQualitySummary": true,
+        "bars": true,
+        "barDiagnostics": true,
+        "barQualitySummary": true,
+        "overview": true,
+        "overviewQualityRollup": true
+      },
+      "preferredEntryPoints": {
+        "strategy": "/api/v1/market-data/decision-summary",
+        "paper": "/api/v1/market-data/decision-summary",
+        "execution": "/api/v1/market-data/decision-summary",
+        "ops": "/api/v1/market-data/overview",
+        "historyQuality": "/api/v1/market-data/history/diagnostics",
+        "barQuality": "/api/v1/market-data/bars/diagnostics"
+      }
+    },
+    "sourcePriority": [
+      {
+        "source": "kgi",
+        "priority": 5
+      },
+      {
+        "source": "twse_mis",
+        "priority": 4
+      },
+      {
+        "source": "tradingview",
+        "priority": 3
+      },
+      {
+        "source": "paper",
+        "priority": 2
+      },
+      {
+        "source": "manual",
+        "priority": 1
+      }
+    ],
+    "freshnessMs": [
+      {
+        "source": "manual",
+        "staleAfterMs": 60000
+      },
+      {
+        "source": "paper",
+        "staleAfterMs": 15000
+      },
+      {
+        "source": "tradingview",
+        "staleAfterMs": 5000
+      },
+      {
+        "source": "kgi",
+        "staleAfterMs": 5000
+      },
+      {
+        "source": "twse_mis",
+        "staleAfterMs": 60000
+      }
+    ],
+    "historyLimit": [
+      {
+        "source": "manual",
+        "limit": 512
+      },
+      {
+        "source": "paper",
+        "limit": 512
+      },
+      {
+        "source": "tradingview",
+        "limit": 512
+      },
+      {
+        "source": "kgi",
+        "limit": 512
+      },
+      {
+        "source": "twse_mis",
+        "limit": 512
+      }
+    ],
+    "syntheticSources": [
+      "manual",
+      "paper"
+    ]
+  },
+  "surface": {
+    "version": "market-data-v1.11-overview-quality-rollup",
+    "capabilities": {
+      "providers": true,
+      "policy": true,
+      "symbols": true,
+      "quotes": true,
+      "resolve": true,
+      "effectiveQuotes": true,
+      "consumerSummary": true,
+      "selectionSummary": true,
+      "decisionSummary": true,
+      "history": true,
+      "historyDiagnostics": true,
+      "historyQualitySummary": true,
+      "bars": true,
+      "barDiagnostics": true,
+      "barQualitySummary": true,
+      "overview": true,
+      "overviewQualityRollup": true
+    },
+    "preferredEntryPoints": {
+      "strategy": "/api/v1/market-data/decision-summary",
+      "paper": "/api/v1/market-data/decision-summary",
+      "execution": "/api/v1/market-data/decision-summary",
+      "ops": "/api/v1/market-data/overview",
+      "historyQuality": "/api/v1/market-data/history/diagnostics",
+      "barQuality": "/api/v1/market-data/bars/diagnostics"
+    }
+  },
+  "providers": [
+    {
+      "source": "manual",
+      "connected": true,
+      "lastMessageAt": "2026-07-23T02:00:05.000Z",
+      "latencyMs": null,
+      "freshnessStatus": "stale",
+      "readiness": "blocked",
+      "strategyUsable": false,
+      "paperUsable": false,
+      "liveUsable": false,
+      "staleAfterMs": 60000,
+      "subscribedSymbols": [
+        "9001"
+      ],
+      "reasons": [
+        "stale:age_exceeded",
+        "synthetic_source",
+        "non_live_source"
+      ],
+      "errorMessage": null
+    },
+    {
+      "source": "paper",
+      "connected": false,
+      "lastMessageAt": null,
+      "latencyMs": null,
+      "freshnessStatus": "missing",
+      "readiness": "blocked",
+      "strategyUsable": false,
+      "paperUsable": false,
+      "liveUsable": false,
+      "staleAfterMs": 15000,
+      "subscribedSymbols": [],
+      "reasons": [
+        "provider_disconnected",
+        "missing_quote",
+        "synthetic_source",
+        "non_live_source"
+      ],
+      "errorMessage": "Paper quote provider not configured."
+    },
+    {
+      "source": "tradingview",
+      "connected": false,
+      "lastMessageAt": null,
+      "latencyMs": null,
+      "freshnessStatus": "missing",
+      "readiness": "blocked",
+      "strategyUsable": false,
+      "paperUsable": false,
+      "liveUsable": false,
+      "staleAfterMs": 5000,
+      "subscribedSymbols": [],
+      "reasons": [
+        "provider_disconnected",
+        "missing_quote",
+        "non_live_source"
+      ],
+      "errorMessage": "TradingView quote provider not configured."
+    },
+    {
+      "source": "kgi",
+      "connected": false,
+      "lastMessageAt": "2026-07-23T02:01:35.000Z",
+      "latencyMs": null,
+      "freshnessStatus": "stale",
+      "readiness": "blocked",
+      "strategyUsable": false,
+      "paperUsable": false,
+      "liveUsable": false,
+      "staleAfterMs": 5000,
+      "subscribedSymbols": [
+        "2000",
+        "2001",
+        "2002",
+        "2003",
+        "2004"
+      ],
+      "reasons": [
+        "provider_disconnected",
+        "stale:age_exceeded"
+      ],
+      "errorMessage": "KGI quote provider not configured."
+    },
+    {
+      "source": "twse_mis",
+      "connected": false,
+      "lastMessageAt": "2026-07-23T02:02:09.000Z",
+      "latencyMs": null,
+      "freshnessStatus": "stale",
+      "readiness": "blocked",
+      "strategyUsable": false,
+      "paperUsable": false,
+      "liveUsable": false,
+      "staleAfterMs": 60000,
+      "subscribedSymbols": [
+        "2039",
+        "2038",
+        "2037",
+        "2036",
+        "2035",
+        "2034",
+        "2033",
+        "2032",
+        "2031",
+        "2030",
+        "2029",
+        "2028",
+        "2027",
+        "2026",
+        "2025",
+        "2024",
+        "2023",
+        "2022",
+        "2021",
+        "2020",
+        "2019",
+        "2018",
+        "2017",
+        "2016",
+        "2015",
+        "2014",
+        "2013",
+        "2012",
+        "2011",
+        "2010",
+        "2009",
+        "2008",
+        "2007",
+        "2006",
+        "2005",
+        "2004",
+        "2003",
+        "2002",
+        "2001",
+        "2000"
+      ],
+      "reasons": [
+        "provider_disconnected",
+        "stale:age_exceeded",
+        "non_live_source"
+      ],
+      "errorMessage": "TWSE MIS quote provider not configured."
+    }
+  ],
+  "marketContext": {
+    "state": "STALE",
+    "source": "market-data/effective-quotes",
+    "index": {
+      "state": "EMPTY",
+      "symbol": null,
+      "market": "TW_INDEX",
+      "name": "加權指數",
+      "source": null,
+      "last": null,
+      "change": null,
+      "changePct": null,
+      "freshnessStatus": "missing",
+      "reason": "market_index_quote_missing",
+      "history": []
+    },
+    "breadth": {
+      "state": "STALE",
+      "up": 41,
+      "down": 0,
+      "flat": 0,
+      "total": 41,
+      "source": "market-data/effective-quotes",
+      "reason": null
+    },
+    "heatmap": [
+      {
+        "symbol": "2039",
+        "market": "TWSE",
+        "name": "測試公司39",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 141,
+        "prevClose": 139,
+        "change": 2,
+        "changePct": 1.44,
+        "volume": 1473,
+        "weight": 3.171,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2038",
+        "market": "TWSE",
+        "name": "測試公司38",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 140,
+        "prevClose": 138,
+        "change": 2,
+        "changePct": 1.45,
+        "volume": 1466,
+        "weight": 3.169,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2037",
+        "market": "TWSE",
+        "name": "測試公司37",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 139,
+        "prevClose": 137,
+        "change": 2,
+        "changePct": 1.46,
+        "volume": 1459,
+        "weight": 3.167,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2036",
+        "market": "TWSE",
+        "name": "測試公司36",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 138,
+        "prevClose": 136,
+        "change": 2,
+        "changePct": 1.47,
+        "volume": 1452,
+        "weight": 3.165,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2035",
+        "market": "TWSE",
+        "name": "測試公司35",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 137,
+        "prevClose": 135,
+        "change": 2,
+        "changePct": 1.48,
+        "volume": 1445,
+        "weight": 3.163,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2034",
+        "market": "TWSE",
+        "name": "測試公司34",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 136,
+        "prevClose": 134,
+        "change": 2,
+        "changePct": 1.49,
+        "volume": 1438,
+        "weight": 3.161,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2033",
+        "market": "TWSE",
+        "name": "測試公司33",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 135,
+        "prevClose": 133,
+        "change": 2,
+        "changePct": 1.5,
+        "volume": 1431,
+        "weight": 3.159,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2032",
+        "market": "TWSE",
+        "name": "測試公司32",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 134,
+        "prevClose": 132,
+        "change": 2,
+        "changePct": 1.52,
+        "volume": 1424,
+        "weight": 3.157,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2031",
+        "market": "TWSE",
+        "name": "測試公司31",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 133,
+        "prevClose": 131,
+        "change": 2,
+        "changePct": 1.53,
+        "volume": 1417,
+        "weight": 3.154,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2030",
+        "market": "TWSE",
+        "name": "測試公司30",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 132,
+        "prevClose": 130,
+        "change": 2,
+        "changePct": 1.54,
+        "volume": 1410,
+        "weight": 3.152,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2029",
+        "market": "TWSE",
+        "name": "測試公司29",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 131,
+        "prevClose": 129,
+        "change": 2,
+        "changePct": 1.55,
+        "volume": 1403,
+        "weight": 3.15,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2028",
+        "market": "TWSE",
+        "name": "測試公司28",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 130,
+        "prevClose": 128,
+        "change": 2,
+        "changePct": 1.56,
+        "volume": 1396,
+        "weight": 3.148,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2027",
+        "market": "TWSE",
+        "name": "測試公司27",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 129,
+        "prevClose": 127,
+        "change": 2,
+        "changePct": 1.57,
+        "volume": 1389,
+        "weight": 3.146,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2026",
+        "market": "TWSE",
+        "name": "測試公司26",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 128,
+        "prevClose": 126,
+        "change": 2,
+        "changePct": 1.59,
+        "volume": 1382,
+        "weight": 3.144,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2025",
+        "market": "TWSE",
+        "name": "測試公司25",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 127,
+        "prevClose": 125,
+        "change": 2,
+        "changePct": 1.6,
+        "volume": 1375,
+        "weight": 3.141,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2024",
+        "market": "TWSE",
+        "name": "測試公司24",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 126,
+        "prevClose": 124,
+        "change": 2,
+        "changePct": 1.61,
+        "volume": 1368,
+        "weight": 3.139,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2023",
+        "market": "TWSE",
+        "name": "測試公司23",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 125,
+        "prevClose": 123,
+        "change": 2,
+        "changePct": 1.63,
+        "volume": 1361,
+        "weight": 3.137,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2022",
+        "market": "TWSE",
+        "name": "測試公司22",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 124,
+        "prevClose": 122,
+        "change": 2,
+        "changePct": 1.64,
+        "volume": 1354,
+        "weight": 3.135,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2021",
+        "market": "TWSE",
+        "name": "測試公司21",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 123,
+        "prevClose": 121,
+        "change": 2,
+        "changePct": 1.65,
+        "volume": 1347,
+        "weight": 3.133,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2020",
+        "market": "TWSE",
+        "name": "測試公司20",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 122,
+        "prevClose": 120,
+        "change": 2,
+        "changePct": 1.67,
+        "volume": 1340,
+        "weight": 3.13,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2019",
+        "market": "TWSE",
+        "name": "測試公司19",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 121,
+        "prevClose": 119,
+        "change": 2,
+        "changePct": 1.68,
+        "volume": 1333,
+        "weight": 3.128,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2018",
+        "market": "TWSE",
+        "name": "測試公司18",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 120,
+        "prevClose": 118,
+        "change": 2,
+        "changePct": 1.69,
+        "volume": 1326,
+        "weight": 3.126,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2017",
+        "market": "TWSE",
+        "name": "測試公司17",
+        "sector": "鋼鐵工業",
+        "source": "twse_mis",
+        "last": 119,
+        "prevClose": 117,
+        "change": 2,
+        "changePct": 1.71,
+        "volume": 1319,
+        "weight": 3.124,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2016",
+        "market": "TWSE",
+        "name": "測試公司16",
+        "sector": null,
+        "source": "twse_mis",
+        "last": 118,
+        "prevClose": 116,
+        "change": 2,
+        "changePct": 1.72,
+        "volume": 1312,
+        "weight": 3.121,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      }
+    ]
+  },
+  "symbols": {
+    "total": 41,
+    "byMarket": [
+      {
+        "market": "TWSE",
+        "total": 41
+      }
+    ]
+  },
+  "quotes": {
+    "total": 41,
+    "fresh": 0,
+    "stale": 41,
+    "readiness": {
+      "connectedSources": [
+        "manual"
+      ],
+      "disconnectedSources": [
+        "paper",
+        "tradingview",
+        "kgi",
+        "twse_mis"
+      ],
+      "preferredSourceOrder": [
+        "kgi",
+        "twse_mis",
+        "tradingview",
+        "paper",
+        "manual"
+      ],
+      "effectiveSelection": {
+        "total": 41,
+        "ready": 0,
+        "degraded": 0,
+        "blocked": 41,
+        "strategyUsable": 0,
+        "paperUsable": 0,
+        "liveUsable": 0,
+        "bySource": [
+          {
+            "source": "manual",
+            "total": 1
+          },
+          {
+            "source": "paper",
+            "total": 0
+          },
+          {
+            "source": "tradingview",
+            "total": 0
+          },
+          {
+            "source": "kgi",
+            "total": 5
+          },
+          {
+            "source": "twse_mis",
+            "total": 35
+          }
+        ],
+        "fallbackReasons": [
+          {
+            "reason": "higher_priority_stale",
+            "total": 0
+          },
+          {
+            "reason": "higher_priority_missing",
+            "total": 0
+          },
+          {
+            "reason": "higher_priority_unavailable",
+            "total": 1
+          },
+          {
+            "reason": "no_fresh_quote",
+            "total": 0
+          },
+          {
+            "reason": "no_quote",
+            "total": 0
+          }
+        ],
+        "staleReasons": [
+          {
+            "reason": "age_exceeded",
+            "total": 41
+          },
+          {
+            "reason": "missing_last",
+            "total": 0
+          },
+          {
+            "reason": "no_quote",
+            "total": 0
+          },
+          {
+            "reason": "provider_unavailable",
+            "total": 0
+          }
+        ]
+      }
+    },
+    "bySource": [
+      {
+        "source": "manual",
+        "total": 1,
+        "stale": 1
+      },
+      {
+        "source": "paper",
+        "total": 0,
+        "stale": 0
+      },
+      {
+        "source": "tradingview",
+        "total": 0,
+        "stale": 0
+      },
+      {
+        "source": "kgi",
+        "total": 5,
+        "stale": 5
+      },
+      {
+        "source": "twse_mis",
+        "total": 35,
+        "stale": 35
+      }
+    ],
+    "byMarket": [
+      {
+        "market": "TWSE",
+        "total": 41,
+        "stale": 41
+      }
+    ]
+  },
+  "quality": {
+    "evaluatedSymbols": 41,
+    "history": {
+      "total": 41,
+      "strategyReady": 0,
+      "referenceOnly": 0,
+      "insufficient": 41,
+      "primaryReasons": [
+        {
+          "reason": "stale_history",
+          "total": 41
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 1
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 5
+        },
+        {
+          "source": "twse_mis",
+          "total": 35
+        }
+      ]
+    },
+    "bars": {
+      "total": 41,
+      "strategyReady": 0,
+      "referenceOnly": 0,
+      "insufficient": 41,
+      "primaryReasons": [
+        {
+          "reason": "stale_bars",
+          "total": 41
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 1
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 5
+        },
+        {
+          "source": "twse_mis",
+          "total": 35
+        }
+      ]
+    }
+  },
+  "leaders": {
+    "topGainers": [
+      {
+        "symbol": "2005",
+        "market": "TWSE",
+        "name": "測試公司5",
+        "source": "twse_mis",
+        "last": 107,
+        "changePct": 1.9,
+        "volume": 1235,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2006",
+        "market": "TWSE",
+        "name": "測試公司6",
+        "source": "twse_mis",
+        "last": 108,
+        "changePct": 1.89,
+        "volume": 1242,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2007",
+        "market": "TWSE",
+        "name": "測試公司7",
+        "source": "twse_mis",
+        "last": 109,
+        "changePct": 1.87,
+        "volume": 1249,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2008",
+        "market": "TWSE",
+        "name": "測試公司8",
+        "source": "twse_mis",
+        "last": 110,
+        "changePct": 1.85,
+        "volume": 1256,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "9001",
+        "market": "TWSE",
+        "name": "測試公司40",
+        "source": "manual",
+        "last": 55,
+        "changePct": 1.85,
+        "volume": 10,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      }
+    ],
+    "topLosers": [
+      {
+        "symbol": "2004",
+        "market": "TWSE",
+        "name": "測試公司4",
+        "source": "kgi",
+        "last": 204,
+        "changePct": 0.49,
+        "volume": 500,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2000",
+        "market": "TWSE",
+        "name": "測試公司0",
+        "source": "kgi",
+        "last": 200,
+        "changePct": 0.5,
+        "volume": 500,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2001",
+        "market": "TWSE",
+        "name": "測試公司1",
+        "source": "kgi",
+        "last": 201,
+        "changePct": 0.5,
+        "volume": 500,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2002",
+        "market": "TWSE",
+        "name": "測試公司2",
+        "source": "kgi",
+        "last": 202,
+        "changePct": 0.5,
+        "volume": 500,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2003",
+        "market": "TWSE",
+        "name": "測試公司3",
+        "source": "kgi",
+        "last": 203,
+        "changePct": 0.5,
+        "volume": 500,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      }
+    ],
+    "mostActive": [
+      {
+        "symbol": "2039",
+        "market": "TWSE",
+        "name": "測試公司39",
+        "source": "twse_mis",
+        "last": 141,
+        "changePct": 1.44,
+        "volume": 1473,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2038",
+        "market": "TWSE",
+        "name": "測試公司38",
+        "source": "twse_mis",
+        "last": 140,
+        "changePct": 1.45,
+        "volume": 1466,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2037",
+        "market": "TWSE",
+        "name": "測試公司37",
+        "source": "twse_mis",
+        "last": 139,
+        "changePct": 1.46,
+        "volume": 1459,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2036",
+        "market": "TWSE",
+        "name": "測試公司36",
+        "source": "twse_mis",
+        "last": 138,
+        "changePct": 1.47,
+        "volume": 1452,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      },
+      {
+        "symbol": "2035",
+        "market": "TWSE",
+        "name": "測試公司35",
+        "source": "twse_mis",
+        "last": 137,
+        "changePct": 1.48,
+        "volume": 1445,
+        "readiness": "blocked",
+        "freshnessStatus": "stale"
+      }
+    ]
+  }
+}
