@@ -1,0 +1,439 @@
+{
+  "generated_at_utc": "2026-07-23T05:47:16.186Z",
+  "results": [
+    {
+      "sleeve": "v51_c1",
+      "symbol": "1808",
+      "sent_qty_lots": 3,
+      "kgi_order_id": "Y001R",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6219",
+      "sent_qty_lots": 7,
+      "kgi_order_id": "Y001A",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6901",
+      "sent_qty_lots": 5,
+      "kgi_order_id": "Y001B",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 5
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "5522",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001C",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "8926",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001D",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6026",
+      "sent_qty_lots": 6,
+      "kgi_order_id": "Y001E",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 6
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6177",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y001F",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6265",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y001G",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "4513",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001H",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 4
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "8937",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001I",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "5351",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001J",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "4113",
+      "sent_qty_lots": 6,
+      "kgi_order_id": "Y001K",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "2465",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001L",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "6885",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001M",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 4
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "2425",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y001N",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "1271",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "無效單",
+      "kgi_status": "INVALID_REJECTED",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "5508",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001O",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "2101",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y001P",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c1",
+      "symbol": "8171",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001Q",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 4
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "1808",
+      "sent_qty_lots": 3,
+      "kgi_order_id": null,
+      "kgi_status": "AMBIGUOUS_DUP_SYMBOL_NO_DISTINCT_RECORD",
+      "filled_qty_lots": null
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6219",
+      "sent_qty_lots": 7,
+      "kgi_order_id": "Y001S",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 7
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "5522",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001T",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6026",
+      "sent_qty_lots": 6,
+      "kgi_order_id": "Y001U",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6177",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y001V",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "8926",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y001W",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "4513",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001X",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "4113",
+      "sent_qty_lots": 6,
+      "kgi_order_id": "Y001Y",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 6
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6885",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y001Z",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "2465",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y0020",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "2348",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y0021",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6535",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y0022",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "8171",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y0023",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "2425",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y0024",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "4416",
+      "sent_qty_lots": 9,
+      "kgi_order_id": "Y0025",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "2442",
+      "sent_qty_lots": 5,
+      "kgi_order_id": "Y0026",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "4174",
+      "sent_qty_lots": 3,
+      "kgi_order_id": "Y0027",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 3
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "5508",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y0028",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "8047",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y0029",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "8059",
+      "sent_qty_lots": 6,
+      "kgi_order_id": "Y002A",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "5267",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "無效單",
+      "kgi_status": "INVALID_REJECTED",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "2101",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002B",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6808",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "無效單",
+      "kgi_status": "INVALID_REJECTED",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "6423",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y002C",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "8383",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y002D",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v51_c3",
+      "symbol": "3093",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002E",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2887",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002F",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2883",
+      "sent_qty_lots": 3,
+      "kgi_order_id": "Y002G",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 3
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2886",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002H",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2892",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002I",
+      "kgi_status": "PartFilled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2880",
+      "sent_qty_lots": 2,
+      "kgi_order_id": "Y002J",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 2
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "6505",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y002K",
+      "kgi_status": "Submitted",
+      "filled_qty_lots": 0
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2634",
+      "sent_qty_lots": 1,
+      "kgi_order_id": "Y002L",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 1
+    },
+    {
+      "sleeve": "v34_c3_proxy",
+      "symbol": "2801",
+      "sent_qty_lots": 4,
+      "kgi_order_id": "Y002M",
+      "kgi_status": "Filled",
+      "filled_qty_lots": 4
+    }
+  ],
+  "byStatus": {
+    "PartFilled": 7,
+    "Submitted": 11,
+    "Filled": 31,
+    "INVALID_REJECTED": 3,
+    "AMBIGUOUS_DUP_SYMBOL_NO_DISTINCT_RECORD": 1
+  },
+  "totalFilledLots": 82,
+  "dealAggEntries": 38,
+  "dealAggTotal": 82
+}
