@@ -84,3 +84,34 @@ synthesis 自 6/05 起幾乎從未真正產出內容（100% `EMPTY_CONTENT_lengt
 僅讀取（`Read`/`Grep`/`git log`/`git show`/`railway logs`/`railway variables`/`curl` 唯讀
 admin 端點）。0 code change。未碰 `OPENAI_MODEL` 釘選、未碰任何 guard 邏輯、未碰
 KGI gateway、未觸發 >3 次真實 LLM 呼叫（本輪 0 次新觸發）。
+
+---
+
+## 修復進度追蹤（誠實記錄，尚未 RESOLVED）— 2026-07-23 稍晚
+
+**PR #1344（maxTokens 修復）**：Pete round 1 NEEDS_FIX（沿用 `#991` 自己當天就被
+`#996`(`0f71c1bd`) 推翻的舊值）→ round 2 對齊 `#996` 已實戰驗證值（synthesis 8000→28000、
+react_reason 4000→16000，並連帶修正 `openalice-strategy-brief.ts` 同款零呼叫紀錄的
+`MAX_TOKENS_GENERATOR`）→ Pete round 2 APPROVED → **已 merge（merge commit
+`abd3946d`）+ deploy 完成**（`GET /health` `buildCommit=abd3946d` 核對一致）。
+
+**Post-merge 真觸發驗證（本輪，2330）— 發現第二個真 bug，非 RESOLVED**：用與前端相同的
+prompt/context（`buildCompanyAiAnalystPrompt("2330")`）打
+`POST /api/v1/admin/brain/react/run`，`run_id=bccb4f1a-0cf3-4942-8ae4-1b9452fa2732`。
+**仍然回傳同一句佔位訊息**「報告生成失敗（LLM 配額不足）」，但這次原因不同：查
+`GET /api/v1/admin/llm/calls` 該筆 `brain_react_synthesis` 呼叫顯示
+`status=failed, errorCode=FETCH_ERROR, latencyMs=25002`——`25002ms` 精準對上
+`llm-gateway.ts:108` 的 `DEFAULT_TIMEOUT_MS=25_000`（`AbortController` 在整整 25 秒觸發，
+非真網路錯誤）。根因：`react-loop.ts` 的 synthesis `callLlm()` 呼叫從未設定 `timeoutMs`，
+沿用 25 秒預設——`maxTokens=1500/8000` 時代夠用，但 #1344 把它拉到 28000 後，一次
+28000-token 的 gpt-5.5 生成經常超過 25 秒，請求會在生成中途被中止。`orchestrator-v3.ts`
+的姊妹 synthesis callsite（同樣 `maxTokens=28000`、同模型）一直都設
+`V3_SYNTHESIS_TIMEOUT_MS=240_000`，本輪對齊此值修正。
+
+**PR #1346（timeout 修復，new）**：`apps/api/src/brain/react-loop.ts` 該 callsite
+補 `timeoutMs: 240_000`。CI 5/5 綠（validate/DB-mode/Playwright P0/Secret
+Regression/W6）。**DRAFT，尚未 merge**：https://github.com/qazabc159-blip/iuf-trading-room/pull/1346
+
+**目前狀態**：`BLOCKED_PENDING_PR_1346_MERGE`——公司報告 synthesis 仍會在 prod 失敗
+（timeout 而非 token 不足），直到 #1346 merge+deploy 後才能重新真觸發驗證。**不宣稱
+RESOLVED**，待 #1346 merge 後本人會立刻重新觸發並回填最終驗證結果段落。
