@@ -736,7 +736,14 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
       workspaceId: opts.workspaceId,
       // gpt-5.5 needs more budget per ReAct step due to reasoning tokens.
       // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
-      maxTokens: 2048,
+      // 2026-06-05 #991 (f0816a7b) left this at 2048; #996 (0f71c1bd, ~70 min later, same
+      // day) found 2048 was STILL insufficient for gpt-5.5's reasoning overhead and raised
+      // the sibling ai_rec_v2 react_reason callsite to 16000
+      // (ai-recommendation-v2/orchestrator-v3.ts:3064) — this callsite is aligned to that
+      // same already-battle-tested value (Pete PR #1344 round-2 review, 2026-07-23) rather
+      // than #991's own since-refuted number. Floor is 12000 (see GPT55-UPGRADE-7 in
+      // tests/ci.test.ts).
+      maxTokens: 16000,
       temperature: 0.1
     });
 
@@ -844,7 +851,24 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
           callerModule: "brain_react_synthesis",
           taskType: "react_synthesis",
           workspaceId: opts.workspaceId,
-          maxTokens: 1500,
+          // 2026-07-23 RCA (reports/design_redesign_20260722/COMPANY_REPORT_LLM_OUTAGE_20260723.md):
+          // this was left at maxTokens:1500 (set 2026-05-19, #736) when #991 (2026-06-05,
+          // f0816a7b) switched LOOP_MODEL_KEY to gpt-5.5 but missed this callsite. Result:
+          // finish_reason=length -> empty content -> 100% synthesis failure for ~7 weeks.
+          // Round-2 correction (Pete PR #1344 review): #991's OWN sibling numbers (8000
+          // synthesis / 2048 react_reason) were themselves found insufficient ~70 minutes
+          // later by #996 (0f71c1bd, same day) — "The gpt-5.5 upgrade (#991) left maxTokens
+          // at 2048 (ReAct step) and 8000 (synthesis) despite the comments saying reasoning
+          // models need more... the JSON/markdown answer is empty" (#996 commit message,
+          // literally this same failure class). #996 raised ai_rec_v2's synthesis to
+          // 28000/32000 (orchestrator-v3.ts:2726). This callsite is aligned to that
+          // already-battle-tested value rather than #991's since-refuted 8000 — no basis to
+          // assume a 9-section company report needs less reasoning budget than ai_rec_v2's
+          // multi-stock synthesis. Cost headroom: HARD_MAX_COST_USD=$5.0/
+          // DEFAULT_COST_CAP_USD=$1.0 (unchanged, react-loop.ts:82,84) already bound actual
+          // per-run spend by real cost incurred, not by this ceiling — a full 28000-token
+          // completion at gpt-5.5's $30/1M output price is ~$0.84, still under both caps.
+          maxTokens: 28000,
           temperature: 0.2
         }
       );

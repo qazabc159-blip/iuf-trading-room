@@ -47,10 +47,17 @@ import { sanitizeBriefBody } from "./openalice-pipeline.js";
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const STALE_AFTER_MS = 26 * 60 * 60 * 1000; // 26h — covers one full trading day
-// Increased from 2400 to 6000 to accommodate gpt-5.5 reasoning tokens.
-// gpt-5.5 uses internal reasoning tokens (not visible in output) before generating content.
-// With a 7-section narrative brief, gpt-5.5 may use 2000-3000 reasoning tokens + 2000-3000 output.
-const MAX_TOKENS_GENERATOR = 6_000;
+// 2026-07-23 (PR #1344 round-2, GPT55-UPGRADE-7 floor raise): this was 6000 (raised from
+// 2400 by #991 on 2026-06-05, with the same "2000-3000 reasoning + 2000-3000 output"
+// estimate that #991's OWN sibling numbers used elsewhere — and those sibling numbers
+// (8000 synthesis / 2048 react_reason) were proven insufficient ~70 minutes later by #996,
+// same day, for a comparably-sized prose task. This callsite has recorded ZERO calls in
+// the 6/1-7/23 llm_cost_daily ledger (checked via /api/v1/admin/llm/usage), so there is no
+// production evidence it ever actually worked at 6000 with gpt-5.5 — raised to the same
+// battle-tested value #996 established for multi-section prose synthesis, to avoid this
+// legacy/rarely-triggered endpoint carrying the exact same latent failure the rest of this
+// PR fixes elsewhere, the first time someone does trigger it.
+const MAX_TOKENS_GENERATOR = 28_000;
 const MAX_TOKENS_HALLUCINATION_CHECK = 600;
 const YAML_DIR_REL_TO_FILE = join(
   fileURLToPath(new URL(".", import.meta.url)),
