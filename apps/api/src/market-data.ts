@@ -537,16 +537,26 @@ function updateHistoryAggregate(
   });
 }
 
-// Test-only accessor (matches this file's existing `_`-prefixed export convention,
-// e.g. _shouldLoadDailyMarketContext / _applyOfficialCloseFallback) -- no production
-// call site reads this in this PR.
-export function _getHistoryAggregateForTest(
+// 2026-07-23 (PR-3): this lookup was originally test-only (PR-2 had no production
+// consumer yet). buildOverviewQualitySummaries below is now the real production
+// caller; _getHistoryAggregateForTest is kept as a thin wrapper so PR-2's existing
+// parity tests (overview-quality-aggregate-parity.test.ts) keep working unchanged.
+function getHistoryAggregate(
   workspaceSlug: string,
   source: QuoteSource,
   market: Market,
   symbol: string
 ): HistoryAggregate | undefined {
   return getHistoryAggregateCacheForWorkspace(workspaceSlug).get(buildQuoteCacheKey(symbol, market, source));
+}
+
+export function _getHistoryAggregateForTest(
+  workspaceSlug: string,
+  source: QuoteSource,
+  market: Market,
+  symbol: string
+): HistoryAggregate | undefined {
+  return getHistoryAggregate(workspaceSlug, source, market, symbol);
 }
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi", "twse_mis"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "twse_mis", "tradingview", "paper", "manual"];
@@ -853,35 +863,19 @@ function listCachedProviderQuoteHistory(workspaceSlug: string, source: QuoteSour
   return result;
 }
 
-// 2026-07-21 P0 round 6 (architecture fix, not another memo tweak): round 5's
-// own conclusion was that under continuous live MIS-sweep traffic, a genuinely
-// new tick can (and typically does) land in the ~1ms gap between
-// historyQuality's and barQuality's independent calls into
-// listCachedProviderQuoteHistory("twse_mis") -- so the write-generation memo
-// correctly busts almost every time under real load, meaning /overview was
-// still paying for the ~932K-entry scan TWICE per request. No cache-validity
-// strategy (TTL, generation, or any smarter invalidation) can close that gap,
-// because the two calls are genuinely reading at two different instants and
-// the underlying data genuinely changes between them.
-// The actual fix: getMarketDataOverview is the one caller that needs BOTH
-// historyQuality and barQuality to see the SAME per-source history snapshot
-// for the SAME request -- so it now computes that snapshot once, synchronously,
-// before kicking off either sub-call, and threads it down as an explicit
-// `rawHistoryBySource` parameter through listMarketQuoteHistory /
-// getMarketQuoteHistoryDiagnostics / listMarketBars / getMarketBarDiagnostics.
-// This makes sharing a property of the call graph, not of a cache's timing
-// luck. All other (non-overview) callers of those four functions omit the
-// parameter and keep the exact previous per-call-scan behavior untouched.
-function snapshotCachedProviderQuoteHistoryBySource(
-  workspaceSlug: string,
-  sources: readonly QuoteSource[]
-): Map<QuoteSource, Quote[]> {
-  const snapshot = new Map<QuoteSource, Quote[]>();
-  for (const source of sources) {
-    snapshot.set(source, listCachedProviderQuoteHistory(workspaceSlug, source));
-  }
-  return snapshot;
-}
+// 2026-07-21 P0 round 6 introduced a `snapshotCachedProviderQuoteHistoryBySource()`
+// helper + `rawHistoryBySource` parameter (threaded through listMarketQuoteHistory /
+// getMarketQuoteHistoryDiagnostics / listMarketBars / getMarketBarDiagnostics) so
+// getMarketDataOverview's historyQuality/barQuality sub-calls could share ONE
+// O(#ticks) scan of the history cache instead of each triggering its own. 2026-07-23
+// PR-3 (plan: reports/design_redesign_20260722/OVERVIEW_2S_ARCH_PLAN_20260722.md §3
+// 案 A) removed getMarketDataOverview's only call site for that snapshot entirely --
+// its quality section now reads the O(#symbols) historyAggregateCache (PR-2, see
+// buildOverviewQualitySummaries below) and never touches the raw tick cache at all.
+// The snapshot helper and the `rawHistoryBySource` parameter it fed were therefore
+// removed as dead code (zero remaining producers). The two /diagnostics endpoints
+// (server.ts routes) still call getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics
+// directly, unchanged -- full per-request scan, exactly as before this PR.
 
 // 2026-07-22 P0 round 7 (home concurrency CPU): same architecture as round 6
 // above, applied to the OTHER cache getMarketDataOverview scans repeatedly --
@@ -2727,14 +2721,8 @@ export async function listMarketQuoteHistory(input: {
   from?: string;
   to?: string;
   limit?: number;
-  // 2026-07-21 P0 round 6: optional caller-supplied snapshot (see
-  // snapshotCachedProviderQuoteHistoryBySource) so getMarketDataOverview can
-  // share ONE scan of the (potentially ~932K-entry) history cache between its
-  // historyQuality and barQuality sub-calls instead of each triggering its own.
-  // Omitted by every other caller -- falls back to the original per-call scan.
-  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
-  // 2026-07-22 P0 round 7: same idea, for the "latest tick" cache this
-  // function ALSO scans (for currentQuotes/preferredSourceBySymbol) -- see
+  // 2026-07-22 P0 round 7: for the "latest tick" cache this function scans
+  // (for currentQuotes/preferredSourceBySymbol) -- see
   // snapshotCachedProviderQuotesBySource's doc.
   rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
@@ -2759,11 +2747,8 @@ export async function listMarketQuoteHistory(input: {
 
   const preferredSourceBySymbol = input.source ? null : getPreferredSourceBySymbol(currentQuotes);
 
-  const history = (
-    input.rawHistoryBySource
-      ? sources.map((source) => input.rawHistoryBySource!.get(source) ?? [])
-      : sources.map((source) => listCachedProviderQuoteHistory(workspaceSlug, source))
-  )
+  const history = sources
+    .map((source) => listCachedProviderQuoteHistory(workspaceSlug, source))
     .flat()
     .filter((quote) => !input.market || quote.market === input.market)
     .filter((quote) => symbolSet.size === 0 || symbolSet.has(quote.symbol))
@@ -2801,8 +2786,6 @@ export async function getMarketQuoteHistoryDiagnostics(input: {
   from?: string;
   to?: string;
   limit?: number;
-  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
-  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
   // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc --
   // this function has TWO of its own additional call-sites (currentQuotes
   // inside listMarketQuoteHistory below, and the resolveMarketQuotes call
@@ -4097,8 +4080,6 @@ export async function listMarketBars(input: {
   from?: string;
   to?: string;
   limit?: number;
-  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
-  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
   // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
   rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
@@ -4113,7 +4094,6 @@ export async function listMarketBars(input: {
     from: input.from,
     to: input.to,
     limit: Math.max((input.limit ?? 100) * 8, 200),
-    rawHistoryBySource: input.rawHistoryBySource,
     rawQuotesBySource: input.rawQuotesBySource
   });
   const groupedQuotes = new Map<string, Quote[]>();
@@ -4169,8 +4149,6 @@ export async function getMarketBarDiagnostics(input: {
   from?: string;
   to?: string;
   limit?: number;
-  // 2026-07-21 P0 round 6: see listMarketQuoteHistory's rawHistoryBySource doc.
-  rawHistoryBySource?: Map<QuoteSource, Quote[]>;
   // 2026-07-22 P0 round 7: see snapshotCachedProviderQuotesBySource's doc above.
   rawQuotesBySource?: Map<QuoteSource, Quote[]>;
 }) {
@@ -4326,6 +4304,126 @@ export async function getMarketDataOverview(input: GetMarketDataOverviewInput) {
   return promise;
 }
 
+// 2026-07-23 (perf/overview-quality-aggregate PR-3, plan: reports/design_redesign_20260722/
+// OVERVIEW_2S_ARCH_PLAN_20260722.md §3 案 A -- "收割 PR"): the ONLY production consumer of
+// PR-2's historyAggregateCache. computeMarketDataOverview's quality section used to call
+// getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics, which (even after rounds 6/7's
+// shared-snapshot work) still had to materialize+sort the full per-source tick cache
+// (~932K entries for twse_mis) at O(#ticks) cost every request. This reads the
+// incrementally-maintained O(#symbols) aggregate instead -- no tick cache scan at all.
+// The two /diagnostics routes (server.ts) are UNCHANGED: they still call
+// getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics directly, full per-request scan.
+//
+// Preferred-source selection mirrors listMarketQuoteHistory's own
+// getPreferredSourceBySymbol(currentQuotes) call exactly (same function, same shape of
+// input -- the currentQuotes flattened from the SAME rawQuotesBySource snapshot
+// computeMarketDataOverview already built for this request), so a symbol's chosen source
+// here can never disagree with what the (still full-scan) /diagnostics endpoints would
+// pick for the same live cache state.
+//
+// KNOWN, DELIBERATE difference from the pre-PR-3 overview quality numbers (see PR body's
+// before/after section, cross-referenced against PR-1's golden snapshot): the old path fed
+// getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics a merged, globally-sorted,
+// multi-symbol history array that was SLICED to a request-level limit
+// (Math.max(quotes.length*4, 100) for history / Math.max(quotes.length*2, 50) for bars)
+// BEFORE grouping by symbol -- so a symbol whose surviving ticks all fell outside that
+// global top-N-by-recency window got ZERO history points credited for that request, even
+// though its full retained history (bounded only by getQuoteHistoryLimit, default 512)
+// was sitting untouched in the cache. This function reads that full retained aggregate
+// directly, with no request-level slice, so a symbol's evaluated `pointCount`/bar-bucket
+// count can only be >= what the old sliced path saw for it -- grades can only move TOWARD
+// strategy_ready/reference_only, never away from them, for the same live data.
+function buildOverviewQualitySummaries(
+  workspaceSlug: string,
+  qualitySymbols: string,
+  rawQuotesBySource: Map<QuoteSource, Quote[]>
+) {
+  const symbolSet = new Set(
+    qualitySymbols
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean)
+  );
+  const currentQuotes = [...rawQuotesBySource.values()]
+    .flat()
+    .filter((quote) => symbolSet.has(quote.symbol));
+  const preferredSourceBySymbol = getPreferredSourceBySymbol(currentQuotes);
+  const bucketMs = getBarIntervalMs("1m");
+
+  const historyItems: { source: QuoteSource | null; quality: ReturnType<typeof buildHistoryQualityAssessment> }[] = [];
+  const barItems: { source: QuoteSource | null; quality: ReturnType<typeof buildBarQualityAssessment> }[] = [];
+
+  for (const [identityKey, source] of preferredSourceBySymbol.entries()) {
+    const separatorIndex = identityKey.indexOf(":");
+    const market = identityKey.slice(0, separatorIndex) as Market;
+    const symbol = identityKey.slice(separatorIndex + 1);
+    const aggregate = getHistoryAggregate(workspaceSlug, source, market, symbol);
+    const pointCount = aggregate?.count ?? 0;
+    const lastTimestamp = aggregate?.lastTimestamp ?? null;
+    const lastPointAgeMs = getTimestampAgeMs(lastTimestamp);
+    const synthetic = aggregate?.synthetic ?? isSyntheticSource(source);
+
+    const historyFreshnessStatus: QuoteResolutionFreshnessStatus =
+      pointCount === 0 || lastTimestamp === null
+        ? "missing"
+        : lastPointAgeMs !== null && lastPointAgeMs <= getHistoryStaleMs()
+          ? "fresh"
+          : "stale";
+    historyItems.push({
+      source,
+      quality: buildHistoryQualityAssessment({
+        pointCount,
+        freshnessStatus: historyFreshnessStatus,
+        // computeMarketDataOverview never supplies from/to for this call -- and
+        // getTimeWindowCompleteness's own short-circuit for that case is "unbounded"
+        // (see its definition above), so this matches the full-scan path exactly.
+        timeWindowCompleteness: "unbounded",
+        synthetic
+      })
+    });
+
+    // barCount only needs to distinguish 0 / 1 / >=2 (buildBarQualityAssessment only
+    // branches on barCount===0 and barCount<2 -- `approximate` is unconditionally true
+    // for quote-history-derived bars, see getMarketBarDiagnostics) -- exactly what the
+    // aggregate's hasTwoDistinctBars boolean was designed to answer (see its doc above).
+    const barCount = pointCount === 0 ? 0 : aggregate!.hasTwoDistinctBars ? 2 : 1;
+    const lastCloseTime = aggregate ? new Date(aggregate.lastBarBucketStart + bucketMs).toISOString() : null;
+    const lastBarAgeMs = getTimestampAgeMs(lastCloseTime);
+    const barFreshnessStatus: QuoteResolutionFreshnessStatus =
+      !lastCloseTime
+        ? "missing"
+        : lastBarAgeMs !== null && lastBarAgeMs <= getBarStaleMs()
+          ? "fresh"
+          : "stale";
+    barItems.push({
+      source,
+      quality: buildBarQualityAssessment({
+        barCount,
+        freshnessStatus: barFreshnessStatus,
+        timeWindowCompleteness: "unbounded",
+        synthetic,
+        approximate: true
+      })
+    });
+  }
+
+  return {
+    history: summarizeQualityAssessments(historyItems, historyQualityReasonBuckets),
+    bars: summarizeQualityAssessments(barItems, barQualityReasonBuckets)
+  };
+}
+
+// Test/bench-only accessor (matches this file's existing `_`-prefixed export
+// convention, e.g. _getHistoryAggregateForTest / _shouldLoadDailyMarketContext) --
+// computeMarketDataOverview is the only production call site.
+export function _buildOverviewQualitySummariesForTest(
+  workspaceSlug: string,
+  qualitySymbols: string,
+  rawQuotesBySource: Map<QuoteSource, Quote[]>
+) {
+  return buildOverviewQualitySummaries(workspaceSlug, qualitySymbols, rawQuotesBySource);
+}
+
 async function computeMarketDataOverview(input: GetMarketDataOverviewInput) {
   const topLimit = input.topLimit ?? 5;
   // 2026-07-22 P0 round 7 (home concurrency CPU): see
@@ -4387,51 +4485,23 @@ async function computeMarketDataOverview(input: GetMarketDataOverviewInput) {
       },
       items: []
     };
-  // 2026-07-21 P0 round 6: historyQuality and barQuality each independently
-  // re-scan the full per-source quote-history cache (dominant cost for
-  // twse_mis, up to ~932K entries -- see snapshotCachedProviderQuoteHistoryBySource
-  // doc above). Compute that scan ONCE, synchronously, here -- before either
-  // sub-call's own await boundaries give live MIS-sweep writes a chance to
-  // land in between -- and hand both sub-calls the same snapshot so they
-  // never re-derive it. (workspaceSlug/rawQuotesBySource are already computed
-  // at the top of this function -- round 7 reuses the SAME quotes snapshot
-  // here too, since historyQuality/barQuality each have their own additional
-  // "latest tick" cache call-sites -- see their rawQuotesBySource docs.)
-  const rawHistoryBySource = qualitySymbols
-    ? snapshotCachedProviderQuoteHistoryBySource(workspaceSlug, quoteProviderSources)
-    : null;
-  const [historyQuality, barQuality] = qualitySymbols
-    ? await Promise.all([
-      getMarketQuoteHistoryDiagnostics({
-        session: input.session,
-        symbols: qualitySymbols,
-        includeStale: true,
-        limit: Math.max(quotes.length * 4, 100),
-        rawHistoryBySource: rawHistoryBySource!,
-        rawQuotesBySource
-      }),
-      getMarketBarDiagnostics({
-        session: input.session,
-        symbols: qualitySymbols,
-        includeStale: true,
-        interval: "1m",
-        limit: Math.max(quotes.length * 2, 50),
-        rawHistoryBySource: rawHistoryBySource!,
-        rawQuotesBySource
-      })
-    ])
-    : [
-      {
-        generatedAt: new Date().toISOString(),
-        summary: summarizeQualityAssessments([], historyQualityReasonBuckets),
-        items: []
-      },
-      {
-        generatedAt: new Date().toISOString(),
-        summary: summarizeQualityAssessments([], barQualityReasonBuckets),
-        items: []
-      }
-    ];
+  // 2026-07-23 PR-3 (plan: reports/design_redesign_20260722/
+  // OVERVIEW_2S_ARCH_PLAN_20260722.md §3 案 A): rounds 1-7 (2026-07-20/21/22)
+  // exhausted every cache-validity/sharing strategy for the
+  // getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics full-scan path (see
+  // the removed snapshotCachedProviderQuoteHistoryBySource doc above) -- the
+  // remaining cost was the O(#ticks) scan itself, not redundant re-scanning.
+  // This function's quality section no longer calls either diagnostics function
+  // at all; it reads the O(#symbols) historyAggregateCache directly (PR-2) via
+  // buildOverviewQualitySummaries below. The two /diagnostics routes (server.ts)
+  // still call getMarketQuoteHistoryDiagnostics/getMarketBarDiagnostics directly
+  // and are completely unchanged by this PR.
+  const qualitySummaries = qualitySymbols
+    ? buildOverviewQualitySummaries(workspaceSlug, qualitySymbols, rawQuotesBySource)
+    : {
+      history: summarizeQualityAssessments([], historyQualityReasonBuckets),
+      bars: summarizeQualityAssessments([], barQualityReasonBuckets)
+    };
 
   const quotesBySource = [...new Set(quoteProviderSources)]
     .map((source) => ({
@@ -4536,8 +4606,8 @@ async function computeMarketDataOverview(input: GetMarketDataOverviewInput) {
     },
     quality: {
       evaluatedSymbols: qualitySymbols ? qualitySymbols.split(",").length : 0,
-      history: historyQuality.summary,
-      bars: barQuality.summary
+      history: qualitySummaries.history,
+      bars: qualitySummaries.bars
     },
     leaders: {
       topGainers,
