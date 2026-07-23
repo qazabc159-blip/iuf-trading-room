@@ -1,8 +1,8 @@
-# Bruce Prod Verify — 4-Merge Batch (#1348 / #1350 / #1351 / #1352)
+# Bruce Prod Verify — 5-Merge Batch (#1348 / #1350 / #1351 / #1352 / #1353)
 
 - Verifier: Bruce (verifier-release lane)
-- Verify window: 2026-07-23 (四) 21:3x TST
-- Target buildCommit: `37d7068b` (#1352, the last of the four merges)
+- Verify window: 2026-07-23 (四) 21:3x-21:5x TST
+- Target buildCommit: originally `37d7068b` (#1352); **scope expanded mid-task by Elva** — #1353 (AI 投研晨報 newspaper redesign) merged during this verify pass (`931723ac`). Waited for deploy queue to converge to `931723ac` before running item 6.
 
 ## 0. Deploy confirmation
 
@@ -12,7 +12,9 @@
   {"status":"ok","buildCommit":"37d7068b1f1ed873f7a74ac124e725d873b7000a","deploymentId":"e8e0dbac-db0f-471c-b47f-de85b5b9ce04",...}
   ```
 - `railway status` confirms same `deploymentId=e8e0dbac-db0f-471c-b47f-de85b5b9ce04`, service Online.
-- **All 4 merges (#1348 `2a2de354` / #1350 `5a36fe9d` / #1351 `b68f3e73` / #1352 `37d7068b`) are live in prod.**
+- **All 4 original merges (#1348 `2a2de354` / #1350 `5a36fe9d` / #1351 `b68f3e73` / #1352 `37d7068b`) are live in prod.**
+- **#1353 scope addition**: `gh run watch 30012336406` (Deploy to Railway, headSha=931723ac) → green. `GET /health` → `buildCommit=931723ac9a82d37b30818ba4254fbe7ded342f6c`, `deploymentId=cc0f9525-a9f5-443e-8caf-5339ac44da76`. **#1353 is live in prod.**
+- Note: #1352's own CI Validate run shows `completed failure` (Playwright P0 Smoke — `jim_home_heatmap_mode_toggle` + `jim_home_ledger_rsc` heatmap-tile-count assertions) while its **Deploy to Railway run succeeded**. This is the same pre-existing homepage-heatmap flake documented repeatedly in session_handoff.md ("Playwright 紅確認=無關 flake 照 merge") — unrelated to #1352's postgres `.rows` fix content, not a new blocker.
 
 ## Result summary (PASS/FAIL/未驗)
 
@@ -25,6 +27,7 @@
 | 3b | #1349 bench 特徵化數字可觀測性 | PASS (CI golden snapshot 綠；PR-2 本身宣告 zero-consumer/zero-behavior-change，前端無新可觀測面) |
 | 4 | #1351 純新增檔案 + dry-run | PASS |
 | 5 | 全站快掃 5 頁 200 + 零 console error | PASS |
+| 6 | #1353 AI 投研晨報改版 (真上版式 + 盤後誠實 + 零 console error + mobile 390px 零溢出) | PASS |
 
 ## 1. #1348 法人 state 誠實欄位
 
@@ -83,14 +86,26 @@ GET https://api.eycvector.com/api/v1/market/institutional-summary/finmind
 
 Covered by the same Playwright run in §3 — 首頁 `/`, 市場情報 `/market-intel`, AI推薦 `/ai-recommendations`, 交易室 `/desk-exact` all HTTP 200 with 0 console errors (公司頁 `/companies/2330` also checked as a bonus 5th page, also clean).
 
+## 6. #1353 AI 投研晨報 newspaper redesign (added mid-task by Elva)
+
+Owner session, Playwright, `packages/qa-playwright/_bruce_1353_airec_verify_20260723.mjs`, two viewports (desktop 1440x900, mobile 390x844), fresh login each time.
+
+- **Format confirmed as newspaper layout, not old card-grid**: desktop screenshot (`evidence/sprint_2026_07_23/pr1353_verify/_bruce_1353_desktop.png`) shows masthead "AI 投研晨報 / MORNING RESEARCH REPORT", a "頭版" (front page) hero section for the top pick (緯穎 6669: 七維評分 radar table, 主要風險 paragraph, 交易區間 target/stop/entry numbers), followed by a "內頁 其餘候選" (inside-page / remaining candidates) section listing the other 4 tickers each with their own detail block (南亞科/樺漢/台化/旺矽) — matches the "頭版特稿+內頁欄目" spec, zero old 三元凶 card/chip/meter-array pattern detected.
+- **Mobile 390px**: `evidence/sprint_2026_07_23/pr1353_verify/_bruce_1353_mobile390.png` — same content stacks to single column, `document.body.scrollWidth === 390 === viewport width` on both desktop and mobile (script-measured, `overflow: 0` both), i.e. **zero horizontal overflow** confirmed by direct DOM measurement, not just visual eyeballing.
+- **盤後誠實顯示**: page header shows live timestamp "2026/7/23 21:46:05" plus a green post-market banner ("台股目前盤後或週末休市 / 顯示收盤資料" — paraphrased from screenshot) and both top data-freshness badges read "07/23 08:33 收盤" — consistent honest post-market state, no fake "即時" claim.
+- **Console errors**: initial run flagged 4x `401` on `auth/me` + `market-data/overview` — investigated further (`_bruce_1353_401_probe*.mjs`, ad-hoc, deleted after use) and confirmed this is a **transient login-redirect race present on every page** (reproduced identically on `/` homepage right after login-redirect, resolves to 0 once the session settles ~2-3s before navigating) — **not a #1353-specific regression**. Re-ran with a 3s settle delay after login before navigating to `/ai-recommendations`: **0 console errors, 0 page errors**.
+- Response-shape sanity: `/api/v1/ai-recommendations/v3` (already checked in §2) is the same data source this page consumes — confirmed 5 items present, matches the 5 tickers rendered (緯穎/南亞科/樺漢/台化/旺矽).
+- Known non-regression per Elva's note: `marketState`/`marketRiskOffScore` null at top level (TAIEX companies_ohlcv gap, Jason-4 R2 in progress) — not surfaced as a defect on this page; `market_risk_off` UI branch is separately being finished by Jim-2, out of scope for this verify pass.
+
 ## Deploy / release verdict
 
-- **Can deploy**: N/A — already deployed, confirmed live at buildCommit=37d7068b.
-- **Can declare 收口 for tonight's 4-merge batch**: YES, with one flagged 未驗項 (see below).
-- No functional-file edits were made; only read-only verification (curl, Playwright script written under `packages/qa-playwright/`, a temporary detached worktree that was removed).
+- **Can deploy**: N/A — already deployed, confirmed live at buildCommit=`931723ac` (all 5: #1348/#1350/#1351/#1352/#1353).
+- **Can declare 收口 for tonight's 5-merge batch**: YES, with one flagged 未驗項 (see below).
+- No functional-file edits were made; only read-only verification (curl, `railway logs`/`railway status`, `gh run watch`, Playwright scripts written under `packages/qa-playwright/`, temporary detached worktrees used and removed).
 
 ## 意外與未解決事項
 
 - fallback path for #1348 (`isFallback=true` intraday case) — genuinely cannot be exercised post-market; carry to tomorrow's 09:00-14:00 TST window per task instructions.
-- Local main checkout (this session's default cwd) is significantly behind `origin/main` (missing 10 commits including all 4 merges under test) and has pre-existing unrelated dirty state (`apps/api/src/market-data.ts` modified, some untracked `s1-lab-*` files, `errMsg.ini`) — not caused by this verification pass; flagged for whoever owns that worktree to reconcile, not touched here per lane boundary.
-- Ad-hoc verify script left in repo: `packages/qa-playwright/_bruce_4merge_prod_smoke_20260723.mjs` (uncommitted, matches existing naming convention of other `_elva-*`/`_bruce-*` throwaway scripts in that directory — not cleaned up, following existing convention of leaving these as breadcrumbs).
+- #1352's own CI Validate run shows `failure` due to the pre-existing homepage-heatmap Playwright flake (unrelated to its content) while its Deploy to Railway run succeeded — noted in §0, not a new blocker, but flagging since a raw `gh run list` glance would look alarming.
+- Local main checkout (this session's default cwd) was significantly behind `origin/main` (missing commits including the merges under test) and has pre-existing unrelated dirty state (`apps/api/src/market-data.ts` modified, some untracked `s1-lab-*` files, `errMsg.ini`) — not caused by this verification pass; flagged for whoever owns that worktree to reconcile, not touched here per lane boundary. This evidence report itself was pushed via a separate clean detached worktree (commit `c4b00f10` rebased onto `origin/main` → pushed as `1631cadc`) to avoid touching that dirty state.
+- Ad-hoc verify scripts left in repo: `packages/qa-playwright/_bruce_4merge_prod_smoke_20260723.mjs` + `_bruce_1353_airec_verify_20260723.mjs` (uncommitted at write time, matches existing naming convention of other `_elva-*` throwaway scripts in that directory).
