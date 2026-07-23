@@ -228,7 +228,13 @@ export type AiRecommendationV3Status =
   | "budget_exceeded"
   | "synthesis_format_error"
   | "running"
-  | "pending";
+  | "pending"
+  // Programmatic risk-off short-circuit (orchestrator-v3.ts): backend skips
+  // the LLM entirely and returns items:[] + a finalReportMarkdown explaining
+  // which SOP signals fired. This is a deliberate protective decision, not a
+  // pipeline failure — /ai-recommendations must show dedicated copy for it,
+  // not the generic "engine hasn't returned data yet" empty state.
+  | "market_risk_off";
 
 export type AiRecommendationV3Item = {
   id?: string;
@@ -327,6 +333,12 @@ export type AiRecommendationV3Response = {
   generatedAt?: string | null;
   itemCount?: number | null;
   items?: AiRecommendationV3Item[];
+  // Top-level market state — only populated (non-null) on the
+  // market_risk_off short-circuit path, where items is always [] so there is
+  // no per-item marketState/marketScores to read (see v3-view.ts's
+  // getV3MarketScores fallback).
+  marketState?: "risk_off" | "event" | "trend" | "range" | null;
+  marketRiskOffScore?: number | null;
   reactTrace?: unknown[];
   finalReportMarkdown?: string | null;
   totalCostUsd?: number | null;

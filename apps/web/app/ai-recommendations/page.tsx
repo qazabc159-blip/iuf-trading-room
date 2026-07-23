@@ -24,13 +24,21 @@ import Link from "next/link";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
 import { TaipeiClock } from "@/components/TaipeiClock";
 import { getAiRecommendationsV3, getAiRecPerformance, type AiRecommendationV3Response } from "@/lib/api";
+import { resolveBannerLastCloseDate } from "@/lib/index-snapshot-freshness";
 import { getOfficialAnnouncementSourceState, getV3MarketScores, isActionableV3Item, mapV3ItemToStockRecCard } from "./v3-view";
 import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
 import { MorningBriefLead } from "./MorningBriefLead";
 import { MorningBriefStory } from "./MorningBriefStory";
 import { TrackRecordBox } from "./TrackRecordBox";
 import { formatRecommendationTimestamp } from "./source-trail-time";
-import { editionDateLabel, generationStatusLabel, officialAnnouncementLabel } from "./morning-brief-copy";
+import {
+  buildMarketRiskOffCopy,
+  editionDateLabel,
+  generationStatusLabel,
+  officialAnnouncementLabel,
+  parseReportMarkdownLines,
+  resolveMorningBriefBodyMode,
+} from "./morning-brief-copy";
 import type { StockRecCardData } from "./StockRecCard";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +106,31 @@ function EmptyState({ error, itemCount }: { error: string | null; itemCount: num
   );
 }
 
+// market_risk_off 專屬狀態——這是楊董 SOP 的保護性跳過（見
+// morning-brief-copy.ts 頂部註解），不是 EmptyState 講的「還沒有資料」。
+// 照常渲染後端真實 finalReportMarkdown（解析成乾淨段落，不逐字秀 "##"/"-"
+// 這種 markdown 語法），不是空態。
+function MarketRiskOffState({ data }: { data: AiRecommendationV3Response | null }) {
+  const copy = buildMarketRiskOffCopy(data?.marketRiskOffScore ?? null);
+  const reportLines = parseReportMarkdownLines(data?.finalReportMarkdown);
+
+  return (
+    <div className="amb-riskoff">
+      <b>{copy.title}</b>
+      <p>{copy.subtitle}</p>
+      {reportLines.length > 0 && (
+        <div className="amb-riskoff-report">
+          {reportLines.map((line, index) => {
+            if (line.kind === "heading") return <h3 key={index}>{line.text}</h3>;
+            if (line.kind === "bullet") return <p key={index} className="rb-bullet">{line.text}</p>;
+            return <p key={index}>{line.text}</p>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 async function MorningBriefBody() {
   const [v3Result, perf] = await Promise.all([loadRecommendationsV3(), getAiRecPerformance()]);
   const data = v3Result.data;
@@ -109,7 +142,12 @@ async function MorningBriefBody() {
     .filter((card): card is StockRecCardData => Boolean(card))
     .slice(0, 5);
 
-  const marketScores = getV3MarketScores(rawItems);
+  const marketScores = getV3MarketScores(rawItems, data);
+  const bodyMode = resolveMorningBriefBodyMode({
+    status: data?.status,
+    error: v3Result.error,
+    cardCount: cards.length,
+  });
   const lead = cards[0];
   const stories = cards.slice(1);
   const leftStories = stories.filter((_, idx) => idx % 2 === 0);
@@ -123,7 +161,16 @@ async function MorningBriefBody() {
 
       <TrackRecordBox perf={perf} />
 
-      {cards.length === 0 || v3Result.error ? (
+      {bodyMode === "risk_off" ? (
+        <>
+          <div className="band">
+            <span className="ord">頭版</span>
+            <h2>今日主推</h2>
+            <span className="en">Lead Pick</span>
+          </div>
+          <MarketRiskOffState data={data} />
+        </>
+      ) : bodyMode === "empty" ? (
         <>
           <div className="band">
             <span className="ord">頭版</span>
@@ -191,6 +238,18 @@ function MorningBriefBodyFallback() {
   );
 }
 
+// Pete PR #1353 review 🟡#2: pass a server-resolved lastCloseDate into
+// MarketStateBanner (as the pre-#1353 page did) instead of letting the
+// client component fall back to its own client-side getMarketDataOverview()
+// fetch, which duplicates a request TickerTape already makes elsewhere on
+// the page. Isolated in its own Suspense boundary (fallback = the same
+// no-prop MarketStateBanner) so this SSR fetch cannot block the masthead's
+// first paint the way the pre-redesign page's single top-level await did.
+async function MarketStateBannerResolved() {
+  const lastCloseDate = await resolveBannerLastCloseDate().catch(() => null);
+  return <MarketStateBanner lastCloseDate={lastCloseDate} />;
+}
+
 export default function AiRecommendationsPage() {
   return (
     <main className="page-frame amb-shell">
@@ -207,7 +266,9 @@ export default function AiRecommendationsPage() {
         </div>
       </header>
 
-      <MarketStateBanner />
+      <Suspense fallback={<MarketStateBanner />}>
+        <MarketStateBannerResolved />
+      </Suspense>
 
       <p className="lede">
         <span className="mark">研究模式</span>
@@ -396,6 +457,16 @@ const AMB_CSS = `
 .amb-shell .amb-empty p { margin: 0; font-family: var(--sans-tc); font-size: 12.5px; line-height: 1.65; max-width: 620px; }
 .amb-shell .amb-loading { display: flex; align-items: center; gap: 9px; padding: 40px 4px; color: var(--night-soft); font-family: var(--sans-tc); font-size: 12.5px; }
 .amb-shell .amb-loading .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 7px var(--gold); flex-shrink: 0; }
+
+/* ---------- risk-off report state ---------- */
+.amb-shell .amb-riskoff { padding: 20px 18px; border: 1px solid rgba(230, 57, 70, 0.3); border-left: 3px solid rgba(230, 57, 70, 0.6); background: rgba(230, 57, 70, 0.05); color: var(--night-soft); }
+.amb-shell .amb-riskoff b { display: block; color: var(--night-ink); font-family: var(--serif-tc); font-size: 17px; margin-bottom: 8px; }
+.amb-shell .amb-riskoff > p { margin: 0; font-family: var(--sans-tc); font-size: 12.5px; line-height: 1.65; max-width: 680px; }
+.amb-shell .amb-riskoff-report { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(230, 57, 70, 0.22); }
+.amb-shell .amb-riskoff-report h3 { margin: 0 0 8px; font-family: var(--serif-tc); font-size: 13.5px; color: var(--night-ink); font-weight: 700; }
+.amb-shell .amb-riskoff-report p { margin: 0 0 6px; font-family: var(--sans-tc); font-size: 12px; line-height: 1.6; color: var(--night-soft); }
+.amb-shell .amb-riskoff-report p.rb-bullet { padding-left: 14px; position: relative; }
+.amb-shell .amb-riskoff-report p.rb-bullet::before { content: "\\2014"; position: absolute; left: 0; top: 0; color: var(--tw-dn-bright); font-family: var(--mono); }
 
 /* ---------- CTA band ---------- */
 .amb-shell .amb-cta { margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 15px 20px; border: 1px solid var(--night-rule); border-radius: 4px; background: linear-gradient(90deg, var(--night-1), var(--night)); }
