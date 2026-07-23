@@ -1,0 +1,528 @@
+{
+  "generatedAt": "2026-07-23T06:10:04.478Z",
+  "mode": "dry_run",
+  "rows": [
+    {
+      "action": "v51_sim.order_submit",
+      "entityType": "v51_sim",
+      "entityId": "2026-07-13",
+      "payload": {
+        "schema": "v51_order_submit_v1",
+        "label": "SIM_EXECUTION_SAMPLE_NOT_VALIDATED",
+        "basketSignalDate": "2026-07-13",
+        "entryDateTst": "2026-07-23",
+        "submittedAtTst": "2026-07-23T00:35:00.000Z",
+        "capitalTwd": 6000000,
+        "results": [
+          {
+            "stockId": "1808",
+            "shares": 3000,
+            "status": "partially_filled",
+            "tradeId": "1784766165423387001",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001R"
+          },
+          {
+            "stockId": "6219",
+            "shares": 7000,
+            "status": "accepted",
+            "tradeId": "1784769842068732002",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001A"
+          },
+          {
+            "stockId": "6901",
+            "shares": 5000,
+            "status": "filled",
+            "tradeId": "1784769842443732003",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001B"
+          },
+          {
+            "stockId": "5522",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769842834732004",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001C"
+          },
+          {
+            "stockId": "8926",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769843209732005",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001D"
+          },
+          {
+            "stockId": "6026",
+            "shares": 6000,
+            "status": "filled",
+            "tradeId": "1784769843584732006",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001E"
+          },
+          {
+            "stockId": "6177",
+            "shares": 2000,
+            "status": "accepted",
+            "tradeId": "1784769843959732007",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001F"
+          },
+          {
+            "stockId": "6265",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769844350732008",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001G"
+          },
+          {
+            "stockId": "4513",
+            "shares": 4000,
+            "status": "filled",
+            "tradeId": "1784769844725732009",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001H"
+          },
+          {
+            "stockId": "8937",
+            "shares": 4000,
+            "status": "partially_filled",
+            "tradeId": "1784769845101732010",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001I"
+          },
+          {
+            "stockId": "5351",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769845491732011",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001J"
+          },
+          {
+            "stockId": "4113",
+            "shares": 6000,
+            "status": "accepted",
+            "tradeId": "1784769845866732012",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001K"
+          },
+          {
+            "stockId": "2465",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769846257732013",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001L"
+          },
+          {
+            "stockId": "6885",
+            "shares": 4000,
+            "status": "filled",
+            "tradeId": "1784769846632732014",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001M"
+          },
+          {
+            "stockId": "2425",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769846992732015",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001N"
+          },
+          {
+            "stockId": "1271",
+            "shares": 1000,
+            "status": "rejected",
+            "tradeId": "1784769847383732016",
+            "error": "kgi_invalid_order_bucket (reason code not exposed by gateway response; raw entry in trades snapshot's 無效單 bucket)",
+            "sleeve": "v51_c1",
+            "kgiOrderId": "無效單"
+          },
+          {
+            "stockId": "5508",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769847742732017",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001O"
+          },
+          {
+            "stockId": "2101",
+            "shares": 2000,
+            "status": "accepted",
+            "tradeId": "1784769848133732018",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001P"
+          },
+          {
+            "stockId": "8171",
+            "shares": 4000,
+            "status": "filled",
+            "tradeId": "1784769848508732019",
+            "error": null,
+            "sleeve": "v51_c1",
+            "kgiOrderId": "Y001Q"
+          },
+          {
+            "stockId": "1808",
+            "shares": 3000,
+            "status": "unconfirmed",
+            "tradeId": "1784769848883732020",
+            "error": "ambiguous_duplicate_symbol_submission: same symbol+qty sent twice same day (canary + batch), final KGI order book shows only one matching order record — cannot determine which submission it resolves to",
+            "sleeve": "v51_c3",
+            "kgiOrderId": null
+          },
+          {
+            "stockId": "6219",
+            "shares": 7000,
+            "status": "filled",
+            "tradeId": "1784769849258732021",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001S"
+          },
+          {
+            "stockId": "5522",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769849631729022",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001T"
+          },
+          {
+            "stockId": "6026",
+            "shares": 6000,
+            "status": "accepted",
+            "tradeId": "1784769850022729023",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001U"
+          },
+          {
+            "stockId": "6177",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769850397729024",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001V"
+          },
+          {
+            "stockId": "8926",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769850787729025",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001W"
+          },
+          {
+            "stockId": "4513",
+            "shares": 4000,
+            "status": "partially_filled",
+            "tradeId": "1784769851162729026",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001X"
+          },
+          {
+            "stockId": "4113",
+            "shares": 6000,
+            "status": "filled",
+            "tradeId": "1784769851538729027",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001Y"
+          },
+          {
+            "stockId": "6885",
+            "shares": 4000,
+            "status": "accepted",
+            "tradeId": "1784769851928729028",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y001Z"
+          },
+          {
+            "stockId": "2465",
+            "shares": 1000,
+            "status": "accepted",
+            "tradeId": "1784769852303729029",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0020"
+          },
+          {
+            "stockId": "2348",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769852678729030",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0021"
+          },
+          {
+            "stockId": "6535",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769853069729031",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0022"
+          },
+          {
+            "stockId": "8171",
+            "shares": 4000,
+            "status": "partially_filled",
+            "tradeId": "1784769853444729032",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0023"
+          },
+          {
+            "stockId": "2425",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769853835729033",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0024"
+          },
+          {
+            "stockId": "4416",
+            "shares": 9000,
+            "status": "accepted",
+            "tradeId": "1784769854210729034",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0025"
+          },
+          {
+            "stockId": "2442",
+            "shares": 5000,
+            "status": "partially_filled",
+            "tradeId": "1784769854600729035",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0026"
+          },
+          {
+            "stockId": "4174",
+            "shares": 3000,
+            "status": "filled",
+            "tradeId": "1784769854975729036",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0027"
+          },
+          {
+            "stockId": "5508",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769855351729037",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0028"
+          },
+          {
+            "stockId": "8047",
+            "shares": 2000,
+            "status": "partially_filled",
+            "tradeId": "1784769855741729038",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y0029"
+          },
+          {
+            "stockId": "8059",
+            "shares": 6000,
+            "status": "accepted",
+            "tradeId": "1784769856116729039",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y002A"
+          },
+          {
+            "stockId": "5267",
+            "shares": 2000,
+            "status": "rejected",
+            "tradeId": "1784769856507729040",
+            "error": "kgi_invalid_order_bucket (reason code not exposed by gateway response; raw entry in trades snapshot's 無效單 bucket)",
+            "sleeve": "v51_c3",
+            "kgiOrderId": "無效單"
+          },
+          {
+            "stockId": "2101",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769856882729041",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y002B"
+          },
+          {
+            "stockId": "6808",
+            "shares": 2000,
+            "status": "rejected",
+            "tradeId": "1784769857257729042",
+            "error": "kgi_invalid_order_bucket (reason code not exposed by gateway response; raw entry in trades snapshot's 無效單 bucket)",
+            "sleeve": "v51_c3",
+            "kgiOrderId": "無效單"
+          },
+          {
+            "stockId": "6423",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769857648729043",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y002C"
+          },
+          {
+            "stockId": "8383",
+            "shares": 1000,
+            "status": "filled",
+            "tradeId": "1784769858023729044",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y002D"
+          },
+          {
+            "stockId": "3093",
+            "shares": 2000,
+            "status": "filled",
+            "tradeId": "1784769858398729045",
+            "error": null,
+            "sleeve": "v51_c3",
+            "kgiOrderId": "Y002E"
+          }
+        ],
+        "failsafeNotes": [
+          "backfilled_from_ad_hoc_tool: orders originally submitted via reports/sim_go_live_20260723/send_three_sleeve.mjs (standalone RUNBOOK tool, does not write audit_logs); this row constructed post-hoc by apps/api/src/sim-go-live-audit-backfill-20260723.ts at 2026-07-23T06:10:04.477Z from evidence/orders_20260723.jsonl + evidence/reconcile_53_orders_20260723.json (ground truth built by direct per-KGI-order-id-bucket matching, see RECONCILE_53_ORDERS_FINAL_20260723.md).",
+          "merged_two_sleeves: v51_c1 (19 orders / 3,000,000 TWD) + v51_c3 (26 orders / 3,000,000 TWD) both source CSVs carry signal_date=2026-07-13 — merged into one row per the real schema's one-row-per-basketSignalDate design (see hasAlreadySubmitted()/writeAuditRecord() in v51-sim-basket-runner.ts); per-result sleeve field preserves C1 vs C3 provenance. Confirm this merge decision before --apply — see KNOWN ISSUE #1 in this script's file header."
+        ]
+      }
+    },
+    {
+      "action": "v34_sim.order_submit",
+      "entityType": "v34_sim",
+      "entityId": "2026-07-21",
+      "payload": {
+        "schema": "v34_order_submit_v1",
+        "label": "SIM_EXECUTION_SAMPLE_NOT_VALIDATED",
+        "basketAsOfDate": "2026-07-21",
+        "entryDateTst": "2026-07-23",
+        "submittedAtTst": "2026-07-23T01:24:18.783Z",
+        "capitalTwd": 1000000,
+        "results": [
+          {
+            "stockId": "2887",
+            "shares": 2000,
+            "isOddLot": false,
+            "executedNotionalTwd": null,
+            "status": "accepted",
+            "tradeId": "1784769858789729046",
+            "error": null,
+            "kgiOrderId": "Y002F"
+          },
+          {
+            "stockId": "2883",
+            "shares": 3000,
+            "isOddLot": false,
+            "executedNotionalTwd": 88650,
+            "status": "filled",
+            "tradeId": "1784769859165729047",
+            "error": null,
+            "kgiOrderId": "Y002G"
+          },
+          {
+            "stockId": "2886",
+            "shares": 2000,
+            "isOddLot": false,
+            "executedNotionalTwd": 96400,
+            "status": "filled",
+            "tradeId": "1784769859556729048",
+            "error": null,
+            "kgiOrderId": "Y002H"
+          },
+          {
+            "stockId": "2892",
+            "shares": 2000,
+            "isOddLot": false,
+            "executedNotionalTwd": 33950,
+            "status": "partially_filled",
+            "tradeId": "1784769859931729049",
+            "error": null,
+            "kgiOrderId": "Y002I"
+          },
+          {
+            "stockId": "2880",
+            "shares": 2000,
+            "isOddLot": false,
+            "executedNotionalTwd": 79800,
+            "status": "filled",
+            "tradeId": "1784769860306729050",
+            "error": null,
+            "kgiOrderId": "Y002J"
+          },
+          {
+            "stockId": "6505",
+            "shares": 1000,
+            "isOddLot": false,
+            "executedNotionalTwd": null,
+            "status": "accepted",
+            "tradeId": "1784769860697729051",
+            "error": null,
+            "kgiOrderId": "Y002K"
+          },
+          {
+            "stockId": "2634",
+            "shares": 1000,
+            "isOddLot": false,
+            "executedNotionalTwd": 65000,
+            "status": "filled",
+            "tradeId": "1784769861072729052",
+            "error": null,
+            "kgiOrderId": "Y002L"
+          },
+          {
+            "stockId": "2801",
+            "shares": 4000,
+            "isOddLot": false,
+            "executedNotionalTwd": 95400,
+            "status": "filled",
+            "tradeId": "1784769861462729053",
+            "error": null,
+            "kgiOrderId": "Y002M"
+          }
+        ],
+        "failsafeNotes": [
+          "backfilled_from_ad_hoc_tool: orders originally submitted via reports/sim_go_live_20260723/send_three_sleeve.mjs (standalone RUNBOOK tool, does not write audit_logs); this row constructed post-hoc by apps/api/src/sim-go-live-audit-backfill-20260723.ts at 2026-07-23T06:10:04.477Z from evidence/orders_20260723.jsonl + evidence/reconcile_53_orders_20260723.json (ground truth built by direct per-KGI-order-id-bucket matching, see RECONCILE_53_ORDERS_FINAL_20260723.md)."
+        ]
+      }
+    }
+  ]
+}
