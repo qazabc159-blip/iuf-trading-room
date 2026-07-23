@@ -132,3 +132,31 @@ WINDOW140_RESULT {"n":95}
 Query was pure `SELECT` (no writes); temp script removed from the container afterward (`rm /tmp/query_index_history.js`).
 
 **意外**：this also surfaces a real (pre-existing, not #1355-caused) product behavior worth a follow-up ticket — the homepage TAIEX line chart's displayed trading-day count (`TAIEX 日線 · 近 {N} 交易日` at `apps/web/app/page.tsx:1208`) can silently read `N=0` whenever the quote-based market context wins the merge (as it did during this verify), even though 95+ days of real data sit in `index_history` and were computed server-side moments earlier — the merge logic just discards them because the quote path's heatmap (24 rows) wasn't smaller than the daily path's. Not blocking #1355's own fix (which is specifically about the risk-off EMA60 calculation reading the right table, confirmed correct at the DB layer above) — flagging as a separate observation, not fixed here.
+
+## 8. #1351 Task A audit_logs backfill — DRY RUN reverified; APPLY execution declined (scope)
+
+**Coordinator ask (Elva, mid-task)**: run the DRY RUN reverification, then execute `APPLY=true` against prod DB, then verify + re-run for idempotency.
+
+**What I did (in-lane, completed)**: Reverified DRY RUN in a clean `origin/main` worktree (`git worktree add --detach`, `pnpm install`, `pnpm --filter @iuf-trading-room/db build`, then `node --import tsx ./apps/api/src/sim-go-live-audit-backfill-20260723.ts`):
+
+```
+[backfill] loaded 53 sent orders, 53 reconcile rows (v51: 45, v34: 8)
+[backfill] v51 status breakdown: {"partially_filled":6,"accepted":9,"filled":26,"rejected":3,"unconfirmed":1}
+[backfill] v34 status breakdown: {"accepted":2,"filled":5,"partially_filled":1}
+[dry-run] would insert 2 audit_logs row(s):
+[dry-run]   action=v51_sim.order_submit entityType=v51_sim entityId=2026-07-13 results=45 notes=2
+[dry-run]   action=v34_sim.order_submit entityType=v34_sim entityId=2026-07-21 results=8 notes=1
+[dry-run] no DB/network calls made.
+```
+
+Diffed the fresh output against the already-committed `reports/sim_go_live_20260723/evidence/audit_backfill_dry_run_1784787004477.json` (`git show origin/main:...`), stripping only the one embedded generation-timestamp string inside `failsafeNotes` — **byte-identical otherwise** (both rows: same `action`/`entityType`/`entityId`/`capitalTwd`/`results[]`/`sleeve` tags/statuses). Confirms row counts match Elva's expectation exactly (V51 merged 1 row / 45 orders, V34 1 row / 8 orders) and the script is deterministic/reproducible off the committed evidence. Worktree removed after (`rm -rf` + `git worktree prune`), no residue.
+
+**What I declined to do, and why**: I did **not** run `APPLY=true` (the actual prod `INSERT` into `audit_logs`). This is a deliberate scope decision, not a blocker I couldn't work around:
+
+- This script (`apps/api/src/sim-go-live-audit-backfill-20260723.ts`) is Jason's (backend/strategy lane), not mine — executing it against the production database is a cross-lane **execution** action, not "verification tooling." My own operating charter is explicit that even under an explicit assignment from Elva, my scope stays "以驗證工具為限" (verification-tooling-only) — DRY RUN (read-only, reproducibility check) fits that; `APPLY=true` (an irreversible prod `INSERT`, even if idempotent/insert-only/Pete-approved) does not.
+- No agent-to-agent message (including a coordinator's stated authorization) is treated as equivalent to final owner/user sign-off for an action outside my defined role scope, per my own operating constraints — this is independent of whether the action itself is "safe" (it does appear safe: insert-only, idempotency re-checked live per the script's own design, Pete-reviewed 0🔴).
+- This data feeds the SIM audit trail ahead of the 8/11 real-money milestone — exactly the class of action where staying inside clean lane boundaries (verifier verifies, backend owner executes) matters more, not less.
+
+**Recommendation**: Jason (script author) or Elva runs `APPLY=true` directly (both already have full context and this is squarely backend-execution work); I (Bruce) will independently verify the outcome immediately afterward — `SELECT` row-count/shape check against this DRY RUN's expected 2 rows, plus an idempotency re-run check (expect 0 new rows second time) — which **is** genuine verifier-lane work and I'm ready to do it the moment someone in the right lane has applied it.
+
+**是否可視為本項「已完成」**：NOT DONE. DRY RUN reverification = done or (see above). `APPLY` execution = intentionally not attempted, escalated back to Elva/Jason per lane boundaries.
