@@ -1,0 +1,234 @@
+{
+  "capturedAt": "2026-07-23T13:29:43.920Z",
+  "note": "PR-3 harvest bench — post-aggregate-index behavior + full E2E overview timing. See reports/design_redesign_20260722/OVERVIEW_2S_ARCH_PLAN_20260722.md §3.",
+  "scale": {
+    "symbolCount": 1826,
+    "ticksPerSymbol": 511,
+    "totalTwseMisEntries": 933086
+  },
+  "partA_directQualityComparison": {
+    "timingMs": {
+      "seed": 5950,
+      "old_historyQualityScan": 3001,
+      "old_barQualityScan": 3045,
+      "new_buildOverviewQualitySummaries": 9
+    },
+    "old_historyQualitySummary": {
+      "total": 1826,
+      "strategyReady": 1826,
+      "referenceOnly": 0,
+      "insufficient": 0,
+      "primaryReasons": [
+        {
+          "reason": "history_strategy_ready",
+          "total": 1826
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 0
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 0
+        },
+        {
+          "source": "twse_mis",
+          "total": 1826
+        }
+      ]
+    },
+    "old_barQualitySummary": {
+      "total": 1826,
+      "strategyReady": 0,
+      "referenceOnly": 0,
+      "insufficient": 1826,
+      "primaryReasons": [
+        {
+          "reason": "insufficient_bars",
+          "total": 1826
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 0
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 0
+        },
+        {
+          "source": "twse_mis",
+          "total": 1826
+        }
+      ]
+    },
+    "new_historyQualitySummary": {
+      "total": 1826,
+      "strategyReady": 1826,
+      "referenceOnly": 0,
+      "insufficient": 0,
+      "primaryReasons": [
+        {
+          "reason": "history_strategy_ready",
+          "total": 1826
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 0
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 0
+        },
+        {
+          "source": "twse_mis",
+          "total": 1826
+        }
+      ]
+    },
+    "new_barQualitySummary": {
+      "total": 1826,
+      "strategyReady": 0,
+      "referenceOnly": 1826,
+      "insufficient": 0,
+      "primaryReasons": [
+        {
+          "reason": "approximate_bars",
+          "total": 1826
+        }
+      ],
+      "sources": [
+        {
+          "source": "manual",
+          "total": 0
+        },
+        {
+          "source": "paper",
+          "total": 0
+        },
+        {
+          "source": "tradingview",
+          "total": 0
+        },
+        {
+          "source": "kgi",
+          "total": 0
+        },
+        {
+          "source": "twse_mis",
+          "total": 1826
+        }
+      ]
+    }
+  },
+  "partB_endToEndOverviewTiming": {
+    "runsMs": [
+      52,
+      40,
+      37,
+      39,
+      40
+    ],
+    "medianMs": 40,
+    "qualityFromFirstRun": {
+      "evaluatedSymbols": 1000,
+      "history": {
+        "total": 1000,
+        "strategyReady": 1000,
+        "referenceOnly": 0,
+        "insufficient": 0,
+        "primaryReasons": [
+          {
+            "reason": "history_strategy_ready",
+            "total": 1000
+          }
+        ],
+        "sources": [
+          {
+            "source": "manual",
+            "total": 0
+          },
+          {
+            "source": "paper",
+            "total": 0
+          },
+          {
+            "source": "tradingview",
+            "total": 0
+          },
+          {
+            "source": "kgi",
+            "total": 0
+          },
+          {
+            "source": "twse_mis",
+            "total": 1000
+          }
+        ]
+      },
+      "bars": {
+        "total": 1000,
+        "strategyReady": 0,
+        "referenceOnly": 1000,
+        "insufficient": 0,
+        "primaryReasons": [
+          {
+            "reason": "approximate_bars",
+            "total": 1000
+          }
+        ],
+        "sources": [
+          {
+            "source": "manual",
+            "total": 0
+          },
+          {
+            "source": "paper",
+            "total": 0
+          },
+          {
+            "source": "tradingview",
+            "total": 0
+          },
+          {
+            "source": "kgi",
+            "total": 0
+          },
+          {
+            "source": "twse_mis",
+            "total": 1000
+          }
+        ]
+      }
+    }
+  }
+}
