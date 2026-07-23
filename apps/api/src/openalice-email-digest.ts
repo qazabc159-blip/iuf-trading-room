@@ -15,7 +15,7 @@
  */
 
 import { sql as drizzleSql, gte, and } from "drizzle-orm";
-import { getDb, isDatabaseMode } from "@iuf-trading-room/db";
+import { getDb, isDatabaseMode, execRows } from "@iuf-trading-room/db";
 import { resolvePrimaryWorkspaceId } from "./workspace-scope.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
   const todayStart = `${getTaipeiDate()}T00:00:00+08:00`;
 
   try {
-    const rows = await db.execute(
+    const rawRows = await db.execute(
       drizzleSql`
         SELECT rule_id, rule_name, severity, ticker, payload, triggered_at
         FROM iuf_events
@@ -100,18 +100,16 @@ async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
           triggered_at DESC
         LIMIT 100
       `
-    ) as {
-      rows?: Array<{
-        rule_id?: string;
-        rule_name?: string;
-        severity?: string;
-        ticker?: string | null;
-        payload?: unknown;
-        triggered_at?: string;
-      }>;
-    };
+    );
 
-    return (rows.rows ?? [])
+    return execRows<{
+      rule_id?: string;
+      rule_name?: string;
+      severity?: string;
+      ticker?: string | null;
+      payload?: unknown;
+      triggered_at?: string;
+    }>(rawRows)
       .filter((r) => r.rule_id && r.severity)
       .map((r) => ({
         ruleId: r.rule_id!,

@@ -221,17 +221,23 @@ export async function computeProgrammaticRiskOffScore(): Promise<ProgrammaticRis
 /**
  * Compute TAIEX EMA60 from DB companies_ohlcv index data if available.
  * Uses index-level data if present, otherwise returns null (fail-open).
+ *
+ * Exported (not just internal) so tests can inject a fake db.execute() result
+ * shaped like the real drizzle-orm/postgres-js driver — see the R1 audit fix
+ * 2026-07-23: this previously read `rows.rows` directly, which is always
+ * `undefined` on this driver (bare-array shape, no `.rows` wrapper), so the
+ * risk-off EMA60 signal silently computed as null/false on every call.
  */
-async function computeTaiexEma60FromDb(): Promise<number | null> {
+export async function computeTaiexEma60FromDb(): Promise<number | null> {
   try {
-    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return null;
     const db = getDb();
     if (!db) return null;
 
     const { sql } = await import("drizzle-orm");
     // Query TAIEX index history from DB if available (ticker = "^TWII" or "TAIEX")
-    const rows = (await db.execute(sql`
+    const rawRows = await db.execute(sql`
       SELECT o.close AS close
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
@@ -239,9 +245,9 @@ async function computeTaiexEma60FromDb(): Promise<number | null> {
         AND o.interval = '1d'
       ORDER BY o.dt DESC
       LIMIT 60
-    `)) as unknown as { rows: Array<{ close: string }> };
+    `);
 
-    const closes = (rows.rows ?? [])
+    const closes = execRows<{ close: string }>(rawRows)
       .map(r => parseFloat(r.close))
       .filter(v => !isNaN(v) && v > 0);
 
