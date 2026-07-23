@@ -17883,19 +17883,37 @@ test("GPT55-UPGRADE-6: ai rec v3 caps fallback model token budget", async () => 
 // reasoning-token overhead but missed this one — 100% finish_reason=length silent failure
 // for ~7 weeks (see reports/design_redesign_20260722/COMPANY_REPORT_LLM_OUTAGE_20260723.md).
 //
+// Round-2 correction (Pete PR #1344 review, 2026-07-23): #991's OWN numbers (8000
+// synthesis / 2048 react_reason) were themselves proven insufficient ~70 minutes later,
+// same day, by #996 (0f71c1bd — "give reasoning models (gpt-5.5) real completion budget"),
+// which raised ai_rec_v2's sibling callsites to synthesis 28000/32000 and react_reason
+// 16000 (orchestrator-v3.ts:2726,3064). The floor below (and the react-loop.ts values it
+// polices) are aligned to those already-battle-tested numbers, not #991's since-refuted
+// ones — the floor must sit strictly above every empirically-refuted value on record
+// (1500, 2048, 8000, 10000) with real margin, not just above the smallest of them.
+//
 // This test statically scans every callLlm() invocation under apps/api/src whose modelKey
 // resolves, via a same-file `const X = process.env["OPENAI_MODEL_AI_REC"|"OPENAI_MODEL_BRIEF"] ...`
 // declaration, to a reasoning-model-linked identifier, and asserts maxTokens >= the floor.
-// Scope note: this intentionally only follows the direct same-statement declaration pattern
-// (matches brain/react-loop.ts's LOOP_MODEL_KEY and openalice-strategy-brief.ts's briefModel —
-// the exact pattern that caused the outage). ai-recommendation-v2/orchestrator-v3.ts resolves
-// its model via a function return rather than a same-statement const, so it falls outside this
-// generic scanner's identifier tracing; it already has its own dedicated GPT55-UPGRADE-3/5/6
-// tests pinning its maxTokens behavior. A genuinely new callsite added later using the
-// LOOP_MODEL_KEY/briefModel pattern (or a new same-file `const X = ...OPENAI_MODEL_AI_REC...`)
-// WILL be picked up automatically — this is a directory scan, not a hardcoded file/line list.
+// Scope note (known blind spot, flagged by Pete's review — not fixed here, just documented):
+// this only follows the direct same-statement declaration pattern (matches
+// brain/react-loop.ts's LOOP_MODEL_KEY and openalice-strategy-brief.ts's briefModel — the
+// exact pattern that caused the outage). ai-recommendation-v2/orchestrator-v3.ts resolves
+// its model via a function return rather than a same-statement const, so it falls outside
+// this generic scanner's identifier tracing; it already has its own dedicated
+// GPT55-UPGRADE-3/5/6 tests pinning its maxTokens behavior. A genuinely new callsite added
+// later using the LOOP_MODEL_KEY/briefModel pattern (or a new same-file
+// `const X = ...OPENAI_MODEL_AI_REC...`) WILL be picked up automatically — this is a
+// directory scan, not a hardcoded file/line list. BUT: if a future refactor wraps the model
+// resolution or the callLlm() call itself in a helper function (a reasonable engineering
+// move) such that the identifier declaration and the call no longer share the same file, OR
+// passes modelKey through a function parameter/object property instead of a bare same-file
+// const, this scanner will silently stop seeing that callsite — it will neither pass nor
+// fail, it just won't be scanned. Anyone introducing such a wrapper must manually add either
+// a dedicated test (like GPT55-UPGRADE-3/5/6) or extend this scanner's resolution rules; this
+// test is not a universal safety net for every possible future refactor shape.
 
-const GPT55_MAXTOKENS_FLOOR = 4000;
+const GPT55_MAXTOKENS_FLOOR = 12000;
 const GPT55_ENV_MARKERS = ["OPENAI_MODEL_AI_REC", "OPENAI_MODEL_BRIEF"];
 // Resolver functions with their own dedicated tests elsewhere — a maxTokens value this
 // generic scanner cannot statically resolve to a number is accepted only if the file
@@ -17974,7 +17992,7 @@ function gpt55ResolveMaxTokensValue(src: string, rawValue: string): number | nul
   return null; // property access / function-call result — see GPT55_KNOWN_SAFE_RESOLVERS gate
 }
 
-test("GPT55-UPGRADE-7: every callLlm() callsite bound to a same-file OPENAI_MODEL_AI_REC/OPENAI_MODEL_BRIEF identifier has maxTokens >= 4000", () => {
+test("GPT55-UPGRADE-7: every callLlm() callsite bound to a same-file OPENAI_MODEL_AI_REC/OPENAI_MODEL_BRIEF identifier has maxTokens >= 12000", () => {
   const violations: string[] = [];
 
   for (const file of gpt55ListApiSourceFiles()) {
