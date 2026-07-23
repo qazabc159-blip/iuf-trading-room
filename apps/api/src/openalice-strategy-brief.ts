@@ -915,7 +915,25 @@ export async function generateStrategyBrief(
   const prompt = buildGeneratorPrompt(sourcePack);
   const rawAiOutput = (await callLlm(
     [{ role: "user", content: prompt }],
-    { modelKey: briefModel, callerModule: "strategy_brief", taskType: "generation", maxTokens: MAX_TOKENS_GENERATOR, temperature: 0.15 }
+    {
+      modelKey: briefModel,
+      callerModule: "strategy_brief",
+      taskType: "generation",
+      maxTokens: MAX_TOKENS_GENERATOR,
+      temperature: 0.15,
+      // 2026-07-23 (PR #1344/#1346 RCA — reports/design_redesign_20260722/
+      // COMPANY_REPORT_LLM_OUTAGE_20260723.md): this callsite's maxTokens was raised to
+      // 28000 to fix a gpt-5.5 reasoning-token-starvation bug, but a sibling callsite
+      // (brain/react-loop.ts) at the same maxTokens=28000 was live-verified to silently
+      // fail with errorCode=FETCH_ERROR at exactly llm-gateway's DEFAULT_TIMEOUT_MS=25s
+      // (llm-gateway.ts:108) — a 28000-token gpt-5.5 completion routinely takes longer
+      // than 25s. This callsite has the identical maxTokens=28000/gpt-5.5 combination and
+      // never set timeoutMs either, so it carries the same latent risk (flagged by Pete's
+      // PR #1344 round-2 review). Aligned to the same 240s value already proven safe for
+      // this exact maxTokens ceiling (orchestrator-v3.ts:436 V3_SYNTHESIS_TIMEOUT_MS, and
+      // now brain/react-loop.ts's synthesis callsite).
+      timeoutMs: 240_000
+    }
   ))?.content ?? null;
 
   if (rawAiOutput) {
