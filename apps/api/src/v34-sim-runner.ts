@@ -59,14 +59,16 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { auditLogs, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
 import { getLastCloses } from "./quote-last-close-store.js";
 import {
   extractKgiTradeId,
   reconcileKgiOrder,
+  reconcileUnconfirmedAuditOrders,
   type KgiOrderLifecycleStatus,
 } from "./broker/kgi-order-reconciliation.js";
+import { toKgiOrderQty } from "./broker/kgi-contract-rules.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -762,7 +764,13 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
         const tradeRaw = await client.createOrder({
           action: "Buy",
           symbol: entry.stockId,
-          qty: entry.targetShares,
+          // 2026-07-23 P0 fix: SDK qty is 張 (lots) for board-lot orders and
+          // SHARES for odd-lot orders. targetShares is always a board-lot
+          // multiple when isOddLot=false (see roundDownBoardLot in
+          // computeV34OrderSizing) — convert to lots in that case; odd-lot
+          // orders keep the raw share count. Passing raw shares for the
+          // board-lot branch was a 1000x oversized order.
+          qty: toKgiOrderQty(entry.targetShares, entry.isOddLot),
           price: undefined, // MARKET order — approximates next_trading_day_open
           timeInForce: "ROD",
           orderCond: "Cash",
@@ -780,7 +788,11 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           extractKgiTradeId(tradeRecord["kgi_response_repr"]) ??
           extractKgiTradeId(tradeRecord);
         accepted = true;
-        console.log(`[v34-sim] ${entry.stockId} qty=${entry.targetShares}${entry.isOddLot ? " (odd lot)" : ""} accepted tradeId=${tradeId ?? "null"}`);
+        // 2026-07-23 Round 2 (Pete review PR #1345): log both units explicitly —
+        // shares=targetShares (audit_logs unit) vs wireQty actually sent to KGI
+        // (lots for board-lot, shares for odd-lot), to avoid misleading future
+        // debugging.
+        console.log(`[v34-sim] ${entry.stockId} shares=${entry.targetShares} wireQty=${toKgiOrderQty(entry.targetShares, entry.isOddLot)}${entry.isOddLot ? " (odd lot, shares)" : " (lots)"} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -802,7 +814,10 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           client.getDeals().catch(() => null),
         ]);
         const reconciled = reconcileKgiOrder({
-          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares },
+          // Board-lot entries (isOddLot=false) report broker evidence quantity
+          // in lots, not shares; odd-lot entries report shares. 2026-07-23
+          // Round 2 fix (Pete review PR #1345).
+          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares, wireQtyUnit: entry.isOddLot ? "shares" : "lots" },
           events,
           trades,
           deals,
@@ -814,6 +829,10 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
     }
 
     results.push({
+      // NOTE: `shares` is always SHARES (not lots) — audit_logs / notional
+      // semantics unchanged by the 2026-07-23 qty-unit fix. Only the wire
+      // `qty` sent to createOrder() (above) is lot-denominated for
+      // non-odd-lot orders.
       stockId: entry.stockId,
       shares: entry.targetShares,
       isOddLot: entry.isOddLot,
@@ -850,6 +869,128 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
   );
 
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// Unconfirmed-order reconciliation cron (2026-07-23 P0 fix) — mirrors
+// s1-sim-runner.ts's reconcileUnconfirmedS1Orders(). See that function's
+// doc for the full rationale (4.5s poll can't observe 10-40s+ real fill
+// latency). Only the latest order_submit audit row is checked — gateway
+// trades/deals/events are transient in-memory state wiped on restart.
+// ---------------------------------------------------------------------------
+
+export interface V34ReconcileSummary {
+  auditRowFound: boolean;
+  ordersUnconfirmed: number;
+  ordersNewlyConfirmed: number;
+  gatewayUnreachable: boolean;
+  skippedGatewayScheduledOff: boolean;
+}
+
+async function readLatestV34OrderSubmitAuditRow(
+  workspaceId: string,
+): Promise<{ id: string; payload: Record<string, unknown>; report: V34OrderSubmitReport } | null> {
+  const db = getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ id: auditLogs.id, payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, V34_AUDIT_ACTION),
+        eq(auditLogs.entityType, V34_AUDIT_ENTITY_TYPE),
+      ),
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(1)
+    .catch(() => [] as Array<{ id: string; payload: unknown }>);
+
+  const row = rows[0];
+  if (!row?.id) return null;
+  const payload = row.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  return { id: row.id, payload: payload as Record<string, unknown>, report: payload as unknown as V34OrderSubmitReport };
+}
+
+/**
+ * Re-check the latest v34_sim.order_submit audit row's still-unconfirmed
+ * orders against a fresh gateway snapshot, updating the same row in place
+ * for any that resolved. Cheap no-op if nothing is unconfirmed.
+ */
+export async function reconcileUnconfirmedV34Orders(gatewayBaseUrl?: string): Promise<V34ReconcileSummary> {
+  const summary: V34ReconcileSummary = {
+    auditRowFound: false,
+    ordersUnconfirmed: 0,
+    ordersNewlyConfirmed: 0,
+    gatewayUnreachable: false,
+    skippedGatewayScheduledOff: false,
+  };
+  if (!isDatabaseMode()) return summary;
+  const db = getDb();
+  if (!db) return summary;
+
+  const workspaceId = await resolveWorkspaceId();
+  if (!workspaceId) return summary;
+
+  const row = await readLatestV34OrderSubmitAuditRow(workspaceId);
+  if (!row) return summary;
+  summary.auditRowFound = true;
+
+  const unconfirmedOrders = row.report.results
+    .map((r, index) => ({ r, index }))
+    .filter(({ r }) => r.status === "unconfirmed" && r.tradeId);
+  summary.ordersUnconfirmed = unconfirmedOrders.length;
+  if (unconfirmedOrders.length === 0) return summary;
+
+  const { isKgiGatewayScheduledOff } = await import("./broker/kgi-gateway-schedule.js");
+  if (isKgiGatewayScheduledOff()) {
+    summary.skippedGatewayScheduledOff = true;
+    return summary;
+  }
+
+  const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayBaseUrl ?? kgiGatewayUrl(), connectTimeoutMs: 10_000, ignoreScheduleGuard: true });
+
+  let trades: unknown = null;
+  let deals: unknown = null;
+  let events: unknown = null;
+  try {
+    [trades, deals, events] = await Promise.all([
+      client.getTrades(true).catch(() => null),
+      client.getDeals().catch(() => null),
+      client.getRecentOrderEvents(200).catch(() => null),
+    ]);
+  } catch {
+    summary.gatewayUnreachable = true;
+    return summary;
+  }
+
+  const resolutions = reconcileUnconfirmedAuditOrders(
+    // V34's own audit_logs row already carries isOddLot per entry (stored at
+    // submit time) — thread it through, do not assume board-lot like S1/V51.
+    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.tradeId, symbol: r.stockId, shares: r.shares, isOddLot: r.isOddLot })),
+    { trades, deals, events },
+  );
+  if (resolutions.length === 0) return summary;
+
+  const updatedResults = [...row.report.results];
+  for (const { index, reconciled } of resolutions) {
+    updatedResults[index] = { ...updatedResults[index], status: reconciled.status as V34OrderResult["status"], error: null };
+  }
+  summary.ordersNewlyConfirmed = resolutions.length;
+
+  try {
+    await db
+      .update(auditLogs)
+      .set({ payload: { ...row.payload, results: updatedResults, reconciledAt: new Date().toISOString() } })
+      .where(eq(auditLogs.id, row.id));
+    console.log(`[v34-reconcile] updated ${resolutions.length} order(s) on audit row ${row.id}`);
+  } catch (e) {
+    console.warn("[v34-reconcile] failed to write reconciled payload:", e instanceof Error ? e.message : String(e));
+  }
+
+  return summary;
 }
 
 /**

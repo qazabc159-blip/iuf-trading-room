@@ -1,3 +1,5 @@
+import { fromKgiOrderQty } from "./kgi-contract-rules.js";
+
 export type KgiOrderLifecycleStatus =
   | "accepted"
   | "partially_filled"
@@ -10,8 +12,22 @@ export type SubmittedKgiOrder = {
   tradeId?: string | null;
   symbol: string;
   side: "buy" | "sell";
+  /** ALWAYS in SHARES (never lots), regardless of wireQtyUnit below. */
   requestedQty: number;
   submittedAt?: string | null;
+  /**
+   * Unit of the QUANTITY FIELDS INSIDE MATCHED BROKER EVIDENCE (deal/order-
+   * event/trade-report rows) for this order — NOT the unit of requestedQty
+   * above, which is always shares. Board-lot orders echo quantity back in
+   * 張 (lots) in every broker report (NewOrder ack, Deal, /trades query);
+   * odd-lot orders echo shares. Defaults to "shares" (no conversion) to
+   * preserve exact prior behavior for any caller that doesn't set this —
+   * only callers that KNOW their order was placed as a board-lot order
+   * (S1/V34/V51's own audit-derived orders) should pass "lots". See
+   * kgi-contract-rules.ts::fromKgiOrderQty() doc (2026-07-23 Round 2 fix,
+   * Pete review PR #1345) for the full symmetric-bug rationale.
+   */
+  wireQtyUnit?: "lots" | "shares";
 };
 
 export type ReconciledKgiOrder = {
@@ -75,9 +91,23 @@ function text(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+/**
+ * 2026-07-23 P0 fix: `Number("")` evaluates to `0` in JS (not NaN) — so this
+ * function used to silently turn "key absent" (scalar() returns null for a
+ * missing key) into a real `0` instead of null. That 0 then defeated the
+ * `row.filledQty ?? row.requestedQty ?? 0` fallback chain in
+ * reconcileKgiOrder() below wherever real KGI evidence lacks an explicit
+ * filled_qty/deal_qty field — which real /deals payloads always do (KGI uses
+ * "quantity", not "filled_qty"; see FILLED_QTY_KEYS above). Net effect: every
+ * real deal's filledQty silently computed as 0, so status could never
+ * advance past "accepted" and settlementConfirmed stayed false forever —
+ * caught by reconcileUnconfirmedAuditOrders' fixture test using real
+ * 2026-07-23 go-live /deals evidence (reports/sim_go_live_20260723/).
+ */
 function numberValue(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(String(value).replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -156,11 +186,30 @@ function normalizeEvidence(record: Record<string, unknown>, source: NormalizedEv
   };
 }
 
+/**
+ * Convert a wire-unit quantity extracted from broker evidence (lots for
+ * board-lot orders, shares for odd-lot orders — see SubmittedKgiOrder.
+ * wireQtyUnit doc) into a real share count. `null` in, `null` out — callers
+ * fall back to sensible defaults (0/undefined) same as before this existed.
+ *
+ * 2026-07-23 Round 2 fix (Pete review PR #1345): every quantity field read
+ * off matched evidence rows (filledQty/requestedQty/remainingQty) is in
+ * this wire unit and MUST be converted before being compared against or
+ * summed with order.requestedQty (always shares) — this was the symmetric
+ * gap left after the submit-side qty fix (kgi-contract-rules.ts::
+ * toKgiOrderQty()) landed without a matching parse-side fix.
+ */
+function wireQtyToShares(wireQtyUnit: SubmittedKgiOrder["wireQtyUnit"], qty: number | null): number | null {
+  if (qty === null) return null;
+  return fromKgiOrderQty(qty, (wireQtyUnit ?? "shares") === "shares");
+}
+
 function sameRequest(order: SubmittedKgiOrder, evidence: NormalizedEvidence): boolean {
   if (evidence.symbol && evidence.symbol !== order.symbol) return false;
   if (evidence.side && evidence.side !== order.side) return false;
-  if (evidence.requestedQty !== null && evidence.requestedQty !== order.requestedQty) return false;
-  return evidence.symbol === order.symbol && (evidence.side !== null || evidence.requestedQty !== null);
+  const evidenceRequestedQtyShares = wireQtyToShares(order.wireQtyUnit, evidence.requestedQty);
+  if (evidenceRequestedQtyShares !== null && evidenceRequestedQtyShares !== order.requestedQty) return false;
+  return evidence.symbol === order.symbol && (evidence.side !== null || evidenceRequestedQtyShares !== null);
 }
 
 export function reconcileKgiOrder(params: {
@@ -170,6 +219,8 @@ export function reconcileKgiOrder(params: {
   events?: unknown;
 }): ReconciledKgiOrder {
   const tradeId = params.order.tradeId ?? null;
+  const wireQtyUnit = params.order.wireQtyUnit;
+  const toShares = (qty: number | null) => wireQtyToShares(wireQtyUnit, qty);
   const evidence = [
     ...flattenEvidence(params.deals, "deal").map((row) => normalizeEvidence(row, "deal")),
     ...flattenEvidence(params.events, "order_event").map((row) => normalizeEvidence(row, "order_event")),
@@ -185,17 +236,17 @@ export function reconcileKgiOrder(params: {
   const dealRows = safeMatched.filter((row) => row.source === "deal");
   const eventDealRows = safeMatched.filter((row) => row.source === "order_event" && row.status === "filled");
   const filledQty = dealRows.length > 0
-    ? dealRows.reduce((sum, row) => sum + Math.max(0, row.filledQty ?? row.requestedQty ?? 0), 0)
+    ? dealRows.reduce((sum, row) => sum + Math.max(0, toShares(row.filledQty ?? row.requestedQty) ?? 0), 0)
     : eventDealRows.length > 0
-      ? Math.max(...eventDealRows.map((row) => row.filledQty ?? row.requestedQty ?? 0))
-      : Math.max(0, ...safeMatched.map((row) => row.filledQty ?? 0));
+      ? Math.max(...eventDealRows.map((row) => toShares(row.filledQty ?? row.requestedQty) ?? 0))
+      : Math.max(0, ...safeMatched.map((row) => toShares(row.filledQty) ?? 0));
   const weightedDeals = dealRows.filter((row) => (row.avgFillPrice ?? 0) > 0);
   const avgFillPrice = weightedDeals.length > 0
-    ? weightedDeals.reduce((sum, row) => sum + (row.avgFillPrice ?? 0) * Math.max(1, row.filledQty ?? row.requestedQty ?? 1), 0)
-      / weightedDeals.reduce((sum, row) => sum + Math.max(1, row.filledQty ?? row.requestedQty ?? 1), 0)
+    ? weightedDeals.reduce((sum, row) => sum + (row.avgFillPrice ?? 0) * Math.max(1, toShares(row.filledQty ?? row.requestedQty) ?? 1), 0)
+      / weightedDeals.reduce((sum, row) => sum + Math.max(1, toShares(row.filledQty ?? row.requestedQty) ?? 1), 0)
     : safeMatched.find((row) => row.avgFillPrice !== null)?.avgFillPrice ?? null;
   const explicitRemaining = safeMatched.find((row) => row.remainingQty !== null)?.remainingQty;
-  const remainingQty = Math.max(0, explicitRemaining ?? params.order.requestedQty - filledQty);
+  const remainingQty = Math.max(0, toShares(explicitRemaining ?? null) ?? params.order.requestedQty - filledQty);
 
   let status: KgiOrderLifecycleStatus = safeMatched[0]?.status ?? "unconfirmed";
   if (safeMatched.some((row) => row.status === "rejected")) status = "rejected";
@@ -233,6 +284,101 @@ export function reconcileKgiOrders(params: {
   events?: unknown;
 }): ReconciledKgiOrder[] {
   return params.orders.map((order) => reconcileKgiOrder({ ...params, order }));
+}
+
+// ── SIM audit_logs 補確認掃描 (2026-07-23) ──────────────────────────────────
+//
+// Root cause (2026-07-23 P0, reports/sim_go_live_20260723/): S1/V34/V51 SIM
+// runners poll trades/deals/events for only 3x1.5s=4.5s immediately after
+// order submission, then give up permanently and persist
+// status="unconfirmed" into their own audit_logs row forever — even though
+// real evidence the same day showed ExecReport/Deal confirmations landing
+// 10-40s+ after submission (see VISIBILITY_DIAGNOSIS_20260723.md). 4.5s can
+// never observe a real fill; this is why settlement_confirmed has been 0%
+// for 8 straight weeks.
+//
+// This is the pure reconciliation-matching core of the fix: given a batch of
+// orders an audit row recorded as still "unconfirmed" (plus a trade id), and
+// a FRESH trades/deals/events snapshot from the gateway, report which ones
+// can now be resolved. No I/O here — callers (one per pipeline, in
+// s1-sim-runner.ts / v34-sim-runner.ts / v51-sim-basket-runner.ts) own
+// reading the audit_logs row (with its `id`) and writing the updated
+// payload back in place (same row, same field semantics — see each
+// pipeline's own `reconcileUnconfirmed<X>Orders()` for the I/O wrapper).
+//
+// Idempotent by construction: re-running against the same audit row is safe
+// — orders that are still unconfirmed are re-checked (no-op if nothing new
+// arrived), orders already resolved are filtered out by the caller before
+// even reaching this function (or simply produce the same reconciled result
+// again), and the write-back is an UPDATE of the same row, never an INSERT
+// — no duplicate audit rows are ever created by re-running this scan.
+//
+// This function intentionally does NOT reach back further than the orders
+// it's given — gateway trades/deals/events are transient in-memory state
+// that is wiped on every gateway process restart (confirmed 2026-07-23), so
+// orders from a prior gateway session cannot be recovered here regardless of
+// how far back the caller looks. Callers should scope their audit_logs scan
+// to recent rows (same gateway uptime window) for this to have any chance of
+// finding evidence.
+
+/** One order from an audit_logs row's `results` array that is still unresolved. */
+export type UnconfirmedAuditOrder = {
+  /** Position in the caller's original results array — lets the caller splice
+   *  the reconciliation result back into the exact same array slot. */
+  index: number;
+  tradeId: string | null;
+  symbol: string;
+  /** Requested share count (NOT lots — matches SubmittedKgiOrder.requestedQty). */
+  shares: number;
+  /**
+   * Whether this order was placed as a Taiwan odd-lot (零股) order — REQUIRED,
+   * not optional, because the caller MUST know this to correctly reconcile
+   * (board-lot orders' broker evidence reports quantity in lots, not shares
+   * — see SubmittedKgiOrder.wireQtyUnit doc). 2026-07-23 Round 2 fix (Pete
+   * review PR #1345): omitting this silently produced a 1000x-wrong
+   * filledQty for every board-lot order.
+   */
+  isOddLot: boolean;
+};
+
+export type UnconfirmedAuditOrderResolution = {
+  index: number;
+  reconciled: ReconciledKgiOrder;
+};
+
+/**
+ * Re-check a batch of still-"unconfirmed" audit-log orders against a fresh
+ * trades/deals/events snapshot. Returns only the ones that can now be
+ * resolved (settlementConfirmed=true) — orders with no matching evidence yet
+ * are omitted so callers can leave those audit fields untouched.
+ *
+ * Orders without a tradeId are skipped (nothing to match against — a
+ * "skipped"/"rejected"-at-submission-time order was never really pending).
+ */
+export function reconcileUnconfirmedAuditOrders(
+  orders: UnconfirmedAuditOrder[],
+  evidence: { trades?: unknown; deals?: unknown; events?: unknown },
+): UnconfirmedAuditOrderResolution[] {
+  const resolutions: UnconfirmedAuditOrderResolution[] = [];
+  for (const order of orders) {
+    if (!order.tradeId) continue;
+    const reconciled = reconcileKgiOrder({
+      order: {
+        tradeId: order.tradeId,
+        symbol: order.symbol,
+        side: "buy",
+        requestedQty: order.shares,
+        wireQtyUnit: order.isOddLot ? "shares" : "lots",
+      },
+      trades: evidence.trades,
+      deals: evidence.deals,
+      events: evidence.events,
+    });
+    if (reconciled.settlementConfirmed) {
+      resolutions.push({ index: order.index, reconciled });
+    }
+  }
+  return resolutions;
 }
 
 // ── UTA-C2 委託回報輪詢 (2026-07-04) ────────────────────────────────────────

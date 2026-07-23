@@ -33,6 +33,7 @@ import {
   nextWeekdayIso,
   parseV34BasketCsv,
   readV34BasketForDate,
+  reconcileUnconfirmedV34Orders,
   V34_CAPITAL_TWD,
   V34_KGI_SUBSCRIPTION_CAP,
   V34_LABEL,
@@ -41,6 +42,7 @@ import {
   type V34Basket,
   type V34BasketRow,
 } from "./v34-sim-runner.js";
+import { toKgiOrderQty } from "./broker/kgi-contract-rules.js";
 
 const VALID_HEADER = "stock_id,signal_date,gh,days_since_high,wm60_twd,last_close,label,weight,planned_entry";
 const ROW = (id: string, signalDate = "2026-07-09") =>
@@ -329,6 +331,51 @@ test("computeV34OrderSizing: real committed basket prices — all 9 names get > 
   // close to it (previously only ~49.5% actually committed with the 4 zeroed names).
   assert.ok(totalCommittedTwd <= V34_CAPITAL_TWD, `total committed ${totalCommittedTwd} must not exceed capital ${V34_CAPITAL_TWD}`);
   assert.ok(totalCommittedTwd > V34_CAPITAL_TWD * 0.9, `total committed ${totalCommittedTwd} should be close to equal-weight (>90% of ${V34_CAPITAL_TWD})`);
+});
+
+// ---------------------------------------------------------------------------
+// qty-unit regression (2026-07-23 P0 fix): board-lot entries (isOddLot=false)
+// must convert to LOTS (÷1000) before being sent as createOrder({ qty });
+// odd-lot entries (isOddLot=true) keep the raw share count. Pins both
+// branches against the real committed basket sizing above.
+// ---------------------------------------------------------------------------
+
+test("qty-unit fix: real committed basket sizing converts board-lot entries to lots, odd-lot entries pass through as shares", () => {
+  const basket = realBasket();
+  const lastCloses = new Map(REAL_BASKET_PRICES.map(([id, price]) => [id, { closePrice: price }]));
+  const sized = computeV34OrderSizing(basket, lastCloses, V34_CAPITAL_TWD);
+
+  const expectedQty: Record<string, number> = {
+    "2330": 460,    // odd lot -> shares pass through
+    "8046": 914,    // odd lot -> shares pass through
+    "2409": 35,     // board lot 35000 shares -> 35 lots
+    "6223": 156,    // odd lot -> shares pass through
+    "6488": 823,    // odd lot -> shares pass through
+    "6182": 5,      // board lot 5000 shares -> 5 lots
+    "6213": 2,      // board lot 2000 shares -> 2 lots
+    "8150": 9,      // board lot 9000 shares -> 9 lots
+    "3374": 3,      // board lot 3000 shares -> 3 lots
+  };
+  for (const entry of sized) {
+    const qty = toKgiOrderQty(entry.targetShares, entry.isOddLot);
+    assert.equal(qty, expectedQty[entry.stockId], `${entry.stockId}: expected qty ${expectedQty[entry.stockId]}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// reconcileUnconfirmedV34Orders() — the 2026-07-23 P0 reconciliation cron
+// wrapper. Test env runs in memory mode (no DATABASE_URL/PERSISTENCE_MODE=
+// database), so this exercises the fail-safe no-op contract: never throws,
+// always returns a well-formed zeroed summary, makes no gateway call.
+// ---------------------------------------------------------------------------
+
+test("reconcileUnconfirmedV34Orders: no-ops safely (returns zeroed summary, no throw) when not in database mode", async () => {
+  const summary = await reconcileUnconfirmedV34Orders();
+  assert.equal(summary.auditRowFound, false);
+  assert.equal(summary.ordersUnconfirmed, 0);
+  assert.equal(summary.ordersNewlyConfirmed, 0);
+  assert.equal(summary.gatewayUnreachable, false);
+  assert.equal(summary.skippedGatewayScheduledOff, false);
 });
 
 // ---------------------------------------------------------------------------

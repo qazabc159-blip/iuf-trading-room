@@ -22,7 +22,8 @@ import { join } from "node:path";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getFinMindClient } from "./data-sources/finmind-client.js";
 import { auditLogs, companies, getDb, isDatabaseMode, workspaces } from "@iuf-trading-room/db";
-import { extractKgiTradeId, reconcileKgiOrder } from "./broker/kgi-order-reconciliation.js";
+import { extractKgiTradeId, reconcileKgiOrder, reconcileUnconfirmedAuditOrders } from "./broker/kgi-order-reconciliation.js";
+import { toKgiOrderQty } from "./broker/kgi-contract-rules.js";
 import { upsertLastCloses, getLastCloses, getLatestOhlcvCloseForTickers, type LastCloseEntry } from "./quote-last-close-store.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
 
@@ -866,7 +867,11 @@ export async function runS1OrderSubmitTick(): Promise<void> {
         const tradeRaw = await client.createOrder({
           action: "Buy",
           symbol: entry.symbol,
-          qty: entry.target_shares,
+          // 2026-07-23 P0 fix: SDK qty is 張 (lots) for board-lot (oddLot=false)
+          // orders — target_shares is always a board-lot multiple (see
+          // roundDownBoardLot above), so convert shares -> lots here. Passing
+          // raw shares was a 1000x oversized order. See toKgiOrderQty() doc.
+          qty: toKgiOrderQty(entry.target_shares, false),
           price: undefined, // MARKET order
           timeInForce: "ROD",
           orderCond: "Cash",
@@ -881,7 +886,11 @@ export async function runS1OrderSubmitTick(): Promise<void> {
           ?? extractKgiTradeId(tradeRecord);
 
         accepted = true;
-        console.log(`[s1-order] ${entry.symbol} qty=${entry.target_shares} accepted tradeId=${tradeId ?? "null"}`);
+        // 2026-07-23 Round 2 (Pete review PR #1345): log both units explicitly —
+        // shares=target_shares (audit_logs unit) vs wireQty=lots actually sent to
+        // KGI, to avoid misleading future debugging (this line used to label the
+        // share count "qty=", which isn't the value actually sent on the wire).
+        console.log(`[s1-order] ${entry.symbol} shares=${entry.target_shares} wireQtyLots=${toKgiOrderQty(entry.target_shares, false)} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -912,6 +921,10 @@ export async function runS1OrderSubmitTick(): Promise<void> {
               symbol: entry.symbol,
               side: "buy",
               requestedQty: entry.target_shares,
+              // S1 always submits board-lot orders (oddLot hardcoded false
+              // above) — broker evidence quantity is in lots, not shares.
+              // 2026-07-23 Round 2 fix (Pete review PR #1345).
+              wireQtyUnit: "lots",
             },
             events,
             trades,
@@ -942,6 +955,10 @@ export async function runS1OrderSubmitTick(): Promise<void> {
 
     orderResults.push({
       symbol: entry.symbol,
+      // NOTE: shares/filled_shares/remaining_shares below are always SHARES
+      // (not lots) — audit_logs / position / PnL semantics unchanged by the
+      // 2026-07-23 qty-unit fix. Only the wire `qty` sent to createOrder()
+      // (above) is lot-denominated; this field keeps the true share count.
       shares: entry.target_shares,
       status: accepted ? brokerStatus : "rejected",
       trade_id: tradeId,
@@ -991,6 +1008,160 @@ export async function runS1OrderSubmitTick(): Promise<void> {
   const accepted = orderResults.filter((r) => ["accepted", "filled", "partially_filled", "cancelled"].includes(r.status)).length;
   const rejected = orderResults.filter((r) => r.status === "rejected").length;
   console.log(`[s1-order] DONE accepted=${accepted} rejected=${rejected} skipped=${orderResults.length - accepted - rejected}`);
+}
+
+// ---------------------------------------------------------------------------
+// B2. Unconfirmed-order reconciliation cron (2026-07-23 P0 fix)
+//
+// runS1OrderSubmitTick() above only polls 3x1.5s=4.5s per order before
+// giving up and persisting status="unconfirmed" forever. Real evidence
+// 2026-07-23 showed ExecReport/Deal confirmations landing 10-40s+ after
+// submission (reports/sim_go_live_20260723/VISIBILITY_DIAGNOSIS_20260723.md)
+// — 4.5s structurally cannot observe this. This tick re-checks the most
+// recent orders_submitted audit row's still-unconfirmed entries against a
+// fresh gateway snapshot and, for any that resolved, updates the SAME
+// audit_logs row in place (same field semantics as the submit-time write) —
+// never inserts a new row, so re-running this tick is idempotent.
+//
+// Scope: only the LATEST orders_submitted row is checked. Gateway
+// trades/deals/events are transient in-memory state wiped on every gateway
+// restart — orders from a prior gateway session (a prior week's Tuesday
+// basket, for S1's weekly cadence) cannot be recovered here regardless of
+// how far back we look, so there is no value in scanning deeper history.
+// ---------------------------------------------------------------------------
+
+export interface S1ReconcileSummary {
+  auditRowFound: boolean;
+  ordersUnconfirmed: number;
+  ordersNewlyConfirmed: number;
+  gatewayUnreachable: boolean;
+  skippedGatewayScheduledOff: boolean;
+}
+
+/** Latest orders_submitted audit row INCLUDING its row id (needed to update in place). */
+async function readLatestS1OrderSubmitAuditRow(
+  workspaceId: string,
+): Promise<{ id: string; tradingDate: string; payload: Record<string, unknown>; data: S1OrderSubmitResult } | null> {
+  const db = getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ id: auditLogs.id, entityId: auditLogs.entityId, payload: auditLogs.payload })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.workspaceId, workspaceId),
+        eq(auditLogs.action, S1_AUDIT_ACTIONS.ordersSubmitted),
+        eq(auditLogs.entityType, "s1_sim"),
+      ),
+    )
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(1)
+    .catch(() => [] as Array<{ id: string; entityId: string | null; payload: unknown }>);
+
+  const row = rows[0];
+  if (!row?.id || !row.entityId) return null;
+  const payload = row.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const data = (payload as Record<string, unknown>)["data"];
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  return { id: row.id, tradingDate: row.entityId, payload: payload as Record<string, unknown>, data: data as S1OrderSubmitResult };
+}
+
+/**
+ * Re-check the latest s1_sim.orders_submitted audit row's still-unconfirmed
+ * orders against a fresh gateway trades/deals/events snapshot. Updates the
+ * same audit row in place for any orders that resolved. Cheap no-op if
+ * there's nothing unconfirmed (no gateway call made).
+ */
+export async function reconcileUnconfirmedS1Orders(gatewayBaseUrl?: string): Promise<S1ReconcileSummary> {
+  const summary: S1ReconcileSummary = {
+    auditRowFound: false,
+    ordersUnconfirmed: 0,
+    ordersNewlyConfirmed: 0,
+    gatewayUnreachable: false,
+    skippedGatewayScheduledOff: false,
+  };
+  if (!isDatabaseMode()) return summary;
+  const db = getDb();
+  if (!db) return summary;
+
+  const workspaceId = await resolveS1WorkspaceId();
+  if (!workspaceId) return summary;
+
+  const row = await readLatestS1OrderSubmitAuditRow(workspaceId);
+  if (!row) return summary;
+  summary.auditRowFound = true;
+
+  const unconfirmedOrders = row.data.results
+    .map((r, index) => ({ r, index }))
+    .filter(({ r }) => r.status === "unconfirmed" && r.trade_id);
+  summary.ordersUnconfirmed = unconfirmedOrders.length;
+  if (unconfirmedOrders.length === 0) return summary;
+
+  const { isKgiGatewayScheduledOff } = await import("./broker/kgi-gateway-schedule.js");
+  if (isKgiGatewayScheduledOff()) {
+    summary.skippedGatewayScheduledOff = true;
+    return summary;
+  }
+
+  const { KgiGatewayClient } = await import("./broker/kgi-gateway-client.js");
+  const client = new KgiGatewayClient({ gatewayBaseUrl: gatewayBaseUrl ?? kgiGatewayUrl(), connectTimeoutMs: 10_000, ignoreScheduleGuard: true });
+
+  let trades: unknown = null;
+  let deals: unknown = null;
+  let events: unknown = null;
+  try {
+    [trades, deals, events] = await Promise.all([
+      client.getTrades(true).catch(() => null),
+      client.getDeals().catch(() => null),
+      client.getRecentOrderEvents(200).catch(() => null),
+    ]);
+  } catch {
+    summary.gatewayUnreachable = true;
+    return summary;
+  }
+
+  const resolutions = reconcileUnconfirmedAuditOrders(
+    // S1 always submits board-lot orders (oddLot hardcoded false at submit
+    // time) — isOddLot:false is correct for every S1 order, not a default.
+    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.trade_id, symbol: r.symbol, shares: r.shares, isOddLot: false })),
+    { trades, deals, events },
+  );
+  if (resolutions.length === 0) return summary;
+
+  const updatedResults = [...row.data.results];
+  for (const { index, reconciled } of resolutions) {
+    updatedResults[index] = {
+      ...updatedResults[index],
+      status: reconciled.status,
+      filled_shares: reconciled.filledQty,
+      remaining_shares: reconciled.remainingQty,
+      avg_fill_price: reconciled.avgFillPrice,
+      settlement_source: reconciled.settlementSource,
+      settlement_confirmed: reconciled.settlementConfirmed,
+      confirmed_at: reconciled.confirmedAt,
+      error: null,
+    };
+  }
+  summary.ordersNewlyConfirmed = resolutions.length;
+
+  try {
+    await db
+      .update(auditLogs)
+      .set({
+        payload: {
+          ...row.payload,
+          data: { ...row.data, results: updatedResults },
+          reconciled_at: new Date().toISOString(),
+        },
+      })
+      .where(eq(auditLogs.id, row.id));
+    console.log(`[s1-reconcile] updated ${resolutions.length} order(s) on audit row ${row.id} (trading_date=${row.tradingDate})`);
+  } catch (e) {
+    console.warn("[s1-reconcile] failed to write reconciled payload:", e instanceof Error ? e.message : String(e));
+  }
+
+  return summary;
 }
 
 // ---------------------------------------------------------------------------

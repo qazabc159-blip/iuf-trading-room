@@ -5819,6 +5819,11 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
       side: "buy" as const,
       requestedQty: r.shares,
       submittedAt: auditSubmittedAt,
+      // S1 always submits board-lot orders — broker evidence quantity is in
+      // lots, not shares. 2026-07-23 Round 2 fix (Pete review PR #1345):
+      // this live-reconcile display endpoint reads the same share-
+      // denominated audit_logs data as the reconcile cron, same bug applies.
+      wireQtyUnit: "lots" as const,
     }));
 
   const orderAuditCount = baseOrders.length;
@@ -6093,6 +6098,12 @@ app.get("/api/v1/kgi/sim/v34-orders", async (c) => {
       side: "buy" as const,
       requestedQty: r.shares,
       submittedAt: auditSubmittedAt,
+      // V34's audit row carries isOddLot per entry — board-lot entries report
+      // broker evidence quantity in lots, odd-lot entries in shares.
+      // 2026-07-23 Round 2 fix (Pete review PR #1345): this live-reconcile
+      // display endpoint reads the same audit_logs data as the reconcile
+      // cron, same bug applies.
+      wireQtyUnit: r.isOddLot ? ("shares" as const) : ("lots" as const),
     }));
 
   const orderAuditCount = baseOrders.length;
@@ -20601,6 +20612,65 @@ function startSchedulers(workspaceSlug: string): void {
     }, V34_SIM_POLL_MS);
 
     console.log("[schedulers] V34-SIM-SHAKEDOWN-PIPELINE wired: auto orders(weekday 08:20 TST, entry-date scan over embedded shakedown basket)");
+  }
+
+  // =============================================================================
+  // SIM-ORDER-RECONCILE-CRON: S1/V34/V51 unconfirmed-order reconciliation
+  // (2026-07-23 P0 fix)
+  //
+  // Root cause: each pipeline's order-submit tick polls trades/deals/events
+  // for only 3x1.5s=4.5s before giving up permanently and persisting
+  // status="unconfirmed" into its own audit_logs row forever — real evidence
+  // 2026-07-23 showed ExecReport/Deal confirmations landing 10-40s+ after
+  // submission (structurally unobservable within 4.5s), matching 8 straight
+  // weeks of settlement_confirmed=0.
+  //
+  // These ticks re-check each pipeline's LATEST orders_submitted audit row's
+  // still-unconfirmed entries against a fresh gateway snapshot and update the
+  // same row in place for anything that resolved. Idempotent (UPDATE, never
+  // INSERT) and a cheap no-op when nothing is unconfirmed (no gateway call).
+  // Gateway-hours window guard lives inside each reconcile function.
+  // =============================================================================
+  {
+    const SIM_RECONCILE_TICK_MS = 5 * 60 * 1000;
+
+    ui(async () => {
+      try {
+        const { reconcileUnconfirmedS1Orders } = await import("./s1-sim-runner.js");
+        const summary = await reconcileUnconfirmedS1Orders();
+        if (summary.ordersNewlyConfirmed > 0) {
+          console.log(`[s1-reconcile-cron] confirmed ${summary.ordersNewlyConfirmed}/${summary.ordersUnconfirmed} previously-unconfirmed order(s)`);
+        }
+      } catch (e) {
+        console.error("[s1-reconcile-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, SIM_RECONCILE_TICK_MS);
+
+    ui(async () => {
+      try {
+        const { reconcileUnconfirmedV34Orders } = await import("./v34-sim-runner.js");
+        const summary = await reconcileUnconfirmedV34Orders();
+        if (summary.ordersNewlyConfirmed > 0) {
+          console.log(`[v34-reconcile-cron] confirmed ${summary.ordersNewlyConfirmed}/${summary.ordersUnconfirmed} previously-unconfirmed order(s)`);
+        }
+      } catch (e) {
+        console.error("[v34-reconcile-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, SIM_RECONCILE_TICK_MS);
+
+    ui(async () => {
+      try {
+        const { reconcileUnconfirmedV51Orders } = await import("./v51-sim-basket-runner.js");
+        const summary = await reconcileUnconfirmedV51Orders();
+        if (summary.ordersNewlyConfirmed > 0) {
+          console.log(`[v51-reconcile-cron] confirmed ${summary.ordersNewlyConfirmed}/${summary.ordersUnconfirmed} previously-unconfirmed order(s)`);
+        }
+      } catch (e) {
+        console.error("[v51-reconcile-cron] tick failed:", e instanceof Error ? e.message : String(e));
+      }
+    }, SIM_RECONCILE_TICK_MS);
+
+    console.log("[schedulers] SIM-ORDER-RECONCILE-CRON (5min tick, gateway-hours window guard internal) started for s1/v34/v51");
   }
 
   // =============================================================================
