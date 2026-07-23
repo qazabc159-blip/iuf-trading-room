@@ -115,3 +115,67 @@ Regression/W6）。**DRAFT，尚未 merge**：https://github.com/qazabc159-blip/
 **目前狀態**：`BLOCKED_PENDING_PR_1346_MERGE`——公司報告 synthesis 仍會在 prod 失敗
 （timeout 而非 token 不足），直到 #1346 merge+deploy 後才能重新真觸發驗證。**不宣稱
 RESOLVED**，待 #1346 merge 後本人會立刻重新觸發並回填最終驗證結果段落。
+
+---
+
+## ✅ RESOLVED — 2026-07-23 第三度真觸發驗證通過
+
+**PR #1346 merge+deploy**：Pete round APPROVED，merge commit `2d9d78dc`。deploy workflow
+（databaseId `29975569823`，headSha 精準核對）api job 綠；`GET /health` `buildCommit=
+2d9d78dc337fe2b20b7d45792b7a9ce5c7d8a849` 與 merge commit 逐字核對一致。
+
+**第三度真觸發（2330，正式同步阻塞 HTTP 呼叫，`--max-time 300`）**：
+`POST /api/v1/admin/brain/react/run`（與前端相同 prompt/context）→ `HTTP 200`，
+`TIME_TOTAL=65.78s`（遠低於新 240s 上限，也遠低於 Railway edge 常見 timeout 門檻，
+訊號形狀=乾淨完成，非 502/504/連線中斷，排除第三層 infra timeout 假設）。
+`run_id=2b0eff39-baf5-4ec1-8e43-b25cbaf13cbd`，`status=complete`，`cost_usd=0.196275`
+（`prompt_tokens=11112`、`completion_tokens=7408`，符合 round-2 PR body 估算的
+$0.21-0.24/次區間）。
+
+**`admin/llm/calls` 逐筆核對**（owner session）：
+```
+2026-07-23T02:59:49.540Z brain_react_synthesis react_synthesis gpt-5.5
+  status=success errorCode=None promptTokens=3603 completionTokens=3699
+  costUsd=0.128985 latencyMs=50086
+```
+`status=success`、`errorCode=None`（非 `EMPTY_CONTENT_length`、非 `FETCH_ERROR`）、
+`completionTokens=3699`（真實輸出，非空內容）——`finish_reason` 未直接入庫，但
+`errorCode=None` 且有非零 `completionTokens` 已足以排除 `length`/`FETCH_ERROR` 兩種
+已知失敗模式；`latencyMs=50086`（~50s）落在新 240s 上限內、遠低於舊 25s 上限，正是
+先前兩輪失敗的直接反證。同批 5 個 `brain_react` 推理輪全數 `status=success`。
+
+**`report_md` 內容真實性驗證**（非佔位、非「品質保護版」樣板）：
+- 全文 2736 字元，9 段標題與 `COMPANY_AI_ANALYST_REQUIRED_SECTIONS` **逐字相符**（程式化
+  比對，非肉眼判讀），順序正確、無改名無省略。
+- 內容引用真實資料：最新價 2400 元、漲跌 -0.41%、成交量 31,653,123 股、資料日期
+  2026-07-22、RSI14 40.87、20 日均線 2414.25、60 日均線 2334.10、20 日量比 0.76；三大法人
+  與融資融券欄位誠實標註「未取得可用數值」而非造假或籠統帶過。
+- 禁字掃描（`get_company_technical`/`run_id`/`too_short`/`保證獲利`/`必漲`/`勝率` 等）：
+  **0 命中**。
+
+**前端顯示層驗證（#1341 prod e2e，順收 Pete 的 🟡）**：
+- `GET /api/v1/admin/brain/react/company-report/2330`（前端 `AiAnalystReportPanel` 掛載時
+  實際呼叫的持久化端點）回傳 `run_id` 與內容跟上述觸發完全一致，證明前端能拿到這份真報告。
+- 用 Node 逐行複製 `apps/web/app/companies/[symbol]/aiAnalystReportQuality.ts` 的
+  `assessCompanyAiReportQuality()` 判準（9 段字面比對＋
+  `ENGINEERING_REPORT_LEAK_PATTERNS`＋`品質保護版`/`保守分析版`字串＋資料缺口句數／可驗證
+  數字數／來源類型數門檻），對這份真報告程式化重放：
+  `{ ok: true, reason: "ok", dataGapSentences: 2, numericFacts: 86, sourceMentions: 8 }`
+  ——全數通過（門檻：缺口句 ≤5、數字 ≥3、來源 ≥3），確認前端嚴格閘門**不會**把這份真報告
+  誤判為 `missing_sections`/`low_substance`/`engineering_leak`，會走 `reportQuality.ok`
+  分支正常渲染，而非顯示品質攔截空狀態卡。
+- **範圍說明（誠實揭露）**：本輪未使用真瀏覽器/Playwright 對 `/companies/2330` 頁面截圖，
+  是用「持久化端點內容 = 觸發內容」+「逐行複製前端閘門邏輯程式化重放」兩層替代驗證，
+  非畫面級 e2e。若需要畫面級證據（截圖/DOM 檢查），需另一輪派 Playwright 驗證。
+
+**Fast-follow（Pete 抓到同款組合）**：`openalice-strategy-brief.ts:909-918` 的
+`generation` callsite 同樣是 `maxTokens=28000`＋gpt-5.5 卻沒設 `timeoutMs`（該
+callerModule 過去 7+ 週零呼叫紀錄，未曾在 prod 真的觸發過，屬於「同款組合但未爆」）。
+補 `timeoutMs: 240_000`（同款註記）。PR：
+https://github.com/qazabc159-blip/iuf-trading-room/pull/1347（CI 5/5 綠，DRAFT，
+待 Elva 裁 merge）。
+
+**最終判定**：公司報告 synthesis 12+ 天（實為 ~7 週，since 2026-06-05）100% 失敗
+**RESOLVED**（後端 synthesis 成功產出真報告＋前端閘門邏輯驗證會正常渲染）。剩餘非阻擋
+待辦：①PR #1347 merge（同款組合的第二個 callsite，防守性修復非本次故障本身）
+②畫面級 Playwright e2e（非阻擋，資料層與邏輯層已雙重驗證）。
