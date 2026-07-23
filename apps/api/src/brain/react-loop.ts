@@ -736,7 +736,11 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
       workspaceId: opts.workspaceId,
       // gpt-5.5 needs more budget per ReAct step due to reasoning tokens.
       // temperature is omitted from requestBody for gpt-5.5 by llm-gateway automatically.
-      maxTokens: 2048,
+      // Floor is 4000 (see GPT55-UPGRADE-7 in tests/ci.test.ts) — 2026-06-05's gpt-5.5
+      // migration (#991) left this at 2048, which stayed just barely enough for short
+      // ReAct reasoning turns but is below the floor now enforced for every callLlm()
+      // callsite on this model to prevent a repeat of the 2026-07-23 synthesis outage.
+      maxTokens: 4000,
       temperature: 0.1
     });
 
@@ -844,7 +848,14 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
           callerModule: "brain_react_synthesis",
           taskType: "react_synthesis",
           workspaceId: opts.workspaceId,
-          maxTokens: 1500,
+          // 2026-07-23 RCA (reports/design_redesign_20260722/COMPANY_REPORT_LLM_OUTAGE_20260723.md):
+          // this was left at maxTokens:1500 (set 2026-05-19, #736) when #991 (2026-06-05,
+          // f0816a7b) switched LOOP_MODEL_KEY to gpt-5.5 — that commit bumped the sibling
+          // react_reason call (512->2048) and ai_rec_v2's synthesis call (5500->8000) to
+          // cover gpt-5.5's hidden reasoning-token overhead, but missed this callsite.
+          // Result: finish_reason=length -> empty content -> 100% synthesis failure for
+          // ~7 weeks. 8000 matches the ai_rec_v2 synthesis budget from the same commit.
+          maxTokens: 8000,
           temperature: 0.2
         }
       );

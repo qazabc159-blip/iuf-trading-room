@@ -17874,6 +17874,172 @@ test("GPT55-UPGRADE-6: ai rec v3 caps fallback model token budget", async () => 
   );
 });
 
+// ── GPT55-UPGRADE-7: reasoning-model maxTokens floor (2026-07-23 outage prevention) ─────────────
+//
+// Root cause fixed alongside this test: apps/api/src/brain/react-loop.ts's company-report
+// synthesis callsite kept maxTokens:1500 (set 2026-05-19, #736) through the 2026-06-05
+// gpt-5.5 migration (#991, f0816a7b), which bumped the sibling react_reason callsite
+// (512->2048) and ai_rec_v2's synthesis callsite (5500->8000) to cover gpt-5.5's hidden
+// reasoning-token overhead but missed this one — 100% finish_reason=length silent failure
+// for ~7 weeks (see reports/design_redesign_20260722/COMPANY_REPORT_LLM_OUTAGE_20260723.md).
+//
+// This test statically scans every callLlm() invocation under apps/api/src whose modelKey
+// resolves, via a same-file `const X = process.env["OPENAI_MODEL_AI_REC"|"OPENAI_MODEL_BRIEF"] ...`
+// declaration, to a reasoning-model-linked identifier, and asserts maxTokens >= the floor.
+// Scope note: this intentionally only follows the direct same-statement declaration pattern
+// (matches brain/react-loop.ts's LOOP_MODEL_KEY and openalice-strategy-brief.ts's briefModel —
+// the exact pattern that caused the outage). ai-recommendation-v2/orchestrator-v3.ts resolves
+// its model via a function return rather than a same-statement const, so it falls outside this
+// generic scanner's identifier tracing; it already has its own dedicated GPT55-UPGRADE-3/5/6
+// tests pinning its maxTokens behavior. A genuinely new callsite added later using the
+// LOOP_MODEL_KEY/briefModel pattern (or a new same-file `const X = ...OPENAI_MODEL_AI_REC...`)
+// WILL be picked up automatically — this is a directory scan, not a hardcoded file/line list.
+
+const GPT55_MAXTOKENS_FLOOR = 4000;
+const GPT55_ENV_MARKERS = ["OPENAI_MODEL_AI_REC", "OPENAI_MODEL_BRIEF"];
+// Resolver functions with their own dedicated tests elsewhere — a maxTokens value this
+// generic scanner cannot statically resolve to a number is accepted only if the file
+// references one of these (e.g. openalice-pipeline.ts's `briefRuntime.maxTokens`, which
+// comes from resolveDailyBriefLlmRuntimeOptions() and is asserted by GPT55-UPGRADE-4b).
+const GPT55_KNOWN_SAFE_RESOLVERS = [
+  "resolveDailyBriefLlmRuntimeOptions",
+  "capAiRecFallbackMaxTokensForModel"
+];
+
+function gpt55ListApiSourceFiles(): string[] {
+  const root = path.join(process.cwd(), "apps/api/src");
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "__tests__" || entry.name === "node_modules") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** Extracts the full `callLlm(...)` invocation text starting at the given `(` index. */
+function gpt55ExtractBalancedCall(src: string, openParenIdx: number): string {
+  let depth = 0;
+  for (let i = openParenIdx; i < src.length; i++) {
+    if (src[i] === "(") depth++;
+    else if (src[i] === ")") {
+      depth--;
+      if (depth === 0) return src.slice(openParenIdx, i + 1);
+    }
+  }
+  throw new Error("GPT55-UPGRADE-7: unbalanced parens while scanning a callLlm() invocation");
+}
+
+/** Same-file `const X = ... OPENAI_MODEL_AI_REC|OPENAI_MODEL_BRIEF ...` declared identifiers. */
+function gpt55FindReasoningLinkedIdentifiers(src: string): Set<string> {
+  const names = new Set<string>();
+  const declRe = /(?:const|let)\s+(\w+)\s*=[^;\n]*(?:OPENAI_MODEL_AI_REC|OPENAI_MODEL_BRIEF)/g;
+  let m: RegExpExecArray | null;
+  while ((m = declRe.exec(src))) names.add(m[1]!);
+  return names;
+}
+
+/** Resolves a same-file numeric constant, e.g. `const MAX_TOKENS_GENERATOR = 6_000;`. */
+function gpt55ResolveNumericConstant(src: string, name: string): number | null {
+  const re = new RegExp(`(?:const|let)\\s+${name}\\s*=\\s*([\\d_]+)\\s*;`);
+  const m = re.exec(src);
+  return m ? parseInt(m[1]!.replace(/_/g, ""), 10) : null;
+}
+
+/** Best-effort resolution of a `maxTokens:` value to its reasoning-branch number, or null. */
+function gpt55ResolveMaxTokensValue(src: string, rawValue: string): number | null {
+  const trimmed = rawValue.trim();
+
+  if (/^[\d_]+$/.test(trimmed)) {
+    return parseInt(trimmed.replace(/_/g, ""), 10);
+  }
+
+  // Ternary gated on a reasoning-model regex test, e.g. `/^(gpt-5|o1|o3)/.test(model) ? 32000 : 8000`
+  // — the reasoning-model branch is whichever literal follows the `?`.
+  const ternaryMatch = /test\([^)]*\)\s*\?\s*\(?\s*([\d_]+)/.exec(trimmed);
+  if (ternaryMatch) {
+    return parseInt(ternaryMatch[1]!.replace(/_/g, ""), 10);
+  }
+
+  // Bare identifier referencing a same-file numeric constant.
+  const identMatch = /^(\w+)$/.exec(trimmed);
+  if (identMatch) {
+    return gpt55ResolveNumericConstant(src, identMatch[1]!);
+  }
+
+  return null; // property access / function-call result — see GPT55_KNOWN_SAFE_RESOLVERS gate
+}
+
+test("GPT55-UPGRADE-7: every callLlm() callsite bound to a same-file OPENAI_MODEL_AI_REC/OPENAI_MODEL_BRIEF identifier has maxTokens >= 4000", () => {
+  const violations: string[] = [];
+
+  for (const file of gpt55ListApiSourceFiles()) {
+    const src = readFileSync(file, "utf8");
+    if (!GPT55_ENV_MARKERS.some((marker) => src.includes(marker))) continue;
+
+    const reasoningIdentifiers = gpt55FindReasoningLinkedIdentifiers(src);
+    if (reasoningIdentifiers.size === 0) continue;
+
+    const callRe = /(?<!function )callLlm\(/g;
+    let callMatch: RegExpExecArray | null;
+    while ((callMatch = callRe.exec(src))) {
+      const openIdx = callMatch.index + callMatch[0].length - 1;
+      let callText: string;
+      try {
+        callText = gpt55ExtractBalancedCall(src, openIdx);
+      } catch {
+        continue;
+      }
+
+      // Strip `//` line comments before matching so explanatory comments that happen to
+      // mention "maxTokens:"/history values (like this test's own fix commentary) never
+      // get picked up ahead of the real code.
+      const callTextNoComments = callText.replace(/\/\/[^\n]*/g, "");
+
+      const modelKeyMatch = /modelKey:\s*([\w.]+)/.exec(callTextNoComments);
+      const modelKeyExpr = modelKeyMatch?.[1];
+      if (!modelKeyExpr || !reasoningIdentifiers.has(modelKeyExpr)) continue;
+
+      const lineNo = src.slice(0, callMatch.index).split("\n").length;
+      const location = `${path.relative(process.cwd(), file)}:${lineNo}`;
+
+      const maxTokensMatch = /maxTokens:\s*([^,}]+)/.exec(callTextNoComments);
+      const rawValue = maxTokensMatch?.[1];
+      if (!rawValue) {
+        violations.push(`${location} — modelKey=${modelKeyExpr} callLlm() has no maxTokens field`);
+        continue;
+      }
+
+      const resolved = gpt55ResolveMaxTokensValue(src, rawValue);
+      if (resolved === null) {
+        const safe = GPT55_KNOWN_SAFE_RESOLVERS.some((fn) => src.includes(fn));
+        if (!safe) {
+          violations.push(
+            `${location} — modelKey=${modelKeyExpr} maxTokens="${rawValue.trim()}" is not statically ` +
+            `resolvable; inline a literal >= ${GPT55_MAXTOKENS_FLOOR} or add its resolver to ` +
+            `GPT55_KNOWN_SAFE_RESOLVERS in this test`
+          );
+        }
+        continue;
+      }
+
+      if (resolved < GPT55_MAXTOKENS_FLOOR) {
+        violations.push(`${location} — modelKey=${modelKeyExpr} maxTokens=${resolved} < floor ${GPT55_MAXTOKENS_FLOOR}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `GPT55-UPGRADE-7: reasoning-model callLlm() callsite(s) below the maxTokens floor (or unresolvable):\n${violations.join("\n")}`
+  );
+});
+
 test("JSON-SYNTHESIS-1: parseV3JsonSynthesis is exported from orchestrator-v3", () => {
   const src = readFileSync(path.join(process.cwd(), "apps/api/src/ai-recommendation-v2/orchestrator-v3.ts"), "utf8");
   assert.ok(
