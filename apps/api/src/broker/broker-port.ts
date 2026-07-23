@@ -148,6 +148,15 @@ export type KgiOddLot = boolean | "Common" | "Fixing" | "Odd" | "OddAfterMarket"
 export interface KgiCreateOrderInput {
   action: KgiAction;
   symbol: string;
+  /**
+   * Unit depends on `oddLot`: 張 (LOTS, 1 lot = 1000 shares) when
+   * oddLot is false/omitted; SHARES when oddLot is true. Do not pass a raw
+   * share count here for board-lot orders — use
+   * `broker/kgi-contract-rules.ts::toKgiOrderQty()` to convert. Root-caused
+   * 2026-07-23 (quantity_unit old bug, see
+   * reports/sim_go_live_20260723/RUNNER_QTY_UNIT_FIX_2026_07_23.md) — three
+   * SIM runners were sending raw shares here, a 1000x oversized order.
+   */
   qty: number;
   price?: KgiPriceType;            // defaults to MKT if omitted
   timeInForce?: KgiTimeInForce;    // defaults to ROD

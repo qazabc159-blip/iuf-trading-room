@@ -75,9 +75,23 @@ function text(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+/**
+ * 2026-07-23 P0 fix: `Number("")` evaluates to `0` in JS (not NaN) — so this
+ * function used to silently turn "key absent" (scalar() returns null for a
+ * missing key) into a real `0` instead of null. That 0 then defeated the
+ * `row.filledQty ?? row.requestedQty ?? 0` fallback chain in
+ * reconcileKgiOrder() below wherever real KGI evidence lacks an explicit
+ * filled_qty/deal_qty field — which real /deals payloads always do (KGI uses
+ * "quantity", not "filled_qty"; see FILLED_QTY_KEYS above). Net effect: every
+ * real deal's filledQty silently computed as 0, so status could never
+ * advance past "accepted" and settlementConfirmed stayed false forever —
+ * caught by reconcileUnconfirmedAuditOrders' fixture test using real
+ * 2026-07-23 go-live /deals evidence (reports/sim_go_live_20260723/).
+ */
 function numberValue(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(String(value).replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -233,6 +247,91 @@ export function reconcileKgiOrders(params: {
   events?: unknown;
 }): ReconciledKgiOrder[] {
   return params.orders.map((order) => reconcileKgiOrder({ ...params, order }));
+}
+
+// ── SIM audit_logs 補確認掃描 (2026-07-23) ──────────────────────────────────
+//
+// Root cause (2026-07-23 P0, reports/sim_go_live_20260723/): S1/V34/V51 SIM
+// runners poll trades/deals/events for only 3x1.5s=4.5s immediately after
+// order submission, then give up permanently and persist
+// status="unconfirmed" into their own audit_logs row forever — even though
+// real evidence the same day showed ExecReport/Deal confirmations landing
+// 10-40s+ after submission (see VISIBILITY_DIAGNOSIS_20260723.md). 4.5s can
+// never observe a real fill; this is why settlement_confirmed has been 0%
+// for 8 straight weeks.
+//
+// This is the pure reconciliation-matching core of the fix: given a batch of
+// orders an audit row recorded as still "unconfirmed" (plus a trade id), and
+// a FRESH trades/deals/events snapshot from the gateway, report which ones
+// can now be resolved. No I/O here — callers (one per pipeline, in
+// s1-sim-runner.ts / v34-sim-runner.ts / v51-sim-basket-runner.ts) own
+// reading the audit_logs row (with its `id`) and writing the updated
+// payload back in place (same row, same field semantics — see each
+// pipeline's own `reconcileUnconfirmed<X>Orders()` for the I/O wrapper).
+//
+// Idempotent by construction: re-running against the same audit row is safe
+// — orders that are still unconfirmed are re-checked (no-op if nothing new
+// arrived), orders already resolved are filtered out by the caller before
+// even reaching this function (or simply produce the same reconciled result
+// again), and the write-back is an UPDATE of the same row, never an INSERT
+// — no duplicate audit rows are ever created by re-running this scan.
+//
+// This function intentionally does NOT reach back further than the orders
+// it's given — gateway trades/deals/events are transient in-memory state
+// that is wiped on every gateway process restart (confirmed 2026-07-23), so
+// orders from a prior gateway session cannot be recovered here regardless of
+// how far back the caller looks. Callers should scope their audit_logs scan
+// to recent rows (same gateway uptime window) for this to have any chance of
+// finding evidence.
+
+/** One order from an audit_logs row's `results` array that is still unresolved. */
+export type UnconfirmedAuditOrder = {
+  /** Position in the caller's original results array — lets the caller splice
+   *  the reconciliation result back into the exact same array slot. */
+  index: number;
+  tradeId: string | null;
+  symbol: string;
+  /** Requested share count (NOT lots — matches SubmittedKgiOrder.requestedQty). */
+  shares: number;
+};
+
+export type UnconfirmedAuditOrderResolution = {
+  index: number;
+  reconciled: ReconciledKgiOrder;
+};
+
+/**
+ * Re-check a batch of still-"unconfirmed" audit-log orders against a fresh
+ * trades/deals/events snapshot. Returns only the ones that can now be
+ * resolved (settlementConfirmed=true) — orders with no matching evidence yet
+ * are omitted so callers can leave those audit fields untouched.
+ *
+ * Orders without a tradeId are skipped (nothing to match against — a
+ * "skipped"/"rejected"-at-submission-time order was never really pending).
+ */
+export function reconcileUnconfirmedAuditOrders(
+  orders: UnconfirmedAuditOrder[],
+  evidence: { trades?: unknown; deals?: unknown; events?: unknown },
+): UnconfirmedAuditOrderResolution[] {
+  const resolutions: UnconfirmedAuditOrderResolution[] = [];
+  for (const order of orders) {
+    if (!order.tradeId) continue;
+    const reconciled = reconcileKgiOrder({
+      order: {
+        tradeId: order.tradeId,
+        symbol: order.symbol,
+        side: "buy",
+        requestedQty: order.shares,
+      },
+      trades: evidence.trades,
+      deals: evidence.deals,
+      events: evidence.events,
+    });
+    if (reconciled.settlementConfirmed) {
+      resolutions.push({ index: order.index, reconciled });
+    }
+  }
+  return resolutions;
 }
 
 // ── UTA-C2 委託回報輪詢 (2026-07-04) ────────────────────────────────────────

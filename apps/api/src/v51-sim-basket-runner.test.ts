@@ -30,6 +30,7 @@ import {
   computeV51OrderSizing,
   nextWeekdayIso,
   parseV51BasketCsv,
+  reconcileUnconfirmedV51Orders,
   V51_BENCHMARK_RESERVED_SYMBOLS,
   V51_CAPITAL_TWD,
   V51_ENTRY_RULE,
@@ -37,6 +38,7 @@ import {
   V51_LABEL,
   type V51Basket,
 } from "./v51-sim-basket-runner.js";
+import { toKgiOrderQty } from "./broker/kgi-contract-rules.js";
 
 const VALID_HEADER = "stock_id,weight,signal,signal_date,entry_rule,label";
 const ROW = (id: string) =>
@@ -211,6 +213,25 @@ test("computeV51OrderSizing: sub-board-lot allocation rounds down to 0 shares wi
 });
 
 // ---------------------------------------------------------------------------
+// qty-unit regression (2026-07-23 P0 fix): computeV51OrderSizing's targetShares
+// must convert to LOTS (÷1000) before being sent as createOrder({ qty }) —
+// pins the exact real-evidence-shaped sizing output (3000 shares -> qty 3
+// lots) through the same conversion the runner's createOrder() call uses.
+// ---------------------------------------------------------------------------
+
+test("qty-unit fix: computeV51OrderSizing output converts to lots via toKgiOrderQty (not raw shares)", () => {
+  const basket = basketWithNSymbols(30);
+  const lastCloses = new Map(basket.rows.map((r) => [r.stockId, { closePrice: 100 }]));
+  const sized = computeV51OrderSizing(basket, lastCloses, V51_CAPITAL_TWD);
+  for (const entry of sized) {
+    assert.equal(entry.targetShares, 3000);
+    // V51 always submits board-lot orders (oddLot=false) — this is the exact
+    // qty value the runner must send to createOrder(), not entry.targetShares.
+    assert.equal(toKgiOrderQty(entry.targetShares, false), 3);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Entry-date computation
 // ---------------------------------------------------------------------------
 
@@ -297,4 +318,20 @@ test("report JSON write: success path writes the real file and leaves failsafeNo
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// reconcileUnconfirmedV51Orders() — the 2026-07-23 P0 reconciliation cron
+// wrapper. Test env runs in memory mode (no DATABASE_URL/PERSISTENCE_MODE=
+// database), so this exercises the fail-safe no-op contract: never throws,
+// always returns a well-formed zeroed summary, makes no gateway call.
+// ---------------------------------------------------------------------------
+
+test("reconcileUnconfirmedV51Orders: no-ops safely (returns zeroed summary, no throw) when not in database mode", async () => {
+  const summary = await reconcileUnconfirmedV51Orders();
+  assert.equal(summary.auditRowFound, false);
+  assert.equal(summary.ordersUnconfirmed, 0);
+  assert.equal(summary.ordersNewlyConfirmed, 0);
+  assert.equal(summary.gatewayUnreachable, false);
+  assert.equal(summary.skippedGatewayScheduledOff, false);
 });

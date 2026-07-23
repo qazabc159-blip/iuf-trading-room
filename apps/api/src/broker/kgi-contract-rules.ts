@@ -42,6 +42,42 @@ export function getBoardLot(symbol: string): number {
   return BOARD_LOT_REGULAR;
 }
 
+/**
+ * Convert a target SHARE count into the `qty` unit `api.Order.create_order()`
+ * actually expects on the wire.
+ *
+ * quantity_unit old bug, this-case-in-point (2026-07-23 P0):
+ *   - Regular (board-lot, isOddLot=false) orders: `qty` is 張 (LOTS) — 1 lot =
+ *     BOARD_LOT_REGULAR shares. SDK docstring (create_order):
+ *     "qty: int, # 張數 (整股) 或股數 (零股)" — i.e. lots for board-lot orders,
+ *     shares for odd-lot orders. Source:
+ *     KGI_SUPERPY_VERIFY/evidence_2026-04-23/step4_account_probe_v2.log L140-155.
+ *   - Odd-lot (isOddLot=true, 1-999 shares) orders: `qty` IS shares — a lot
+ *     doesn't apply below board-lot size.
+ *
+ * 2026-07-23 real evidence (three-sleeve SIM go-live): symbol 6901 order sent
+ * `qty=5` (lots, isOddLot=false) and filled 5 @ 19.25 (5000 shares); symbol
+ * 1808 canary sent `qty=3` and filled 3 @ 35.1. See
+ * reports/sim_go_live_20260723/evidence/{orders_20260723.jsonl,deals_snapshot_*.json}
+ * and reports/sim_go_live_20260723/VISIBILITY_DIAGNOSIS_20260723.md.
+ *
+ * s1-sim-runner.ts / v34-sim-runner.ts / v51-sim-basket-runner.ts previously
+ * passed the raw share count directly as `qty` for board-lot orders — a
+ * 1000x oversized order relative to SDK intent (fixed 2026-07-23; see
+ * reports/sim_go_live_20260723/RUNNER_QTY_UNIT_FIX_2026_07_23.md). Callers
+ * MUST route target share counts through this function before building a
+ * KgiCreateOrderInput — do not pass raw shares to createOrder({ qty }).
+ *
+ * @param shares   Target share count (as computed by board-lot/odd-lot sizing).
+ * @param isOddLot Whether this order is being placed as a Taiwan odd-lot
+ *                 (零股) order — must match the `oddLot` flag passed to
+ *                 createOrder() for the SAME order.
+ */
+export function toKgiOrderQty(shares: number, isOddLot: boolean): number {
+  if (isOddLot) return shares;
+  return Math.floor(shares / BOARD_LOT_REGULAR);
+}
+
 // ---------------------------------------------------------------------------
 // Tick size (升降單位) — TWSE price tier table
 // ---------------------------------------------------------------------------
