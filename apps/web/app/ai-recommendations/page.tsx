@@ -1,232 +1,39 @@
+// AI 投研晨報 — /ai-recommendations v2 重設計實作（2026-07-23, Jim）。
+// 設計稿：reports/design_redesign_20260722/drafts/ai_rec_redesign_v2.html
+// （楊董已 ACK 方向：頭版特稿 + 排印 box-score + 內頁欄目，5 檔全資訊直排零
+// <details> 展開；禁 stat-tile 帶／meter 陣列／chip 列）。
+// 欄位對照表：reports/design_redesign_20260722/AI_REC_IMPL_FIELD_MAP_20260723.md
+//
+// 資料層完全沿用既有 v3-view.ts（mapV3ItemToStockRecCard / isActionableV3Item /
+// buildV3PanelState / getV3MarketScores / getOfficialAnnouncementSourceState）
+// 與 StockRecCard.tsx 的 LinkageCtaRow / displaySource / displaySourceTrail /
+// BUCKET_CONFIG — 只換版面呈現層，不重寫任何資料 mapping 邏輯（7/14 五輪退件
+// 教訓：已打磨元件只 import 複用不重寫）。
+//
+// v1/v2「brain_react」分桶卡片格（BUCKETS/groupByBucket/RecommendationCard/
+// QualityBadges）本輪整段移除——那正是楊董退件的「四不像」版式本體（stat-tile
+// 帶 + chip 列）。v3 canonical 一直是本頁唯一正式來源，這裡拿掉的只是舊版才
+// 會出現的備援分桶格，不是刪除任何資料來源。
+//
+// Suspense：masthead + lede（無資料依賴）立即 SSR 回；推薦內容與追蹤實績都
+// 在同一顆 Suspense 邊界內串流出（AI 推薦本質上是單一主資料源，拆多顆邊界
+// 只會增加複雜度而非縮短首屏——與 /market-intel 的 5 源並行拆分場景不同）。
+import { Suspense } from "react";
 import Link from "next/link";
-import {
-  recommendationActionSchema,
-  recommendationDirectionSchema,
-  recommendationPositionSuggestionSchema,
-  recommendationTimeHorizonSchema,
-  type StockRecommendation,
-} from "@iuf-trading-room/contracts";
-import { ArrowRight, Database, FileSearch, Gauge, ShieldAlert, Target } from "lucide-react";
 
-import { PageFrame, Panel } from "@/components/PageFrame";
 import { MarketStateBanner } from "@/components/MarketStateBanner";
-import { resolveBannerLastCloseDate } from "@/lib/index-snapshot-freshness";
-import { getAiRecommendationsV3, getAiRecPerformance, getRecommendationsToday, type AiRecommendationV3Response, type AiRecPerformance, type RecommendationListResponse } from "@/lib/api";
-import {
-  buildRecommendationPrefillHref,
-  handoffLabelForDirection,
-  INVALID_AI_HANDOFF_TICKER_MESSAGE,
-} from "@/lib/ai-recommendation-handoff";
-import { RecommendationFeedbackActions } from "./RecommendationFeedbackActions";
-import { RecommendationHandoffLink, RecommendationHandoffPreview, RecommendationHandoffUnavailable } from "./RecommendationHandoffLink";
-import { formatRecommendationSourceMode } from "./source-mode-label";
-import { formatRecommendationTimestamp, formatSourceTimestamp } from "./source-trail-time";
+import { TaipeiClock } from "@/components/TaipeiClock";
+import { getAiRecommendationsV3, getAiRecPerformance, type AiRecommendationV3Response } from "@/lib/api";
+import { getOfficialAnnouncementSourceState, getV3MarketScores, isActionableV3Item, mapV3ItemToStockRecCard } from "./v3-view";
 import { MarketStateBadge, MarketStateBadgePlaceholder } from "./MarketStateBadge";
-import { StockRecCard, type StockRecCardData } from "./StockRecCard";
-import { buildV3PanelState, getOfficialAnnouncementSourceState, getV3MarketScores, mapV3ItemToStockRecCard } from "./v3-view";
+import { MorningBriefLead } from "./MorningBriefLead";
+import { MorningBriefStory } from "./MorningBriefStory";
+import { TrackRecordBox } from "./TrackRecordBox";
+import { formatRecommendationTimestamp } from "./source-trail-time";
+import { editionDateLabel, generationStatusLabel, officialAnnouncementLabel } from "./morning-brief-copy";
+import type { StockRecCardData } from "./StockRecCard";
 
 export const dynamic = "force-dynamic";
-
-type BucketValue = StockRecommendation["action"];
-
-const ACTION_VALUES = recommendationActionSchema.options as readonly BucketValue[];
-const DIRECTION_VALUES = recommendationDirectionSchema.options as readonly StockRecommendation["direction"][];
-const TIME_HORIZON_VALUES = recommendationTimeHorizonSchema.options as readonly StockRecommendation["timeHorizon"][];
-const POSITION_VALUES = recommendationPositionSuggestionSchema.options as readonly StockRecommendation["positionSizing"]["suggestion"][];
-
-const BUCKETS: Array<{
-  value: BucketValue;
-  label: string;
-  range: string;
-  primary: boolean;
-  tone: "ok" | "warn" | "bad";
-  emptyMessage: string;
-}> = [
-  {
-    value: ACTION_VALUES[0],
-    label: "積極觀察",
-    range: "80+",
-    primary: true,
-    tone: "ok",
-    emptyMessage: "目前沒有達到積極觀察門檻的標的。",
-  },
-  {
-    value: ACTION_VALUES[1],
-    label: "觀察名單",
-    range: "70-79",
-    primary: true,
-    tone: "warn",
-    emptyMessage: "目前沒有適合列入觀察名單的標的。",
-  },
-  {
-    value: ACTION_VALUES[2],
-    label: "小量追蹤",
-    range: "60-69",
-    primary: true,
-    tone: "warn",
-    emptyMessage: "目前沒有適合小量追蹤的標的。",
-  },
-  {
-    value: ACTION_VALUES[3],
-    label: "暫不進場",
-    range: "<60",
-    primary: false,
-    tone: "bad",
-    emptyMessage: "目前沒有被系統明確排除的標的。",
-  },
-  {
-    value: ACTION_VALUES[4],
-    label: "資料不足",
-    range: "MISSING",
-    primary: false,
-    tone: "bad",
-    emptyMessage: "目前沒有因資料不足而保留的標的。",
-  },
-];
-
-const REASON_GROUPS: Array<{
-  key: keyof StockRecommendation["reasons"];
-  label: string;
-}> = [
-  { key: "technical", label: "技術面" },
-  { key: "chip", label: "籌碼" },
-  { key: "news", label: "新聞" },
-  { key: "theme", label: "主題" },
-  { key: "quant", label: "量化" },
-  { key: "macro", label: "總經" },
-];
-
-const DIRECTION_LABELS = new Map<StockRecommendation["direction"], string>([
-  [DIRECTION_VALUES[0], "偏多"],
-  [DIRECTION_VALUES[1], "偏空"],
-  [DIRECTION_VALUES[2], "中性"],
-]);
-
-const TIME_HORIZON_LABELS = new Map<StockRecommendation["timeHorizon"], string>([
-  [TIME_HORIZON_VALUES[0], "短線 / 波段"],
-  [TIME_HORIZON_VALUES[1], "1-2 週"],
-  [TIME_HORIZON_VALUES[2], "中期觀察"],
-]);
-
-const POSITION_LABELS = new Map<StockRecommendation["positionSizing"]["suggestion"], string>([
-  [POSITION_VALUES[0], "標準部位"],
-  [POSITION_VALUES[1], "半碼觀察"],
-  [POSITION_VALUES[2], "高風險小量"],
-]);
-
-function asPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatPrice(value: number | null) {
-  if (value === null) return "-";
-  return value.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
-}
-
-function hasProductText(value: string | null | undefined) {
-  const raw = value?.trim();
-  return Boolean(raw && raw !== "-" && raw.toLowerCase() !== "n/a" && raw.toLowerCase() !== "null");
-}
-
-function cleanRecommendationText(value: string | null | undefined, fallback = "資料待確認") {
-  const raw = value?.trim();
-  if (!raw || raw === "-" || raw.toLowerCase() === "n/a" || raw.toLowerCase() === "null") return fallback;
-  return raw
-    .replace(/\bWATCH\b/g, "觀察中")
-    .replace(/\bPASS\b/g, "通過")
-    .replace(/\bFAIL\b/g, "未通過")
-    .replace(/\bforward observation\b/gi, "前瞻觀察")
-    .replace(/\bcont[_-]?liq\b/gi, "流動性策略")
-    .replace(/\bno allocation\b/gi, "暫不配置部位")
-    .replace(/\bmax\s*([0-9.]+)%\b/gi, "部位上限 $1%")
-    .replace(/\blastPrice\b/g, "最新可用價")
-    .replace(/\bQuant\b/g, "量化")
-    .replace(/_/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function formatTradePlanValue(value: string | number | null | undefined, fallback = "待資料確認") {
-  if (typeof value === "number") return formatPrice(value);
-  return cleanRecommendationText(value, fallback);
-}
-
-function formatGateStatus(value: StockRecommendation["quant"]["gateStatus"]) {
-  if (value === "PASS") return "通過";
-  if (value === "WATCH") return "觀察中";
-  if (value === "FAIL") return "未通過";
-  return cleanRecommendationText(String(value), "待確認");
-}
-
-function formatStrategySource(value: string | null | undefined) {
-  const text = cleanRecommendationText(value, "策略來源待確認");
-  if (/S1/i.test(text)) return text.replace(/\bS1\b/g, "S1 策略");
-  return text;
-}
-
-function formatDirection(value: StockRecommendation["direction"]) {
-  return DIRECTION_LABELS.get(value) ?? "中性";
-}
-
-function formatTimeHorizon(value: StockRecommendation["timeHorizon"]) {
-  return TIME_HORIZON_LABELS.get(value) ?? String(value);
-}
-
-function formatPositionSuggestion(value: StockRecommendation["positionSizing"]["suggestion"]) {
-  return POSITION_LABELS.get(value) ?? "依風控調整";
-}
-
-function qualityTone(value: string) {
-  if (value === "OK") return "ok";
-  if (value === "MISSING") return "bad";
-  return "warn";
-}
-
-function qualityStatusLabel(value: string) {
-  if (value === "OK") return "完整";
-  if (value === "STALE") return "過期";
-  if (value === "MISSING") return "缺資料";
-  if (value === "WEAK") return "偏弱";
-  return value;
-}
-
-function gateTone(value: StockRecommendation["quant"]["gateStatus"]) {
-  if (value === "PASS") return "ok";
-  if (value === "FAIL") return "bad";
-  return "warn";
-}
-
-function targetLabel(value: StockRecommendation["targets"][number]["label"]) {
-  if (value === "TP1" || value === "TP2") return value;
-  return "移動停利";
-}
-
-function scoreBucket(item: StockRecommendation) {
-  if (item.dataQuality.quote === "MISSING" && item.dataQuality.kbar === "MISSING") return BUCKETS[4];
-  if (item.totalScore >= 80) return BUCKETS[0];
-  if (item.totalScore >= 70) return BUCKETS[1];
-  if (item.totalScore >= 60) return BUCKETS[2];
-  return BUCKETS[3];
-}
-
-function bucketForItem(item: StockRecommendation) {
-  return BUCKETS.find((bucket) => bucket.value === item.action) ?? scoreBucket(item);
-}
-
-function groupByBucket(items: StockRecommendation[]) {
-  const groups = new Map<BucketValue, StockRecommendation[]>();
-  for (const bucket of BUCKETS) groups.set(bucket.value, []);
-
-  for (const item of items) {
-    const bucket = bucketForItem(item);
-    groups.get(bucket.value)?.push(item);
-  }
-
-  for (const values of groups.values()) {
-    values.sort((a, b) => a.rank - b.rank);
-  }
-  return groups;
-}
 
 function safeMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -237,17 +44,6 @@ function safeMessage(error: unknown) {
     return "請先登入 IUF 帳號，再查看 AI 推薦。";
   }
   return "AI 推薦服務暫時無法讀取資料。";
-}
-
-async function loadRecommendations(): Promise<{
-  data: RecommendationListResponse | null;
-  error: string | null;
-}> {
-  try {
-    return { data: await getRecommendationsToday(), error: null };
-  } catch (error) {
-    return { data: null, error: safeMessage(error) };
-  }
 }
 
 async function loadRecommendationsV3(): Promise<{
@@ -261,1199 +57,382 @@ async function loadRecommendationsV3(): Promise<{
   }
 }
 
-function QualityBadges({ rec }: { rec: StockRecommendation }) {
-  const items: Array<[string, string]> = [
-    ["報價", rec.dataQuality.quote],
-    ["K 線", rec.dataQuality.kbar],
-    ["籌碼", rec.dataQuality.chip],
-    ["新聞", rec.dataQuality.news],
-    ["量化", rec.dataQuality.quant],
-  ];
-  const penaltyPct = Math.round(rec.dataQuality.confidencePenalty * 100);
-  const weakItems = items
-    .filter(([, value]) => value !== "OK")
-    .map(([label, value]) => `${label}${qualityStatusLabel(value)}`);
-  const summary = weakItems.length > 0
-    ? `資料品質弱項：${weakItems.join("、")}；信心折減 ${penaltyPct}%`
-    : `資料品質完整；信心折減 ${penaltyPct}%`;
-
+// ── 天頭 running head ────────────────────────────────────────────────────
+function RunHead({ data, cardCount }: { data: AiRecommendationV3Response | null; cardCount: number }) {
+  const generatedLabel = formatRecommendationTimestamp(data?.generatedAt);
   return (
-    <div className="_rec-quality" aria-label={summary} title={summary}>
-      {items.map(([label, value]) => (
-        <span key={label} data-tone={qualityTone(value)}>
-          <b>{label}</b>
-          {qualityStatusLabel(value)}
-        </span>
-      ))}
-      <span data-tone={rec.dataQuality.confidencePenalty > 0 ? "warn" : "ok"}>
-        <b>信心折減</b>
-        {penaltyPct}%
-      </span>
+    <div className="runhead">
+      <div className="seg"><span className="k">版次</span><span className="v mono">{editionDateLabel(generatedLabel)}</span></div>
+      <div className="seg"><span className="k">產生</span><span className="v mono">{generatedLabel || "--"}</span></div>
+      <div className="seg"><span className="k">正式推薦</span><span className="v mono">{cardCount}/5 檔</span></div>
     </div>
   );
 }
 
-function RecommendationCard({ rec }: { rec: StockRecommendation }) {
-  const prefillHref = buildRecommendationPrefillHref(rec);
-  const bucket = bucketForItem(rec);
-  const positionLabel = formatPositionSuggestion(rec.positionSizing.suggestion);
-  const directionLabel = formatDirection(rec.direction);
-
+// ── 頭版/內頁 band 狀態列 ────────────────────────────────────────────────
+function BandStatus({ data, cardCount }: { data: AiRecommendationV3Response | null; cardCount: number }) {
+  const usedFallback = data?.usedFallback === true || data?.synthesisFallbackUsed === true || data?.fullAiReportParsed === false;
+  const officialState = getOfficialAnnouncementSourceState(data);
   return (
-    <article className="_rec-card" data-tone={bucket.tone}>
-      <div className="_rec-card-head">
-        <div>
-          <span className="_rec-rank">#{rec.rank}</span>
-          <h3>
-            <span>{rec.ticker}</span>
-            {rec.companyName}
-          </h3>
-        </div>
-        <div className="_rec-badges">
-          <span data-tone={bucket.tone}>{bucket.label}</span>
-          <span>{directionLabel}</span>
-          <span>{formatTimeHorizon(rec.timeHorizon)}</span>
-        </div>
-      </div>
-
-      <div className="_rec-score-grid">
-        <div className="_rec-score">
-          <div>
-            <Gauge size={16} strokeWidth={1.9} />
-            <span>總分</span>
-            <b>{rec.totalScore}</b>
-          </div>
-          <i style={{ width: `${rec.totalScore}%` }} />
-        </div>
-        <div className="_rec-score">
-          <div>
-            <Target size={16} strokeWidth={1.9} />
-            <span>信心</span>
-            <b>{asPercent(rec.confidence)}</b>
-          </div>
-          <i style={{ width: `${Math.round(rec.confidence * 100)}%` }} />
-        </div>
-      </div>
-
-      <div className="_rec-quant">
-        <span data-tone={gateTone(rec.quant.gateStatus)}>{formatGateStatus(rec.quant.gateStatus)}</span>
-        <b>量化分數 {rec.quant.score}</b>
-        <small>{formatStrategySource(rec.quant.strategySource)}</small>
-      </div>
-
-      <p className="_rec-research-note">AI 推薦只做研究與 SIM 演練，不代表實單建議。</p>
-      <div className="_rec-trade-grid">
-        <div>
-          <span>進場區間</span>
-          <b>{formatTradePlanValue(rec.entryZone.primary, "等待策略提供進場區間")}</b>
-          {hasProductText(rec.entryZone.secondary) && <small>{cleanRecommendationText(rec.entryZone.secondary)}</small>}
-          <p>{cleanRecommendationText(rec.entryZone.reason, "尚無足夠進場理由；先列入觀察。")}</p>
-        </div>
-        <div>
-          <span>失效條件 / 停損</span>
-          <b>{formatTradePlanValue(rec.invalidation.price, "等待策略提供停損")}</b>
-          <p>{cleanRecommendationText(rec.invalidation.rule, "尚無完整失效條件；下單前必須補齊。")}</p>
-        </div>
-        <div>
-          <span>部位建議</span>
-          <b data-risk={positionLabel === "高風險小量" ? "hot" : undefined}>
-            {positionLabel}
-          </b>
-          <p>單筆最大風險 {rec.positionSizing.maxRiskPct}%</p>
-        </div>
-      </div>
-
-      <div className="_rec-targets">
-        {rec.targets.map((target) => (
-          <span key={`${rec.recommendationId}-${target.label}`}>
-            <b>{targetLabel(target.label)}</b>
-            {formatTradePlanValue(target.price, "待資料確認")}
-            <small>{cleanRecommendationText(target.reason, "尚無目標價理由")}</small>
-          </span>
-        ))}
-      </div>
-
-      <details className="_rec-details" open>
-        <summary>推薦理由</summary>
-        <div className="_rec-reasons">
-          {REASON_GROUPS.map((group) => {
-            const reasons = rec.reasons[group.key];
-            return (
-              <section key={group.key}>
-                <b>{group.label}</b>
-                {reasons.length > 0 ? (
-                  <ul>
-                    {reasons.map((reason) => (
-                      <li key={reason}>{cleanRecommendationText(reason)}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span>-</span>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      </details>
-
-      <details className="_rec-details">
-        <summary>
-          <ShieldAlert size={14} strokeWidth={1.9} />
-          風險
-        </summary>
-        {rec.risks.length > 0 ? (
-          <ul className="_rec-risks">
-            {rec.risks.map((risk) => (
-              <li key={risk}>{cleanRecommendationText(risk)}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="_rec-empty-text">尚無額外風險說明。</p>
-        )}
-      </details>
-
-      <QualityBadges rec={rec} />
-
-      <details className="_rec-source">
-        <summary>
-          <Database size={14} strokeWidth={1.9} />
-          資料來源
-        </summary>
-        <div>
-          {rec.sourceTrail.length > 0 ? (
-            rec.sourceTrail.map((source) => (
-              <span key={`${source.type}-${source.source}-${source.timestamp}`}>
-                <b>{cleanRecommendationText(source.type, "資料來源")}</b>
-                {cleanRecommendationText(source.source, "來源待確認")}
-                <small title={source.timestamp} aria-label={`資料來源時間 ${source.timestamp}`}>
-                  {formatSourceTimestamp(source.timestamp)}
-                </small>
-              </span>
-            ))
-          ) : (
-            <p className="_rec-empty-text">尚無來源紀錄。</p>
-          )}
-        </div>
-      </details>
-
-      <Link className="_rec-detail-link" href={`/ai-recommendations/${encodeURIComponent(rec.recommendationId)}`}>
-        <FileSearch size={16} strokeWidth={1.9} />
-        查看詳情
-      </Link>
-
-      {prefillHref ? (
-        <>
-          <RecommendationHandoffPreview href={prefillHref} recommendationId={rec.recommendationId} />
-          <RecommendationHandoffLink
-            href={prefillHref}
-            recommendationId={rec.recommendationId}
-            directionLabel={handoffLabelForDirection(rec.direction)}
-          >
-            <ArrowRight size={16} strokeWidth={1.9} />
-            帶入模擬委託
-          </RecommendationHandoffLink>
-        </>
-      ) : (
-        <RecommendationHandoffUnavailable reason={INVALID_AI_HANDOFF_TICKER_MESSAGE}>
-          <ShieldAlert size={16} strokeWidth={1.9} />
-          無法帶入模擬委託
-        </RecommendationHandoffUnavailable>
-      )}
-      <RecommendationFeedbackActions recommendationId={rec.recommendationId} />
-    </article>
-  );
-}
-
-function EmptyBucket({ message }: { message: string }) {
-  return (
-    <div className="_rec-empty">
-      <b>尚無標的</b>
-      <p>{message}</p>
+    <div className="status">
+      <span>正式推薦 <b>{cardCount}</b>／5 檔</span>
+      <span>生成 <b className="g">{generationStatusLabel(data?.status)}</b></span>
+      <span>備援補牌 <b className={usedFallback ? undefined : "g"}>{usedFallback ? "有使用" : "未使用"}</b></span>
+      <span>官方公告 {officialAnnouncementLabel(officialState.state)}</span>
     </div>
   );
 }
 
-function RecommendationListEmptyState({ error }: { error: string | null }) {
+function EmptyState({ error, itemCount }: { error: string | null; itemCount: number }) {
   return (
-    <div className="_rec-empty _rec-empty-single">
-      <b>推薦清單目前沒有可顯示標的</b>
+    <div className="amb-empty">
+      <b>{error ? "AI 推薦目前無法讀取" : "今日沒有可行動的 AI 推薦"}</b>
       <p>
         {error
-          ? "目前 session 無法讀取今日推薦；前端不補假股票，也不把其他候選名單冒充 AI 推薦。"
-          : "今日推薦清單目前回傳 0 檔；等待 v3 refresh 或正式候選通過資料品質門檻。"}
+          ? error
+          : itemCount > 0
+            ? `後端回傳 ${itemCount} 筆候選，但都未達可行動門檻（B 級以上）；系統不會把排除名單包裝成推薦。`
+            : "推薦引擎尚未回傳可用候選；此頁不會補假股票。"}
       </p>
-      <dl>
-        <div>
-          <dt>資料狀態</dt>
-          <dd>{error ? "權限或資料讀取異常" : "等待推薦產生"}</dd>
-        </div>
-        <div>
-          <dt>下一步</dt>
-          <dd>重新產生推薦後再驗收；頁面不顯示假資料。</dd>
-        </div>
-      </dl>
     </div>
   );
 }
 
-function V3BackendFacts({
-  data,
-  visibleCount,
-}: {
-  data: AiRecommendationV3Response | null;
-  visibleCount: number;
-}) {
-  const officialSourceState = getOfficialAnnouncementSourceState(data);
-  const itemCount = data?.itemCount ?? data?.items?.length ?? visibleCount;
-  const usedFallback = data?.usedFallback === true || data?.synthesisFallbackUsed === true || data?.fullAiReportParsed === false;
-  const officialSourceLabel =
-    officialSourceState.state === "live"
-      ? "已納入"
-      : officialSourceState.state === "empty"
-        ? "已檢查無公告"
-        : officialSourceState.state === "degraded"
-          ? "降級"
-          : officialSourceState.state === "pending"
-            ? "待接入"
-            : "待確認";
+async function MorningBriefBody() {
+  const [v3Result, perf] = await Promise.all([loadRecommendationsV3(), getAiRecPerformance()]);
+  const data = v3Result.data;
+  const rawItems = data?.items ?? [];
+  const itemCount = data?.itemCount ?? rawItems.length;
+  const cards = rawItems
+    .filter(isActionableV3Item)
+    .map((item) => mapV3ItemToStockRecCard(item, data))
+    .filter((card): card is StockRecCardData => Boolean(card))
+    .slice(0, 5);
+
+  const marketScores = getV3MarketScores(rawItems);
+  const lead = cards[0];
+  const stories = cards.slice(1);
+  const leftStories = stories.filter((_, idx) => idx % 2 === 0);
+  const rightStories = stories.filter((_, idx) => idx % 2 === 1);
 
   return (
-    <dl className="_rec-v3-facts" aria-label="AI 推薦資料狀態">
-      <div>
-        <dt>推薦數量</dt>
-        <dd>{visibleCount}/{itemCount}</dd>
-      </div>
-      <div>
-        <dt>生成狀態</dt>
-        <dd>{data?.status === "complete" ? "完成" : "需留意"}</dd>
-      </div>
-      <div>
-        <dt>備援補牌</dt>
-        <dd>{usedFallback ? "有使用" : "未使用"}</dd>
-      </div>
-      <div>
-        <dt>官方公告</dt>
-        <dd>{officialSourceLabel}</dd>
-      </div>
-    </dl>
-  );
-}
+    <>
+      <RunHead data={data} cardCount={cards.length} />
 
-function BucketSection({
-  bucket,
-  items,
-  error,
-}: {
-  bucket: (typeof BUCKETS)[number];
-  items: StockRecommendation[];
-  error: string | null;
-}) {
-  const body = (
-    <div className="_rec-card-grid">
-      {items.length > 0 ? (
-        items.map((rec) => <RecommendationCard key={rec.recommendationId} rec={rec} />)
+      {marketScores ? <MarketStateBadge scores={marketScores} /> : <MarketStateBadgePlaceholder />}
+
+      <TrackRecordBox perf={perf} />
+
+      {cards.length === 0 || v3Result.error ? (
+        <>
+          <div className="band">
+            <span className="ord">頭版</span>
+            <h2>今日主推</h2>
+            <span className="en">Lead Pick</span>
+          </div>
+          <EmptyState error={v3Result.error} itemCount={itemCount} />
+        </>
       ) : (
-        <EmptyBucket message={error ?? bucket.emptyMessage} />
+        <>
+          <div className="band">
+            <span className="ord">頭版</span>
+            <h2>今日主推</h2>
+            <span className="en">Lead Pick</span>
+            <BandStatus data={data} cardCount={cards.length} />
+          </div>
+
+          <MorningBriefLead rec={lead} />
+
+          {stories.length > 0 && (
+            <>
+              <div className="band">
+                <span className="ord">內頁</span>
+                <h2>其餘候選</h2>
+                <span className="en">Inside · Candidates</span>
+                <div className="status"><span>依總分序位 <b>2</b>–<b>{cards.length}</b></span></div>
+              </div>
+
+              <div className="spread">
+                <div className="col">
+                  {leftStories.map((rec) => {
+                    const idx = stories.indexOf(rec);
+                    return <MorningBriefStory key={rec.ticker} rec={rec} index={idx + 1} />;
+                  })}
+                </div>
+                <div className="col">
+                  {rightStories.map((rec) => {
+                    const idx = stories.indexOf(rec);
+                    return <MorningBriefStory key={rec.ticker} rec={rec} index={idx + 1} />;
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </>
       )}
+
+      <footer className="colophon">
+        <span className="mark">IUF·TR</span>
+        <span className="txt">
+          AI 投研晨報僅呈現正式推薦 API 回傳，<b>不以候選或假資料冒充</b>；分數、進場、停損、部位皆須再經交易室 SIM 流程與風控確認。此為事後績效追蹤，非未來報酬保證。
+        </span>
+        <span className="src">來源 · AI 推薦引擎 正式資料</span>
+      </footer>
+    </>
+  );
+}
+
+function MorningBriefBodyFallback() {
+  return (
+    <div className="amb-loading">
+      <span className="dot" />
+      AI 推薦內容載入中…
     </div>
   );
+}
 
-  if (!bucket.primary) {
-    return (
-      <details className="_rec-section _rec-section-collapsed">
-        <summary>
-          <span>{bucket.label}</span>
-          <b>{items.length}</b>
-        </summary>
-        {body}
-      </details>
-    );
-  }
-
+export default function AiRecommendationsPage() {
   return (
-    <section className="_rec-section">
-      <div className="_rec-section-head">
-        <h2>{bucket.label}</h2>
-        <span>{items.length} 檔</span>
-      </div>
-      {body}
-    </section>
-  );
-}
+    <main className="page-frame amb-shell">
+      <style>{AMB_CSS}</style>
 
-function formatPct(value: number | null, digits = 1): string {
-  if (value === null || !Number.isFinite(value)) return "--";
-  return `${(value * 100).toFixed(digits)}%`;
-}
+      <header className="nameplate">
+        <div className="np-chip"><b>IUF·TR</b><span>TRADING ROOM</span></div>
+        <div className="np-title">
+          <h1>AI 投研晨報</h1>
+          <div className="en">Morning Research · 今日投研助理</div>
+        </div>
+        <div className="np-clock">
+          <TaipeiClock />
+        </div>
+      </header>
 
-function formatSignedPct(value: number | null, digits = 2): string {
-  if (value === null || !Number.isFinite(value)) return "--";
-  const pct = value * 100;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(digits)}%`;
-}
+      <MarketStateBanner />
 
-/**
- * 推薦績效成績單 — forward returns vs 0050, accumulated daily by the backend.
- * Renders nothing for non-owner sessions (endpoint is Owner-only) and shows an
- * explicit sample-accumulating state instead of pretty empty numbers.
- */
-function PerfScorecard({ perf }: { perf: AiRecPerformance | null }) {
-  if (!perf || perf.total_picks === 0) return null;
-  const smallSample = perf.picks_with_ret_5d < 20;
-  const range = perf.earliest_pick_date && perf.latest_pick_date
-    ? `${perf.earliest_pick_date} ~ ${perf.latest_pick_date}`
-    : "--";
-
-  return (
-    <Panel
-      code="AI-PERF"
-      title="推薦績效追蹤"
-      right={<span style={{ font: "700 10.5px/1 var(--mono)", color: "var(--tac-fg-3)" }}>基準 0050 · 每日自動更新</span>}
-    >
-      <div className="_rec-perf-grid">
-        <div>
-          <span>隔日勝率</span>
-          <b>{formatPct(perf.overall_hit_rate_1d)}</b>
-          <i>{perf.picks_with_ret_1d} 筆樣本</i>
-        </div>
-        <div>
-          <span>5 日勝率</span>
-          <b>{formatPct(perf.overall_hit_rate_5d)}</b>
-          <i>{perf.picks_with_ret_5d} 筆樣本</i>
-        </div>
-        <div>
-          <span>5 日平均超額</span>
-          <b data-tone={perf.avg_excess_5d !== null && perf.avg_excess_5d >= 0 ? "ok" : "warn"}>{formatSignedPct(perf.avg_excess_5d)}</b>
-          <i>vs 0050</i>
-        </div>
-        <div>
-          <span>20 日勝率</span>
-          <b>{formatPct(perf.overall_hit_rate_20d)}</b>
-          <i>{perf.picks_with_ret_20d > 0 ? `${perf.picks_with_ret_20d} 筆樣本` : "樣本未滿 20 個交易日"}</i>
-        </div>
-      </div>
-      <p className="_rec-perf-note">
-        統計期間 {range}，共 {perf.total_picks} 筆推薦。勝率＝推薦後相對 0050 有超額報酬的比例。
-        {smallSample ? " 樣本仍在累積中，數字會隨時間趨於穩定，暫不適合作為結論。" : ""}
-        此為事後績效追蹤，非未來報酬保證。
+      <p className="lede">
+        <span className="mark">研究模式</span>
+        <span>
+          本報只呈現研究與模擬交易前置資訊；<em>正式券商寫入仍關閉</em>。所列分數、進場、停損、部位皆須再經交易室 SIM 流程與風控確認後才可動作，非可直接執行之委託。
+        </span>
       </p>
-      <style>{`
-        ._rec-perf-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 10px;
-        }
-        ._rec-perf-grid > div {
-          display: grid;
-          gap: 4px;
-          border: 1px solid var(--tac-line);
-          border-radius: 8px;
-          padding: 12px 14px;
-          background: rgba(8, 11, 16, 0.42);
-        }
-        ._rec-perf-grid span { font: 700 10.5px/1.2 var(--sans-tc); color: var(--tac-fg-3); }
-        ._rec-perf-grid b { font: 850 19px/1.1 var(--mono); color: var(--tac-fg-0); }
-        ._rec-perf-grid b[data-tone="warn"] { color: var(--tw-dn-bright, #e63946); }
-        ._rec-perf-grid b[data-tone="ok"] { color: var(--tac-ok, #4ade80); }
-        ._rec-perf-grid i { font: 500 10px/1.3 var(--sans-tc); color: var(--tac-fg-3); font-style: normal; }
-        ._rec-perf-note { margin: 10px 0 0; font: 500 11px/1.6 var(--sans-tc); color: var(--tac-fg-2); }
-      `}</style>
-    </Panel>
-  );
-}
 
-export default async function AiRecommendationsPage() {
-  const [todayResult, v3Result, perf, lastCloseDate] = await Promise.all([
-    loadRecommendations(),
-    loadRecommendationsV3(),
-    getAiRecPerformance(),
-    resolveBannerLastCloseDate().catch(() => null),
-  ]);
-  const { data, error } = todayResult;
-  const items = data?.items ?? [];
-  const grouped = groupByBucket(items);
-  const v3Items = v3Result.data?.items ?? [];
-  const v3Cards = v3Items
-    .map((item) => mapV3ItemToStockRecCard(item, v3Result.data))
-    .filter((card): card is StockRecCardData => Boolean(card));
-  const v3PanelState = buildV3PanelState({
-    data: v3Result.data,
-    error: v3Result.error,
-    visibleCount: v3Cards.length,
-  });
-  // v3 is the canonical primary — always show v3 panel regardless of v2 state
-  const v3BackendItemCount = v3Result.data?.itemCount ?? v3Items.length;
-  const hasEnoughV3Cards = v3BackendItemCount >= 5 && v3Cards.length >= 5;
-  const isV3Complete = v3Result.data?.status === "complete";
-  // v2 brain_react: only show as demoted "研究參考" secondary panel when v3 has no cards
-  const showV2ResearchRef = v3Cards.length === 0 && items.length > 0;
-  const v3MarketScores = getV3MarketScores(v3Items);
-  const sourceMode = formatRecommendationSourceMode({
-    hasData: Boolean(data),
-    isMock: Boolean(data?._mock),
-  });
-  const generatedAtLabel = formatRecommendationTimestamp(data?.generatedAt);
-  const v3GeneratedAtLabel = formatRecommendationTimestamp(v3Result.data?.generatedAt);
+      <Suspense fallback={<MorningBriefBodyFallback />}>
+        <MorningBriefBody />
+      </Suspense>
 
-  return (
-    <PageFrame
-      code="AI"
-      title="AI 推薦"
-      sub="今日投研助理"
-      note="推薦頁只呈現研究與模擬交易前置資訊；正式券商寫入仍關閉。分數、進場、停損、部位都必須再經 SIM 流程與風控確認。"
-    >
-      <MarketStateBanner lastCloseDate={lastCloseDate} />
-      {v3MarketScores ? <MarketStateBadge scores={v3MarketScores} /> : <MarketStateBadgePlaceholder />}
-      <PerfScorecard perf={perf} />
-      <style>{`
-        ._rec-tabs {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-bottom: 16px;
-        }
-        ._rec-tabs a,
-        ._rec-prefill {
-          min-height: 36px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 0 12px;
-          color: var(--tac-fg-1);
-          background: rgba(8, 11, 16, 0.52);
-          font: 800 11px/1 var(--mono);
-          text-decoration: none;
-        }
-        ._rec-tabs a:hover,
-        ._rec-prefill:hover:not(._rec-prefill-disabled) {
-          color: var(--tac-fg-0);
-          border-color: rgba(200, 148, 63, 0.42);
-          background: rgba(200, 148, 63, 0.08);
-        }
-        ._rec-prefill-disabled {
-          color: var(--tac-fg-3);
-          border-style: dashed;
-          border-color: rgba(230, 57, 70, 0.28);
-          background: rgba(230, 57, 70, 0.05);
-          cursor: not-allowed;
-        }
-        ._rec-prefill-side {
-          border-left: 1px solid rgba(200, 148, 63, 0.28);
-          padding-left: 7px;
-          color: var(--tac-brand);
-          font-weight: 900;
-          white-space: nowrap;
-        }
-        ._rec-bucket-grid {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 10px;
-          padding: 16px;
-        }
-        ._rec-bucket {
-          min-height: 118px;
-          border: 1px solid rgba(200, 148, 63, 0.18);
-          border-radius: 8px;
-          background:
-            linear-gradient(180deg, rgba(200, 148, 63, 0.055), transparent 72%),
-            rgba(9, 14, 20, 0.82);
-          padding: 13px;
-        }
-        ._rec-bucket span,
-        ._rec-rank,
-        ._rec-trade-grid span,
-        ._rec-section-head span {
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-        }
-        ._rec-bucket b {
-          display: block;
-          margin-top: 10px;
-          color: var(--tac-fg-0);
-          font: 850 15px/1.25 var(--sans-tc);
-        }
-        ._rec-bucket small {
-          display: block;
-          margin-top: 9px;
-          color: var(--tac-fg-3);
-          font: 700 11px/1.5 var(--sans-tc);
-        }
-        ._rec-section {
-          padding: 0 16px 18px;
-        }
-        ._rec-section + ._rec-section,
-        ._rec-section + ._rec-section-collapsed {
-          border-top: 1px solid var(--tac-line);
-          padding-top: 16px;
-        }
-        ._rec-section-head,
-        ._rec-section-collapsed > summary {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          margin-bottom: 12px;
-        }
-        ._rec-section-head h2 {
-          margin: 0;
-          color: var(--tac-fg-0);
-          font: 850 18px/1.25 var(--sans-tc);
-        }
-        ._rec-section-collapsed {
-          border-top: 1px solid var(--tac-line);
-        }
-        ._rec-section-collapsed > summary {
-          min-height: 48px;
-          cursor: pointer;
-          color: var(--tac-fg-0);
-          font: 850 14px/1.25 var(--sans-tc);
-          list-style: none;
-        }
-        ._rec-section-collapsed > summary::-webkit-details-marker {
-          display: none;
-        }
-        ._rec-section-collapsed > summary b {
-          color: var(--tac-brand);
-          font: 900 12px/1 var(--mono);
-        }
-        ._rec-card-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-          gap: 12px;
-        }
-        ._rec-card {
-          display: grid;
-          gap: 13px;
-          min-width: 0;
-          border: 1px solid rgba(220, 228, 240, 0.1);
-          border-left: 3px solid rgba(200, 148, 63, 0.78);
-          border-radius: 8px;
-          padding: 15px;
-          background:
-            linear-gradient(135deg, rgba(200, 148, 63, 0.055), transparent 42%),
-            rgba(4, 8, 13, 0.42);
-        }
-        ._rec-card[data-tone="bad"] {
-          border-left-color: rgba(230, 57, 70, 0.78);
-        }
-        ._rec-card[data-tone="ok"] {
-          border-left-color: rgba(46, 204, 113, 0.68);
-        }
-        ._rec-card-head {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: start;
-        }
-        ._rec-card h3 {
-          margin: 6px 0 0;
-          color: var(--tac-fg-0);
-          font: 850 18px/1.25 var(--sans-tc);
-        }
-        ._rec-card h3 span {
-          margin-right: 8px;
-          color: var(--tac-brand);
-          font-family: var(--mono);
-        }
-        ._rec-badges,
-        ._rec-quality,
-        ._rec-targets {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px;
-        }
-        ._rec-badges span,
-        ._rec-quality span,
-        ._rec-quant span {
-          min-height: 24px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          border: 1px solid var(--tac-line);
-          border-radius: 5px;
-          padding: 0 8px;
-          color: var(--tac-fg-2);
-          background: rgba(8, 11, 16, 0.5);
-          font: 800 10px/1 var(--sans-tc);
-          white-space: nowrap;
-        }
-        ._rec-badges span[data-tone="ok"],
-        ._rec-quality span[data-tone="ok"],
-        ._rec-quant span[data-tone="ok"] {
-          color: var(--tac-ok);
-          border-color: rgba(46, 204, 113, 0.34);
-          background: rgba(46, 204, 113, 0.06);
-        }
-        ._rec-badges span[data-tone="warn"],
-        ._rec-quality span[data-tone="warn"],
-        ._rec-quant span[data-tone="warn"] {
-          color: var(--tac-warn);
-          border-color: rgba(200, 148, 63, 0.34);
-          background: rgba(200, 148, 63, 0.06);
-        }
-        ._rec-badges span[data-tone="bad"],
-        ._rec-quality span[data-tone="bad"],
-        ._rec-quant span[data-tone="bad"] {
-          color: var(--tac-bad);
-          border-color: rgba(230, 57, 70, 0.34);
-          background: rgba(230, 57, 70, 0.06);
-        }
-        ._rec-score-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-        }
-        ._rec-score {
-          min-width: 0;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 10px;
-          background: rgba(8, 11, 16, 0.38);
-        }
-        ._rec-score div {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--tac-fg-2);
-          font: 800 11px/1 var(--sans-tc);
-        }
-        ._rec-score b {
-          margin-left: auto;
-          color: var(--tac-fg-0);
-          font: 900 18px/1 var(--mono);
-        }
-        ._rec-score i {
-          display: block;
-          height: 4px;
-          margin-top: 10px;
-          border-radius: 99px;
-          background: linear-gradient(90deg, var(--tac-brand), var(--tac-ok));
-        }
-        ._rec-quant {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          min-width: 0;
-        }
-        ._rec-quant b {
-          color: var(--tac-fg-0);
-          font: 900 13px/1 var(--mono);
-        }
-        ._rec-quant small {
-          min-width: 0;
-          color: var(--tac-fg-3);
-          font: 800 11px/1 var(--mono);
-          overflow-wrap: anywhere;
-        }
-        ._rec-research-note {
-          margin: 0;
-          color: var(--tac-fg-3);
-          font-size: 12px;
-          line-height: 1.58;
-        }
-        ._rec-trade-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-        }
-        ._rec-trade-grid > div {
-          min-width: 0;
-          border-top: 1px solid var(--tac-line);
-          padding-top: 10px;
-        }
-        ._rec-trade-grid b {
-          display: block;
-          margin-top: 7px;
-          color: var(--tac-fg-0);
-          font: 850 14px/1.35 var(--sans-tc);
-          overflow-wrap: anywhere;
-        }
-        ._rec-trade-grid b[data-risk="hot"] {
-          color: var(--tac-bad);
-        }
-        ._rec-trade-grid small,
-        ._rec-trade-grid p,
-        ._rec-targets small,
-        ._rec-empty-text {
-          margin: 6px 0 0;
-          color: var(--tac-fg-3);
-          font-size: 12px;
-          line-height: 1.58;
-        }
-        ._rec-targets span {
-          display: grid;
-          gap: 4px;
-          min-width: 104px;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 9px;
-          color: var(--tac-fg-0);
-          background: rgba(8, 11, 16, 0.34);
-          font: 900 13px/1 var(--mono);
-        }
-        ._rec-targets b {
-          color: var(--tac-brand);
-          font-size: 10px;
-        }
-        ._rec-details,
-        ._rec-source {
-          border-top: 1px solid var(--tac-line);
-          padding-top: 10px;
-        }
-        ._rec-details summary,
-        ._rec-source summary {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          cursor: pointer;
-          color: var(--tac-fg-0);
-          font: 850 12px/1 var(--sans-tc);
-        }
-        ._rec-reasons {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 10px;
-          margin-top: 10px;
-        }
-        ._rec-reasons section {
-          min-width: 0;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 9px;
-          background: rgba(8, 11, 16, 0.34);
-        }
-        ._rec-reasons b {
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-        }
-        ._rec-reasons ul,
-        ._rec-risks {
-          margin: 8px 0 0;
-          padding-left: 17px;
-          color: var(--tac-fg-2);
-          font-size: 12px;
-          line-height: 1.62;
-        }
-        ._rec-reasons span {
-          display: block;
-          margin-top: 8px;
-          color: var(--tac-fg-3);
-          font: 800 12px/1 var(--mono);
-        }
-        ._rec-quality span {
-          display: inline-grid;
-          grid-template-columns: 1fr;
-          gap: 4px;
-          min-height: 38px;
-          align-items: center;
-        }
-        ._rec-quality b {
-          color: var(--tac-fg-3);
-          font: 900 9px/1 var(--mono);
-        }
-        ._rec-source div {
-          display: grid;
-          gap: 7px;
-          margin-top: 10px;
-        }
-        ._rec-source div span {
-          display: grid;
-          grid-template-columns: 70px minmax(0, 1fr);
-          gap: 8px;
-          color: var(--tac-fg-2);
-          font: 12px/1.45 var(--mono);
-          overflow-wrap: anywhere;
-        }
-        ._rec-source b {
-          color: var(--tac-brand);
-        }
-        ._rec-source small {
-          grid-column: 2;
-          color: var(--tac-fg-3);
-        }
-        ._rec-prefill {
-          justify-self: start;
-          color: var(--tac-brand);
-        }
-        ._rec-detail-link {
-          justify-self: start;
-          min-height: 34px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 0 11px;
-          color: var(--tac-fg-2);
-          background: rgba(8, 11, 16, 0.46);
-          font: 850 12px/1 var(--sans-tc);
-          text-decoration: none;
-        }
-        ._rec-detail-link:hover {
-          color: var(--tac-fg-0);
-          border-color: rgba(200, 148, 63, 0.5);
-          background: rgba(200, 148, 63, 0.1);
-        }
-        ._rec-handoff-preview {
-          display: grid;
-          gap: 8px;
-          border: 1px solid rgba(46, 204, 113, 0.24);
-          border-radius: 6px;
-          padding: 10px;
-          background:
-            linear-gradient(135deg, rgba(46, 204, 113, 0.07), transparent 64%),
-            rgba(8, 11, 16, 0.42);
-        }
-        ._rec-handoff-preview-head,
-        ._rec-handoff-preview-items {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 7px;
-        }
-        ._rec-handoff-preview-head b {
-          color: var(--tac-fg-0);
-          font: 900 12px/1 var(--sans-tc);
-        }
-        ._rec-handoff-preview-head span {
-          min-height: 22px;
-          display: inline-flex;
-          align-items: center;
-          border: 1px solid rgba(46, 204, 113, 0.28);
-          border-radius: 5px;
-          padding: 0 7px;
-          color: var(--tac-ok);
-          background: rgba(46, 204, 113, 0.06);
-          font: 900 10px/1 var(--sans-tc);
-        }
-        ._rec-handoff-preview-items span {
-          min-height: 24px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          border: 1px solid var(--tac-line);
-          border-radius: 5px;
-          padding: 0 8px;
-          color: var(--tac-fg-2);
-          background: rgba(8, 11, 16, 0.5);
-          font: 800 10px/1 var(--sans-tc);
-          white-space: nowrap;
-        }
-        ._rec-handoff-preview-items b {
-          color: var(--tac-brand);
-          font: 900 9px/1 var(--sans-tc);
-        }
-        ._rec-handoff-preview p {
-          margin: 0;
-          color: var(--tac-fg-3);
-          font-size: 12px;
-          line-height: 1.55;
-        }
-        ._rec-feedback {
-          display: grid;
-          gap: 7px;
-          border-top: 1px solid var(--tac-line);
-          padding-top: 10px;
-        }
-        ._rec-feedback div {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 7px;
-        }
-        ._rec-feedback button {
-          min-height: 32px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          border: 1px solid var(--tac-line);
-          border-radius: 6px;
-          padding: 0 10px;
-          color: var(--tac-fg-2);
-          background: rgba(8, 11, 16, 0.5);
-          font: 850 11px/1 var(--sans-tc);
-          cursor: pointer;
-        }
-        ._rec-feedback button:hover:not(:disabled),
-        ._rec-feedback button[data-active="true"] {
-          color: var(--tac-fg-0);
-          border-color: rgba(200, 148, 63, 0.44);
-          background: rgba(200, 148, 63, 0.1);
-        }
-        ._rec-feedback button:disabled {
-          cursor: wait;
-          opacity: 0.64;
-        }
-        ._rec-feedback > span {
-          color: var(--tac-fg-3);
-          font: 800 11px/1 var(--mono);
-        }
-        ._rec-feedback[data-status="saved"] > span {
-          color: var(--tac-ok);
-        }
-        ._rec-feedback[data-status="failed"] > span {
-          color: var(--tac-warn);
-        }
-        ._rec-empty {
-          min-height: 170px;
-          display: grid;
-          align-content: center;
-          justify-items: center;
-          gap: 8px;
-          border: 1px dashed rgba(200, 148, 63, 0.24);
-          border-radius: 8px;
-          color: var(--tac-fg-3);
-          background: rgba(8, 11, 16, 0.28);
-          text-align: center;
-          padding: 22px;
-        }
-        ._rec-empty b {
-          color: var(--tac-fg-0);
-          font: 850 14px/1.35 var(--sans-tc);
-        }
-        ._rec-empty p {
-          margin: 0;
-          max-width: 360px;
-          font-size: 12px;
-          line-height: 1.65;
-        }
-        ._rec-empty-single {
-          justify-items: stretch;
-          text-align: left;
-          min-height: 0;
-        }
-        ._rec-empty-single p {
-          max-width: 760px;
-        }
-        ._rec-empty-single dl {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-          margin: 10px 0 0;
-        }
-        ._rec-empty-single dl > div {
-          min-width: 0;
-          border: 1px solid rgba(220, 228, 240, 0.1);
-          border-radius: 6px;
-          padding: 10px;
-          background: rgba(3, 7, 12, 0.42);
-        }
-        ._rec-empty-single dt {
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-          margin-bottom: 6px;
-        }
-        ._rec-empty-single dd {
-          margin: 0;
-          color: var(--tac-fg-2);
-          font: 800 11px/1.45 var(--sans-tc);
-          overflow-wrap: anywhere;
-        }
-        ._rec-v3-preview {
-          display: grid;
-          gap: 10px;
-          padding: 12px;
-          border: 1px dashed rgba(200,148,63,0.24);
-          border-radius: 8px;
-          background: rgba(8,11,16,0.28);
-          margin-bottom: 14px;
-          overflow-x: auto;
-        }
-        ._rec-v3-preview-title {
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-        }
-        ._rec-v3-preview table {
-          width: 100%;
-          min-width: 680px;
-          border-collapse: collapse;
-          font: 800 11px/1 var(--mono);
-        }
-        ._rec-v3-preview th {
-          padding: 5px 6px;
-          color: var(--tac-brand);
-          text-align: center;
-          border-bottom: 1px solid var(--tac-line);
-          font-size: 10px;
-          white-space: nowrap;
-        }
-        ._rec-v3-preview td {
-          padding: 6px;
-          text-align: center;
-          color: var(--tac-fg-3);
-          font-size: 12px;
-        }
-        ._rec-v3-state {
-          display: grid;
-          gap: 10px;
-          border: 1px solid var(--tac-line);
-          border-left: 3px solid rgba(200, 148, 63, 0.72);
-          border-radius: 8px;
-          padding: 14px;
-          margin-bottom: 14px;
-          background: rgba(8, 11, 16, 0.42);
-        }
-        ._rec-v3-state[data-tone="live"] {
-          border-left-color: rgba(46, 204, 113, 0.7);
-        }
-        ._rec-v3-state[data-tone="blocked"],
-        ._rec-v3-state[data-tone="degraded"] {
-          border-left-color: rgba(230, 57, 70, 0.72);
-        }
-        ._rec-v3-state b {
-          color: var(--tac-fg-0);
-          font: 850 14px/1.35 var(--sans-tc);
-        }
-        ._rec-v3-state p {
-          margin: 0;
-          color: var(--tac-fg-2);
-          font-size: 12px;
-          line-height: 1.65;
-        }
-        ._rec-v3-state dl {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
-          margin: 0;
-        }
-        ._rec-v3-state div {
-          min-width: 0;
-        }
-        ._rec-v3-state dt {
-          color: var(--tac-brand);
-          font: 900 10px/1 var(--mono);
-        }
-        ._rec-v3-state dd {
-          margin: 6px 0 0;
-          color: var(--tac-fg-2);
-          font: 800 11px/1.5 var(--sans-tc);
-          overflow-wrap: anywhere;
-        }
-        ._rec-v3-card-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-          gap: 12px;
-        }
-        @media (max-width: 1180px) {
-          ._rec-bucket-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-          ._rec-trade-grid { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 760px) {
-          ._rec-bucket-grid,
-          ._rec-card-grid,
-          ._rec-v3-card-grid,
-          ._rec-score-grid,
-          ._rec-reasons,
-          ._rec-empty-single dl,
-          ._rec-v3-state dl {
-            grid-template-columns: 1fr;
-          }
-          ._rec-card-head {
-            display: grid;
-          }
-        }
-        /* Mobile M1 (2026-07-05): 390px read-path baseline — presentation only.
-           Touch targets ≥44px + legible body text for the buttons/copy a
-           trader actually taps and reads on this page (feedback actions,
-           handoff CTA, entry/stop/reason copy). Card grids already collapse
-           to 1fr above at 760px; this block only tightens target size + type
-           scale, no structural change. */
-        @media (max-width: 480px) {
-          ._rec-tabs a,
-          ._rec-prefill,
-          ._rec-detail-link {
-            min-height: 44px;
-          }
-          ._rec-feedback button {
-            min-height: 44px;
-          }
-          ._rec-reasons ul,
-          ._rec-risks,
-          ._rec-trade-grid small,
-          ._rec-trade-grid p,
-          ._rec-targets small,
-          ._rec-empty-text {
-            font-size: 14px;
-          }
-          ._rec-quant small {
-            font-size: 12px;
-          }
-        }
-      `}</style>
-
-      <div className="_rec-tabs" aria-label="AI 推薦導覽">
-        <Link href="/quant-strategies">量化策略</Link>
-        <Link href="/signals">訊號中心</Link>
-      </div>
-
-      {/* AI-01: v3 is always the canonical primary recommendation panel */}
-      <Panel
-        code="AI-01"
-        title="今日 AI 推薦"
-        sub={`產生時間 ${v3GeneratedAtLabel || "-"} / ${v3PanelState.label}`}
-        right={`${v3Cards.length} 檔`}
-      >
-        <div style={{ padding: "16px" }}>
-          <div className="_rec-v3-state" data-tone={v3PanelState.tone}>
-            <b>{v3PanelState.title}</b>
-            <p>{v3PanelState.detail}</p>
-            <V3BackendFacts data={v3Result.data} visibleCount={v3Cards.length} />
-          </div>
-          {v3Cards.length > 0 ? (
-            <div className="_rec-v3-card-grid">
-              {v3Cards.map((card) => (
-                <StockRecCard key={`${card.ticker}-${card.bucket}`} rec={card} />
-              ))}
-            </div>
-          ) : (
-            <div className="_rec-empty _rec-empty-single">
-              <b>推薦引擎尚未回傳可顯示卡片</b>
-              <p>等待 v3 推薦引擎回傳正式資料；前端不用舊資料補卡。</p>
-            </div>
-          )}
+      <div className="amb-cta">
+        <div className="txt">看完今日主推？<b>前往交易室</b>用 SIM 模式演練。</div>
+        <div className="acts">
+          <Link className="btn" href="/market-intel">市場情報</Link>
+          <Link className="btn gold" href="/desk-exact">交易室 →</Link>
         </div>
-      </Panel>
-
-      {/* AI-RES: v2 brain_react demoted to research-reference — only shown when v3 has no cards */}
-      {showV2ResearchRef && (
-        <Panel
-          code="AI-RES"
-          title="研究參考（非主推薦）"
-          sub={`交易日 ${data?.date ?? "-"} / 產生時間 ${generatedAtLabel || "-"} / ${sourceMode} / 僅研究參考`}
-          right={`${items.length} 檔`}
-        >
-          <div style={{ padding: "8px 16px 4px", background: "rgba(245,166,35,0.06)", borderBottom: "1px solid rgba(245,166,35,0.2)" }}>
-            <span style={{ color: "var(--tac-amber, #f5a623)", fontSize: 11, fontWeight: 900, letterSpacing: "0.06em" }}>
-              此區塊為 brain_react v2 輸出，非 v3 SOP 主推薦。資料僅供研究比對，請勿作為交易依據。
-            </span>
-          </div>
-          <div className="_rec-bucket-grid">
-            {BUCKETS.map((bucket) => {
-              const bucketItems = grouped.get(bucket.value) ?? [];
-              return (
-                <article key={bucket.value} className="_rec-bucket">
-                  <span>{bucket.range}</span>
-                  <b>{bucket.label}</b>
-                  <small>{bucketItems.length} 檔</small>
-                </article>
-              );
-            })}
-          </div>
-          {BUCKETS.map((bucket) => (
-            <BucketSection
-              key={bucket.value}
-              bucket={bucket}
-              items={grouped.get(bucket.value) ?? []}
-              error={error}
-            />
-          ))}
-        </Panel>
-      )}
-
-    </PageFrame>
+      </div>
+    </main>
   );
 }
+
+const AMB_CSS = `
+.amb-shell {
+  --amb-rulefaint: rgba(220, 228, 240, 0.06);
+  --amb-goldsoft: rgba(200, 148, 63, 0.1);
+  --amb-goldline: rgba(200, 148, 63, 0.3);
+}
+.amb-shell * { box-sizing: border-box; }
+
+/* ---------- nameplate ---------- */
+.amb-shell .nameplate { display: flex; align-items: stretch; margin-top: 4px; border-top: 2px solid var(--gold); border-bottom: 1px solid var(--night-rule-strong); }
+.amb-shell .np-chip { background: linear-gradient(105deg, #1c1608, #0d0a05); padding: 14px 30px 14px 4px; display: flex; flex-direction: column; justify-content: center; clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%); min-width: 150px; margin-right: 6px; }
+.amb-shell .np-chip b { color: var(--gold-bright); font-family: var(--mono); font-size: 15px; letter-spacing: .06em; font-weight: 700; }
+.amb-shell .np-chip span { color: var(--gold); opacity: .72; font-family: var(--mono); font-size: 8px; letter-spacing: .32em; margin-top: 2px; }
+.amb-shell .np-title { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 0; }
+.amb-shell .np-title h1 { font-family: var(--serif-tc); color: var(--night-ink); font-size: 32px; font-weight: 700; letter-spacing: .05em; line-height: 1.08; margin: 0; }
+.amb-shell .np-title .en { font-family: var(--sans-tc); font-size: 9.5px; letter-spacing: .38em; color: var(--night-soft); text-transform: uppercase; margin-top: 5px; }
+.amb-shell .np-clock { display: flex; align-items: center; padding: 8px 0 8px 20px; }
+.amb-shell .np-clock b { font-family: var(--mono); font-size: 15px; color: var(--night-ink); letter-spacing: .02em; white-space: nowrap; }
+
+/* ---------- runhead ---------- */
+.amb-shell .runhead { display: flex; flex-wrap: wrap; align-items: center; gap: 0; border-bottom: 1px solid var(--night-rule); font-family: var(--sans-tc); padding-top: 10px; }
+.amb-shell .runhead .seg { padding: 8px 20px 8px 0; margin-right: 20px; border-right: 1px solid var(--night-rule); display: flex; align-items: baseline; gap: 8px; }
+.amb-shell .runhead .seg:last-child { border-right: 0; margin-right: 0; }
+.amb-shell .runhead .k { font-size: 9px; letter-spacing: .16em; color: var(--night-faint); text-transform: uppercase; }
+.amb-shell .runhead .v { font-family: var(--serif-tc); font-size: 13px; color: var(--night-ink); font-weight: 600; }
+.amb-shell .runhead .v.mono { font-family: var(--mono); font-size: 14px; }
+
+/* ---------- lede ---------- */
+.amb-shell .lede { display: flex; gap: 12px; padding: 12px 0 0; color: var(--night-mid); font-size: 12.5px; line-height: 1.6; font-family: var(--sans-tc); margin: 0; }
+.amb-shell .lede .mark { flex: 0 0 auto; font-family: var(--mono); font-size: 9px; letter-spacing: .14em; color: var(--gold); border: 1px solid var(--amb-goldline); padding: 3px 8px; height: fit-content; background: var(--amb-goldsoft); }
+.amb-shell .lede em { font-style: normal; color: var(--night-ink); }
+
+/* ---------- track-box ---------- */
+.amb-shell .track-box { margin-top: 16px; border: 1px solid var(--night-rule); background: var(--night-1); }
+.amb-shell .track-box .tb-hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; padding: 9px 16px; border-bottom: 1px solid var(--night-rule); }
+.amb-shell .track-box .tb-hd h3 { font-family: var(--serif-tc); font-size: 14px; color: var(--night-ink); font-weight: 700; letter-spacing: .04em; margin: 0; }
+.amb-shell .track-box .caveat { font-family: var(--sans-tc); font-size: 10.5px; color: var(--gold-bright); letter-spacing: .02em; }
+.amb-shell .track-box .base { margin-left: auto; font-family: var(--mono); font-size: 9px; color: var(--night-faint); letter-spacing: .1em; }
+.amb-shell .track-row { display: flex; flex-wrap: wrap; }
+.amb-shell .track-row .m { flex: 1 1 0; min-width: 150px; padding: 12px 16px; border-right: 1px solid var(--night-rule); display: flex; align-items: baseline; gap: 10px; }
+.amb-shell .track-row .m:last-child { border-right: 0; }
+.amb-shell .track-row .k { font-family: var(--sans-tc); font-size: 11px; color: var(--night-soft); line-height: 1.35; display: flex; flex-direction: column; }
+.amb-shell .track-row .n { font-family: var(--mono); font-size: 20px; color: var(--night-ink); font-weight: 500; letter-spacing: -.01em; }
+.amb-shell .track-row .n.up { color: var(--tw-up-bright); }
+.amb-shell .track-row .s { font-family: var(--mono); font-size: 9px; color: var(--night-faint); display: block; margin-top: 2px; }
+.amb-shell .track-foot { padding: 8px 16px; border-top: 1px solid var(--night-rule); font-family: var(--sans-tc); font-size: 11px; color: var(--night-soft); line-height: 1.55; }
+
+/* ---------- band ---------- */
+.amb-shell .band { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 26px; padding-bottom: 8px; border-bottom: 2px solid var(--night-rule-strong); }
+.amb-shell .band .ord { font-family: var(--serif-tc); font-size: 14px; color: var(--gold-bright); font-weight: 700; letter-spacing: .1em; border: 1px solid var(--amb-goldline); padding: 2px 11px; background: var(--amb-goldsoft); }
+.amb-shell .band h2 { font-family: var(--serif-tc); font-size: 20px; color: var(--night-ink); font-weight: 700; letter-spacing: .06em; margin: 0; }
+.amb-shell .band .en { font-family: var(--sans-tc); font-size: 9px; letter-spacing: .26em; color: var(--night-faint); text-transform: uppercase; }
+.amb-shell .band .status { margin-left: auto; display: flex; flex-wrap: wrap; gap: 5px 16px; font-family: var(--sans-tc); font-size: 10.5px; color: var(--night-soft); }
+.amb-shell .band .status b { color: var(--night-ink); font-family: var(--mono); font-style: normal; }
+.amb-shell .band .status b.g { color: var(--gold-bright); }
+
+/* ---------- lead article ---------- */
+.amb-shell .lead { margin-top: 18px; }
+.amb-shell .lead-head { display: grid; grid-template-columns: auto 1fr auto; gap: 20px; align-items: flex-end; padding-bottom: 14px; border-bottom: 1px solid var(--night-rule); }
+.amb-shell .lh-name { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.amb-shell .lh-name .co { font-family: var(--serif-tc); font-size: 36px; color: var(--night-ink); font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.amb-shell .lh-name .code { font-size: 20px; color: var(--gold-bright); letter-spacing: .02em; }
+.amb-shell .lh-name .lvl { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border: 1px solid var(--gold-bright); color: var(--gold-bright); background: var(--amb-goldsoft); }
+.amb-shell .lh-name .rank { font-family: var(--serif-tc); font-size: 12px; color: var(--night-soft); letter-spacing: .1em; }
+.amb-shell .lh-metrics { display: flex; gap: 26px; justify-content: flex-end; }
+.amb-shell .lh-metrics .m { text-align: right; }
+.amb-shell .lh-metrics .k { font-family: var(--sans-tc); font-size: 10px; color: var(--night-soft); letter-spacing: .06em; }
+.amb-shell .lh-metrics .v { font-family: var(--mono); font-size: 20px; color: var(--night-ink); line-height: 1.1; }
+.amb-shell .lh-metrics .m.conf .v { color: var(--gold-bright); }
+.amb-shell .lead-body { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr); gap: 0; margin-top: 22px; }
+.amb-shell .lb-main { padding: 16px 30px 6px 0; border-right: 1px solid var(--night-rule); }
+.amb-shell .lb-aside { padding: 16px 0 6px 30px; }
+.amb-shell .colhd { font-family: var(--sans-tc); font-size: 10px; letter-spacing: .2em; color: var(--gold); text-transform: uppercase; font-weight: 600; padding-bottom: 9px; margin-bottom: 12px; border-bottom: 1px solid var(--amb-rulefaint); }
+.amb-shell .prose p { font-family: var(--serif-tc); font-size: 14.5px; line-height: 1.8; color: var(--night-mid); margin: 0 0 12px; text-align: justify; }
+.amb-shell .prose p:last-child { margin-bottom: 0; }
+.amb-shell .prose-empty { font-family: var(--sans-tc); font-size: 12.5px; color: var(--night-soft); }
+.amb-shell .risk-block { margin-top: 20px; }
+.amb-shell .rh { font-family: var(--serif-tc); font-size: 15px; color: var(--tw-up-bright); font-weight: 700; letter-spacing: .06em; padding-bottom: 8px; margin-bottom: 11px; border-bottom: 1px solid var(--amb-rulefaint); display: flex; align-items: baseline; gap: 9px; }
+.amb-shell .rh .en { font-family: var(--sans-tc); font-size: 8.5px; letter-spacing: .22em; color: var(--night-faint); text-transform: uppercase; }
+.amb-shell .risk-list { list-style: none; padding: 0; margin: 0; }
+.amb-shell .risk-list li { position: relative; padding: 0 0 10px 20px; font-family: var(--serif-tc); font-size: 13.5px; line-height: 1.72; color: var(--night-mid); }
+.amb-shell .risk-list li::before { content: "\\2014"; position: absolute; left: 0; top: 0; color: var(--tw-up-bright); font-family: var(--mono); }
+
+/* box-score + plan tables */
+.amb-shell .boxscore, .amb-shell .plan { width: 100%; border-collapse: collapse; font-family: var(--sans-tc); margin-bottom: 18px; }
+.amb-shell .boxscore caption, .amb-shell .plan caption { text-align: left; font-family: var(--sans-tc); font-size: 10px; letter-spacing: .2em; color: var(--gold); text-transform: uppercase; font-weight: 600; padding-bottom: 9px; }
+.amb-shell .boxscore td { padding: 6px 0; border-bottom: 1px solid var(--amb-rulefaint); vertical-align: baseline; }
+.amb-shell .boxscore td.dim { font-family: var(--serif-tc); font-size: 13.5px; color: var(--night-mid); }
+.amb-shell .boxscore td.sc { text-align: right; font-family: var(--mono); font-size: 13.5px; color: var(--night-ink); width: 66px; }
+.amb-shell .boxscore tr.tot td { border-bottom: 0; border-top: 1.5px solid var(--night-rule-strong); padding-top: 9px; }
+.amb-shell .boxscore tr.tot td.dim { color: var(--gold-bright); font-weight: 700; font-size: 14.5px; }
+.amb-shell .boxscore tr.tot td.sc { color: var(--gold-bright); font-size: 16px; }
+.amb-shell .plan td { padding: 7px 0; border-bottom: 1px solid var(--amb-rulefaint); }
+.amb-shell .plan td.k { font-family: var(--serif-tc); font-size: 13px; color: var(--night-soft); }
+.amb-shell .plan td.v { text-align: right; font-family: var(--mono); font-size: 14.5px; color: var(--night-ink); }
+.amb-shell .plan td.v.up { color: var(--tw-up-bright); } .amb-shell .plan td.v.down { color: var(--tw-dn-bright); } .amb-shell .plan td.v.g { color: var(--gold-bright); }
+.amb-shell .plan .entry-row td { border-bottom: 0; padding-bottom: 2px; }
+.amb-shell .plan .entry-val { font-size: 18px; color: var(--gold-bright); }
+.amb-shell .plan .entry-note td { border-bottom: 1px solid var(--night-rule-strong); padding: 0 0 12px; }
+.amb-shell .plan .entry-note .n { font-family: var(--serif-tc); font-size: 12px; color: var(--night-soft); line-height: 1.6; text-align: justify; }
+
+/* byline */
+.amb-shell .byline, .amb-shell .st-byline { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--night-rule); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+.amb-shell .st-byline { margin-top: 13px; padding-top: 10px; }
+.amb-shell .byline .src, .amb-shell .st-byline .src { font-family: var(--sans-tc); font-size: 11px; color: var(--night-soft); line-height: 1.5; flex: 1 1 auto; min-width: 200px; }
+.amb-shell .byline .src b, .amb-shell .st-byline .src b { color: var(--night-mid); font-weight: 600; }
+.amb-shell .byline .pos, .amb-shell .st-byline .pos { font-family: var(--mono); font-size: 12px; color: var(--night-mid); }
+.amb-shell .byline .pos b, .amb-shell .st-byline .pos b { color: var(--gold-bright); font-style: normal; }
+.amb-shell .byline .acts, .amb-shell .st-byline .acts { margin-left: auto; }
+
+/* CTA row reuse override (LinkageCtaRow renders ._src-cta-*; restyle to fit newspaper byline) */
+.amb-shell .acts ._src-cta-row { border-top: 0; padding-top: 0; gap: 8px; }
+.amb-shell .acts ._src-cta-btn { border-radius: 0; font-family: var(--sans-tc); font-size: 11.5px; padding: 0 13px; min-height: 30px; border-color: var(--night-rule-strong); background: transparent; color: var(--night-mid); }
+.amb-shell .acts ._src-cta-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--night-ink); background: var(--amb-goldsoft); }
+
+/* ---------- inner spread ---------- */
+.amb-shell .spread { display: grid; grid-template-columns: 1fr 1fr; column-gap: 40px; margin-top: 20px; position: relative; }
+.amb-shell .spread::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 20px; width: 1px; background: var(--night-rule); transform: translateX(-.5px); }
+.amb-shell .col { min-width: 0; display: flex; flex-direction: column; }
+.amb-shell .story { padding: 22px 0; border-bottom: 1px solid var(--night-rule); }
+.amb-shell .col .story:first-child { padding-top: 0; }
+.amb-shell .col .story:last-child { border-bottom: 0; }
+.amb-shell .st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--amb-rulefaint); }
+.amb-shell .st-head .rank { font-family: var(--serif-tc); font-size: 13px; color: var(--gold-bright); font-weight: 700; letter-spacing: .08em; }
+.amb-shell .st-head .co { font-family: var(--serif-tc); font-size: 21px; color: var(--night-ink); font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.amb-shell .st-head .code { font-size: 13px; color: var(--gold-bright); }
+.amb-shell .st-head .lvl { font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 2px 8px; border: 1px solid var(--night-rule-strong); color: var(--night-mid); letter-spacing: .04em; }
+.amb-shell .st-head .spr { flex: 1; }
+.amb-shell .st-head .conf, .amb-shell .st-head .tot { text-align: right; }
+.amb-shell .st-head .conf .v { font-size: 15px; color: var(--gold-bright); }
+.amb-shell .st-head .tot .v { font-size: 15px; color: var(--night-ink); }
+.amb-shell .st-head .k { font-family: var(--sans-tc); font-size: 9px; color: var(--night-soft); letter-spacing: .04em; }
+
+.amb-shell .st-scores { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--amb-rulefaint); border: 1px solid var(--amb-rulefaint); margin: 12px 0; }
+.amb-shell .st-scores .s { background: var(--night-1); padding: 7px 4px; text-align: center; }
+.amb-shell .st-scores .v { font-size: 12.5px; color: var(--night-ink); line-height: 1.1; }
+.amb-shell .st-scores .l { font-family: var(--sans-tc); font-size: 9px; color: var(--night-soft); margin-top: 3px; }
+
+.amb-shell .st-plan { display: flex; flex-wrap: wrap; border: 1px solid var(--amb-rulefaint); background: var(--night-1); margin-bottom: 12px; }
+.amb-shell .st-plan .p { flex: 1 1 0; min-width: 64px; padding: 8px 10px; border-right: 1px solid var(--amb-rulefaint); }
+.amb-shell .st-plan .p:last-child { border-right: 0; }
+.amb-shell .st-plan .k { font-family: var(--sans-tc); font-size: 9px; color: var(--night-soft); letter-spacing: .04em; }
+.amb-shell .st-plan .v { font-size: 13.5px; color: var(--night-ink); margin-top: 2px; }
+.amb-shell .st-plan .p.up .v { color: var(--tw-up-bright); } .amb-shell .st-plan .p.down .v { color: var(--tw-dn-bright); } .amb-shell .st-plan .p.g .v { color: var(--gold-bright); }
+.amb-shell .st-entry { font-family: var(--serif-tc); font-size: 12.5px; color: var(--night-soft); line-height: 1.6; margin: 0 0 10px; text-align: justify; }
+.amb-shell .st-entry .rng { font-size: 13px; color: var(--gold-bright); }
+.amb-shell .st-body p { font-family: var(--serif-tc); font-size: 13.5px; line-height: 1.76; color: var(--night-mid); margin: 0 0 10px; text-align: justify; }
+.amb-shell .st-sub { font-family: var(--serif-tc); font-size: 13px; color: var(--tw-up-bright); font-weight: 700; letter-spacing: .05em; margin: 14px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--amb-rulefaint); }
+.amb-shell .st-risk { list-style: none; padding: 0; margin: 0; }
+.amb-shell .st-risk li { position: relative; padding: 0 0 8px 18px; font-family: var(--serif-tc); font-size: 13px; line-height: 1.66; color: var(--night-mid); }
+.amb-shell .st-risk li::before { content: "\\2014"; position: absolute; left: 0; top: 0; color: var(--tw-up-bright); font-family: var(--mono); }
+
+/* ---------- colophon ---------- */
+.amb-shell .colophon { margin-top: 40px; padding-top: 14px; border-top: 2px solid var(--gold); display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; font-family: var(--sans-tc); }
+.amb-shell .colophon .mark { font-family: var(--mono); font-size: 11px; color: var(--gold-bright); letter-spacing: .1em; }
+.amb-shell .colophon .txt { font-size: 11px; color: var(--night-soft); line-height: 1.6; flex: 1; min-width: 240px; }
+.amb-shell .colophon .txt b { color: var(--night-mid); font-weight: 600; }
+.amb-shell .colophon .src { font-family: var(--mono); font-size: 9.5px; color: var(--night-faint); letter-spacing: .06em; }
+
+/* ---------- empty / loading ---------- */
+.amb-shell .amb-empty { padding: 26px 4px; color: var(--night-soft); }
+.amb-shell .amb-empty b { display: block; color: var(--night-ink); font-family: var(--serif-tc); font-size: 16px; margin-bottom: 8px; }
+.amb-shell .amb-empty p { margin: 0; font-family: var(--sans-tc); font-size: 12.5px; line-height: 1.65; max-width: 620px; }
+.amb-shell .amb-loading { display: flex; align-items: center; gap: 9px; padding: 40px 4px; color: var(--night-soft); font-family: var(--sans-tc); font-size: 12.5px; }
+.amb-shell .amb-loading .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 7px var(--gold); flex-shrink: 0; }
+
+/* ---------- CTA band ---------- */
+.amb-shell .amb-cta { margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 15px 20px; border: 1px solid var(--night-rule); border-radius: 4px; background: linear-gradient(90deg, var(--night-1), var(--night)); }
+.amb-shell .amb-cta .txt { font-size: 13px; color: var(--night-mid); font-family: var(--sans-tc); }
+.amb-shell .amb-cta .txt b { color: var(--night-ink); }
+.amb-shell .amb-cta .acts { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+.amb-shell .amb-cta .btn { font-size: 12.5px; padding: 8px 16px; border-radius: 4px; border: 1px solid var(--night-rule-strong); color: var(--night-mid); font-family: var(--mono); letter-spacing: .03em; text-decoration: none; display: inline-flex; align-items: center; }
+.amb-shell .amb-cta .btn:hover { border-color: var(--night-faint); color: var(--night-ink); }
+.amb-shell .amb-cta .btn.gold { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #1a1206; border-color: var(--gold-bright); font-weight: 600; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) {
+  .amb-shell .lead-body { grid-template-columns: 1fr; }
+  .amb-shell .lb-main { border-right: 0; border-bottom: 1px solid var(--night-rule); padding: 16px 0 20px; }
+  .amb-shell .lb-aside { padding: 20px 0 6px; }
+  .amb-shell .spread { grid-template-columns: 1fr; column-gap: 0; }
+  .amb-shell .spread::before { display: none; }
+  .amb-shell .col .story:last-child { border-bottom: 1px solid var(--night-rule); }
+}
+@media (max-width: 820px) {
+  .amb-shell .nameplate { flex-wrap: wrap; }
+  .amb-shell .np-chip { clip-path: none; min-width: 0; margin-right: 0; flex: 1 0 100%; padding: 12px 16px; }
+  .amb-shell .np-title { flex: 1 1 60%; padding: 12px 0 12px 4px; }
+  .amb-shell .np-title h1 { font-size: 24px; }
+  .amb-shell .np-clock { flex: 1 1 30%; padding: 12px 0; }
+  .amb-shell .runhead .seg { padding: 7px 14px 7px 0; margin-right: 14px; }
+  .amb-shell .lead-head { grid-template-columns: 1fr; gap: 12px; }
+  .amb-shell .lh-metrics { justify-content: flex-start; flex-wrap: wrap; gap: 18px; }
+  .amb-shell .lh-metrics .m { text-align: left; }
+  .amb-shell .track-row .m { flex-basis: 50%; min-width: 0; }
+}
+@media (max-width: 440px) {
+  .amb-shell .lh-name .co { font-size: 28px; }
+  .amb-shell .st-scores { grid-template-columns: repeat(4, 1fr); }
+  .amb-shell .track-row .m { flex-basis: 100%; border-right: 0; }
+  .amb-shell .band { flex-wrap: wrap; }
+  .amb-shell .band .status { margin-left: 0; flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .amb-shell * { animation: none !important; } }
+`;
