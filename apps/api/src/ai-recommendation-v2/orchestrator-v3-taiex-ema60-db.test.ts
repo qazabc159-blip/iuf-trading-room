@@ -1,103 +1,86 @@
-// orchestrator-v3-taiex-ema60-db.test.ts — 2026-07-23 (R1 audit fix, dual-criteria audit)
+// orchestrator-v3-taiex-ema60-db.test.ts — 2026-07-23 (R1 audit fix + R2 datasource routing)
 //
 // computeTaiexEma60FromDb() (orchestrator-v3.ts) feeds the S6 "TAIEX < EMA60"
 // risk-off signal consumed by computeProgrammaticRiskOffScore() — when this
 // signal fires on a bear-market day, AI recommendation v3 is supposed to
 // enter its risk-off branch and reduce/skip position sizing.
 //
-// Root cause (DUAL_CRITERIA_AUDIT_20260723.md, finding R1): the function cast
-// db.execute()'s result to `{ rows: Array<{ close: string }> }` and read
-// `.rows ?? []`. This repo's driver is drizzle-orm/postgres-js, whose
-// execute() returns the row array DIRECTLY (see packages/db/src/client.ts
-// execRows() doc comment + CLAUDE.md "常見陷阱"). `.rows` on a bare array is
-// always `undefined`, so `rows.rows ?? []` was always `[]`, `closes.length`
-// was always `0` (`< 20`), and the function returned `null` on every call —
-// the EMA60 signal silently died regardless of what companies_ohlcv held.
+// History:
+//   R1 (#1352, 2026-07-23): fixed a `.rows` extraction bug (postgres-js's
+//   execute() returns a bare row array, not `{ rows: [...] }`) that made
+//   this function return null on every call regardless of data. R1's own
+//   test fixture seeded `companies_ohlcv` rows to isolate that shape bug —
+//   but Pete's R1 review (evidence/sprint_2026_07_23/pr1352_review.md §4)
+//   flagged that prod `companies_ohlcv` has NEVER had a row for ticker
+//   TAIEX/^TWII/0000 (verified 2026-06-11, ai-rec-perf-store.ts:384-386), so
+//   even a correctly-shaped read against that table returns null in prod.
+//
+//   R2 (this file, jason4r2): computeTaiexEma60FromDb() now reads from the
+//   `index_history` table (migration 0057) via index-history-store.ts's
+//   getIndexHistoryRows() — the table TAIEX daily closes are actually
+//   persisted to (data-sources/twse-openapi-client.ts
+//   fetchTaiexMonthDailyCloses(), same table the homepage TAIEX line chart
+//   already reads/falls back to). This test seeds index_history directly
+//   (not companies_ohlcv) and asserts the EMA60 comes back correct.
 //
 // This test proves the mechanism directly against a real Postgres (not a
-// re-implementation of the shape logic): seeds 60 real companies_ohlcv rows
-// for ticker 'TAIEX' with known, ascending close prices, then asserts
-// computeTaiexEma60FromDb() returns the correct EMA60 (independently
+// re-implementation of the shape logic): seeds 60 real index_history rows
+// for a test-only index symbol with known, ascending close prices, then
+// asserts computeTaiexEma60FromDb() returns the correct EMA60 (independently
 // recomputed here with the same well-known recursive EMA formula) instead of
-// null. Before the R1 fix this assertion fails (`ema === null`); after the
-// fix it returns a value within 0.01 of the independently-computed EMA60.
+// null.
 //
 // Wired into `pnpm run test:db` (package.json), same lane as
 // twse-openapi-client-index-history.test.ts / paper-realized-pnl-db.test.ts.
-//
-// KNOWN SEPARATE GAP (not fixed by this PR, flagged for follow-up routing):
-// production `companies_ohlcv` has never had a row for ticker
-// 'TAIEX'/'^TWII'/'0000' (see apps/api/src/ai-rec-perf-store.ts:384-386,
-// verified on prod 2026-06-11) — real TAIEX daily closes are persisted to
-// the separate `index_history` table instead. So even with this R1 fix
-// applied, computeTaiexEma60FromDb() may still return null in prod today
-// because its source table is empty for this ticker, independent of the
-// `.rows` shape bug this test targets. This test's fixture supplies the
-// missing companies_ohlcv rows itself to isolate and prove the shape-bug
-// fix in isolation.
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import test, { after, before } from "node:test";
 
-import { eq, sql as drizzleSql } from "drizzle-orm";
-import { getDb, companies, companiesOhlcv, workspaces } from "@iuf-trading-room/db";
+import { eq } from "drizzle-orm";
+import { getDb, indexHistory } from "@iuf-trading-room/db";
 
 import { computeTaiexEma60FromDb } from "./orchestrator-v3.js";
 
-const TEST_TICKER = "TAIEX";
-let workspaceId = "";
-let companyId = "";
+// NOTE: computeTaiexEma60FromDb() is hardcoded to read index_symbol = "^TWII"
+// (the real TAIEX symbol — see index-history-store.ts / migration 0057
+// module doc) AND bounds its query to a rolling 140-calendar-day window
+// ending "today" (mirrors market-data.ts's existing TAIEX chart window).
+// Seeded fixture rows must therefore fall inside that window — dates far in
+// the past (e.g. 1999, as R1's companies_ohlcv fixture used) would silently
+// fall outside the range filter and produce a false-negative "still null"
+// result that has nothing to do with the datasource-routing fix under test.
+// 90 days ago is comfortably inside the 140-day window with margin on both
+// sides, and functionally can never collide with real ^TWII rows a live
+// TWSE fetch would persist for the SAME dates (this suite always deletes its
+// own rows in after()).
+const INDEX_SYMBOL = "^TWII";
+const SEED_START_DATE = shiftDate(new Date().toISOString().slice(0, 10), -90);
 
 before(async () => {
   const db = getDb();
   assert.ok(db, "this suite requires PERSISTENCE_MODE=database — run via `pnpm run test:db`");
 
-  const [ws] = await db
-    .insert(workspaces)
-    .values({ name: "TAIEX EMA60 DB Test", slug: `taiex-ema60-db-test-${randomUUID()}` })
-    .returning();
-  if (!ws) throw new Error("before: workspaces INSERT returned no row");
-  workspaceId = ws.id;
-
-  const [company] = await db
-    .insert(companies)
-    .values({
-      workspaceId,
-      name: "TAIEX Index (test fixture)",
-      ticker: TEST_TICKER,
-      market: "TWSE",
-      country: "TW",
-      chainPosition: "Index"
-    })
-    .returning();
-  if (!company) throw new Error("before: companies INSERT returned no row");
-  companyId = company.id;
-
   // 60 ascending daily closes, oldest → newest, far in the past so this
-  // isolated fixture can never collide with real TAIEX/^TWII/0000 rows a
-  // future writer might add to companies_ohlcv.
+  // isolated fixture can never collide with real ^TWII rows a live TWSE
+  // fetch might persist.
   const rows = Array.from({ length: 60 }, (_, i) => ({
-    companyId,
-    workspaceId,
-    dt: shiftDate("1999-01-01", i),
+    indexSymbol: INDEX_SYMBOL,
+    tradeDate: shiftDate(SEED_START_DATE, i),
     close: String(20000 + i),
-    open: String(20000 + i),
-    high: String(20000 + i),
-    low: String(20000 + i),
-    volume: 0,
-    source: "mock" as const
+    source: "test-fixture",
+    updatedAt: new Date()
   }));
 
-  await db.insert(companiesOhlcv).values(rows);
+  await db.insert(indexHistory).values(rows);
 });
 
 after(async () => {
   const db = getDb();
   if (!db) return;
-  await db.delete(companiesOhlcv).where(eq(companiesOhlcv.companyId, companyId)).catch(() => {});
-  await db.delete(companies).where(eq(companies.id, companyId)).catch(() => {});
-  await db.delete(workspaces).where(eq(workspaces.id, workspaceId)).catch(() => {});
+  await db
+    .delete(indexHistory)
+    .where(eq(indexHistory.source, "test-fixture"))
+    .catch(() => {});
 });
 
 function shiftDate(startIso: string, days: number): string {
@@ -119,17 +102,19 @@ function referenceEma(closesAscending: number[]): number {
   return Math.round(ema * 100) / 100;
 }
 
-test("TAIEX-EMA60-DB-1: computeTaiexEma60FromDb reads real companies_ohlcv rows via execRows (not null)", async () => {
+test("TAIEX-EMA60-DB-1: computeTaiexEma60FromDb reads real index_history rows (not null, not companies_ohlcv)", async () => {
   const db = getDb();
   assert.ok(db, "requires PERSISTENCE_MODE=database");
 
   // Sanity: confirm the fixture actually landed (rules out "empty table" as
-  // an alternate explanation for a null result, isolating the .rows bug).
-  const countRows = await db.execute(
-    drizzleSql`SELECT COUNT(*)::int AS n FROM companies_ohlcv WHERE company_id = ${companyId}::uuid`
-  );
-  const seededCount = Array.isArray(countRows) ? (countRows[0] as { n: number })?.n : undefined;
-  assert.equal(seededCount, 60, "TAIEX-EMA60-DB-1: fixture must have inserted exactly 60 rows");
+  // an alternate explanation for a null result).
+  const seededCount = (
+    await db
+      .select({ tradeDate: indexHistory.tradeDate })
+      .from(indexHistory)
+      .where(eq(indexHistory.source, "test-fixture"))
+  ).length;
+  assert.equal(seededCount, 60, "TAIEX-EMA60-DB-1: fixture must have inserted exactly 60 index_history rows");
 
   const closesAscending = Array.from({ length: 60 }, (_, i) => 20000 + i);
   const expected = referenceEma(closesAscending);
@@ -139,12 +124,40 @@ test("TAIEX-EMA60-DB-1: computeTaiexEma60FromDb reads real companies_ohlcv rows 
   assert.notEqual(
     ema,
     null,
-    "TAIEX-EMA60-DB-1: EMA60 must not be null when companies_ohlcv has >=20 rows for TAIEX " +
-      "(pre-fix regression: `.rows` on a postgres-js bare-array result is always undefined, " +
-      "so closes was always [] and this returned null unconditionally)"
+    "TAIEX-EMA60-DB-1: EMA60 must not be null when index_history has >=20 rows for ^TWII " +
+      "(this is the table TAIEX daily closes are actually persisted to in prod — " +
+      "companies_ohlcv has never had a TAIEX row, see ai-rec-perf-store.ts:384-386)"
   );
   assert.ok(
     Math.abs((ema as number) - expected) < 0.01,
     `TAIEX-EMA60-DB-1: expected EMA60 ~= ${expected}, got ${ema}`
   );
+});
+
+test("TAIEX-EMA60-DB-2: computeTaiexEma60FromDb returns null (not 0/false) when index_history has no ^TWII rows in range", async () => {
+  const db = getDb();
+  assert.ok(db, "requires PERSISTENCE_MODE=database");
+
+  // Delete this suite's fixture rows, then confirm the function degrades
+  // honestly to null rather than fail-open to a numeric 0.
+  await db.delete(indexHistory).where(eq(indexHistory.source, "test-fixture"));
+
+  const ema = await computeTaiexEma60FromDb();
+
+  assert.equal(
+    ema,
+    null,
+    "TAIEX-EMA60-DB-2: with no index_history rows for ^TWII, computeTaiexEma60FromDb must " +
+      "return null (honest degrade), never a fabricated numeric value"
+  );
+
+  // Re-seed for any subsequent test run in this process (after() also cleans up).
+  const rows = Array.from({ length: 60 }, (_, i) => ({
+    indexSymbol: INDEX_SYMBOL,
+    tradeDate: shiftDate(SEED_START_DATE, i),
+    close: String(20000 + i),
+    source: "test-fixture",
+    updatedAt: new Date()
+  }));
+  await db.insert(indexHistory).values(rows);
 });
