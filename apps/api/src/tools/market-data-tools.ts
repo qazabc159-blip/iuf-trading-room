@@ -195,21 +195,21 @@ export async function getSectorRotation(limit = 20): Promise<SectorRotationResul
     // Computes per-sector avg changePct from the most-recent trading day in DB.
     console.info("[get_sector_rotation] StockDayAll empty — falling back to DB OHLCV sector aggregation");
     try {
-      const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+      const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
       if (!isDatabaseMode()) return { sectors: [], asOf, source: "twse_stock_day_all" };
       const db = getDb();
       if (!db) return { sectors: [], asOf, source: "twse_stock_day_all" };
 
       const { sql } = await import("drizzle-orm");
       // Find the most recent date in OHLCV
-      const latestDateRows = (await db.execute(sql`
+      const latestDateRows = await db.execute(sql`
         SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval IN ('1d', 'day')
-      `)) as unknown as { rows: Array<{ max_dt: string | null }> };
-      const latestDate = latestDateRows.rows?.[0]?.max_dt;
+      `);
+      const latestDate = execRows<{ max_dt: string | null }>(latestDateRows)[0]?.max_dt;
       if (!latestDate) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
 
       // Fetch all stocks for that date with their previous-day close for changePct
-      const sectorRows = (await db.execute(sql`
+      const sectorRows = await db.execute(sql`
         SELECT
           c.industry AS industry,
           o.close AS close,
@@ -230,9 +230,9 @@ export async function getSectorRotation(limit = 20): Promise<SectorRotationResul
           AND c.industry IS NOT NULL
           AND c.industry <> ''
         LIMIT 2000
-      `)) as unknown as { rows: Array<{ industry: string; close: string; prev_close: string | null }> };
+      `);
 
-      const dbRows = sectorRows.rows ?? [];
+      const dbRows = execRows<{ industry: string; close: string; prev_close: string | null }>(sectorRows);
       if (dbRows.length === 0) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
 
       const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
@@ -297,7 +297,7 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
     asOf: null,
   };
   try {
-    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return base;
     const db = getDb();
     if (!db) return base;
@@ -305,15 +305,15 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
     // Fetch last 200 OHLCV rows for this ticker (enough for MA200)
     // companies_ohlcv columns: company_id (uuid) + dt (date) — lookup via companies.ticker first
     const { sql } = await import("drizzle-orm");
-    const companyRows = (await db.execute(sql`
+    const companyRows = await db.execute(sql`
       SELECT name
       FROM companies
       WHERE ticker = ${ticker}
       LIMIT 1
-    `)) as unknown as { rows: Array<{ name: string | null }> };
-    const companyName = companyRows.rows?.[0]?.name ?? null;
+    `);
+    const companyName = execRows<{ name: string | null }>(companyRows)[0]?.name ?? null;
 
-    const rows = (await db.execute(sql`
+    const rows = await db.execute(sql`
       SELECT o.dt AS date, o.close AS close, o.volume AS volume
       FROM companies_ohlcv o
       INNER JOIN companies c ON c.id = o.company_id
@@ -321,9 +321,9 @@ export async function getCompanyTechnical(ticker: string): Promise<CompanyTechni
         AND o.interval IN ('1d', 'day')
       ORDER BY o.dt DESC
       LIMIT 200
-    `)) as unknown as { rows: Array<{ date: string; close: string; volume: string }> };
+    `);
 
-    let data = (rows.rows ?? []) as Array<{ date: string; close: string; volume: string }>;
+    let data = execRows<{ date: string; close: string; volume: string }>(rows);
     let source = "companies_ohlcv";
     if (data.length === 0 && /^\d{4}[A-Z]?$/.test(ticker) && process.env["FINMIND_API_TOKEN"]) {
       const { getFinMindClient } = await import("../data-sources/finmind-client.js");
@@ -427,7 +427,7 @@ export async function getInstitutionalFlow(ticker: string): Promise<Institutiona
     source: "tw_institutional_buysell",
   };
   try {
-    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return base;
     const db = getDb();
     if (!db) return base;
@@ -437,15 +437,15 @@ export async function getInstitutionalFlow(ticker: string): Promise<Institutiona
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-    const rows = (await db.execute(sql`
+    const rows = await db.execute(sql`
       SELECT date, name, buy, sell
       FROM tw_institutional_buysell
       WHERE stock_id = ${ticker}
         AND date >= ${cutoffStr}
       ORDER BY date DESC
-    `)) as unknown as { rows: Array<{ date: string; name: string; buy: string; sell: string }> };
+    `);
 
-    const data = (rows.rows ?? []) as Array<{ date: string; name: string; buy: string; sell: string }>;
+    const data = execRows<{ date: string; name: string; buy: string; sell: string }>(rows);
     if (data.length === 0) return base;
 
     let foreign = 0, trust = 0, dealer = 0;
@@ -713,7 +713,7 @@ export async function getSupplyChain(ticker: string): Promise<SupplyChainResult>
   };
 
   try {
-    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
+    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return base;
     const db = getDb();
     if (!db) return base;
@@ -721,28 +721,28 @@ export async function getSupplyChain(ticker: string): Promise<SupplyChainResult>
     const { sql } = await import("drizzle-orm");
 
     // Company lookup
-    const companyRows = (await db.execute(sql`
+    const companyRows = await db.execute(sql`
       SELECT id, chain_position, beneficiary_tier
       FROM companies
       WHERE ticker = ${ticker}
       LIMIT 1
-    `)) as unknown as { rows: Array<{ id: string; chain_position: string | null; beneficiary_tier: string | null }> };
+    `);
 
-    const company = companyRows.rows?.[0];
+    const company = execRows<{ id: string; chain_position: string | null; beneficiary_tier: string | null }>(companyRows)[0];
     if (!company) return base;
     const companyId = company.id;
 
     // Themes via company_theme_links
-    const themeRows = (await db.execute(sql`
+    const themeRows = await db.execute(sql`
       SELECT t.name, t.lifecycle
       FROM company_theme_links ctl
       INNER JOIN themes t ON t.id = ctl.theme_id
       WHERE ctl.company_id = ${companyId}
       LIMIT 10
-    `)) as unknown as { rows: Array<{ name: string; lifecycle: string }> };
+    `);
 
     // Relations (outbound, confidence >= 0.3)
-    const relRows = (await db.execute(sql`
+    const relRows = await db.execute(sql`
       SELECT
         cr.relation_type,
         cr.target_company_id,
@@ -755,19 +755,19 @@ export async function getSupplyChain(ticker: string): Promise<SupplyChainResult>
         AND cr.confidence >= 0.3
       ORDER BY cr.confidence DESC
       LIMIT 30
-    `)) as unknown as { rows: Array<{
-      relation_type: string;
-      target_company_id: string | null;
-      target_label: string;
-      confidence: number;
-      target_ticker: string | null;
-    }> };
+    `);
 
     const suppliers: SupplyChainResult["suppliers"] = [];
     const customers: SupplyChainResult["customers"] = [];
     const peers: SupplyChainResult["peers"] = [];
 
-    for (const rel of relRows.rows ?? []) {
+    for (const rel of execRows<{
+      relation_type: string;
+      target_company_id: string | null;
+      target_label: string;
+      confidence: number;
+      target_ticker: string | null;
+    }>(relRows)) {
       const entry = {
         ticker: rel.target_ticker ?? null,
         label: rel.target_label,
@@ -782,7 +782,7 @@ export async function getSupplyChain(ticker: string): Promise<SupplyChainResult>
       ticker,
       chainPosition: company.chain_position,
       beneficiaryTier: company.beneficiary_tier,
-      themes: (themeRows.rows ?? []).map(r => ({ name: r.name, lifecycle: r.lifecycle })),
+      themes: execRows<{ name: string; lifecycle: string }>(themeRows).map(r => ({ name: r.name, lifecycle: r.lifecycle })),
       suppliers: suppliers.slice(0, 5),
       customers: customers.slice(0, 5),
       peers: peers.slice(0, 5),
