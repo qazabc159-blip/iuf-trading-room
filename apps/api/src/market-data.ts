@@ -447,6 +447,92 @@ export const marketDataDecisionSummaryQuerySchema = marketDataEffectiveQuotesQue
 const providerQuoteCache = new Map<string, Map<string, QuoteCacheEntry>>();
 const providerQuoteHistoryCache = new Map<string, Map<string, QuoteCacheEntry[]>>();
 const persistedQuoteHistoryLoaded = new Set<string>();
+
+// 2026-07-23 (perf/overview-quality-aggregate PR-2, plan: reports/design_redesign_20260722/
+// OVERVIEW_2S_ARCH_PLAN_20260722.md §3 案 A): per-(source,symbol) rolling summary,
+// maintained incrementally at the SAME single write choke point that already owns
+// `history` (pushQuoteEntry's `!isDuplicateHistoryEntry` branch, right after the
+// push+splice). This is PURELY ADDITIVE in this PR -- nothing reads it yet (no
+// endpoint/consumer change). The eventual PR-3 consumer is what lets /overview's
+// quality section answer "count/first/last-tick/has-2-distinct-1m-bars" in
+// O(#symbols) instead of materializing+sorting the full O(#ticks) history cache
+// (see listCachedProviderQuoteHistory's ~932K-entry scan, RCA_ROUND2_REAL_PROFILING).
+// Keyed by the SAME cacheKey format as `history` (`${source}:${market}:${symbol}`)
+// so it can piggyback on the exact array `pushQuoteEntry` just finished mutating --
+// no independent re-derivation, no risk of drifting out of sync with what `history`
+// actually holds after eviction.
+type HistoryAggregate = {
+  count: number;
+  firstTimestamp: string;
+  lastTimestamp: string;
+  synthetic: boolean;
+  // "Has this (source,symbol) ever had ticks land in >=2 distinct 1-minute buckets
+  // (within its currently-retained history window)?" -- deliberately a boolean, not
+  // an exact bar count. getMarketBarDiagnostics's `approximate` flag is unconditionally
+  // true for quote-history-derived bars (bar-quality grading only branches on
+  // barCount===0 / barCount<2 / freshness / synthetic -- see buildBarQualityAssessment),
+  // so a boolean crossing is all a future consumer needs; tracking the full bucket
+  // count/set would be strictly more bookkeeping for zero additional grading power.
+  hasTwoDistinctBars: boolean;
+  lastBarBucketStart: number;
+};
+const historyAggregateCache = new Map<string, Map<string, HistoryAggregate>>();
+
+function getHistoryAggregateCacheForWorkspace(workspaceSlug: string) {
+  let workspaceAggregates = historyAggregateCache.get(workspaceSlug);
+  if (!workspaceAggregates) {
+    workspaceAggregates = new Map<string, HistoryAggregate>();
+    historyAggregateCache.set(workspaceSlug, workspaceAggregates);
+  }
+
+  return workspaceAggregates;
+}
+
+// Called from pushQuoteEntry with the ALREADY push+splice'd `history` array for this
+// cacheKey -- so count/firstTimestamp just read off it directly (`history.at(0)` is
+// exactly right post-splice, per the plan's risk-mitigation note) rather than being
+// independently tracked and risking drift from splice eviction.
+function updateHistoryAggregate(
+  workspaceSlug: string,
+  cacheKey: string,
+  source: QuoteSource,
+  history: QuoteCacheEntry[]
+) {
+  const first = history[0];
+  const last = history.at(-1);
+  if (!first || !last) {
+    return;
+  }
+
+  const workspaceAggregates = getHistoryAggregateCacheForWorkspace(workspaceSlug);
+  const previous = workspaceAggregates.get(cacheKey);
+  const bucketMs = getBarIntervalMs("1m");
+  const lastBarBucketStart = Math.floor(new Date(last.timestamp).getTime() / bucketMs) * bucketMs;
+  const hasTwoDistinctBars =
+    Boolean(previous?.hasTwoDistinctBars) ||
+    (previous !== undefined && previous.lastBarBucketStart !== lastBarBucketStart);
+
+  workspaceAggregates.set(cacheKey, {
+    count: history.length,
+    firstTimestamp: first.timestamp,
+    lastTimestamp: last.timestamp,
+    synthetic: isSyntheticSource(source),
+    hasTwoDistinctBars,
+    lastBarBucketStart
+  });
+}
+
+// Test-only accessor (matches this file's existing `_`-prefixed export convention,
+// e.g. _shouldLoadDailyMarketContext / _applyOfficialCloseFallback) -- no production
+// call site reads this in this PR.
+export function _getHistoryAggregateForTest(
+  workspaceSlug: string,
+  source: QuoteSource,
+  market: Market,
+  symbol: string
+): HistoryAggregate | undefined {
+  return getHistoryAggregateCacheForWorkspace(workspaceSlug).get(buildQuoteCacheKey(symbol, market, source));
+}
 const quoteProviderSources: QuoteSource[] = ["manual", "paper", "tradingview", "kgi", "twse_mis"];
 const defaultSourcePriorityOrder: QuoteSource[] = ["kgi", "twse_mis", "tradingview", "paper", "manual"];
 const MARKET_DATA_SURFACE_VERSION = "market-data-v1.11-overview-quality-rollup";
@@ -662,6 +748,7 @@ function pushQuoteEntry(
     }
     workspaceHistory.set(cacheKey, history);
     bumpHistoryGeneration(workspaceSlug, entry.source);
+    updateHistoryAggregate(workspaceSlug, cacheKey, entry.source, history);
     return true;
   }
 
@@ -4449,6 +4536,7 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
   if (workspaceSlug) {
     providerQuoteCache.delete(workspaceSlug);
     providerQuoteHistoryCache.delete(workspaceSlug);
+    historyAggregateCache.delete(workspaceSlug);
     persistedQuoteHistoryLoaded.delete(workspaceSlug);
     // _dailyBarRowsCache is keyed by workspaceId (UUID), not slug — clear all on slug reset.
     _dailyBarRowsCache.clear();
@@ -4474,6 +4562,7 @@ export function resetMarketDataWorkspaceState(workspaceSlug?: string) {
 
   providerQuoteCache.clear();
   providerQuoteHistoryCache.clear();
+  historyAggregateCache.clear();
   persistedQuoteHistoryLoaded.clear();
   _dailyBarRowsCache.clear();
   quotesGeneration.clear();
