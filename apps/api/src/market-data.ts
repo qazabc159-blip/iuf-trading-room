@@ -466,13 +466,28 @@ type HistoryAggregate = {
   firstTimestamp: string;
   lastTimestamp: string;
   synthetic: boolean;
-  // "Has this (source,symbol) ever had ticks land in >=2 distinct 1-minute buckets
-  // (within its currently-retained history window)?" -- deliberately a boolean, not
-  // an exact bar count. getMarketBarDiagnostics's `approximate` flag is unconditionally
-  // true for quote-history-derived bars (bar-quality grading only branches on
-  // barCount===0 / barCount<2 / freshness / synthetic -- see buildBarQualityAssessment),
-  // so a boolean crossing is all a future consumer needs; tracking the full bucket
-  // count/set would be strictly more bookkeeping for zero additional grading power.
+  // "Has this (source,symbol) EVER had ticks land in >=2 distinct 1-minute buckets,
+  // at any point in its recorded history?" -- deliberately a boolean, not an exact
+  // bar count, AND deliberately monotonic (Pete #1350 review 🟡 #1, 2026-07-23):
+  // once true, it never flips back to false, even after splice eviction has since
+  // dropped every entry from the bucket(s) that originally caused the crossing --
+  // see updateHistoryAggregate's `Boolean(previous?.hasTwoDistinctBars) || ...` OR,
+  // and overview-quality-aggregate-parity.test.ts's "flips true (and stays true)"
+  // case. This does NOT track "does the CURRENTLY-retained window span >=2 buckets
+  // right now" -- a symbol whose retained window has decayed back down to 1 bucket's
+  // worth of surviving entries still reads hasTwoDistinctBars=true here. PR-3 (not
+  // this PR -- this aggregate has zero consumers yet) must not treat this field as
+  // "current window has >=2 bars"; a naive swap-in as computeMarketDataOverview's
+  // bar-quality signal could report strategy_ready/reference_only for a symbol whose
+  // real current window would grade insufficient_bars under a full scan. See PR
+  // body's "Known open scope" section.
+  // (Original rationale for a boolean vs an exact bucket count/set still holds:
+  // getMarketBarDiagnostics's `approximate` flag is unconditionally true for
+  // quote-history-derived bars -- bar-quality grading only branches on
+  // barCount===0 / barCount<2 / freshness / synthetic, see buildBarQualityAssessment
+  // -- so a boolean crossing is all a future consumer needs for THAT part of the
+  // decision; tracking the full bucket count/set would be strictly more bookkeeping
+  // for zero additional grading power on that axis.)
   hasTwoDistinctBars: boolean;
   lastBarBucketStart: number;
 };
