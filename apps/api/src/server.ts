@@ -21072,8 +21072,18 @@ app.get("/api/v1/market/leaders/finmind", async (c) => {
 
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public TWSE
 // institutional trading summary data)
+// 2026-07-23 P0 fix: FinMind only publishes 三大法人 data AFTER TWSE's
+// afternoon close, so querying "today" during market hours always came back
+// empty (9 blank tiles all morning — Bruce RCA
+// reports/design_redesign_20260722/MORNING_REGRESSION_20260723.md, not a
+// regression, a structural gap). getFinMindInstitutionalSummaryWithFallback()
+// now falls back to the most recent PRIOR trading day (via the #1298-family
+// authoritative trading-day calendar) when today's data isn't published yet,
+// returning `dataDate`/`isFallback` so the frontend can label it (e.g. "MM/DD
+// 收盤") rather than showing empty. Once FinMind publishes today's data this
+// afternoon, the primary path wins again automatically.
 app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
-  const { getFinMindInstitutionalSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+  const { getFinMindInstitutionalSummaryWithFallback, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (!finMindAggregateHasToken()) {
     return c.json({
@@ -21089,7 +21099,7 @@ app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
     });
   }
 
-  const result = await getFinMindInstitutionalSummary();
+  const result = await getFinMindInstitutionalSummaryWithFallback();
   if (!result) {
     return c.json({
       asOf: null,
