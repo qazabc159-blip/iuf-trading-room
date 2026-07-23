@@ -21070,10 +21070,35 @@ app.get("/api/v1/market/leaders/finmind", async (c) => {
   });
 });
 
+/**
+ * 2026-07-23 Pete review round-2 🔴 fix: `getFinMindInstitutionalSummaryWithFallback()`
+ * can return a PRIOR trading day's data (isFallback:true), not just today's
+ * live data — a bare `state: "live"` on every success made the existing
+ * frontend disclaimer branch (`inst.state !== "live"`) unreachable for the
+ * fallback case, so yesterday's institutional numbers rendered with zero
+ * staleness indication every trading-day morning. `dataDate` is already in
+ * the response body for a future "MM/DD 收盤" label (apps/web change,
+ * separate ticket); this only restores the honest `state` so the EXISTING
+ * disclaimer fires correctly.
+ */
+export function _institutionalSummaryResponseState(result: { isFallback: boolean }): "live" | "stale" {
+  return result.isFallback ? "stale" : "live";
+}
+
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public TWSE
 // institutional trading summary data)
+// 2026-07-23 P0 fix: FinMind only publishes 三大法人 data AFTER TWSE's
+// afternoon close, so querying "today" during market hours always came back
+// empty (9 blank tiles all morning — Bruce RCA
+// reports/design_redesign_20260722/MORNING_REGRESSION_20260723.md, not a
+// regression, a structural gap). getFinMindInstitutionalSummaryWithFallback()
+// now falls back to the most recent PRIOR trading day (via the #1298-family
+// authoritative trading-day calendar) when today's data isn't published yet,
+// returning `dataDate`/`isFallback` so the frontend can label it (e.g. "MM/DD
+// 收盤") rather than showing empty. Once FinMind publishes today's data this
+// afternoon, the primary path wins again automatically.
 app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
-  const { getFinMindInstitutionalSummary, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
+  const { getFinMindInstitutionalSummaryWithFallback, finMindAggregateHasToken } = await import("./data-sources/finmind-aggregate-client.js");
 
   if (!finMindAggregateHasToken()) {
     return c.json({
@@ -21089,7 +21114,7 @@ app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
     });
   }
 
-  const result = await getFinMindInstitutionalSummary();
+  const result = await getFinMindInstitutionalSummaryWithFallback();
   if (!result) {
     return c.json({
       asOf: null,
@@ -21104,7 +21129,7 @@ app.get("/api/v1/market/institutional-summary/finmind", async (c) => {
     });
   }
 
-  return c.json({ ...result, state: "live" });
+  return c.json({ ...result, state: _institutionalSummaryResponseState(result) });
 });
 
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, public TWSE

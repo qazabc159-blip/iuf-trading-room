@@ -34,6 +34,8 @@
  *   - NOT touching index path (BG #1 lane: twse-openapi-client.ts index path)
  */
 
+import { sanitizeNewsUrl } from "./finmind-client.js";
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const FINMIND_BASE_URL = "https://api.finmindtrade.com/api/v4/data";
@@ -80,12 +82,20 @@ export interface FinMindWholeMarginRow {
   ShortSaleYesterdayBalance?: number;
 }
 
-/** Row from TaiwanStockNews whole-market query */
+/**
+ * Row from TaiwanStockNews whole-market query.
+ *
+ * NOTE: FinMind's actual wire field is "link", NOT "url" (same wire quirk
+ * fixed for the per-symbol path in #1343 / finmind-client.ts). The old field
+ * name here (`url`) never matched the real API response, so every row's URL
+ * silently came back undefined. Map `link` -> `FinMindNewsItem.url` explicitly
+ * in getFinMindMarketNews() below via the shared sanitizeNewsUrl() validator.
+ */
 export interface FinMindWholeNewsRow {
   date: string;         // 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DD'
   stock_id: string;
   title: string;
-  url?: string;
+  link?: string;
   source_name?: string;
 }
 
@@ -305,10 +315,19 @@ function spreadToChangePct(close: number, spread: number): number {
   return Math.round((spread / prevClose) * 10000) / 100;
 }
 
-/** Today's date in Taipei time as YYYY-MM-DD */
-function todayTaipei(): string {
+/**
+ * Today's date in Taipei time as YYYY-MM-DD.
+ * Optional `nowMs` override (defaults to Date.now()) exists solely so
+ * getFinMindInstitutionalSummaryWithFallback() below can be deterministically
+ * unit-tested against a fixed intraday/after-close instant, without a real
+ * clock dependency leaking into test assertions.
+ * Exported so tests can derive expected dates from the SAME function under
+ * test rather than re-implementing (and potentially drifting from) the
+ * Taipei-date conversion logic.
+ */
+export function todayTaipei(nowMs: number = Date.now()): string {
   // Taipei = UTC+8
-  const now = new Date();
+  const now = new Date(nowMs);
   const offset = 8 * 60;
   const local = new Date(now.getTime() + (offset + now.getTimezoneOffset()) * 60_000);
   return local.toISOString().slice(0, 10);
@@ -562,6 +581,62 @@ export async function getFinMindInstitutionalSummary(
   };
 }
 
+export interface FinMindInstitutionalSummaryWithDate extends FinMindInstitutionalSummaryResult {
+  /** YYYY-MM-DD the returned data actually belongs to (may be a prior trading day). */
+  dataDate: string;
+  /** True when today's 三大法人 data wasn't published yet and this is the most
+   * recent PRIOR trading day's real data instead. */
+  isFallback: boolean;
+}
+
+/**
+ * 2026-07-23 P0 fix (Bruce morning regression RCA:
+ * reports/design_redesign_20260722/MORNING_REGRESSION_20260723.md): FinMind
+ * only publishes a day's 三大法人 buy/sell data AFTER TWSE's afternoon close,
+ * so a bare `getFinMindInstitutionalSummary()` (always "today") returns empty
+ * for the entire morning/early-afternoon session every single trading day —
+ * not a transient bug, a structural gap. When today's query comes back
+ * empty, fall back to the most recent PRIOR trading day so the panel shows
+ * real numbers with an honest `dataDate`/`isFallback` label instead of 9
+ * blank tiles. Once FinMind publishes today's data (afternoon), the primary
+ * path succeeds again on the next call and this fallback naturally stops
+ * being used — no separate clock/session-window check needed.
+ *
+ * Trading-day arithmetic reuses the #1298-family authoritative calendar
+ * (`mostRecentTradingDayYYYYMMDD` → `isTwTradingDay` → `tw_trading_calendar`
+ * DB table, fail-open to weekend-only check) — never a hand-rolled weekday
+ * guess.
+ *
+ * `nowMs` override exists only for deterministic unit tests (mock intraday
+ * vs after-close instants); callers should omit it in production.
+ */
+export async function getFinMindInstitutionalSummaryWithFallback(
+  nowMs: number = Date.now()
+): Promise<FinMindInstitutionalSummaryWithDate | null> {
+  if (!hasToken()) return null;
+
+  const todayIso = todayTaipei(nowMs);
+  const todayResult = await getFinMindInstitutionalSummary(todayIso);
+  if (todayResult) {
+    return { ...todayResult, dataDate: todayIso, isFallback: false };
+  }
+
+  // Today not published yet — walk back to the most recent PRIOR trading day
+  // (starting the search at yesterday, since today already failed above).
+  const [y, m, d] = todayIso.split("-").map(Number);
+  const yesterdayUtc = new Date(Date.UTC(y!, m! - 1, d! - 1));
+  const yesterdayYYYYMMDD =
+    `${yesterdayUtc.getUTCFullYear()}${String(yesterdayUtc.getUTCMonth() + 1).padStart(2, "0")}${String(yesterdayUtc.getUTCDate()).padStart(2, "0")}`;
+
+  const { mostRecentTradingDayYYYYMMDD } = await import("./twse-openapi-client.js");
+  const priorYYYYMMDD = await mostRecentTradingDayYYYYMMDD(yesterdayYYYYMMDD);
+  const priorIso = `${priorYYYYMMDD.slice(0, 4)}-${priorYYYYMMDD.slice(4, 6)}-${priorYYYYMMDD.slice(6, 8)}`;
+
+  const priorResult = await getFinMindInstitutionalSummary(priorIso);
+  if (!priorResult) return null;
+  return { ...priorResult, dataDate: priorIso, isFallback: true };
+}
+
 /** Normalize FinMind institutional name to 3 buckets */
 function normalizeInstName(raw: string): string {
   if (!raw) return "其他";
@@ -642,7 +717,7 @@ export async function getFinMindMarketNews(
       date: row.date,
       stockId: row.stock_id,
       title: row.title,
-      url: row.url ?? null,
+      url: sanitizeNewsUrl(row.link) ?? null,
       sourceName: row.source_name ?? null
     });
     if (items.length >= limit) break;

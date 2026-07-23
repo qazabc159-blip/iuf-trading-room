@@ -22976,6 +22976,44 @@ test("MIS-CALENDAR-GATE-2: _runTwseMisQuoteCron checks the non-trading-day signa
   );
 });
 
+// INST-STATE-1 (PR #1348 Pete review round-2 🔴 fix): the
+// /api/v1/market/institutional-summary/finmind handler used to hard-code
+// `state: "live"` on every success — once getFinMindInstitutionalSummaryWithFallback()
+// could return a PRIOR trading day's data (isFallback:true), that made the
+// EXISTING frontend disclaimer branch (`inst.state !== "live"`) unreachable
+// for the fallback case, so a prior day's numbers rendered indistinguishable
+// from live intraday data. Pins the exact rule so a future regression (e.g.
+// someone "simplifying" the handler back to a bare `state: "live"`) fails
+// CI instead of silently reintroducing the mislabeling bug.
+test("INST-STATE-1: _institutionalSummaryResponseState returns 'stale' for fallback data, 'live' only for today's real data", async () => {
+  const { _institutionalSummaryResponseState } = await import("../apps/api/src/server.ts");
+
+  assert.equal(_institutionalSummaryResponseState({ isFallback: true }), "stale", "prior-trading-day fallback data must NOT be labeled live");
+  assert.equal(_institutionalSummaryResponseState({ isFallback: false }), "live", "today's real data is still labeled live");
+});
+
+test("INST-STATE-2: the institutional-summary/finmind route composes state via _institutionalSummaryResponseState, not a hard-coded 'live'", () => {
+  const serverSrc = readFileSync(
+    new URL("../apps/api/src/server.ts", import.meta.url),
+    "utf-8"
+  );
+  const routeStart = serverSrc.indexOf('app.get("/api/v1/market/institutional-summary/finmind"');
+  assert.ok(routeStart >= 0, "institutional-summary/finmind route must exist");
+  const routeEnd = serverSrc.indexOf("\n});", routeStart);
+  const routeBody = serverSrc.slice(routeStart, routeEnd >= 0 ? routeEnd : undefined);
+
+  assert.match(
+    routeBody,
+    /state:\s*_institutionalSummaryResponseState\(result\)/,
+    "the success-path response must compose state via _institutionalSummaryResponseState(result), not a bare literal"
+  );
+  assert.doesNotMatch(
+    routeBody,
+    /\.\.\.result,\s*state:\s*"live"\s*\}/,
+    "must not regress to unconditionally spreading result with a hard-coded state:\"live\""
+  );
+});
+
 test("EOD-CALENDAR-GATE-1: _isTwseEodCronTradeDateAlreadyPersisted is fail-open and only fires when the trading date is unchanged", async () => {
   const { _isTwseEodCronTradeDateAlreadyPersisted } = await import("../apps/api/src/server.ts");
 

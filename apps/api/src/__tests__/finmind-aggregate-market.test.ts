@@ -10,6 +10,9 @@
  *   FA6: no token → functions return null (fail-open)
  *   FA7: promise coalescing — concurrent callers share one inflight fetch
  *   FA8: getFinMindMarketNews deduplicates titles + limits to N items
+ *   FA9: getFinMindInstitutionalSummaryWithFallback — intraday (today not yet
+ *        published) falls back to the most recent PRIOR trading day with an
+ *        honest dataDate/isFallback label (2026-07-23 P0 fix)
  */
 
 import { describe, it, before, after, beforeEach } from "node:test";
@@ -21,9 +24,11 @@ import {
   getFinMindMarketBreadth,
   getFinMindLeaders,
   getFinMindInstitutionalSummary,
+  getFinMindInstitutionalSummaryWithFallback,
   getFinMindMarketNews,
   getFinMindMarginSummary,
   finMindAggregateHasToken,
+  todayTaipei,
   _resetFinMindAggregateCache
 } from "../data-sources/finmind-aggregate-client.js";
 
@@ -57,12 +62,15 @@ function makeInstitutionalRows() {
   ];
 }
 
+// Wire shape uses "link", NOT "url" (real FinMind TaiwanStockNews field name —
+// see #1343 / finmind-client.ts). Fixture intentionally mirrors the real wire
+// field so this test would have caught the url/link mismatch bug.
 function makeNewsRows() {
   return [
-    { date: "2026-05-13 14:00:00", stock_id: "2330", title: "台積電法說會重點", url: "https://example.com/1", source_name: "財經日報" },
-    { date: "2026-05-13 13:30:00", stock_id: "2317", title: "鴻海Q1獲利公告", url: null, source_name: null },
-    { date: "2026-05-13 12:00:00", stock_id: "2330", title: "台積電法說會重點", url: "https://example.com/1", source_name: "財經日報" }, // duplicate title
-    { date: "2026-05-13 11:00:00", stock_id: "2454", title: "聯發科新品發布", url: "https://example.com/3", source_name: "科技週刊" },
+    { date: "2026-05-13 14:00:00", stock_id: "2330", title: "台積電法說會重點", link: "https://example.com/1", source_name: "財經日報" },
+    { date: "2026-05-13 13:30:00", stock_id: "2317", title: "鴻海Q1獲利公告", link: null, source_name: null },
+    { date: "2026-05-13 12:00:00", stock_id: "2330", title: "台積電法說會重點", link: "https://example.com/1", source_name: "財經日報" }, // duplicate title
+    { date: "2026-05-13 11:00:00", stock_id: "2454", title: "聯發科新品發布", link: "https://example.com/3", source_name: "科技週刊" },
   ];
 }
 
@@ -342,5 +350,135 @@ describe("FA8: getFinMindMarketNews deduplication", () => {
     const result = await getFinMindMarketNews("2026-05-13", 2);
     assert.ok(result !== null);
     assert.equal(result!.items.length, 2, "should return max 2 items");
+  });
+
+  it("maps wire field 'link' -> items[].url, dropping non-http(s)/missing values", async () => {
+    process.env.FINMIND_API_TOKEN = MOCK_TOKEN;
+    mockFetch({
+      "TaiwanStockNews": finmindEnvelope([
+        { date: "2026-05-13 14:00:00", stock_id: "2330", title: "有效連結新聞", link: "https://example.com/valid", source_name: "財經日報" },
+        { date: "2026-05-13 13:00:00", stock_id: "2317", title: "缺連結新聞", link: null, source_name: null },
+        { date: "2026-05-13 12:00:00", stock_id: "2454", title: "惡意協議新聞", link: "javascript:alert(1)", source_name: "科技週刊" },
+      ])
+    });
+
+    const result = await getFinMindMarketNews("2026-05-13", 10);
+    assert.ok(result !== null);
+    assert.equal(result!.items.length, 3);
+
+    const byTitle = new Map(result!.items.map((item) => [item.title, item]));
+    assert.equal(byTitle.get("有效連結新聞")!.url, "https://example.com/valid", "real http(s) link passes through");
+    assert.equal(byTitle.get("缺連結新聞")!.url, null, "missing link -> null, not undefined/crash");
+    assert.equal(byTitle.get("惡意協議新聞")!.url, null, "non-http(s) protocol dropped, not passed through");
+  });
+});
+
+// ── FA9: getFinMindInstitutionalSummaryWithFallback — intraday fallback ───────
+//
+// FinMind only publishes 三大法人 buy/sell data AFTER TWSE's afternoon close,
+// so a bare getFinMindInstitutionalSummary() (always "today") returns empty
+// for the entire morning/early-afternoon session, every trading day — not a
+// transient failure, a structural gap. These tests use a fixed `nowMs`
+// (never the real wall clock) so they're deterministic regardless of what
+// day CI actually runs on, and derive expected dates from the SAME
+// `todayTaipei()`/`mostRecentTradingDayYYYYMMDD()` functions production
+// code uses, rather than re-implementing (and risking drifting from) the
+// Taipei-date/calendar conversion logic.
+//
+// KNOWN GAP (Pete PR #1348 review 🟡 #2, deliberately not covered here):
+// every `nowMs` below is picked in a "safe window" (06:00 UTC = 14:00
+// Taipei, away from the UTC-midnight boundary) specifically to AVOID a
+// pre-existing, out-of-scope quirk in `todayTaipei()` itself — on a
+// non-UTC-TZ host (e.g. a Taipei-timezone dev machine), `getTimezoneOffset()`
+// cancels out the function's own +8h Taipei adjustment for part of the day,
+// so it can silently return the UTC calendar date instead of the Taipei
+// one during roughly UTC 00:00-08:00. Verified (Pete PR #1348 review) that
+// prod (Railway/Nixpacks Node container) runs `TZ=UTC`, so this does NOT
+// affect prod — it only matters if someone runs tests/scripts on a non-UTC
+// host. If `todayTaipei()`'s own implementation is ever touched, add a
+// dedicated boundary-case test here (a nowMs inside UTC 00:00-08:00) rather
+// than continuing to route around it.
+function makeInstitutionalRowsForDate(date: string) {
+  return [
+    { date, stock_id: "2330", name: "外陸資", buy: 10_000_000, sell: 5_000_000 },
+    { date, stock_id: "2330", name: "投信", buy: 500_000, sell: 200_000 },
+  ];
+}
+
+describe("FA9: getFinMindInstitutionalSummaryWithFallback", () => {
+  before(() => {
+    process.env.FINMIND_API_TOKEN = MOCK_TOKEN;
+  });
+
+  it("intraday (today not yet published) falls back to the previous trading day (Wed -> Tue, no weekend to skip)", async () => {
+    // 2026-07-08 is a Wednesday (verified: `date -u -d 2026-07-08 +%A`).
+    const nowMs = Date.UTC(2026, 6, 8, 6, 0, 0); // 06:00 UTC = 14:00 Taipei — clear of the UTC-midnight boundary
+    const todayIso = todayTaipei(nowMs);
+    assert.equal(todayIso, "2026-07-08", "sanity: nowMs must resolve to the intended Taipei date");
+
+    const { mostRecentTradingDayYYYYMMDD } = await import("../data-sources/twse-openapi-client.js");
+    const expectedPriorYYYYMMDD = await mostRecentTradingDayYYYYMMDD("20260707");
+    const expectedPriorIso = `${expectedPriorYYYYMMDD.slice(0, 4)}-${expectedPriorYYYYMMDD.slice(4, 6)}-${expectedPriorYYYYMMDD.slice(6, 8)}`;
+    assert.equal(expectedPriorIso, "2026-07-07", "sanity: Tuesday is itself a trading day, no walk-back needed");
+
+    mockFetch({
+      "TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-07-08": finmindEnvelope([]), // not published yet
+      "TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-07-07": finmindEnvelope(makeInstitutionalRowsForDate("2026-07-07")),
+    });
+
+    const result = await getFinMindInstitutionalSummaryWithFallback(nowMs);
+    assert.ok(result !== null, "should fall back to prior trading day's real data, not return null");
+    assert.equal(result!.isFallback, true);
+    assert.equal(result!.dataDate, expectedPriorIso, "dataDate must honestly reflect the prior trading day, not today");
+    assert.ok(result!.asOf?.startsWith(expectedPriorIso), "asOf must be dated the prior trading day, not claim today/live");
+
+    const foreign = result!.institutions.find((i) => i.name === "外陸資");
+    assert.ok(foreign, "should aggregate the fallback day's real institutional rows");
+    assert.equal(foreign!.net, 5_000_000);
+  });
+
+  it("intraday Monday walks back over the weekend to Friday (skips Sat/Sun, not just yesterday)", async () => {
+    // 2026-07-13 is a Monday (verified: `date -u -d 2026-07-13 +%A`).
+    const nowMs = Date.UTC(2026, 6, 13, 6, 0, 0);
+    const todayIso = todayTaipei(nowMs);
+    assert.equal(todayIso, "2026-07-13", "sanity: nowMs must resolve to the intended Taipei Monday");
+
+    const { mostRecentTradingDayYYYYMMDD } = await import("../data-sources/twse-openapi-client.js");
+    const expectedPriorYYYYMMDD = await mostRecentTradingDayYYYYMMDD("20260712"); // yesterday = Sunday
+    const expectedPriorIso = `${expectedPriorYYYYMMDD.slice(0, 4)}-${expectedPriorYYYYMMDD.slice(4, 6)}-${expectedPriorYYYYMMDD.slice(6, 8)}`;
+    assert.equal(expectedPriorIso, "2026-07-10", "sanity: must walk back past Sun+Sat to Friday, not stop at Sunday");
+
+    mockFetch({
+      "TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-07-13": finmindEnvelope([]),
+      "TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-07-10": finmindEnvelope(makeInstitutionalRowsForDate("2026-07-10")),
+    });
+
+    const result = await getFinMindInstitutionalSummaryWithFallback(nowMs);
+    assert.ok(result !== null);
+    assert.equal(result!.isFallback, true);
+    assert.equal(result!.dataDate, "2026-07-10", "must land on Friday, never a non-trading weekend date");
+  });
+
+  it("when today's data IS already published, returns it directly (isFallback:false) with exactly one fetch (no wasted fallback lookup)", async () => {
+    const nowMs = Date.UTC(2026, 6, 8, 6, 0, 0);
+    const todayIso = todayTaipei(nowMs);
+    assert.equal(todayIso, "2026-07-08");
+
+    mockFetch({
+      "TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-07-08": finmindEnvelope(makeInstitutionalRowsForDate("2026-07-08")),
+    });
+
+    const result = await getFinMindInstitutionalSummaryWithFallback(nowMs);
+    assert.ok(result !== null);
+    assert.equal(result!.isFallback, false);
+    assert.equal(result!.dataDate, "2026-07-08");
+    assert.equal(fetchCallCount, 1, "must not attempt a fallback lookup when today's data already succeeded");
+  });
+
+  it("no token -> null (fail-open, same convention as getFinMindInstitutionalSummary)", async () => {
+    delete process.env.FINMIND_API_TOKEN;
+    const result = await getFinMindInstitutionalSummaryWithFallback(Date.UTC(2026, 6, 8, 6, 0, 0));
+    assert.equal(result, null);
+    process.env.FINMIND_API_TOKEN = MOCK_TOKEN;
   });
 });
