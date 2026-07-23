@@ -869,6 +869,17 @@ export async function runReactLoop(opts: ReactLoopOptions): Promise<ReactLoopRes
           // per-run spend by real cost incurred, not by this ceiling — a full 28000-token
           // completion at gpt-5.5's $30/1M output price is ~$0.84, still under both caps.
           maxTokens: 28000,
+          // 2026-07-23 live post-merge verification (same RCA doc) caught a SECOND latent bug
+          // in the same class: this callsite never set timeoutMs, so it silently inherited
+          // llm-gateway's DEFAULT_TIMEOUT_MS=25s (llm-gateway.ts:108) — plenty for the old
+          // small maxTokens, but a real prod trigger against 2330 right after this maxTokens
+          // fix deployed still failed, this time with errorCode=FETCH_ERROR at
+          // latencyMs=25002 (AbortController firing at exactly the 25s wall, not a genuine
+          // network error) because a 28000-token gpt-5.5 completion routinely takes longer
+          // than 25s. orchestrator-v3.ts's sibling synthesis callsite (same maxTokens) has
+          // always set V3_SYNTHESIS_TIMEOUT_MS=240_000 (orchestrator-v3.ts:436,2730) for
+          // exactly this reason — aligned to that same value here.
+          timeoutMs: 240_000,
           temperature: 0.2
         }
       );
