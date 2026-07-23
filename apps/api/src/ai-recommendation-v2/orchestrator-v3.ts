@@ -219,43 +219,50 @@ export async function computeProgrammaticRiskOffScore(): Promise<ProgrammaticRis
 }
 
 /**
- * Compute TAIEX EMA60 from DB companies_ohlcv index data if available.
- * Uses index-level data if present, otherwise returns null (fail-open).
+ * Compute TAIEX EMA60 from the persisted `index_history` table (migration
+ * 0057), NOT `companies_ohlcv`.
  *
- * Exported (not just internal) so tests can inject a fake db.execute() result
- * shaped like the real drizzle-orm/postgres-js driver — see the R1 audit fix
- * 2026-07-23: this previously read `rows.rows` directly, which is always
- * `undefined` on this driver (bare-array shape, no `.rows` wrapper), so the
- * risk-off EMA60 signal silently computed as null/false on every call.
+ * Data-source decision (2026-07-23, R1 audit follow-up — see
+ * evidence/sprint_2026_07_23/pr1352_review.md §4 "生產影響澄清"): the R1 fix
+ * (#1352) repaired the `.rows` extraction bug but left this function reading
+ * `companies_ohlcv` for ticker TAIEX/^TWII/0000 — a table that has NEVER had
+ * a row for those tickers in prod (verified 2026-06-11, recorded in
+ * ai-rec-perf-store.ts:384-386). Real TAIEX daily closes are persisted to
+ * the separate `index_history` table instead (migration 0057), written by
+ * data-sources/twse-openapi-client.ts fetchTaiexMonthDailyCloses() after
+ * every successful live TWSE MI_5MINS_HIST fetch, and already consumed by
+ * the homepage TAIEX line chart (market-data.ts) via the same
+ * index-history-store.ts read helper this function now reuses. Switching to
+ * index_history is what makes the S6 signal load-bearing in prod; the EMA60
+ * arithmetic itself is unchanged from the R1 fix.
+ *
+ * Exported (not just internal) so tests can seed index_history rows and
+ * assert against a real Postgres — see
+ * orchestrator-v3-taiex-ema60-db.test.ts.
  */
 export async function computeTaiexEma60FromDb(): Promise<number | null> {
   try {
-    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
+    const { getDb, isDatabaseMode } = await import("@iuf-trading-room/db");
     if (!isDatabaseMode()) return null;
     const db = getDb();
     if (!db) return null;
 
-    const { sql } = await import("drizzle-orm");
-    // Query TAIEX index history from DB if available (ticker = "^TWII" or "TAIEX")
-    const rawRows = await db.execute(sql`
-      SELECT o.close AS close
-      FROM companies_ohlcv o
-      INNER JOIN companies c ON c.id = o.company_id
-      WHERE (c.ticker = 'TAIEX' OR c.ticker = '^TWII' OR c.ticker = '0000')
-        AND o.interval = '1d'
-      ORDER BY o.dt DESC
-      LIMIT 60
-    `);
+    const { getIndexHistoryRows } = await import("../index-history-store.js");
+    // 140 calendar days mirrors market-data.ts's existing TAIEX chart window
+    // (getMarketOverview's historyStartDate) — comfortably covers 60+
+    // trading days after weekends/holidays.
+    const toDate = new Date().toISOString().slice(0, 10);
+    const fromDate = new Date(Date.now() - 140 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // getIndexHistoryRows already returns ascending-by-date, positive-finite-only
+    // rows (index-history-store.ts) — no further shape normalization needed here.
+    const rows = await getIndexHistoryRows(db, "^TWII", fromDate, toDate);
+    const closesAscending = rows.map(r => r.close);
 
-    const closes = execRows<{ close: string }>(rawRows)
-      .map(r => parseFloat(r.close))
-      .filter(v => !isNaN(v) && v > 0);
+    if (closesAscending.length < 20) return null; // not enough data — fail-open, not fail-zero
 
-    if (closes.length < 20) return null; // not enough data
-
-    // Simple EMA60 (or EMA<N> with what we have)
-    const n = Math.min(60, closes.length);
-    const reversed = closes.slice(0, n).reverse(); // ascending
+    // Simple EMA60 (or EMA<N> with what we have) — logic unchanged from the R1 fix.
+    const n = Math.min(60, closesAscending.length);
+    const reversed = closesAscending.slice(closesAscending.length - n); // most recent n, ascending
     const k = 2 / (n + 1);
     let ema = reversed[0]!;
     for (let i = 1; i < reversed.length; i++) {
