@@ -78,6 +78,35 @@ export function toKgiOrderQty(shares: number, isOddLot: boolean): number {
   return Math.floor(shares / BOARD_LOT_REGULAR);
 }
 
+/**
+ * Symmetric inverse of toKgiOrderQty() — converts a wire quantity (as it
+ * appears in a broker report: NewOrder ack, ExecReport/Deal, or a /trades
+ * query) back into a real SHARE count.
+ *
+ * 2026-07-23 Round 2 fix (Pete review, PR #1345): the qty-unit bug fixed by
+ * toKgiOrderQty() on the SUBMIT side has a symmetric twin on the PARSE side
+ * — every broker report KGI echoes back for a board-lot order reports
+ * quantity in the SAME wire unit the order was placed in (lots), not
+ * shares. reconcileKgiOrder() in kgi-order-reconciliation.ts was comparing/
+ * summing this wire-lot quantity directly against share-denominated
+ * requestedQty (from audit_logs), producing filledQty off by 1000x and a
+ * status that could get stuck at "partially_filled" instead of "filled" —
+ * caught by Pete re-running the PR's own real fixture with a realistic
+ * share count (5000, not the wire lot count 5). Both directions MUST route
+ * through this shared board-lot constant — do not hand-roll a second
+ * `* 1000` / `/ 1000` anywhere else.
+ *
+ * @param wireQty  Quantity as reported by the broker (lots for board-lot
+ *                 orders, shares for odd-lot orders — same unit convention
+ *                 as toKgiOrderQty()'s `qty` parameter).
+ * @param isOddLot Whether the ORIGINAL order this report belongs to was
+ *                 placed as a Taiwan odd-lot (零股) order.
+ */
+export function fromKgiOrderQty(wireQty: number, isOddLot: boolean): number {
+  if (isOddLot) return wireQty;
+  return wireQty * BOARD_LOT_REGULAR;
+}
+
 // ---------------------------------------------------------------------------
 // Tick size (升降單位) — TWSE price tier table
 // ---------------------------------------------------------------------------

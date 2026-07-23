@@ -788,7 +788,11 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           extractKgiTradeId(tradeRecord["kgi_response_repr"]) ??
           extractKgiTradeId(tradeRecord);
         accepted = true;
-        console.log(`[v34-sim] ${entry.stockId} qty=${entry.targetShares}${entry.isOddLot ? " (odd lot)" : ""} accepted tradeId=${tradeId ?? "null"}`);
+        // 2026-07-23 Round 2 (Pete review PR #1345): log both units explicitly —
+        // shares=targetShares (audit_logs unit) vs wireQty actually sent to KGI
+        // (lots for board-lot, shares for odd-lot), to avoid misleading future
+        // debugging.
+        console.log(`[v34-sim] ${entry.stockId} shares=${entry.targetShares} wireQty=${toKgiOrderQty(entry.targetShares, entry.isOddLot)}${entry.isOddLot ? " (odd lot, shares)" : " (lots)"} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -810,7 +814,10 @@ export async function submitV34BasketOrders(asOfDate: string): Promise<V34OrderS
           client.getDeals().catch(() => null),
         ]);
         const reconciled = reconcileKgiOrder({
-          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares },
+          // Board-lot entries (isOddLot=false) report broker evidence quantity
+          // in lots, not shares; odd-lot entries report shares. 2026-07-23
+          // Round 2 fix (Pete review PR #1345).
+          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares, wireQtyUnit: entry.isOddLot ? "shares" : "lots" },
           events,
           trades,
           deals,
@@ -960,7 +967,9 @@ export async function reconcileUnconfirmedV34Orders(gatewayBaseUrl?: string): Pr
   }
 
   const resolutions = reconcileUnconfirmedAuditOrders(
-    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.tradeId, symbol: r.stockId, shares: r.shares })),
+    // V34's own audit_logs row already carries isOddLot per entry (stored at
+    // submit time) — thread it through, do not assume board-lot like S1/V51.
+    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.tradeId, symbol: r.stockId, shares: r.shares, isOddLot: r.isOddLot })),
     { trades, deals, events },
   );
   if (resolutions.length === 0) return summary;

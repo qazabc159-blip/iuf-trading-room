@@ -673,7 +673,10 @@ export async function submitV51BasketOrders(signalDate: string): Promise<V51Orde
           extractKgiTradeId(tradeRecord["kgi_response_repr"]) ??
           extractKgiTradeId(tradeRecord);
         accepted = true;
-        console.log(`[v51-sim] ${entry.stockId} qty=${entry.targetShares} accepted tradeId=${tradeId ?? "null"}`);
+        // 2026-07-23 Round 2 (Pete review PR #1345): log both units explicitly —
+        // shares=targetShares (audit_logs unit) vs wireQty=lots actually sent to
+        // KGI, to avoid misleading future debugging.
+        console.log(`[v51-sim] ${entry.stockId} shares=${entry.targetShares} wireQtyLots=${toKgiOrderQty(entry.targetShares, false)} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -695,7 +698,10 @@ export async function submitV51BasketOrders(signalDate: string): Promise<V51Orde
           client.getDeals().catch(() => null),
         ]);
         const reconciled = reconcileKgiOrder({
-          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares },
+          // V51 always submits board-lot orders (oddLot hardcoded false
+          // above) — broker evidence quantity is in lots, not shares.
+          // 2026-07-23 Round 2 fix (Pete review PR #1345).
+          order: { tradeId, symbol: entry.stockId, side: "buy", requestedQty: entry.targetShares, wireQtyUnit: "lots" },
           events,
           trades,
           deals,
@@ -842,7 +848,9 @@ export async function reconcileUnconfirmedV51Orders(gatewayBaseUrl?: string): Pr
   }
 
   const resolutions = reconcileUnconfirmedAuditOrders(
-    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.tradeId, symbol: r.stockId, shares: r.shares })),
+    // V51 always submits board-lot orders (oddLot hardcoded false at submit
+    // time) — isOddLot:false is correct for every V51 order, not a default.
+    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.tradeId, symbol: r.stockId, shares: r.shares, isOddLot: false })),
     { trades, deals, events },
   );
   if (resolutions.length === 0) return summary;

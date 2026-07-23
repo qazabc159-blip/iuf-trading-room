@@ -5819,6 +5819,11 @@ app.get("/api/v1/kgi/sim/orders", async (c) => {
       side: "buy" as const,
       requestedQty: r.shares,
       submittedAt: auditSubmittedAt,
+      // S1 always submits board-lot orders — broker evidence quantity is in
+      // lots, not shares. 2026-07-23 Round 2 fix (Pete review PR #1345):
+      // this live-reconcile display endpoint reads the same share-
+      // denominated audit_logs data as the reconcile cron, same bug applies.
+      wireQtyUnit: "lots" as const,
     }));
 
   const orderAuditCount = baseOrders.length;
@@ -6093,6 +6098,12 @@ app.get("/api/v1/kgi/sim/v34-orders", async (c) => {
       side: "buy" as const,
       requestedQty: r.shares,
       submittedAt: auditSubmittedAt,
+      // V34's audit row carries isOddLot per entry — board-lot entries report
+      // broker evidence quantity in lots, odd-lot entries in shares.
+      // 2026-07-23 Round 2 fix (Pete review PR #1345): this live-reconcile
+      // display endpoint reads the same audit_logs data as the reconcile
+      // cron, same bug applies.
+      wireQtyUnit: r.isOddLot ? ("shares" as const) : ("lots" as const),
     }));
 
   const orderAuditCount = baseOrders.length;

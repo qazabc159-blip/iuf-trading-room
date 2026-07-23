@@ -886,7 +886,11 @@ export async function runS1OrderSubmitTick(): Promise<void> {
           ?? extractKgiTradeId(tradeRecord);
 
         accepted = true;
-        console.log(`[s1-order] ${entry.symbol} qty=${entry.target_shares} accepted tradeId=${tradeId ?? "null"}`);
+        // 2026-07-23 Round 2 (Pete review PR #1345): log both units explicitly —
+        // shares=target_shares (audit_logs unit) vs wireQty=lots actually sent to
+        // KGI, to avoid misleading future debugging (this line used to label the
+        // share count "qty=", which isn't the value actually sent on the wire).
+        console.log(`[s1-order] ${entry.symbol} shares=${entry.target_shares} wireQtyLots=${toKgiOrderQty(entry.target_shares, false)} accepted tradeId=${tradeId ?? "null"}`);
         break;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -917,6 +921,10 @@ export async function runS1OrderSubmitTick(): Promise<void> {
               symbol: entry.symbol,
               side: "buy",
               requestedQty: entry.target_shares,
+              // S1 always submits board-lot orders (oddLot hardcoded false
+              // above) — broker evidence quantity is in lots, not shares.
+              // 2026-07-23 Round 2 fix (Pete review PR #1345).
+              wireQtyUnit: "lots",
             },
             events,
             trades,
@@ -1114,7 +1122,9 @@ export async function reconcileUnconfirmedS1Orders(gatewayBaseUrl?: string): Pro
   }
 
   const resolutions = reconcileUnconfirmedAuditOrders(
-    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.trade_id, symbol: r.symbol, shares: r.shares })),
+    // S1 always submits board-lot orders (oddLot hardcoded false at submit
+    // time) — isOddLot:false is correct for every S1 order, not a default.
+    unconfirmedOrders.map(({ r, index }) => ({ index, tradeId: r.trade_id, symbol: r.symbol, shares: r.shares, isOddLot: false })),
     { trades, deals, events },
   );
   if (resolutions.length === 0) return summary;
