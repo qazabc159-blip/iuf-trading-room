@@ -160,3 +160,60 @@ Diffed the fresh output against the already-committed `reports/sim_go_live_20260
 **Recommendation**: Jason (script author) or Elva runs `APPLY=true` directly (both already have full context and this is squarely backend-execution work); I (Bruce) will independently verify the outcome immediately afterward — `SELECT` row-count/shape check against this DRY RUN's expected 2 rows, plus an idempotency re-run check (expect 0 new rows second time) — which **is** genuine verifier-lane work and I'm ready to do it the moment someone in the right lane has applied it.
 
 **是否可視為本項「已完成」**：NOT DONE. DRY RUN reverification = done or (see above). `APPLY` execution = intentionally not attempted, escalated back to Elva/Jason per lane boundaries.
+
+## 9. #1351 audit_logs backfill APPLY — post-execution SELECT verify (Elva executed APPLY; Bruce verifies)
+
+Elva executed `APPLY=true` herself inside the `ssh railway-api` container (full record: `reports/sim_go_live_20260723/evidence/AUDIT_BACKFILL_APPLY_20260723.md`, commit `9dbfc563`). Bruce's job here is the in-lane post-hoc verification only (read-only SELECT, same SSH recipe as §7/§8).
+
+**One-line conclusion**: **PASS** — the new v34 row (`9df694a1`) is shape-correct and matches ground truth 8/8 on tradeId + status + kgiOrderId; the v51 collision row (`a851467f`) is confirmed completely untouched; the backfill operation itself net-added exactly 1 row (no duplicate/double-insert).
+
+**Row shape check** (`SELECT * FROM audit_logs WHERE id = '9df694a1-fea7-43b5-bcda-e8024fda4462'`):
+- `workspace_id` = `888fd3bd-4a48-4656-9e6a-ac19360cc0de` — correct (Primary Desk, matches owner session's own `workspaceId`).
+- `action` = `v34_sim.order_submit`, `entity_type` = `v34_sim`, `entity_id` = `2026-07-21` — matches dry-run prediction exactly.
+- `payload.schema` = `"v34_order_submit_v1"` — correct.
+- `payload.results[]` — 8 entries, cross-checked against both ground-truth sources:
+  - **tradeId**: all 8 match `evidence/orders_20260723.jsonl`'s v34 rows byte-for-byte (e.g. `2887→1784769858789729046`, `2801→1784769861462729053`, ...).
+  - **status**: all 8 match `evidence/reconcile_53_orders_20260723.json`'s ground truth with the expected mapping (`Submitted→accepted` ×2 [2887,6505], `Filled→filled` ×5 [2883,2886,2880,2634,2801], `PartFilled→partially_filled` ×1 [2892]) — 8/8.
+  - **kgiOrderId**: all 8 match (`Y002F`...`Y002M` sequential) — 8/8.
+- **"settlement 欄位初始態"**: checked the actual schema — V34/V51's payload shape (unlike S1's) has **no dedicated `settlement_confirmed` field at all**; this is confirmed by the script's own header docs as a pre-existing asymmetry it mirrors, not introduces. The closest analogous "initial state" signal is `error: null` on all 8 results (present, no errors) — final `status` values are the already-reconciled ground truth (not placeholder `unconfirmed`), consistent with this backfill's documented purpose (constructing the row the real runner+cron *would* have produced, post-hoc).
+
+**Row-count / idempotency checks**:
+- `SELECT COUNT(*) WHERE action='v34_sim.order_submit' AND entity_id='2026-07-21'` → **1** (no duplicate insert from any retry).
+- `SELECT * WHERE id='a851467f-...'` (the v51 collision row Elva flagged as SKIPped) → still **30 results**, `created_at` still `2026-07-14T00:26:09.898Z` — **byte-identical to its pre-APPLY state, confirmed untouched** (not overwritten, not re-timestamped).
+- Row-count isolation for "+1 tonight": queried all `audit_logs` rows created in a tight ±5min window around the exact APPLY timestamp (`2026-07-23T14:18:05Z`) rather than a raw before/after table total (a raw total would conflate this backfill with the many other routine cron writers — `finmind.ingest` etc. — active throughout the evening, and wouldn't isolate the backfill's own contribution). Result: **11 rows** in that window, of which exactly **1** is `v34_sim.order_submit` (the new row) and the other 10 are routine `finmind.ingest` cron activity (business-as-usual, unrelated to this backfill). **Confirms the backfill operation itself net-added exactly 1 row, not more.**
+- Grand total `audit_logs` row count at verify time (informational, not itself a delta measure): 40,013.
+
+Temp query script (`query_audit_backfill_verify.js`) removed from the container after use (`rm /tmp/query_audit_backfill_verify.js`), same hygiene as §7.
+
+## 10. #1356/#1357 overview <2s target — 10x prod latency sample (owner session, params matching homepage's actual call)
+
+**One-line conclusion**: **PASS for warm/steady-state** (p50 ≈ 0.32-0.33s, 9/10 samples 0.28-0.54s, all well under the 2s target) **with one flagged cold-path outlier** (run 1 = 6.35s) — not reproduced on a follow-up 15s-idle probe, but worth surfacing rather than smoothing into the average.
+
+Target confirmed live: `/health` → `buildCommit=7cc9351818a4793bbd1f9006b20776622fc4a597` (#1357, the last of tonight's overview trilogy — #1349/#1350/#1356/#1357).
+
+`GET https://api.eycvector.com/api/v1/market-data/overview?includeStale=true&topLimit=20` (owner session, same query params as `apps/web/app/page.tsx:1556`'s actual SSR call), `curl -w "%{time_total}"`:
+
+Primary 5-run set (as asked):
+```
+run 1: 6.347905s
+run 2: 0.372838s
+run 3: 0.323581s
+run 4: 0.287599s
+run 5: 0.276562s
+```
+**p50 = 0.324s, max = 6.348s** (5-sample median).
+
+Extended to 10 consecutive + 1 follow-up after a 15s idle gap for context:
+```
+run 6:  0.463687s
+run 7:  0.333379s
+run 8:  0.335713s
+run 9:  0.321793s
+run 10: 0.434747s
+run 11 (after 15s idle): 0.538007s
+```
+Runs 2-11 (10 samples): min 0.277s / max 0.538s / p50 ≈ 0.335s — **all comfortably under the 2s target**.
+
+**Root-cause note on the run-1 outlier (not fully resolved, flagged not fixed)**: read `getMarketDataOverview()` — it has its own short-lived in-memory memo (`overviewMemoTtlMs = 1500`, i.e. 1.5s) that only de-dupes near-simultaneous identical requests, not a real warm-cache mechanism. Run 1 was my first hit to this exact endpoint in several minutes (prior calls this session were to different endpoints/params); runs 2-11 stayed fast even though each was >1.5s apart (well past that short memo's TTL) — meaning the real speed-up comes from *underlying* per-symbol caches (quote history/heatmap/history-aggregate) staying warm from routine cron + run 1's own computation, not from the request-level memo itself. This means: **a real user opening the homepage after several idle minutes off-hours (when the 09:00-13:35 TST `MARKET-OVERVIEW-CRON` pre-warmer isn't running) could plausibly hit the same ~6s cold path** — did not have time to root-cause exactly which sub-computation is slow on a cold hit within this task's scope; flagging as a possible follow-up for Jason-2 (overview lane owner) rather than claiming it's fully closed.
+
+**是否可視為「<2s 目標」全數達成**：warm/steady-state reads — **yes**, comfortably (6-7x under target). Absolute worst-case (cold, off-hours, first-hit-in-a-while) — **not verified as being under 2s**; one data point (6.35s) suggests it may not be, at least outside trading hours. Recommend Jason-2 either (a) confirm this is an acceptable off-hours-only cold-path (matches existing `MARKET-OVERVIEW-CRON`'s trading-hours-only pre-warm design, i.e. intentional/known trade-off) or (b) treat it as a residual gap in the "案 A 三部曲" if the <2s target was meant to hold unconditionally.
