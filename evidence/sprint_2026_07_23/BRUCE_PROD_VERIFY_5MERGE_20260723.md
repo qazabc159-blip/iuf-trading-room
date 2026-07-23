@@ -109,3 +109,26 @@ Owner session, Playwright, `packages/qa-playwright/_bruce_1353_airec_verify_2026
 - #1352's own CI Validate run shows `failure` due to the pre-existing homepage-heatmap Playwright flake (unrelated to its content) while its Deploy to Railway run succeeded — noted in §0, not a new blocker, but flagging since a raw `gh run list` glance would look alarming.
 - Local main checkout (this session's default cwd) was significantly behind `origin/main` (missing commits including the merges under test) and has pre-existing unrelated dirty state (`apps/api/src/market-data.ts` modified, some untracked `s1-lab-*` files, `errMsg.ini`) — not caused by this verification pass; flagged for whoever owns that worktree to reconcile, not touched here per lane boundary. This evidence report itself was pushed via a separate clean detached worktree (commit `c4b00f10` rebased onto `origin/main` → pushed as `1631cadc`) to avoid touching that dirty state.
 - Ad-hoc verify scripts left in repo: `packages/qa-playwright/_bruce_4merge_prod_smoke_20260723.mjs` + `_bruce_1353_airec_verify_20260723.mjs` (uncommitted at write time, matches existing naming convention of other `_elva-*` throwaway scripts in that directory).
+
+## 7. #1355 (Elva mid-task add-on) — prod `index_history` table really has ^TWII data
+
+**One-line conclusion**: **PASS** — prod `index_history` table has 131 rows for `index_symbol='^TWII'` (2026-01-02 → 2026-07-22), 95 of them inside the 140-day window `getTaiexDailyCloses()`/`loadFinMindTaiexIndexContext()` actually queries (`market-data.ts:1548,1566`) — well over the ≥60-trading-day bar, closing Pete-5's flagged inference gap.
+
+**How verified**: the API-route path (`GET /api/v1/market-data/overview`, owner session, matching both `topLimit=1` and the homepage's actual `topLimit=20`) returned `marketContext.index.history: []` at verify time — traced this to `market-data.ts`'s merge logic (`buildMarketContext()` — the **quote-based** path — always hardcodes `history: []` at lines 1352/1365; only `buildDailyBarMarketContext()` — the **daily-bar fallback** path — populates real history from `index_history` via `getTaiexDailyCloses()`). Right now `quoteMarketContext.state === "LIVE"` with a 24-row heatmap, and the merge ternary (`market-data.ts` ~3452) keeps the quote-based context unless the daily-bar heatmap is strictly larger — so this specific off-hours call never surfaces the daily-bar branch's `history` field, even though #1355's fix is live. This is a pre-existing merge-selection behavior, unrelated to #1355 itself, and out of scope to fix here (flagged below, not touched).
+
+Given the endpoint didn't surface a countable `history[]` at this exact moment, went straight to source per task instructions (owner-session SSH into the Railway `api` service, read-only SQL, same recipe as `memory_railway_ssh_local_key_setup_20260713.md`):
+
+```
+ssh -i ~/.ssh/id_ed25519 railway-api -- node /tmp/query_index_history.js
+COUNT_RESULT   {"n":131,"min_date":"2026-01-02","max_date":"2026-07-22"}
+LAST5_RESULT   [{"trade_date":"2026-07-22","close":44825.78,"source":"twse:MI_5MINS_HIST"},
+                {"trade_date":"2026-07-21","close":44232.87,"source":"twse:MI_5MINS_HIST"},
+                {"trade_date":"2026-07-20","close":42449.7, "source":"twse:MI_5MINS_HIST"},
+                {"trade_date":"2026-07-17","close":42671.27,"source":"twse:MI_5MINS_HIST"},
+                {"trade_date":"2026-07-16","close":45624.98,"source":"twse:MI_5MINS_HIST"}]
+WINDOW140_RESULT {"n":95}
+```
+
+Query was pure `SELECT` (no writes); temp script removed from the container afterward (`rm /tmp/query_index_history.js`).
+
+**意外**：this also surfaces a real (pre-existing, not #1355-caused) product behavior worth a follow-up ticket — the homepage TAIEX line chart's displayed trading-day count (`TAIEX 日線 · 近 {N} 交易日` at `apps/web/app/page.tsx:1208`) can silently read `N=0` whenever the quote-based market context wins the merge (as it did during this verify), even though 95+ days of real data sit in `index_history` and were computed server-side moments earlier — the merge logic just discards them because the quote path's heatmap (24 rows) wasn't smaller than the daily path's. Not blocking #1355's own fix (which is specifically about the risk-off EMA60 calculation reading the right table, confirmed correct at the DB layer above) — flagging as a separate observation, not fixed here.
