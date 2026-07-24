@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { saveRouteScreenshot } from "./helpers";
+import { checkHeatmapUpstreamCoverage, saveRouteScreenshot } from "./helpers";
 
 // 首頁「原封搬原稿」React server component 版驗收（2026-07-14 楊董終令：
 // 重做，恢復幾週打磨的 React 資料層＋原稿版面 CSS，不再走 iframe/inline
@@ -23,7 +23,7 @@ test.describe("/ homepage LEDGER RSC", () => {
   // .tac-heat-tile/.idxhist，這些 class 從未出現在實際 markup（現行是
   // .heat-chips/.heatmapgrid .tile/.idxhistband），從這支 spec 建立起就是
   // 假綠斷言、從未真的驗過任何東西——順手修正選擇器對齊真實 DOM。
-  test("desktop 1280 renders heatmap sector chips + tiles + breadth real values + TAIEX chart @smoke", async ({ page }, testInfo) => {
+  test("desktop 1280 renders heatmap sector chips + tiles + breadth real values + TAIEX chart @smoke", async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
@@ -48,20 +48,72 @@ test.describe("/ homepage LEDGER RSC", () => {
 
     const sectorChipCount = await page.locator(".heat-chips button").count();
     const semiconductorChip = page.locator('.heat-chips button[aria-label="半導體業"]');
-    const heatTileCount = await page.locator(".heatmapgrid .tile").count();
     const breadthUp = await page.locator(".breadthline .n.up").first().textContent();
     const breadthDown = await page.locator(".breadthline .n.down").first().textContent();
     const idxHistPresent = await page.locator(".idxhistband").count();
 
     testInfo.annotations.push({ type: "sector-chip-count", description: String(sectorChipCount) });
-    testInfo.annotations.push({ type: "heat-tile-count", description: String(heatTileCount) });
     testInfo.annotations.push({ type: "breadth-up", description: String(breadthUp) });
     testInfo.annotations.push({ type: "breadth-down", description: String(breadthDown) });
 
     expect(sectorChipCount).toBeGreaterThan(1);
     await expect(semiconductorChip).toHaveCount(1);
-    expect(heatTileCount).toBeGreaterThan(0);
     expect(idxHistPresent).toBe(1);
+
+    // 2026-07-24 root cure (Pete-6 flow-debt ticket): `.heat-chips` render
+    // unconditionally from the fixed SECTORS list in
+    // components/industry-heatmap.tsx buildOptions() — chip presence is NOT
+    // a valid proxy for whether `.heatmapgrid .tile` has actual data. Tile
+    // rendering additionally requires isUsableTile()'s stricter
+    // readiness/freshness/sector-normalization gate, which is independent of
+    // (and has been observed to diverge from) the coverage check the
+    // `hasChips` branch above relies on — CI run 30011454390 (2026-07-23,
+    // main push) hit exactly this: chips present, semiconductor chip found,
+    // `.heatmapgrid .tile` count 0. Poll the tile grid directly instead of
+    // assuming chip presence implies tile presence; if it genuinely never
+    // renders, that is an honest degraded/warm-up state (same class as the
+    // `hasChips` fallback above), not a regression in this spec's scope.
+    //
+    // Round 2 (2026-07-24, Pete-11): the timeout-only skip above was itself
+    // the blocker Pete-11 flagged — it can't distinguish honest warm-up from
+    // a real renderer/pipeline regression, and after this fix the @smoke
+    // gate had zero non-skippable tile-render assertions left. Skip is now
+    // legal only when checkHeatmapUpstreamCoverage() returns
+    // "empty_confirmed" (positive proof from the raw API); any other outcome
+    // falls through to the hard assertion below instead of returning early.
+    const heatTilesReady = await page
+      .locator(".heatmapgrid .tile")
+      .first()
+      .waitFor({ state: "visible", timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
+    const heatTileCount = await page.locator(".heatmapgrid .tile").count();
+    testInfo.annotations.push({ type: "heat-tile-count", description: String(heatTileCount) });
+
+    if (!heatTilesReady) {
+      const upstream = await checkHeatmapUpstreamCoverage(request);
+      testInfo.annotations.push({ type: "heatmap-upstream-check", description: `${upstream.verdict}: ${upstream.detail}` });
+      if (upstream.verdict === "empty_confirmed") {
+        testInfo.annotations.push({
+          type: "heatmap-tile-fallback",
+          description: `sector chips rendered but .heatmapgrid .tile stayed empty within the wait window — upstream ${upstream.detail}; honest degraded/warm-up state, not a chip/breadth/TAIEX-chart regression`,
+        });
+        await saveRouteScreenshot(page, testInfo, "home-ledger-1280");
+        return;
+      }
+      // No positive proof of an honest empty state — do NOT return early;
+      // fall through to the hard assertion below so this fails loud instead
+      // of silently passing (the exact blind spot Pete-11 flagged).
+      testInfo.annotations.push({
+        type: "heatmap-tile-fallback-unconfirmed",
+        description: `sector chips rendered but .heatmapgrid .tile stayed empty, and upstream did NOT confirm an honest empty state (${upstream.detail}) — treating as a regression, not skipping`,
+      });
+    }
+
+    expect(
+      heatTileCount,
+      "heatmapgrid tile count must be >0 unless checkHeatmapUpstreamCoverage() confirmed an honest empty state (see heatmap-upstream-check annotation)",
+    ).toBeGreaterThan(0);
 
     await saveRouteScreenshot(page, testInfo, "home-ledger-1280");
   });

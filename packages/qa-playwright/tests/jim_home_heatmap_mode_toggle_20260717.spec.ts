@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { checkHeatmapUpstreamCoverage } from "./helpers";
 
 // 2026-07-17 根因修復驗收：楊董深夜回報「首頁熱力圖又換了、沒辦法切換」。
 //
@@ -44,10 +45,21 @@ import { expect, test } from "@playwright/test";
 // （不是斷言弱化——原本就沒東西可驗，比起誤判「迴歸」紅燈或悄悄放行更誠實）
 // ③點擊前先明確驗證 tab 可見/可互動。沒有拿掉或放寬任何一條既有斷言——正常
 // 前提成立時全部原樣跑好跑滿。
+//
+// ── Round 4（2026-07-24，Pete-11 round-2 fix，PR #1361）──────────────────
+// Round 3（見下方 test body）根治了 CI run 30011454390 的分岔，但用的 skip
+// 判準是純計時（`.heatmapgrid .tile` 在 SECTION_TIMEOUT_MS 內沒出現就
+// skip）——Pete-11 審查指出這個訊號跟「誠實暖機」與「渲染器/資料管線真的
+// 壞死」逐位元組相同，且 merge 後 @smoke gate 裡已無任何非 skippable 的
+// tile-render 斷言，等於用 flake 換永久盲區。Round 4 改綁真訊號：DOM 逾時
+// 時，直接呼叫 `checkHeatmapUpstreamCoverage()` 打 `/api/v1/market-data/
+// overview`——只有它回報 "empty_confirmed"（API 有列、全部
+// freshnessStatus="missing" 或 readiness="blocked"）才 skip；API 失敗/空
+// 陣列/回應形狀壞/其實有可渲染的列，一律 fail loud（不 skip）。
 const SECTION_TIMEOUT_MS = 30000; // 2x apps/web/app/page.tsx 的 FETCH_MARKET_MS=15000 worst case，留足緩衝
 
 test.describe("/ homepage heatmap core/全市場 mode toggle", () => {
-  test("clicking 核心熱力圖 renders the treemap grid, clicking 全市場熱力圖 renders the market-wide grid, and they are mutually exclusive @smoke", async ({ page }, testInfo) => {
+  test("clicking 核心熱力圖 renders the treemap grid, clicking 全市場熱力圖 renders the market-wide grid, and they are mutually exclusive @smoke", async ({ page, request }, testInfo) => {
     test.setTimeout(150000);
     await page.setViewportSize({ width: 1280, height: 1400 });
 
@@ -70,10 +82,46 @@ test.describe("/ homepage heatmap core/全市場 mode toggle", () => {
       `代表股資料覆蓋率不足（coverage-fallback banner: "${offHoursBannerText}"）— page.tsx 強制 effectiveMode="all"，toggle 本身在此前提下不可測，非本 spec 要鎖的迴歸`,
     );
 
-    // Wait on the real content signal (tiles actually rendered) instead of a
-    // fixed sleep — tolerant of CI worker contention / slow upstream data,
-    // and resolves as soon as ready rather than always paying a fixed cost.
-    await expect(page.locator(".heatmapgrid .tile").first()).toBeVisible({ timeout: SECTION_TIMEOUT_MS });
+    // ── Round 3 root cure（2026-07-24，Pete-6 flow-debt ticket）───────────
+    // The banner-text check above is a *proxy* for whether `.heatmapgrid
+    // .tile` will actually render — but page.tsx's coverage gate
+    // (hasProductHeatmapCoverage, symbol+move-count only) and
+    // industry-heatmap.tsx's tile-rendering gate (isUsableTile: also
+    // requires readiness !== "blocked" and freshnessStatus !== "missing")
+    // are two independently-computed filters that have been observed to
+    // diverge: CI run 30011454390 (2026-07-23, main push, same headSha red)
+    // read offHoursBannerText without "暖機" (coverage gate passed) yet
+    // `.heatmapgrid .tile` never appeared within SECTION_TIMEOUT_MS — a hard
+    // test failure for a state that was never a real toggle regression.
+    // Poll the actual target selector directly instead of trusting only the
+    // banner proxy; if tiles genuinely never render, that's the same class
+    // of honest "nothing to test" precondition as the banner-text skip
+    // above, just detected via the true signal instead of a proxy that can
+    // be wrong.
+    const coreTilesReady = await page
+      .locator(".heatmapgrid .tile")
+      .first()
+      .waitFor({ state: "visible", timeout: SECTION_TIMEOUT_MS })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!coreTilesReady) {
+      // Round 4 (Pete-11): don't trust the timeout alone — ask the upstream
+      // API for positive proof of an honest empty state before skipping.
+      const upstream = await checkHeatmapUpstreamCoverage(request);
+      testInfo.annotations.push({ type: "heatmap-upstream-check", description: `${upstream.verdict}: ${upstream.detail}` });
+      test.skip(
+        upstream.verdict === "empty_confirmed",
+        `核心熱力圖磚格在 ${SECTION_TIMEOUT_MS}ms 內未渲染出任何真實資料，且上游 ${upstream.detail}（offhours banner: "${offHoursBannerText || "(none)"}"）— 代表股資料誠實無可渲染 tile，toggle 本身在此前提下不可測，非本 spec 要鎖的迴歸`,
+      );
+      // upstream did NOT confirm an honest empty state (request failed / empty
+      // array / malformed shape / usable rows exist) — fail loud instead of
+      // silently skipping. This is the exact blind spot Pete-11 flagged.
+      expect(
+        coreTilesReady,
+        `核心熱力圖磚格在 ${SECTION_TIMEOUT_MS}ms 內未渲染，且上游未確認誠實空態（${upstream.detail}）— 疑似渲染器/資料管線 regression，不可 skip`,
+      ).toBe(true);
+    }
 
     // ── Core mode assertions ──────────────────────────────────────────────
     // Regression lock for the exact bug: even when the off-hours banner is
