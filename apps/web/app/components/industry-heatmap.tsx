@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { formatSectorChipCount } from "./industry-heatmap-chip";
+import { deriveHeatmapMove, isUsableHeatmapTile } from "@/lib/heatmap-tile-usability";
 
 export type IndustryHeatmapTile = {
   symbol: string;
@@ -482,73 +483,17 @@ function normalizeSector(tile: IndustryHeatmapTile): SectorKey | null {
   return null;
 }
 
-function finiteNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function roundMove(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
+// deriveMove/isUsableTile used to be private copies here. Moved to
+// lib/heatmap-tile-usability.ts 2026-07-24 so the home-page banner gate
+// (hasProductHeatmapCoverage) and this tile-render gate share one predicate
+// instead of drifting independently (PR #1361 review finding). Logic is
+// unchanged — same function bodies, just imported instead of duplicated.
 function deriveMove(tile: IndustryHeatmapTile) {
-  const close = finiteNumber(tile.close ?? tile.price);
-  const prevClose = finiteNumber(tile.prevClose);
-  if (close !== null && prevClose !== null && prevClose > 0) {
-    const change = roundMove(close - prevClose);
-    return {
-      pct: roundMove((change / prevClose) * 100),
-      change,
-    };
-  }
-
-  const change = finiteNumber(tile.change);
-  if (close !== null && change !== null) {
-    const derivedPrevClose = close - change;
-    if (derivedPrevClose > 0) {
-      return {
-        pct: roundMove((change / derivedPrevClose) * 100),
-        change: roundMove(change),
-      };
-    }
-  }
-
-  const pct = finiteNumber(tile.pct);
-  if (pct !== null) {
-    const derivedChange = close !== null && pct > -99.99 ? roundMove(close - close / (1 + pct / 100)) : null;
-    return {
-      pct: roundMove(pct),
-      change: derivedChange,
-    };
-  }
-
-  const open = finiteNumber(tile.open);
-  if (close !== null && open !== null && open > 0) {
-    const intradayChange = roundMove(close - open);
-    return {
-      pct: roundMove((intradayChange / open) * 100),
-      change: intradayChange,
-    };
-  }
-
-  return {
-    pct: null,
-    change: null,
-  };
-}
-
-function validMove(tile: IndustryHeatmapTile) {
-  return deriveMove(tile).pct !== null;
+  return deriveHeatmapMove(tile);
 }
 
 function isUsableTile(tile: IndustryHeatmapTile) {
-  if (tile.symbol.trim().length === 0 || tile.name.trim().length === 0) return false;
-  if (tile.readiness === "blocked") return false;
-  // Missing representative quotes are reported in the footer, not rendered as gray empty tiles.
-  if (tile.sourceState === "no_data") return false;
-  // Standard path: must have a valid price move
-  if (!validMove(tile)) return false;
-  if (tile.freshnessStatus === "missing") return false;
-  return true;
+  return isUsableHeatmapTile(tile);
 }
 
 function estimatedTradingValue(tile: IndustryHeatmapTile) {

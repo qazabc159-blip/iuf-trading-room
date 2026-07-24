@@ -1,35 +1,25 @@
-export type HeatmapCoverageTile = {
-  symbol?: string | null;
-  pct?: number | null;
-  change?: number | null;
-  close?: number | null;
-  prevClose?: number | null;
-  sourceState?: string | null;
-};
+import { isUsableHeatmapTile, type HeatmapUsabilityTile } from "./heatmap-tile-usability";
+
+// Kept as an alias so existing imports of `HeatmapCoverageTile` (this file's
+// public type) keep working unchanged — the shape is identical to the
+// canonical usability tile shared with the tile-render gate.
+export type HeatmapCoverageTile = HeatmapUsabilityTile;
 
 export const MIN_PRODUCT_HEATMAP_COVERAGE = 70;
 
-function finiteNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-export function hasHeatmapVerifiedMove(tile: HeatmapCoverageTile) {
-  if (finiteNumber(tile.pct) !== null) return true;
-  if (finiteNumber(tile.change) !== null) return true;
-
-  const close = finiteNumber(tile.close);
-  const prevClose = finiteNumber(tile.prevClose);
-  return close !== null && prevClose !== null && prevClose > 0;
-}
-
+// 2026-07-24: the coverage count now runs through the exact same
+// `isUsableHeatmapTile()` predicate the tile-render gate uses (readiness /
+// no_data / valid move / freshness), instead of a separately-maintained
+// "verified move" check that didn't look at readiness/freshness at all. See
+// `heatmap-tile-usability.ts` doc comment for why this was unified — a
+// PR #1361 review finding (Pete 🟡 #1/#2).
 export function hasProductHeatmapCoverage(tiles: HeatmapCoverageTile[]) {
   const symbols = new Set<string>();
 
   for (const tile of tiles) {
     const symbol = tile.symbol?.trim();
     if (!symbol) continue;
-    if (tile.sourceState === "no_data") continue;
-    if (!hasHeatmapVerifiedMove(tile)) continue;
+    if (!isUsableHeatmapTile(tile)) continue;
     symbols.add(symbol);
   }
 
