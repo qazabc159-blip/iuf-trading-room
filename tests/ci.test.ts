@@ -17181,7 +17181,11 @@ test("TWSE-MIS-4: MIS intraday source label is twse_intraday state LIVE only aft
   assert.ok(mockMisResponse.bid !== null, "TWSE-MIS-4: bid must be populated from MIS b field");
 
   const source = readFileSync(path.join(process.cwd(), "apps/api/src/server.ts"), "utf8");
-  assert.match(source, /function _isTwseLiveSessionNow\(\): boolean/);
+  // 2026-07-24 R2 unification: _isTwseLiveSessionNow now delegates its
+  // trading-day check to the shared lib/trading-calendar.ts helper (weekday
+  // AND holiday aware, not just getUTCDay()), which made it async — see
+  // reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md.
+  assert.match(source, /async function _isTwseLiveSessionNow\(\): Promise<boolean>/);
   assert.match(source, /function _isTodayMisTradeDate\(tradeDate: string\): boolean/);
   // Post-close repair (6/15): the gate rejects only a stale (non-today) MIS
   // date. A today-dated snapshot off-hours is the session close — served as

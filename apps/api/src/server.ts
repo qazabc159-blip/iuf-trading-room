@@ -310,7 +310,7 @@ import {
 import { normalizeTwseIndustryZhTw } from "./utils/twse-industry-normalize.js";
 import { normalizeAndMergeTwseHeatmapTiles } from "./utils/heatmap-normalized-merge.js";
 import { parseRocEodDateIso } from "./lib/roc-date.js";
-import { isTwTradingDay } from "./lib/trading-calendar.js";
+import { isTwTradingDay, getTaiwanMarketSession, isTaiwanTradingDayNow } from "./lib/trading-calendar.js";
 
 type Variables = {
   repo: TradingRoomRepository;
@@ -1255,10 +1255,12 @@ app.get("/api/v1/market-data/overview", async (c) => {
   let finalOverviewData = overviewData;
 
   if (overviewData?.marketContext) {
-    // Check MIS cron window: 08:55-14:35 TST weekdays
+    // Check MIS cron window: 08:55-14:35 TST trading days. Trading-day check
+    // (weekday+holiday) now routes through the shared lib/trading-calendar.ts
+    // helper instead of a local `getUTCDay()` 1-5 check (R2 unification —
+    // reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md).
     const _hhmm = getTaipeiHHMM();
-    const _taipeiDay = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
-    const isMisWindow = _hhmm >= 855 && _hhmm <= 1435 && _taipeiDay >= 1 && _taipeiDay <= 5;
+    const isMisWindow = _hhmm >= 855 && _hhmm <= 1435 && await isTaiwanTradingDayNow();
 
     if (isMisWindow) {
       const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000)
@@ -2940,7 +2942,12 @@ app.get("/api/v1/realtime/snapshot", async (c) => {
     const d = new Date(now + 8 * 60 * 60 * 1000);
     return d.getUTCHours() * 100 + d.getUTCMinutes();
   })();
-  const isTradingHours = TAIPEI_HHMM >= 855 && TAIPEI_HHMM <= 1435;
+  // 2026-07-24 R2 fix: this window check had NO day-of-week check at all —
+  // weekend 08:55-14:35 was treated as trading hours, serving stale MIS tile
+  // cache instead of falling through to EOD (reports/design_redesign_20260722/
+  // DUAL_CRITERIA_AUDIT_20260723.md). Trading-day check now routes through
+  // the shared lib/trading-calendar.ts helper (same source as composeTaiwanMarketState).
+  const isTradingHours = TAIPEI_HHMM >= 855 && TAIPEI_HHMM <= 1435 && await isTaiwanTradingDayNow(now);
   const todayYmd = new Date(now + 8 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10)
@@ -3159,8 +3166,8 @@ app.get("/api/v1/plans/brief", async (c) => {
       console.warn("[plans/brief] getRiskLimitState failed:", riskResult.reason instanceof Error ? riskResult.reason.message : String(riskResult.reason));
     }
 
-    // market: derive from wall clock
-    const market = composeTaiwanMarketState();
+    // market: derive from wall clock (weekday+holiday aware — R2 fix)
+    const market = await composeTaiwanMarketState();
 
     // topThemes: top 6 by priority ascending (lower number = higher priority)
     const sortedThemes = [...themes].sort((a, b) => a.priority - b.priority).slice(0, 6);
@@ -7224,48 +7231,29 @@ app.get("/api/v1/ops/activity", async (c) => {
 // Shape contract: all fields match radar-types.ts exactly.
 // ---------------------------------------------------------------------------
 
-// Compose RADAR MarketState from wall-clock Taiwan time (UTC+8).
-// Taiwan session: pre-open 08:30-09:00, open 09:00-13:30, midday 13:30-13:35,
-// post-close otherwise.
-function composeTaiwanMarketState(): {
-  state: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+// Compose RADAR MarketState from wall-clock Taiwan time (UTC+8), weekday+
+// holiday aware. Taiwan session: pre-open 08:30-09:00, open 09:00-13:30,
+// midday 13:30-13:35, post-close otherwise on a trading day; CLOSED on any
+// non-trading day (weekend/holiday) regardless of the minute.
+// 2026-07-24 R2 fix (reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md):
+// this used to judge purely off the wall-clock minute with NO day-of-week
+// check — Sat/Sun 09:00-13:30 was reported "OPEN". Delegates to
+// lib/trading-calendar.ts's getTaiwanMarketSession(), the single source of
+// truth shared by the other 4 duplicate session-window judgements this same
+// fix unifies (see call sites below). Exported for direct unit testing (same
+// convention as `_isKgiHeatmapAfterHours`).
+export async function composeTaiwanMarketState(nowMs: number = Date.now()): Promise<{
+  state: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE" | "CLOSED";
   countdownSec: number;
   futuresNight: { last: number | null; chgPct: number | null; stale_reason?: string };
   usMarket: { index: string; last: number | null; chgPct: number | null; closeTs: string | null; stale_reason?: string };
   events: { ts: string; label: string; weight: "HIGH" | "MED" | "LOW" }[];
-} {
-  const now = new Date();
-  // Taiwan = UTC+8
-  const twMin = (now.getUTCHours() * 60 + now.getUTCMinutes() + 8 * 60) % (24 * 60);
-  // Boundary minutes: pre-open 510 (08:30), open 540 (09:00), midday 810 (13:30), postClose 815 (13:35)
-  const PREOPEN_START = 510;  // 08:30
-  const OPEN_START    = 540;  // 09:00
-  const MIDDAY_START  = 810;  // 13:30
-  const CLOSE_END     = 815;  // 13:35
-
-  let state: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
-  let nextBoundary: number;
-
-  if (twMin >= PREOPEN_START && twMin < OPEN_START) {
-    state = "PRE-OPEN";
-    nextBoundary = OPEN_START;
-  } else if (twMin >= OPEN_START && twMin < MIDDAY_START) {
-    state = "OPEN";
-    nextBoundary = MIDDAY_START;
-  } else if (twMin >= MIDDAY_START && twMin < CLOSE_END) {
-    state = "MIDDAY";
-    nextBoundary = CLOSE_END;
-  } else {
-    state = "POST-CLOSE";
-    // Next pre-open is tomorrow 08:30
-    nextBoundary = twMin < PREOPEN_START ? PREOPEN_START : PREOPEN_START + 24 * 60;
-  }
-
-  const countdownSec = (nextBoundary - twMin) * 60 - now.getUTCSeconds();
+}> {
+  const session = await getTaiwanMarketSession(nowMs);
 
   return {
-    state,
-    countdownSec: Math.max(0, countdownSec),
+    state: session.state,
+    countdownSec: session.countdownSec,
     // futuresNight + usMarket: no live feed available (KGI TradeCom pending + no US index feed).
     // Expose stale_reason so frontend can show "無即時資料" badge instead of fake 0 values.
     futuresNight: { last: null, chgPct: null, stale_reason: "no_live_feed_kgi_pending" },
@@ -10123,7 +10111,7 @@ export type EodFallbackResult = {
   note: string;
   /** ISO trading date of the EOD row (may be 1-2 sessions behind on publish lag). */
   dataDate: string | null;
-  marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE";
+  marketSession: "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE" | "CLOSED";
   referenceReason: "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback";
 };
 
@@ -10289,7 +10277,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
   const symbol = companyIdToTicker(company.ticker);
   const client = getKgiQuoteClient();
   const updatedAt = new Date().toISOString();
-  const marketSession = composeTaiwanMarketState().state;
+  const marketSession = (await composeTaiwanMarketState()).state;
 
   function _eodReferenceReason(blockReason?: string | null): "pre_open_reference" | "post_close_reference" | "closed_reference" | "kgi_unavailable_eod_fallback" {
     if (marketSession === "PRE-OPEN") return "pre_open_reference";
@@ -10308,12 +10296,13 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
     return "tse";
   }
 
-  function _isTwseLiveSessionNow(): boolean {
+  // 2026-07-24 R2 unification: trading-day check now routes through the
+  // shared lib/trading-calendar.ts helper instead of a local `getUTCDay()`
+  // 1-5 check (reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md).
+  async function _isTwseLiveSessionNow(): Promise<boolean> {
     const hhmm = getTaipeiHHMM();
     if (hhmm < 900 || hhmm > 1335) return false;
-    const taipeiNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const dayOfWeek = taipeiNow.getUTCDay();
-    return dayOfWeek >= 1 && dayOfWeek <= 5;
+    return isTaiwanTradingDayNow();
   }
 
   function _isTodayMisTradeDate(tradeDate: string): boolean {
@@ -10396,7 +10385,7 @@ app.get("/api/v1/companies/:id/quote/realtime", async (c) => {
       // a stale MIS date (not today); a today-dated snapshot off-hours is the
       // real session close, not stale.
       if (!_isTodayMisTradeDate(tradeDate)) return null;
-      const liveNow = _isTwseLiveSessionNow();
+      const liveNow = await _isTwseLiveSessionNow();
 
       return { lastPrice, open, high, low, prevClose, changePct, volume, bid, ask, tradeTime, tradeDate, source: "twse_intraday", state: liveNow ? "LIVE" : "CLOSE", freshness: liveNow ? "fresh" : "stale" };
     } catch {
@@ -10869,9 +10858,10 @@ app.get("/api/v1/companies/:id/orderbook", async (c) => {
   const updatedAt = new Date().toISOString();
   const db = getDb();
 
-  // 3. Off-hours detection: if market is POST-CLOSE and we have no live data, return off_hours
-  const mktState = composeTaiwanMarketState();
-  const isOffHours = mktState.state === "POST-CLOSE";
+  // 3. Off-hours detection: if market is POST-CLOSE or CLOSED (non-trading
+  // day — R2 fix) and we have no live data, return off_hours.
+  const mktState = await composeTaiwanMarketState();
+  const isOffHours = mktState.state === "POST-CLOSE" || mktState.state === "CLOSED";
 
   // 4. Try KGI gateway bidask (primary source)
   const client = getKgiQuoteClient();
@@ -13135,15 +13125,18 @@ app.get("/api/v1/heatmap", async (c) => {
 // The 6/11 audit found both overview endpoints serving YESTERDAY's close labeled
 // "live/今日收盤" mid-session because neither read this cache (only the legacy
 // market-data/overview overlay did).
-function _misIndexOverviewSnapshot(): {
+// 2026-07-24 R2 unification: trading-day check now routes through the shared
+// lib/trading-calendar.ts helper instead of a local `getUTCDay()` 1-5 check
+// (reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md).
+async function _misIndexOverviewSnapshot(): Promise<{
   taiex: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
   otc: { last: number; prevClose: number; change: number; changePct: number; time: string; volume: number | null } | null;
   tsFor: (time: string) => string;
-} | null {
+} | null> {
   const hhmm = getTaipeiHHMM();
-  const taipeiDay = new Date(Date.now() + 8 * 60 * 60 * 1000).getUTCDay();
-  const inWindow = hhmm >= 855 && hhmm <= 1435 && taipeiDay >= 1 && taipeiDay <= 5;
-  if (!inWindow) return null;
+  // Cheap wall-clock gate first (no I/O) — only pay for the (cached) trading-day
+  // check when the minute-of-day window already matches.
+  if (!(hhmm >= 855 && hhmm <= 1435) || !(await isTaiwanTradingDayNow())) return null;
   const idxCache = _overviewMisIndexCache;
   const todayYmd = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
   // Allow up to 2 min staleness (cron ticks every 45s; one missed tick must not flap to EOD)
@@ -13199,7 +13192,7 @@ function _taiexCloseLabel(ts: string | null | undefined, isLkg: boolean): string
 // Auth: any logged-in role (Viewer+ — PR-B G-PUB downgrade, pure TAIEX/OTC index data)
 app.get("/api/v1/market/overview/twse", async (c) => {
   // 1. MIS realtime index (盤中即時) — preferred during the trading session
-  const mis = _misIndexOverviewSnapshot();
+  const mis = await _misIndexOverviewSnapshot();
   if (mis?.taiex) {
     return c.json({
       taiex: { value: mis.taiex.last, change: mis.taiex.change, changePct: mis.taiex.changePct, ts: mis.tsFor(mis.taiex.time) },
@@ -13388,7 +13381,7 @@ app.get("/api/v1/market/overview/kgi", async (c) => {
 
     // MIS realtime index (盤中即時) — KGI quote auth is not enabled on this
     // account, so MIS is the de-facto realtime index source during the session.
-    const mis = _misIndexOverviewSnapshot();
+    const mis = await _misIndexOverviewSnapshot();
     if (mis?.taiex) {
       return c.json({
         taiex: {
