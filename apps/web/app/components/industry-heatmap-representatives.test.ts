@@ -7,6 +7,14 @@ import { formatSectorChipCount } from "./industry-heatmap-chip";
 const sourcePath = fileURLToPath(new URL("./industry-heatmap.tsx", import.meta.url));
 const source = readFileSync(sourcePath, "utf8");
 
+// isUsableTile's data-quality checks (no_data / freshness / readiness) moved
+// to lib/heatmap-tile-usability.ts on 2026-07-24 so the tile-render gate and
+// the home-page banner coverage gate share one predicate instead of two
+// independently-drifting copies (PR #1361 review finding). Some source-grep
+// pins below assert on that shared file instead of this one now.
+const usabilitySourcePath = fileURLToPath(new URL("../../lib/heatmap-tile-usability.ts", import.meta.url));
+const usabilitySource = readFileSync(usabilitySourcePath, "utf8");
+
 function listLength(name: string) {
   const match = source.match(new RegExp(`${name}[^=]*= \\[(?<body>[\\s\\S]*?)\\];`));
   const body = match?.groups?.body ?? "";
@@ -57,7 +65,7 @@ describe("industry heatmap representative pool source gate", () => {
   // 做法——不留洞、不畫灰塊，固定代表股缺可驗證行情時從候選序列遞補等量
   // 真公司真行情進來（isSupplemental 標記），grid 永遠是有行情的真公司。
   it("backfills missing representative quotes with real substitute companies instead of gray placeholder tiles", () => {
-    expect(source).toContain('if (tile.sourceState === "no_data") return false;');
+    expect(usabilitySource).toContain('if (tile.sourceState === "no_data") return false;');
     expect(source).not.toContain("placeholder?: boolean");
     expect(source).not.toContain("無行情");
     expect(source).toContain("isSupplemental?: boolean");
