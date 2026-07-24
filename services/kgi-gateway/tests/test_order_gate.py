@@ -313,6 +313,29 @@ def test_c3_sim_session_full_normal_lot_payload_returns_200(order_client):
     assert len(mock_api.Order.calls) == 1
 
 
+def test_c5_sim_session_dict_without_operations_key_returns_200_fast(order_client):
+    """
+    Regression guard for the Gate 3 reject-honesty fix (2026-07-24): a
+    dict-shaped SDK response with no "operations" key (matches every
+    pre-existing test double in this file, incl. _MockOrder above) must
+    still return 200 accepted with ZERO added polling delay — the poll
+    loop must be skipped entirely, not run to its full bound, whenever
+    there is no operations list to inspect.
+    """
+    mock_api = _MockApi()
+    with _patch_session(simulation=True, mock_api=mock_api):
+        import time as _time
+        t0 = _time.perf_counter()
+        resp = order_client.post(
+            "/order/create",
+            json={"action": "Buy", "symbol": "0050", "qty": 1, "odd_lot": True},
+        )
+        elapsed = _time.perf_counter() - t0
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accepted"
+    assert elapsed < 0.5, f"no-operations-key response must skip the poll loop, took {elapsed:.2f}s"
+
+
 def test_c4_sim_session_sdk_exception_returns_502(order_client):
     """SIM session + SDK raises → 502 SIM_SDK_ERROR (no leakage of exception details)."""
     class _ExplodingOrder:
@@ -335,3 +358,128 @@ def test_c4_sim_session_sdk_exception_returns_502(order_client):
     assert body["error"]["code"] == "SIM_SDK_ERROR"
     # Message must NOT echo raw exception text (no SECRETTOKEN leak)
     assert "SECRETTOKEN" not in body["error"]["message"]
+
+
+# ===========================================================================
+# GROUP D — Gate 3 reject-honesty poll (2026-07-24 fix,
+# FORENSICS_TRADEID_AND_INVALID_20260724.md "Cross-cutting" finding)
+#
+# Mirrors the three real states observed in production evidence:
+#   normal order → operations[] stays Pending → 200 accepted
+#   MAT0015 (bad symbol)       → operations[] flips to Failed → 422 rejected
+#   MAT0024 (price out of range) → operations[] flips to Failed → 422 rejected
+# Plus the sdk_response=None synchronous-reject branch.
+# ===========================================================================
+
+def test_d1_sim_session_operations_stay_pending_returns_200_accepted(order_client):
+    """
+    Real Trade-shaped response whose operations[] never flips to Failed
+    within the poll window → 200 accepted (poll runs to completion, doesn't
+    falsely reject a genuinely-queued order).
+    """
+    class _PendingOrder:
+        def create_order(self, **kwargs):
+            return {
+                "nid": "1784854749957001",
+                "operations": [{"status": "Pending", "msg": None}],
+            }
+
+    class _PendingApi:
+        def __init__(self):
+            self.Order = _PendingOrder()
+
+    import app as gateway_app
+    import kgi_session
+    with patch.object(gateway_app, "_GATE3_REJECT_POLL_INTERVAL_S", 0.01):
+        pending_api = _PendingApi()
+        with patch.multiple(kgi_session.session, _api=pending_api, _simulation=True):
+            resp = order_client.post(
+                "/order/create",
+                json={"action": "Buy", "symbol": "2330", "qty": 1},
+            )
+    assert resp.status_code == 200, f"got {resp.status_code} body={resp.text[:200]}"
+    body = resp.json()
+    assert body["status"] == "accepted"
+    assert body["trade_id"] == "1784854749957001"
+
+
+def test_d2_sim_session_mat0015_symbol_error_returns_422_rejected(order_client):
+    """
+    KGI MAT0015 (股票代號錯誤 / bad symbol code) surfaces via
+    Operation.status=Failed + Operation.msg — must return 422
+    KGI_ORDER_REJECTED with the real message passed through, not 200 accepted.
+    """
+    class _RejectingOrder:
+        def create_order(self, **kwargs):
+            return {
+                "nid": "1784854749957014",
+                "operations": [{"status": "Failed", "msg": "MAT0015: 股票代號錯誤"}],
+            }
+
+    class _RejectingApi:
+        def __init__(self):
+            self.Order = _RejectingOrder()
+
+    rejecting_api = _RejectingApi()
+    import kgi_session
+    with patch.multiple(kgi_session.session, _api=rejecting_api, _simulation=True):
+        resp = order_client.post(
+            "/order/create",
+            json={"action": "Buy", "symbol": "1271", "qty": 1},
+        )
+    assert resp.status_code == 422, f"got {resp.status_code} body={resp.text[:200]}"
+    body = resp.json()
+    assert body["error"]["code"] == "KGI_ORDER_REJECTED"
+    assert "MAT0015" in body["error"]["message"]
+
+
+def test_d3_sim_session_mat0024_price_range_error_returns_422_rejected(order_client):
+    """KGI MAT0024 (委託價超過當日漲跌範圍 / price outside limit range) → 422."""
+    class _RejectingOrder:
+        def create_order(self, **kwargs):
+            return {
+                "nid": "1784854749957028",
+                "operations": [{"status": "Failed", "msg": "MAT0024: 委託價超過當日漲跌範圍"}],
+            }
+
+    class _RejectingApi:
+        def __init__(self):
+            self.Order = _RejectingOrder()
+
+    rejecting_api = _RejectingApi()
+    import kgi_session
+    with patch.multiple(kgi_session.session, _api=rejecting_api, _simulation=True):
+        resp = order_client.post(
+            "/order/create",
+            json={"action": "Buy", "symbol": "6505", "qty": 1, "price": 80.1},
+        )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"]["code"] == "KGI_ORDER_REJECTED"
+    assert "MAT0024" in body["error"]["message"]
+
+
+def test_d4_sim_session_sdk_returns_none_returns_422_rejected(order_client):
+    """
+    create_order() returning None (SecurityOrder() DLL call itself rejected
+    synchronously, rt != 0) must be reported as 422 KGI_ORDER_REJECTED, not
+    200 accepted with trade_id=None.
+    """
+    class _NoneOrder:
+        def create_order(self, **kwargs):
+            return None
+
+    class _NoneApi:
+        def __init__(self):
+            self.Order = _NoneOrder()
+
+    none_api = _NoneApi()
+    import kgi_session
+    with patch.multiple(kgi_session.session, _api=none_api, _simulation=True):
+        resp = order_client.post(
+            "/order/create",
+            json={"action": "Buy", "symbol": "2330", "qty": 1},
+        )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"]["code"] == "KGI_ORDER_REJECTED"
