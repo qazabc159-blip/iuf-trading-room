@@ -18,6 +18,16 @@
 //   2. In apps/web: NEXT_PUBLIC_API_BASE_URL=http://localhost:3311 pnpm run build && PORT=3212 pnpm run start
 //   3. In packages/qa-playwright: SEED_OWNER_EMAIL=... SEED_OWNER_PASSWORD=... IUF_QA_WEB_BASE_URL=http://localhost:3212 npx playwright test tests/auth.setup.ts --project=setup
 //   4. Run tests/jim_home_heatmap_mode_toggle_20260717.spec.ts / tests/jim_home_ledger_rsc_20260714.spec.ts against IUF_QA_WEB_BASE_URL=http://localhost:3212
+//
+// ── Round-2 reuse (2026-07-24, Pete-11 fix) ────────────────────────────────
+// This same proxy also doubles as the "渲染壞死但 API 有資料" repro for
+// helpers.ts's checkHeatmapUpstreamCoverage(): point ONLY the web app's SSR
+// fetch at this proxy (step 2 above, unchanged) but leave
+// IUF_QA_API_BASE_URL UNSET when running the specs, so the Playwright
+// `request` fixture (used by checkHeatmapUpstreamCoverage) hits real prod
+// directly instead of this proxy. Real prod (during trading hours) has
+// genuinely usable rows while the proxied DOM renders 0 tiles — the two
+// updated specs must fail loud in this configuration, not test.skip.
 import http from "node:http";
 import https from "node:https";
 
