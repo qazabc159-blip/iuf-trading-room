@@ -81,7 +81,12 @@ function getTaipeiHHMM(): number {
 
 // ── Event collector ────────────────────────────────────────────────────────────
 
-async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
+// Exported (not just internal) so tests can seed real iuf_events rows and
+// call this directly — see the R1/#1352 audit fix 2026-07-23: this used to
+// read `rows.rows` off db.execute()'s bare-array result, which is always
+// `undefined` on drizzle-orm/postgres-js (silent zero), which would have
+// made every daily digest report 0 events regardless of what fired.
+export async function collectTodayEvents(workspaceId: string): Promise<DigestEvent[]> {
   if (!isDatabaseMode()) return [];
   const db = getDb();
   if (!db) return [];
