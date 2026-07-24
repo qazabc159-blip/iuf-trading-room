@@ -361,6 +361,7 @@ const AMB_CSS = `
 .amb-shell .lh-metrics .k { font-family: var(--sans-tc); font-size: 10px; color: var(--night-soft); letter-spacing: .06em; }
 .amb-shell .lh-metrics .v { font-family: var(--mono); font-size: 20px; color: var(--night-ink); line-height: 1.1; }
 .amb-shell .lh-metrics .m.conf .v { color: var(--gold-bright); }
+.amb-shell .lead .deck { font-family: var(--serif-tc); font-size: 16px; font-style: italic; color: var(--night-soft); line-height: 1.65; margin: 14px 0 0; text-align: justify; }
 .amb-shell .lead-body { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr); gap: 0; margin-top: 22px; }
 .amb-shell .lb-main { padding: 16px 30px 6px 0; border-right: 1px solid var(--night-rule); }
 .amb-shell .lb-aside { padding: 16px 0 6px 30px; }
@@ -374,6 +375,11 @@ const AMB_CSS = `
 .amb-shell .risk-list { list-style: none; padding: 0; margin: 0; }
 .amb-shell .risk-list li { position: relative; padding: 0 0 10px 20px; font-family: var(--serif-tc); font-size: 13.5px; line-height: 1.72; color: var(--night-mid); }
 .amb-shell .risk-list li::before { content: "\\2014"; position: absolute; left: 0; top: 0; color: var(--tw-up-bright); font-family: var(--mono); }
+.amb-shell .theme-block { margin-top: 20px; }
+.amb-shell .th-h { font-family: var(--serif-tc); font-size: 14px; color: var(--gold-bright); font-weight: 700; letter-spacing: .05em; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--amb-rulefaint); display: flex; align-items: baseline; gap: 9px; }
+.amb-shell .th-h .en { font-family: var(--sans-tc); font-size: 8.5px; letter-spacing: .22em; color: var(--night-faint); text-transform: uppercase; }
+.amb-shell .th-pos, .amb-shell .th-themes { font-family: var(--serif-tc); font-size: 13px; line-height: 1.7; color: var(--night-mid); margin: 0 0 6px; text-align: justify; }
+.amb-shell .th-pos:last-child, .amb-shell .th-themes:last-child { margin-bottom: 0; }
 
 /* box-score + plan tables */
 .amb-shell .boxscore, .amb-shell .plan { width: 100%; border-collapse: collapse; font-family: var(--sans-tc); margin-bottom: 18px; }
@@ -443,6 +449,9 @@ const AMB_CSS = `
 .amb-shell .st-risk { list-style: none; padding: 0; margin: 0; }
 .amb-shell .st-risk li { position: relative; padding: 0 0 8px 18px; font-family: var(--serif-tc); font-size: 13px; line-height: 1.66; color: var(--night-mid); }
 .amb-shell .st-risk li::before { content: "\\2014"; position: absolute; left: 0; top: 0; color: var(--tw-up-bright); font-family: var(--mono); }
+.amb-shell .st-theme-h { font-family: var(--serif-tc); font-size: 13px; color: var(--gold-bright); font-weight: 700; letter-spacing: .05em; margin: 14px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--amb-rulefaint); }
+.amb-shell .st-theme p { font-family: var(--serif-tc); font-size: 12.5px; line-height: 1.6; color: var(--night-mid); margin: 0 0 5px; text-align: justify; }
+.amb-shell .st-theme p:last-child { margin-bottom: 0; }
 
 /* ---------- colophon ---------- */
 .amb-shell .colophon { margin-top: 40px; padding-top: 14px; border-top: 2px solid var(--gold); display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; font-family: var(--sans-tc); }

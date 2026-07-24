@@ -7,6 +7,8 @@ import {
   fmtRValue,
   fmtScore,
   rankLabel,
+  resolveLeadSummaryText,
+  resolveThemeContextDisplay,
   splitParagraphs,
   SUB_SCORE_ROWS,
 } from "./morning-brief-copy";
@@ -26,6 +28,8 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
   const entryRange = entry?.ote_low != null && entry?.ote_high != null
     ? `${fmtPrice(entry.ote_low)} – ${fmtPrice(entry.ote_high)}`
     : "--";
+  const deckText = resolveLeadSummaryText(rec.leadSummary);
+  const themeDisplay = resolveThemeContextDisplay(rec.themeContext);
 
   return (
     <article className="lead">
@@ -43,6 +47,8 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
           <div className="m"><div className="k">盤勢係數</div><div className="v mono">{fmtMultiplier(rec.market_multiplier)}</div></div>
         </div>
       </div>
+
+      <p className="deck">{deckText}</p>
 
       <div className="lead-body">
         <div className="lb-main">
@@ -65,6 +71,14 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
               <p className="prose-empty">後端尚未回傳主要風險。</p>
             )}
           </div>
+
+          {themeDisplay && (
+            <div className="theme-block">
+              <div className="th-h">主題與供應鏈脈絡<span className="en">Theme Context</span></div>
+              {themeDisplay.positionLine && <p className="th-pos">{themeDisplay.positionLine}</p>}
+              {themeDisplay.themesLine && <p className="th-themes">{themeDisplay.themesLine}</p>}
+            </div>
+          )}
         </div>
 
         <div className="lb-aside">

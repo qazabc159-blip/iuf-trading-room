@@ -72,6 +72,43 @@ describe("AI recommendations v3 view mapping", () => {
     expect(mapV3ItemToStockRecCard({ ticker: "" })).toBeNull();
   });
 
+  // #1362: leadSummary + themeContext pass through verbatim, honestly null when absent.
+  it("passes through leadSummary and themeContext verbatim when the backend provides them", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2330",
+      companyName: "台積電",
+      bucket: "A",
+      totalScore: 80,
+      leadSummary: "月營收YoY+22%連加速+外資買超+技術面突破月線",
+      themeContext: {
+        dataAvailable: true,
+        chainPosition: "CoAP_Chip",
+        beneficiaryTier: "Core",
+        themes: [{ name: "AI 伺服器", lifecycle: "Expansion" }],
+      },
+    });
+
+    expect(card?.leadSummary).toBe("月營收YoY+22%連加速+外資買超+技術面突破月線");
+    expect(card?.themeContext).toEqual({
+      dataAvailable: true,
+      chainPosition: "CoAP_Chip",
+      beneficiaryTier: "Core",
+      themes: [{ name: "AI 伺服器", lifecycle: "Expansion" }],
+    });
+  });
+
+  it("maps leadSummary/themeContext to null (not undefined-shaped omission) when the backend item doesn't have them", () => {
+    const card = mapV3ItemToStockRecCard({
+      ticker: "2330",
+      companyName: "台積電",
+      bucket: "B",
+      totalScore: 68,
+    });
+
+    expect(card?.leadSummary).toBeNull();
+    expect(card?.themeContext).toBeNull();
+  });
+
   it("localizes deterministic fallback narratives instead of exposing raw English backend copy", () => {
     const card = mapV3ItemToStockRecCard({
       ticker: "2059",

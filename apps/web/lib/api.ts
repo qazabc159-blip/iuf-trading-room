@@ -315,6 +315,15 @@ export type AiRecommendationV3Item = {
   synthesisRetryUsed?: boolean | null;
   synthesisFallbackUsed?: boolean | null;
   usedFallback?: boolean | null;
+  /** ≤80 char newspaper-style lead sentence ("頭版摘要句"), alias of whyBuyBrief. Null when no LLM one-liner (#1362). */
+  leadSummary?: string | null;
+  /** Theme / supply-chain context from company_graph_db, verbatim. Null when get_supply_chain was never called (#1362). */
+  themeContext?: {
+    dataAvailable: boolean;
+    chainPosition: string | null;
+    beneficiaryTier: string | null;
+    themes: Array<{ name: string; lifecycle: string }>;
+  } | null;
 };
 
 export type AiRecommendationV3SourceState = {

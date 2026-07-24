@@ -11,7 +11,9 @@ import {
   officialAnnouncementLabel,
   parseReportMarkdownLines,
   rankLabel,
+  resolveLeadSummaryText,
   resolveMorningBriefBodyMode,
+  resolveThemeContextDisplay,
   splitParagraphs,
 } from "./morning-brief-copy";
 
@@ -188,5 +190,77 @@ describe("resolveMorningBriefBodyMode", () => {
     expect(
       resolveMorningBriefBodyMode({ status: "complete", error: null, cardCount: 5 }),
     ).toBe("cards");
+  });
+});
+
+// #1362 backend fields: leadSummary (頭版摘要句) + themeContext (主題/供應鏈脈絡)
+describe("resolveLeadSummaryText — 頭版 deck", () => {
+  it("renders the real backend value verbatim when present", () => {
+    expect(resolveLeadSummaryText("月營收YoY+22%連加速+外資買超+技術面突破月線"))
+      .toBe("月營收YoY+22%連加速+外資買超+技術面突破月線");
+  });
+
+  it("falls back to an honest sentence (not an empty gap) when null — deterministic fallback items have no LLM one-liner", () => {
+    expect(resolveLeadSummaryText(null)).toBe("後端尚未回傳頭版摘要句。");
+    expect(resolveLeadSummaryText(undefined)).toBe("後端尚未回傳頭版摘要句。");
+  });
+
+  it("treats a blank/whitespace-only string the same as null (no invisible deck line)", () => {
+    expect(resolveLeadSummaryText("   ")).toBe("後端尚未回傳頭版摘要句。");
+  });
+});
+
+describe("resolveThemeContextDisplay — 主題/供應鏈脈絡", () => {
+  it("returns null (caller must not render the block) when themeContext itself is null — tool never called for this ticker", () => {
+    expect(resolveThemeContextDisplay(null)).toBeNull();
+    expect(resolveThemeContextDisplay(undefined)).toBeNull();
+  });
+
+  it("returns null when dataAvailable is false — tool was called but company_graph_db has no row; must NOT render a fixed gapnote sentence (Pete-12 review)", () => {
+    expect(
+      resolveThemeContextDisplay({
+        dataAvailable: false,
+        chainPosition: null,
+        beneficiaryTier: null,
+        themes: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("renders human-Chinese labels for the closed beneficiaryTier/lifecycle enums, and passes chainPosition through verbatim (free-text field, not an enum)", () => {
+    const display = resolveThemeContextDisplay({
+      dataAvailable: true,
+      chainPosition: "CoAP_Chip",
+      beneficiaryTier: "Core",
+      themes: [{ name: "AI 伺服器", lifecycle: "Expansion" }],
+    });
+
+    expect(display?.positionLine).toBe("CoAP_Chip．核心受惠");
+    expect(display?.themesLine).toBe("相關主題：AI 伺服器（擴張期）");
+    // beneficiaryTier/lifecycle raw enum codes must never leak into the rendered line
+    expect(`${display?.positionLine}${display?.themesLine}`).not.toMatch(/\bCore\b|\bExpansion\b/);
+  });
+
+  it("omits individual lines honestly when a sub-field is empty, instead of fabricating filler text", () => {
+    const display = resolveThemeContextDisplay({
+      dataAvailable: true,
+      chainPosition: null,
+      beneficiaryTier: null,
+      themes: [{ name: "電動車", lifecycle: "Validation" }],
+    });
+
+    expect(display?.positionLine).toBeNull();
+    expect(display?.themesLine).toBe("相關主題：電動車（驗證期）");
+  });
+
+  it("returns null (no empty-header box) when dataAvailable is true but every sub-field is empty", () => {
+    expect(
+      resolveThemeContextDisplay({
+        dataAvailable: true,
+        chainPosition: null,
+        beneficiaryTier: null,
+        themes: [],
+      }),
+    ).toBeNull();
   });
 });

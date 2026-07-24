@@ -39,6 +39,32 @@ describe("translateNarrativeJargon — known tokens (regression)", () => {
     const clean = "本檔近期外資買超明顯，法人籌碼轉強，建議留意量能變化。";
     expect(translateNarrativeJargon(clean)).toBe(clean);
   });
+
+  // 2026-07-24: found via real prod verification of #1362 leadSummary/
+  // themeContext consumption — the field-name translations above
+  // (chainPosition/beneficiaryTier) fire, but the raw ENUM VALUE the system
+  // prompt templates right after it (受惠層級=[beneficiaryTier], lifecycle=
+  // [lifecycle]) used to survive untouched because neither the specific
+  // rules above nor the catch-all's key=value alternation (only true/false/
+  // number/quoted-string) match a bare identifier value like "Observation".
+  it("translates the closed beneficiaryTier/lifecycle enum values, not just their field names — exact real prod leak text", () => {
+    const real = "供應鏈定位Computer Hardware，受惠層級=Observation，主題含NVIDIA與5G通訊且lifecycle=Discovery";
+    const out = translateNarrativeJargon(real);
+    expect(out).toBe("供應鏈定位Computer Hardware，受惠層級=觀察名單，主題含NVIDIA與5G通訊且lifecycle=探索期");
+    expect(out).not.toMatch(/\bObservation\b|\bDiscovery\b/);
+  });
+
+  it("translates all 4 beneficiaryTier values and all 5 theme lifecycle values", () => {
+    expect(translateNarrativeJargon("Core")).toBe("核心受惠");
+    expect(translateNarrativeJargon("Direct")).toBe("直接受惠");
+    expect(translateNarrativeJargon("Indirect")).toBe("間接受惠");
+    expect(translateNarrativeJargon("Observation")).toBe("觀察名單");
+    expect(translateNarrativeJargon("Discovery")).toBe("探索期");
+    expect(translateNarrativeJargon("Validation")).toBe("驗證期");
+    expect(translateNarrativeJargon("Expansion")).toBe("擴張期");
+    expect(translateNarrativeJargon("Crowded")).toBe("擁擠期");
+    expect(translateNarrativeJargon("Distribution")).toBe("出貨期");
+  });
 });
 
 describe("translateNarrativeJargon — catch-all fallback (2026-07-12)", () => {

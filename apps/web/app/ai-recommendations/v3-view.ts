@@ -349,6 +349,8 @@ export function mapV3ItemToStockRecCard(
       usedFallback: item.usedFallback ?? data?.usedFallback ?? null,
     },
     market_multiplier: asNumber(item.position_sizing?.market_multiplier),
+    leadSummary: item.leadSummary ?? null,
+    themeContext: item.themeContext ?? null,
   };
 }
 

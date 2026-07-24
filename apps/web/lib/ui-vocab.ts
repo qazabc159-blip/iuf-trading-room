@@ -54,6 +54,30 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\btrace\b(?!\s*=)/g, "資料軌跡"],
   [/\binstitutional\b/g, "法人資料"],
   [/\bthemes?\b/g, "主題"],
+  // 2026-07-24 (found via #1362 leadSummary/themeContext verification,
+  // apps/web/app/ai-recommendations/morning-brief-copy.ts): the FIELD NAMES
+  // chainPosition/beneficiaryTier get translated above, but the real prod
+  // `why_buy`/`rationale` prose (system prompt in
+  // apps/api/src/ai-recommendation-v2/orchestrator-v3.ts literally templates
+  // "受惠層級=[beneficiaryTier]"/"lifecycle=[lifecycle]") still leaks the raw
+  // ENUM VALUES verbatim, e.g. real prod text "受惠層級=Observation，主題
+  // NVIDIA/Discovery" — neither the `key=value` catch-all below (its value
+  // alternation only covers true/false/number/quoted-string, not a bare
+  // identifier like Discovery) nor the snake_case/camelCase catch-alls (these
+  // are single PascalCase words, not multi-segment identifiers) catch this
+  // shape. These 9 values are confirmed closed Postgres enums
+  // (packages/db/src/schema.ts beneficiaryTierEnum / themeLifecycleEnum), not
+  // a guess — safe to translate exhaustively like themeContext's own display
+  // helper (resolveThemeContextDisplay) already does for the new panel.
+  [/\bCore\b/g, "核心受惠"],
+  [/\bDirect\b/g, "直接受惠"],
+  [/\bIndirect\b/g, "間接受惠"],
+  [/\bObservation\b/g, "觀察名單"],
+  [/\bDiscovery\b/g, "探索期"],
+  [/\bValidation\b/g, "驗證期"],
+  [/\bExpansion\b/g, "擴張期"],
+  [/\bCrowded\b/g, "擁擠期"],
+  [/\bDistribution\b/g, "出貨期"],
 
   // Catch-all (2026-07-12, Pete #1226 review 🟡: "translateNarrativeJargon()
   // 漏網 token 裸英文"). The rules above only cover tokens someone has
@@ -68,8 +92,12 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   // shape is what marks a token as "leaked from code" in the first place;
   // ordinary Chinese narrative text and legitimate bare English loanwords
   // (AI, ETF, TAIEX, KGI — single-segment, no internal case/underscore
-  // split) never take this shape, so they pass through untouched. Because
-  // these are pattern-shape matches rather than a known-meaning lookup, the
+  // split) never take this shape, so they pass through untouched. (The 9
+  // beneficiaryTier/lifecycle enum-value entries above are the deliberate
+  // exception to "shape not meaning" — those specific words are a known,
+  // closed, verified vocabulary, so they get a real translation instead of
+  // the generic "系統欄位" placeholder.) Because these are pattern-shape
+  // matches rather than a known-meaning lookup, the
   // replacement can only honestly say "there was a technical value here",
   // never claim to know what it meant — that's a deliberate accuracy
   // tradeoff versus the specific, meaning-preserving entries above, which
