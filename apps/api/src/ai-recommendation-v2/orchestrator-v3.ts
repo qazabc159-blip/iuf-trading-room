@@ -2031,11 +2031,18 @@ export function applyDeterministicMultiDimScoresToItems(
           themes: supplyChain.themes,
         }
       : item.themeContext ?? null;
-    // leadSummary: reuse the LLM's required one-line-reason output (already
-    // populates whyBuyBrief) under the explicit name the newspaper frontend
-    // expects. Null (never fabricated) when the item has no LLM one-liner,
-    // e.g. deterministic fallback items.
-    const leadSummary = item.leadSummary ?? item.whyBuyBrief ?? null;
+    // finalWhyBuyBrief: same value this function has always returned as
+    // whyBuyBrief (LLM's oneLineReason when present, else derived from
+    // why_buy bullets). Computed once so leadSummary is a TRUE alias — not
+    // a second, narrower derivation that can diverge from whyBuyBrief when
+    // the LLM omits oneLineReason but why_buy bullets still exist
+    // (Pete review, PR #1362: orchestrator-v3.ts:2023 vs :2019 divergence).
+    const finalWhyBuyBrief = item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy);
+    // leadSummary: explicit alias of whyBuyBrief under the name the
+    // newspaper frontend expects. Null (never fabricated) only when
+    // whyBuyBrief itself is also empty, e.g. deterministic fallback items
+    // with no why_buy bullets at all.
+    const leadSummary = item.leadSummary ?? finalWhyBuyBrief ?? null;
 
     return {
       ...item,
@@ -2047,7 +2054,7 @@ export function applyDeterministicMultiDimScoresToItems(
       bucket,
       why_buy: why_buy.length > 0 ? why_buy : item.why_buy,
       why_not_buy: why_not_buy.length > 0 ? why_not_buy : item.why_not_buy,
-      whyBuyBrief: item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy),
+      whyBuyBrief: finalWhyBuyBrief,
     };
   });
 }
