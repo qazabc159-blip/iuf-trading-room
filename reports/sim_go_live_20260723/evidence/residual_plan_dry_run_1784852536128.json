@@ -1,0 +1,246 @@
+{
+  "generatedAt": "2026-07-24T00:22:16.129Z",
+  "mode": "dry_run",
+  "plan": {
+    "residual": [
+      {
+        "sleeve": "v51_c1",
+        "symbol": "1808",
+        "original_qty_lots": 3,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 32.05,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "6219",
+        "original_qty_lots": 7,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 7,
+        "residual_shares": 7000,
+        "last_close": 14,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "6177",
+        "original_qty_lots": 2,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 48.5,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "8937",
+        "original_qty_lots": 4,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 3,
+        "residual_shares": 3000,
+        "last_close": 24.9,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "4113",
+        "original_qty_lots": 6,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 6,
+        "residual_shares": 6000,
+        "last_close": 14.85,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "1271",
+        "original_qty_lots": 1,
+        "original_status": "INVALID_REJECTED",
+        "reason": "rejected_retry",
+        "residual_qty_lots": 1,
+        "residual_shares": 1000,
+        "last_close": 60.7,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c1",
+        "symbol": "2101",
+        "original_qty_lots": 2,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 33.45,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "6026",
+        "original_qty_lots": 6,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 6,
+        "residual_shares": 6000,
+        "last_close": 14.4,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "4513",
+        "original_qty_lots": 4,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 3,
+        "residual_shares": 3000,
+        "last_close": 20.9,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "6885",
+        "original_qty_lots": 4,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 4,
+        "residual_shares": 4000,
+        "last_close": 20.8,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "2465",
+        "original_qty_lots": 1,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 1,
+        "residual_shares": 1000,
+        "last_close": 82.7,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "8171",
+        "original_qty_lots": 4,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 3,
+        "residual_shares": 3000,
+        "last_close": 20.6,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "4416",
+        "original_qty_lots": 9,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 9,
+        "residual_shares": 9000,
+        "last_close": 10.95,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "2442",
+        "original_qty_lots": 5,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 4,
+        "residual_shares": 4000,
+        "last_close": 19.35,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "8047",
+        "original_qty_lots": 2,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 1,
+        "residual_shares": 1000,
+        "last_close": 43.4,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "8059",
+        "original_qty_lots": 6,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 6,
+        "residual_shares": 6000,
+        "last_close": 15.8,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "5267",
+        "original_qty_lots": 2,
+        "original_status": "INVALID_REJECTED",
+        "reason": "rejected_retry",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 49.95,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v51_c3",
+        "symbol": "6808",
+        "original_qty_lots": 2,
+        "original_status": "INVALID_REJECTED",
+        "reason": "rejected_retry",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 39.85,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v34_c3_proxy",
+        "symbol": "2887",
+        "original_qty_lots": 2,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 2,
+        "residual_shares": 2000,
+        "last_close": 35.15,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v34_c3_proxy",
+        "symbol": "2892",
+        "original_qty_lots": 2,
+        "original_status": "PartFilled",
+        "reason": "partial_gap",
+        "residual_qty_lots": 1,
+        "residual_shares": 1000,
+        "last_close": 33.95,
+        "cap_note": "ok"
+      },
+      {
+        "sleeve": "v34_c3_proxy",
+        "symbol": "6505",
+        "original_qty_lots": 1,
+        "original_status": "Submitted",
+        "reason": "miss_unfilled",
+        "residual_qty_lots": 1,
+        "residual_shares": 1000,
+        "last_close": 77.7,
+        "cap_note": "ok"
+      }
+    ],
+    "excluded": [
+      {
+        "sleeve": "v51_c3",
+        "symbol": "1808",
+        "reason": "MANUAL_DECISION_NEEDED: ambiguous duplicate-symbol submission, cannot determine true fill state — see script header"
+      }
+    ]
+  }
+}
