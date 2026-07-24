@@ -2020,9 +2020,27 @@ export function applyDeterministicMultiDimScoresToItems(
     const bullets = buildV3MultiDimBullets(fundamentals, supplyChain, companyNews);
     const why_buy = mergeUniqueText(item.why_buy, bullets.whyBuy).slice(0, 6);
     const why_not_buy = mergeUniqueText(item.why_not_buy, bullets.whyNotBuy).slice(0, 6);
+    // themeContext: expose the same company_graph_db observation already used
+    // to compute subScores.theme, verbatim — no new inference. Null (not a
+    // guessed default) when get_supply_chain was never called for this ticker.
+    const themeContext = supplyChain
+      ? {
+          dataAvailable: supplyChain.dataAvailable,
+          chainPosition: supplyChain.chainPosition,
+          beneficiaryTier: supplyChain.beneficiaryTier,
+          themes: supplyChain.themes,
+        }
+      : item.themeContext ?? null;
+    // leadSummary: reuse the LLM's required one-line-reason output (already
+    // populates whyBuyBrief) under the explicit name the newspaper frontend
+    // expects. Null (never fabricated) when the item has no LLM one-liner,
+    // e.g. deterministic fallback items.
+    const leadSummary = item.leadSummary ?? item.whyBuyBrief ?? null;
 
     return {
       ...item,
+      themeContext,
+      leadSummary,
       action,
       subScores,
       totalScore,
