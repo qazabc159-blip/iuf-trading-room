@@ -269,8 +269,9 @@ test("getMarketDataOverview top-level memo: a call after TTL expiry recomputes (
       const immediateRepeat = await getMarketDataOverview({ session, repo, includeStale: true, topLimit: 5 });
       assert.equal(immediateRepeat, first, "within the TTL window, the memo must be reused");
 
-      // Wait past the memo's TTL (1500ms) before calling again.
-      await new Promise((resolve) => setTimeout(resolve, 1700));
+      // Wait past the memo's TTL (2000ms, raised from 1500ms by
+      // perf/overview-boot-warmup PR-4 -- see market-data.ts's overviewMemoTtlMs doc).
+      await new Promise((resolve) => setTimeout(resolve, 2200));
       const afterTtl = await getMarketDataOverview({ session, repo, includeStale: true, topLimit: 5 });
       assert.notEqual(afterTtl, first, "after TTL expiry, a fresh computation must happen, not a stale memo hit");
     } finally {
