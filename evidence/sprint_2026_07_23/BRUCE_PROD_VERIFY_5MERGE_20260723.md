@@ -21,7 +21,7 @@
 | # | Item | Result |
 |---|---|---|
 | 1 | #1348 法人 state 誠實欄位 (live path) | PASS |
-| 1b | #1348 fallback 態 (盤中觸發) | 未驗 — 盤後 FinMind 已發布無法觸發 fallback，需明早 09:00-14:00 窗補驗 |
+| 1b | #1348 fallback 態 (盤中觸發, backend) | **補驗 PASS**（2026-07-24 09:37 TST，見 §11）；同輪發現前端未消費該欄位 → §11 item 1c FAIL，另立票 |
 | 2 | #1352 orchestrator 開機無新錯 + v3 回應形狀 | PASS |
 | 3 | #1350 首頁/戰情台盤後渲染 + 零 console error | PASS |
 | 3b | #1349 bench 特徵化數字可觀測性 | PASS (CI golden snapshot 綠；PR-2 本身宣告 zero-consumer/zero-behavior-change，前端無新可觀測面) |
@@ -215,5 +215,53 @@ run 11 (after 15s idle): 0.538007s
 Runs 2-11 (10 samples): min 0.277s / max 0.538s / p50 ≈ 0.335s — **all comfortably under the 2s target**.
 
 **Root-cause note on the run-1 outlier (not fully resolved, flagged not fixed)**: read `getMarketDataOverview()` — it has its own short-lived in-memory memo (`overviewMemoTtlMs = 1500`, i.e. 1.5s) that only de-dupes near-simultaneous identical requests, not a real warm-cache mechanism. Run 1 was my first hit to this exact endpoint in several minutes (prior calls this session were to different endpoints/params); runs 2-11 stayed fast even though each was >1.5s apart (well past that short memo's TTL) — meaning the real speed-up comes from *underlying* per-symbol caches (quote history/heatmap/history-aggregate) staying warm from routine cron + run 1's own computation, not from the request-level memo itself. This means: **a real user opening the homepage after several idle minutes off-hours (when the 09:00-13:35 TST `MARKET-OVERVIEW-CRON` pre-warmer isn't running) could plausibly hit the same ~6s cold path** — did not have time to root-cause exactly which sub-computation is slow on a cold hit within this task's scope; flagging as a possible follow-up for Jason-2 (overview lane owner) rather than claiming it's fully closed.
+
+## 11. #1348 fallback 態盤中補驗 (item 1b closed) — 2026-07-24 09:4x TST
+
+**One-line conclusion**: Backend fallback logic is genuine PASS (real 7/23 values, honest `state`/`isFallback`/`dataDate`). **Frontend does NOT surface it** — `resolveInstitutional()` on the actual live page (`app/final-v031/market-intel/page.tsx`, not `app/market-intel/page.tsx`) strips `state`/`isFallback`/`dataDate` entirely, and the panel header hardcodes the misleading label "三大法人 · **今日**買賣超" even though the numbers are yesterday's (7/23) fallback data. This is a real gap, not a regression of #1348 itself (backend scope was correctly delivered) — item 1b was "盤中觸發能力"，not "前端消費該欄位"，but worth flagging since it undercuts the honesty goal #1348's PR description states.
+
+**1. Backend `GET /api/v1/market/institutional-summary/finmind` (owner session, 09:37 TST, market open ~37min in):**
+```
+HTTP 200
+{"asOf":"2026-07-23T13:30:00+08:00","totalNet":127809181,
+ "institutions":[6 rows: Foreign_Investor net=147790269, Investment_Trust net=39964037, Dealer_self net=10461064, Dealer net=9000, Foreign_Dealer_Self net=0, Dealer_Hedging net=-70415189],
+ "topNetBuy":[{"stockId":"3231","net":82722214},...5], "topNetSell":[...5],
+ "source":"finmind","staleAfterSec":60,
+ "dataDate":"2026-07-23","isFallback":true,"state":"stale"}
+```
+Matches exactly the expected shape from PR #1348 (`_institutionalSummaryResponseState()` in `apps/api/src/server.ts`, `getFinMindInstitutionalSummaryWithFallback()` in `apps/api/src/data-sources/finmind-aggregate-client.ts`, both read via `git show origin/main:<path>` — local checkout was stale, confirmed with `git fetch origin main` first).
+
+**Cross-check against FinMind's own public API (independent of this repo's token)**, stock 3231 (top of `topNetBuy`, net=82722214):
+```
+curl "https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=3231&start_date=2026-07-23&end_date=2026-07-23"
+→ Foreign_Investor 129530868-50514207=79016661, Investment_Trust 3105157-1797553=1307604,
+  Dealer_self 1629000-550000=1079000, Dealer_Hedging 2218790-899841=1318949, Foreign_Dealer_Self 0
+  SUM = 82722214 — exact match to the API's topNetBuy figure. Confirms the fallback payload is genuine 7/23 data, not stale/wrong numbers.
+```
+**PASS.**
+
+**2. Frontend prod check (`app.eycvector.com/market-intel`, fresh owner login + headless Chromium, script `packages/qa-playwright/scripts/bruce-1348-frontend-check-20260724.mjs`):**
+- HTTP 200, 0 pageerror.
+- `._mi-instpanel` DOM text: 9 numeric cells populated (foreign 買26.39億/賣24.91億/net+1.48, invest 買1.42億/賣1.02億/net+0.40, dealer 買22.64億/賣23.24億/net-0.60) — **0 occurrences of `--`**, matches the API's real 7/23 values (26.39億 = 2,639,021,315 / 1e8, foreign buy — ties to API response).
+- Header text: **"三大法人 · 今日買賣超"** (hardcoded "today's" label) + footer "依 FinMind 收盤結算" (no date shown). **No `isFallback`/`state`/`dataDate` string anywhere in the panel** — checked `apps/web/app/market-intel/market-intel-data.ts` `resolveInstitutional()` (origin/main): it maps only `asOf`/`totalNet`/`foreign`/`invest`/`dealer`, dropping `state`/`isFallback`/`dataDate` from the API response before the page component ever sees them.
+- **FAIL against the task's expectation** ("法人區塊有無誠實顯示非即時標示") — no honest non-real-time marker exists on this page today. Correction to task's own reference: **#1357 is unrelated** (it's the `market_risk_off` banner on `/ai-recommendations`, confirmed via `git log --grep="1357"` → commit `7cc93518`); no PR currently threads institutional `state`/`isFallback` into the market-intel UI.
+
+**3. 1808 position (供 Athena 對賬, best-effort via KGI gateway, owner API's `/trading/positions` doesn't expose it under any of the 7 paper accountIds tried):**
+```
+curl http://43.213.204.233:8787/deals → deals["1808"] = [{order_id:"Y0001", action:"B", quantity:2 (lots), price:32.4, ts:"090030"}]
+```
+One deal, 2 lots @ 32.4, filled 09:00:30 today (this is the KGI SIM gateway's in-session deal log, which resets each gateway boot — not a full historical position). Consistent with yesterday's Elva decision to keep 1808 excluded from today's residual resend (`MANUAL_DECISION_NEEDED: 1808 ambiguous duplicate-symbol submission`) — no new fill added today, this reflects carried-over state within the current gateway session. Recorded as-is for Athena cross-reference, not independently reconciled against a ledger of record.
+
+**Result summary update:**
+
+| # | Item | Result |
+|---|---|---|
+| 1b | #1348 fallback 態 (盤中觸發, backend) | **PASS** — real 7/23 values, `state=stale`/`isFallback=true`/`dataDate=2026-07-23`, cross-checked against FinMind public API (exact match) |
+| 1c | #1348 前端誠實標示 (market-intel page) | **FAIL** — panel shows real fallback numbers but header says "今日買賣超" and no `state`/`isFallback` reaches the UI at all; new gap, needs its own ticket, not a #1348 regression |
+| — | 1808 現持倉 (順手, best-effort) | recorded — 2 lots @ 32.4, gateway session log only, not independently reconciled |
+
+**建議**：新開一張小票（frontend-only，`apps/web/app/market-intel/market-intel-data.ts` + `apps/web/app/final-v031/market-intel/page.tsx`）讓 `resolveInstitutional()` 透傳 `state`/`isFallback`/`dataDate`，面板依 `state!=="live"` 顯示「前一交易日收盤值」而非「今日買賣超」。建議 owner: Jim（frontend consume lane）。**不越權自己動手改**（`apps/web/*` 屬 forbidden scope）。
+
+Scripts used: `packages/qa-playwright/scripts/bruce-1348-frontend-check-20260724.mjs` (new, follows the owner fresh-login recipe from `.claude/agent-memory/verifier-release-bruce/verify_intraday_regression_recipe_2026_07_23.md`).
 
 **是否可視為「<2s 目標」全數達成**：warm/steady-state reads — **yes**, comfortably (6-7x under target). Absolute worst-case (cold, off-hours, first-hit-in-a-while) — **not verified as being under 2s**; one data point (6.35s) suggests it may not be, at least outside trading hours. Recommend Jason-2 either (a) confirm this is an acceptable off-hours-only cold-path (matches existing `MARKET-OVERVIEW-CRON`'s trading-hours-only pre-warm design, i.e. intentional/known trade-off) or (b) treat it as a residual gap in the "案 A 三部曲" if the <2s target was meant to hold unconditionally.
