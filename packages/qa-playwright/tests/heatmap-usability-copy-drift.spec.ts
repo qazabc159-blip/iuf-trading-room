@@ -41,7 +41,7 @@ function sourceOfTruthSpan(fileText: string, fileLabel: string): string {
 }
 
 test.describe("heatmap-tile-usability-copy.ts stays in sync with apps/web/lib/heatmap-tile-usability.ts", () => {
-  test("deriveHeatmapMove / isUsableHeatmapTile copy is byte-identical to the real apps/web source, from the sync anchor to end of file", () => {
+  test("@smoke deriveHeatmapMove / isUsableHeatmapTile copy is byte-identical to the real apps/web source, from the sync anchor to end of file", () => {
     const realSource = readFileSync(
       new URL("../../../apps/web/lib/heatmap-tile-usability.ts", import.meta.url),
       "utf8"
