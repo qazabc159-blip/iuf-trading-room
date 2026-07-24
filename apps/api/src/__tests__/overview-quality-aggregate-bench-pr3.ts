@@ -165,7 +165,7 @@ async function main() {
     const e2eTimingsMs: number[] = [];
     let firstRunQuality: unknown = null;
     for (let i = 0; i < E2E_RUNS; i++) {
-      // Vary topLimit per call so getMarketDataOverview's own 1500ms memo (round 7)
+      // Vary topLimit per call so getMarketDataOverview's own top-level TTL memo (round 7)
       // can't serve a cached response -- we want N independent fresh computations,
       // not N memo hits. This does NOT touch/reset the seeded quote/history/
       // aggregate caches (only resetMarketDataWorkspaceState does that).

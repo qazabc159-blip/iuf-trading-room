@@ -4254,12 +4254,24 @@ type GetMarketDataOverviewInput = {
 // what actually bounds total CPU cost under concurrent load; sharing
 // sub-computations (rounds 6/7 above) reduces the cost of each individual
 // call but does not bound it as the number of concurrent callers grows.
-// TTL (1500ms) sits between #1323's/#1334's precedents (1000ms/2000ms) --
-// short enough that no response is served staler than any individual
-// source's own stale-floor (min 5s for quotes).
+// TTL sits at #1334's precedent value (2000ms, matching its own
+// getKgiMarketOverview/getKgiCoreHeatmap memo) -- short enough that no
+// response is served staler than any individual source's own stale-floor
+// (min 5s for quotes). 2026-07-24 (perf/overview-boot-warmup PR-4): raised
+// from 1500ms to 2000ms. Reasoning (Bruce's finding, evidence/sprint_2026_07_23/
+// BRUCE_PROD_VERIFY_5MERGE_20260723.md §10): this memo only de-dupes
+// near-simultaneous identical-params callers -- it does NOT explain why warm
+// requests stay fast several seconds apart (that's the underlying per-symbol
+// caches, e.g. historyAggregateCache, staying resident; see PR-3/PR-4). So this
+// bump buys marginal extra de-dup coverage (e.g. SSR + client hydration
+// double-fetch within a slightly wider window) for near-zero cost -- it does
+// NOT touch freshness: quote/history/bar staleness is still computed from each
+// entry's own lastTimestamp vs wall clock at read time, independent of this
+// memo, and 2000ms remains far under every source's stale-floor (quotes 5s min,
+// history/bars 10min).
 //
 // KNOWN, DELIBERATE behavior change (flagged for Pete's review): two callers
-// hitting /overview with the SAME query params within the same ~1.5s window
+// hitting /overview with the SAME query params within the same ~2s window
 // now get the literal same response object (including the same
 // `generatedAt` timestamp), instead of each getting an independently
 // generated snapshot -- that's the intended mechanism (it's what lets
@@ -4271,7 +4283,7 @@ type GetMarketDataOverviewInput = {
 // safe. resetMarketDataWorkspaceState() below clears this memo too (test
 // isolation, matching the existing convention for the other per-workspace
 // memos in this file).
-const overviewMemoTtlMs = 1500;
+const overviewMemoTtlMs = 2000;
 const overviewMemo = new Map<
   string,
   { expiresAt: number; promise: Promise<Awaited<ReturnType<typeof computeMarketDataOverview>>> }

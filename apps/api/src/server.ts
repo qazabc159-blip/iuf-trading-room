@@ -24299,6 +24299,42 @@ if (process.env.NODE_ENV !== "test" || process.env.IUF_ALLOW_TEST_SERVER_BOOT ==
       const defaultWorkspace = process.env.DEFAULT_WORKSPACE_SLUG ?? "default";
       await seedOwnerIfEmpty().catch((e) => console.warn("[auth] seedOwnerIfEmpty failed:", e));
       const schedulerWorkspace = await resolveDatabaseWorkspaceSlug(defaultWorkspace);
+
+      // 2026-07-24 (perf/overview-boot-warmup PR-4, plan: reports/design_redesign_20260722/
+      // OVERVIEW_2S_ARCH_PLAN_20260722.md §3 D-lite): fire-and-forget, NOT awaited -- the
+      // server is already listening (this callback only runs after the 'listening' event
+      // fires, i.e. the port already accepts connections) and /health has zero dependency
+      // on this, so this can never delay deploy-verify readiness. Calls the exact same
+      // getMarketDataOverview() a real /overview request calls, with the same params the
+      // homepage's SSR fetch uses (apps/web/app/page.tsx), so whatever ends up warm here
+      // (ensurePersistedQuoteHistoryLoaded's JSONL replay, historyAggregateCache, company/
+      // quote caches) is identically what a real request would populate -- no separate
+      // "warm approximation" that could drift from request-time freshness. Root-cause
+      // target: the 6.35s cold-first-request-after-deploy outlier measured live
+      // (evidence/sprint_2026_07_23/BRUCE_PROD_VERIFY_5MERGE_20260723.md §10). A failure
+      // here is silently swallowed -- worst case is the pre-PR-4 status quo (the first
+      // real request pays the cost instead, same as today).
+      void (async () => {
+        const warmupStart = Date.now();
+        try {
+          const warmupSession = await repository.getSession({ workspaceSlug: schedulerWorkspace });
+          await getMarketDataOverview({
+            session: warmupSession,
+            repo: repository,
+            includeStale: true,
+            topLimit: 20
+          });
+          console.log(
+            `[boot-warmup] /overview warmed for workspace "${schedulerWorkspace}" in ${Date.now() - warmupStart}ms`
+          );
+        } catch (e) {
+          console.warn(
+            `[boot-warmup] /overview warmup failed after ${Date.now() - warmupStart}ms (non-fatal, first real request pays the cost instead):`,
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+      })();
+
       await initRiskStore(schedulerWorkspace);
       console.log(`[risk-store] Hydrated workspace "${schedulerWorkspace}" from persistent store.`);
       console.log(`[schedulers] Using workspace "${schedulerWorkspace}" for FinMind/OpenAlice schedulers.`);
