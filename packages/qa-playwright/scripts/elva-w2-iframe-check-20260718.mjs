@@ -5,7 +5,7 @@ const WEB = "https://app.eycvector.com";
 const API = "https://api.eycvector.com";
 
 const email = process.env.SEED_OWNER_EMAIL ?? "qazabc159@gmail.com";
-const password = process.env.SEED_OWNER_PASSWORD ?? "qazabc159";
+const password = process.env.IUF_QA_OWNER_PASSWORD ?? process.env.SEED_OWNER_PASSWORD;
 
 const apiCtx = await pwRequest.newContext({ baseURL: API, storageState: { cookies: [], origins: [] } });
 const loginResp = await apiCtx.post("/auth/login", { data: { email, password }, headers: { "Content-Type": "application/json" } });

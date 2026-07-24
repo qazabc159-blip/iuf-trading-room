@@ -91,7 +91,7 @@ After this PR deploys to Railway:
 1. Get Owner session cookie:
    ```
    POST https://api.eycvector.com/auth/login
-   { "email": "qazabc159@gmail.com", "password": "qazabc159" }
+   { "email": "qazabc159@gmail.com", "password": "[REDACTED-OWNER-PW]" }
    ```
 
 2. Reject stale 5/13 brief draft (if exists):

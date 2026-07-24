@@ -12,7 +12,7 @@ async function checkViewport(browser, viewport, label) {
 
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   await page.fill('input[type="email"]', "qazabc159@gmail.com");
-  await page.fill('input[type="password"]', "qazabc159");
+  await page.fill('input[type="password"]', (process.env.IUF_QA_OWNER_PASSWORD ?? process.env.SEED_OWNER_PASSWORD));
   await Promise.all([
     page.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 15000 }),
     page.click('button[type="submit"]'),

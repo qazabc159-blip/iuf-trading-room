@@ -279,7 +279,7 @@ COOKIE="iuf_session=<from /auth/login>"
 # Auth
 curl -X POST https://api.eycvector.com/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"qazabc159@gmail.com","password":"qazabc159"}'
+  -d '{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}'
 
 # Company count
 curl "https://api.eycvector.com/api/v1/companies?limit=1" -H "Cookie: $COOKIE"

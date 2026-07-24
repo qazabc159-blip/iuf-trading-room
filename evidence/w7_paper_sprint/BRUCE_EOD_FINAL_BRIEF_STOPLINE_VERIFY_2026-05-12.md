@@ -24,7 +24,7 @@ Stop-line MET (3 days published): YES
 
 ### 1. Auth
 POST https://api.eycvector.com/auth/login
-{"email":"qazabc159@gmail.com","password":"qazabc159"}
+{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}
 → 200 OK, iuf_session cookie issued, role=Owner confirmed
 
 ### 2. Backfill

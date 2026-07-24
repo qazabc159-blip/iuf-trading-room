@@ -9,7 +9,7 @@ const API = "https://api.eycvector.com";
 const OUT_DIR = "C:\\Users\\User\\AppData\\Local\\Temp\\claude\\C--Users-User\\1214a02e-ca58-4738-ae9f-f1d2c740413b\\scratchpad\\reverify";
 
 const email = process.env.SEED_OWNER_EMAIL ?? "qazabc159@gmail.com";
-const password = process.env.SEED_OWNER_PASSWORD ?? "qazabc159";
+const password = process.env.IUF_QA_OWNER_PASSWORD ?? process.env.SEED_OWNER_PASSWORD;
 
 // ── Fresh Auth (no reuse of any prior storageState.json) ────────────────────
 console.log(`[auth] fresh login as ${email} against ${API}/auth/login ...`);

@@ -45,7 +45,7 @@ TCS: +3
 
 ```bash
 # 1. login + cookie capture
-curl -c /tmp/cookies.txt -X POST -H "Content-Type: application/json" -H "x-workspace-slug: primary-desk" -d '{"email":"qazabc159@gmail.com","password":"qazabc159"}' "https://api.eycvector.com/auth/login"
+curl -c /tmp/cookies.txt -X POST -H "Content-Type: application/json" -H "x-workspace-slug: primary-desk" -d '{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}' "https://api.eycvector.com/auth/login"
 
 # 2. confirm endpoint live
 curl -b /tmp/cookies.txt -H "x-workspace-slug: primary-desk" "https://api.eycvector.com/api/v1/briefs/2026-05-07"

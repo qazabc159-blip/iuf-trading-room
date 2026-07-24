@@ -10,7 +10,7 @@ replaces: PR #426 (closed — credential leak)
 ## Context
 
 PR #426 was closed by Codex because `scripts/verify/bruce_p0a_4query_runner.py` contained
-hardcoded `EMAIL = "qazabc159@gmail.com"` and `PASSWORD = "qazabc159"` on line 20.
+hardcoded `EMAIL = "qazabc159@gmail.com"` and `PASSWORD = "[REDACTED-OWNER-PW]"` on line 20.
 Branch was deleted. Password rotate handled by Jason via separate endpoint.
 
 This PR adds the 11 untracked Wave 4 evening evidence + memo files with a clean secret scan.
@@ -55,7 +55,7 @@ Findings in NEW files added by this PR:
 | `DATABASE_URL` | all new files | 0 hits |
 | `RAILWAY_TOKEN` | all new files | 0 hits |
 | `KGI_PERSON_PWD` | all new files | 0 hits |
-| `qazabc159` (email only) | 2 files | email reference only, no password value |
+| `[REDACTED-OWNER-PW]` (email only) | 2 files | email reference only, no password value |
 
 **Secret scan verdict: 0 credential/token findings in PR diff.**
 

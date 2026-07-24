@@ -131,7 +131,7 @@ history 全程連續無斷點。
 # A — auth + endpoint checks
 curl -s -c cookies.txt -X POST https://api.eycvector.com/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"qazabc159@gmail.com","password":"qazabc159"}'
+  -d '{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}'
 curl -s -b cookies.txt https://api.eycvector.com/api/v1/market/heatmap/kgi-core
 curl -s -b cookies.txt "https://api.eycvector.com/api/v1/realtime/snapshot?symbols=2330,2454,2308,3008,6669"
 

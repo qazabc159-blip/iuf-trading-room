@@ -130,7 +130,7 @@
 curl -s -c /tmp/iuf_cookies.txt -b /tmp/iuf_cookies.txt \
   -X POST https://api.eycvector.com/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"qazabc159@gmail.com","password":"qazabc159"}'
+  -d '{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}'
 
 # 開 /portfolio → iframe /api/ui-final-v031/paper-trading-room
 # 驗證點：

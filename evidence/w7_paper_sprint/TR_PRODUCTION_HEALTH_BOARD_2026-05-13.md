@@ -202,14 +202,14 @@ GET /api/v1/lab/strategy/cont_liq_v36/snapshot
 HTTP: 404
 Response: {"error":"snapshot_not_found","strategyId":"cont_liq_v36","snapshot":null,"cache_hit":false,"lab_repo_path":"reports/trading_room/strategy_snapshots/cont_liq_v36_snapshot_v0.json"}
 
-Root cause: API fetches from https://raw.githubusercontent.com/qazabc159/IUF_QUANT_LAB/main/...
+Root cause: API fetches from https://raw.githubusercontent.com/[REDACTED-OWNER-PW]/IUF_QUANT_LAB/main/...
   → GitHub returns 404 (repo is private or not yet pushed to that account)
   → Local file exists at IUF_QUANT_LAB/reports/trading_room/strategy_snapshots/cont_liq_v36_snapshot_v0.json
   → File has correct v47 content (schemaVersion "lab_tr_strategy_snapshot_v0" + netAbsoluteReturnAfterCost field)
   → Railway cannot access local filesystem
 
 VERDICT: BLOCKED — not a code bug, a repo publication gap.
-Fix: Push IUF_QUANT_LAB to GitHub at qazabc159/IUF_QUANT_LAB (or update LAB_SNAPSHOT_BASE_URL env).
+Fix: Push IUF_QUANT_LAB to GitHub at [REDACTED-OWNER-PW]/IUF_QUANT_LAB (or update LAB_SNAPSHOT_BASE_URL env).
 Owner of fix: 楊董 (needs to push lab repo to GitHub) or Jason (update env to alt URL).
 This is a pre-existing known issue (memory: wave2_partial_verify_pattern.md).
 
@@ -321,8 +321,8 @@ VERDICT: HEALTHY — pipeline active, no anomalous actions.
 ## Blockers Requiring Action
 
 1. BLOCKER (Lab snapshot): `GET /api/v1/lab/strategy/cont_liq_v36/snapshot` returns 404.
-   Root cause: GitHub repo `qazabc159/IUF_QUANT_LAB` returns 404 on raw URL.
-   Fix option A: 楊董 push IUF_QUANT_LAB to GitHub at qazabc159/IUF_QUANT_LAB (make public or add token).
+   Root cause: GitHub repo `[REDACTED-OWNER-PW]/IUF_QUANT_LAB` returns 404 on raw URL.
+   Fix option A: 楊董 push IUF_QUANT_LAB to GitHub at [REDACTED-OWNER-PW]/IUF_QUANT_LAB (make public or add token).
    Fix option B: Jason update `LAB_SNAPSHOT_BASE_URL` Railway env to correct URL.
 
 2. INFO (KGI SIM smoke): Will self-resolve at 08:00 TST 2026-05-13. No action needed tonight.
@@ -335,7 +335,7 @@ VERDICT: HEALTHY — pipeline active, no anomalous actions.
 
 ```bash
 curl -s https://api.eycvector.com/health
-curl -s -X POST https://api.eycvector.com/auth/login -d '{"email":"qazabc159@gmail.com","password":"qazabc159"}'
+curl -s -X POST https://api.eycvector.com/auth/login -d '{"email":"qazabc159@gmail.com","password":"[REDACTED-OWNER-PW]"}'
 curl -s -b [cookie] https://api.eycvector.com/api/v1/briefs?limit=5
 curl -s -b [cookie] https://api.eycvector.com/api/v1/internal/kgi/sim/daily-smoke-status
 curl -s -b [cookie] https://api.eycvector.com/api/v1/internal/finmind/ingest-status
@@ -343,7 +343,7 @@ curl -s -b [cookie] https://api.eycvector.com/api/v1/lab/strategy/cont_liq_v36/s
 curl -s -b [cookie] https://api.eycvector.com/api/v1/lab/strategies
 curl -s -b [cookie] https://api.eycvector.com/api/v1/audit-logs?limit=50
 curl -s -b [cookie] https://api.eycvector.com/api/v1/content-drafts?limit=50
-gh run list --repo qazabc159-blip/iuf-trading-room --limit 50
+gh run list --repo [REDACTED-OWNER-PW]-blip/iuf-trading-room --limit 50
 gh run view 25746075305 --log  (latest passing smoke)
 gh run view 25743800722 --log  (last failing smoke pre-deploy)
 ```

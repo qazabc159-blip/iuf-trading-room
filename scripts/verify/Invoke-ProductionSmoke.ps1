@@ -17,10 +17,10 @@
     API base URL. Defaults to https://api.eycvector.com
 
 .PARAMETER Email
-    Login email. Defaults to qazabc159@gmail.com
+    Login email. Defaults to $env:IUF_TEST_EMAIL
 
 .PARAMETER Password
-    Login password. Defaults to qazabc159
+    Login password. Defaults to $env:IUF_TEST_PASSWORD (never hardcode)
 
 .EXAMPLE
     .\scripts\verify\Invoke-ProductionSmoke.ps1
