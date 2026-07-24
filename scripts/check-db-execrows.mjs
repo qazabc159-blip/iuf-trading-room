@@ -8,6 +8,14 @@
  * class of "0 rows forever" production bugs (ai-rec perf store, alerts engine,
  * heatmap, etc) that no test caught because the code "worked", just on empty.
  *
+ * Known NOT detected (documented gaps, Pete-14 review 2026-07-24 — reviewers
+ * must still eyeball these shapes in db-touching PRs):
+ *   1. destructuring:      const { rows } = await db.execute(...)
+ *   2. pass-as-param:      fn(await db.execute(...)) then param.rows inside fn
+ *   3. rename-then-read:   const r = result; r.rows  (alias breaks the window)
+ * Also: Pattern B's 2000-char window has no function-scope awareness — an
+ * unrelated same-named variable with a genuine .rows nearby can false-positive.
+ *
  * Rule: never read `.rows` off a db.execute() result, in ANY form — not even
  * with a `?? []` / `?.` fallback attached. `.rows` is undefined on this
  * driver's bare-array shape unconditionally, so `.rows ?? []` doesn't make
