@@ -20,31 +20,23 @@
 //   getCompanyTechnical  — 2 sites (company name lookup, OHLCV rows)   → MDT-1
 //   getInstitutionalFlow — 1 site (tw_institutional_buysell rows)     → MDT-2
 //   getSupplyChain       — 3 sites (company, theme links, relations)  → MDT-3
-//   getSectorRotation    — 2 sites (DB fallback path)                 → NOT COVERED, see below
+//   getSectorRotation    — DB fallback path                          → MDT-4
 //   computeTaiexEma60FromDb (orchestrator-v3.ts) — already has its own
 //     dedicated DB-mode test (orchestrator-v3-taiex-ema60-db.test.ts,
 //     TAIEX-EMA60-DB-1/2) — not duplicated here.
 //
-// ── getSectorRotation NOT covered (unexpected finding, out of this PR's scope) ──
-// getSectorRotation()'s DB fallback issues:
-//   SELECT c.industry AS industry, o.close AS close, o_prev.close AS prev_close
-//   FROM companies_ohlcv o INNER JOIN companies c ON c.id = o.company_id ...
-// `companies.industry` does not exist in the schema (verified against both
-// packages/db/src/schema.ts — the `companies` pgTable has no `industry`
-// column — and a live Postgres via information_schema.columns: chain_position,
-// beneficiary_tier are the only classification columns). This is a
-// pre-existing, unrelated bug: the query throws "column c.industry does not
-// exist" at the driver level BEFORE the `.rows`/execRows() read is ever
-// reached, so the fallback branch fails open to `{ sectors: [] }` today
-// regardless of whether execRows() is used correctly at that site — there is
-// no reachable "success" state to build a red/green execRows regression test
-// against. (The first query in the same function, `SELECT MAX(dt) ...`, has
-// no such issue and would execute fine, but the function always proceeds to
-// the broken second query right after, so it can't be isolated through the
-// public getSectorRotation() API.) Flagging for Elva to route as a separate
-// ticket — not fixed here (would be scope creep on a test/guard-only PR, and
-// the right fix — add the column, or query a different existing column — is
-// a product/data-source decision, not a mechanical execRows swap).
+// ── getSectorRotation (MDT-4) — 2026-07-24 (Jason-3) ─────────────────────────
+// This file originally flagged getSectorRotation's DB fallback as NOT
+// coverable: it queried `companies.industry`, a column that has never
+// existed (companies only has chain_position — verified against both
+// schema.ts and information_schema.columns on a live Postgres). Postgres
+// threw "column c.industry does not exist" at the driver level BEFORE the
+// execRows() read was ever reached, so there was no reachable "success"
+// state to build a regression test against — the fallback failed open to
+// `{ sectors: [] }` regardless of whether execRows() was used correctly.
+// Now fixed (queries c.chain_position — the same ticker->industry/sector
+// proxy already used by the KGI-core and FinMind heatmap routes in
+// server.ts) and covered below as MDT-4.
 //
 // Wired into `pnpm run test:db` (package.json), same lane as
 // orchestrator-v3-taiex-ema60-db.test.ts / paper-realized-pnl-db.test.ts.
@@ -64,7 +56,7 @@ import {
   workspaces
 } from "@iuf-trading-room/db";
 
-import { getCompanyTechnical, getInstitutionalFlow, getSupplyChain } from "./market-data-tools.js";
+import { getCompanyTechnical, getInstitutionalFlow, getSectorRotationFromDb, getSupplyChain } from "./market-data-tools.js";
 
 let workspaceId = "";
 
@@ -270,6 +262,57 @@ test("MDT-3: getSupplyChain reads real company + theme + relation rows (not null
     await db.delete(companyRelations).where(eq(companyRelations.companyId, companyA!.id)).catch(() => {});
     await db.delete(companyThemeLinks).where(eq(companyThemeLinks.companyId, companyA!.id)).catch(() => {});
     await db.delete(themes).where(eq(themes.id, theme!.id)).catch(() => {});
+    await db.delete(companies).where(eq(companies.id, companyA!.id)).catch(() => {});
+    await db.delete(companies).where(eq(companies.id, companyB!.id)).catch(() => {});
+  }
+});
+
+// ── MDT-4: getSectorRotation DB fallback — chain_position column ─────────────
+//
+// getSectorRotationFromDb() looks up the globally most-recent `dt` across the
+// whole companies_ohlcv table (not workspace-scoped), so this fixture uses
+// far-future dates to be deterministically MAX(dt) regardless of concurrent
+// real market data seeded by other tests/jobs in the same CI database.
+
+test("MDT-4: getSectorRotation DB fallback reads real companies.chain_position + companies_ohlcv rows (not empty)", async () => {
+  const db = getDb()!;
+  const tickerA = `ZZS${randomUUID().slice(0, 6).toUpperCase()}`;
+  const tickerB = `ZZT${randomUUID().slice(0, 6).toUpperCase()}`;
+  const sectorA = `MDT-4 半導體 ${randomUUID().slice(0, 6)}`;
+  const sectorB = `MDT-4 金融 ${randomUUID().slice(0, 6)}`;
+  const prevDt = "2099-01-01";
+  const latestDt = "2099-01-02";
+
+  const [companyA] = await db
+    .insert(companies)
+    .values({ workspaceId, name: `MDT-4 A ${tickerA}`, ticker: tickerA, market: "TWSE", country: "TW", chainPosition: sectorA })
+    .returning();
+  const [companyB] = await db
+    .insert(companies)
+    .values({ workspaceId, name: `MDT-4 B ${tickerB}`, ticker: tickerB, market: "TWSE", country: "TW", chainPosition: sectorB })
+    .returning();
+  assert.ok(companyA && companyB, "MDT-4 fixture: both companies inserts must return rows");
+
+  try {
+    // Company A: 100 -> 110 (+10%); Company B: 100 -> 95 (-5%)
+    await db.insert(companiesOhlcv).values([
+      { companyId: companyA!.id, workspaceId, dt: prevDt, interval: "1d", open: "100", high: "100", low: "100", close: "100", volume: 1000, source: "mock" },
+      { companyId: companyA!.id, workspaceId, dt: latestDt, interval: "1d", open: "110", high: "110", low: "110", close: "110", volume: 1000, source: "mock" },
+      { companyId: companyB!.id, workspaceId, dt: prevDt, interval: "1d", open: "100", high: "100", low: "100", close: "100", volume: 1000, source: "mock" },
+      { companyId: companyB!.id, workspaceId, dt: latestDt, interval: "1d", open: "95", high: "95", low: "95", close: "95", volume: 1000, source: "mock" }
+    ]);
+
+    const result = await getSectorRotationFromDb(20, new Date().toISOString());
+
+    assert.equal(result.source, "db_ohlcv_fallback", "MDT-4: must take the DB fallback path, not fail-open to empty (proves companies.chain_position resolves, not the non-existent companies.industry)");
+    assert.ok(result.sectors.length > 0, "MDT-4: fixture data must produce a non-empty sectors array");
+
+    const bySector = new Map(result.sectors.map((s) => [s.sector, s]));
+    assert.equal(bySector.get(sectorA)?.avgChangePct, 10, "MDT-4: company A +10% must roll up under its chain_position sector label");
+    assert.equal(bySector.get(sectorB)?.avgChangePct, -5, "MDT-4: company B -5% must roll up under its chain_position sector label");
+  } finally {
+    await db.delete(companiesOhlcv).where(eq(companiesOhlcv.companyId, companyA!.id)).catch(() => {});
+    await db.delete(companiesOhlcv).where(eq(companiesOhlcv.companyId, companyB!.id)).catch(() => {});
     await db.delete(companies).where(eq(companies.id, companyA!.id)).catch(() => {});
     await db.delete(companies).where(eq(companies.id, companyB!.id)).catch(() => {});
   }
