@@ -201,12 +201,12 @@ describe("resolveLeadSummaryText — 頭版 deck", () => {
   });
 
   it("falls back to an honest sentence (not an empty gap) when null — deterministic fallback items have no LLM one-liner", () => {
-    expect(resolveLeadSummaryText(null)).toBe("後端尚未回傳頭版摘要句。");
-    expect(resolveLeadSummaryText(undefined)).toBe("後端尚未回傳頭版摘要句。");
+    expect(resolveLeadSummaryText(null)).toBe("AI 尚未為此檔產出頭版摘要句。");
+    expect(resolveLeadSummaryText(undefined)).toBe("AI 尚未為此檔產出頭版摘要句。");
   });
 
   it("treats a blank/whitespace-only string the same as null (no invisible deck line)", () => {
-    expect(resolveLeadSummaryText("   ")).toBe("後端尚未回傳頭版摘要句。");
+    expect(resolveLeadSummaryText("   ")).toBe("AI 尚未為此檔產出頭版摘要句。");
   });
 });
 

@@ -57,7 +57,7 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
             {whyBuyParagraphs.length > 0 ? (
               whyBuyParagraphs.map((paragraph, idx) => <p key={idx}>{paragraph}</p>)
             ) : (
-              <p>後端尚未回傳推薦理由。</p>
+              <p>AI 尚未產出推薦理由。</p>
             )}
           </div>
 
@@ -68,7 +68,7 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
                 {riskItems.map((item, idx) => <li key={idx}>{item}</li>)}
               </ul>
             ) : (
-              <p className="prose-empty">後端尚未回傳主要風險。</p>
+              <p className="prose-empty">AI 尚未產出主要風險。</p>
             )}
           </div>
 
@@ -102,7 +102,7 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
             <caption>交易計畫</caption>
             <tbody>
               <tr className="entry-row"><td className="k">進場區間</td><td className="v"><span className="entry-val mono">{entryRange}</span></td></tr>
-              <tr className="entry-note"><td colSpan={2}><div className="n">{entry?.label ?? "後端未回傳建議進場區間"}</div></td></tr>
+              <tr className="entry-note"><td colSpan={2}><div className="n">{entry?.label ?? "AI 尚未提供建議進場區間"}</div></td></tr>
               <tr><td className="k">目標一</td><td className="v up">{fmtPrice(targets?.tp1)}</td></tr>
               <tr><td className="k">目標二</td><td className="v up">{fmtPrice(targets?.tp2)}</td></tr>
               <tr><td className="k">停損</td><td className="v down">{fmtPrice(targets?.sl)}</td></tr>

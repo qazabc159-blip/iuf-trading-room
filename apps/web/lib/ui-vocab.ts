@@ -60,24 +60,36 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   // `why_buy`/`rationale` prose (system prompt in
   // apps/api/src/ai-recommendation-v2/orchestrator-v3.ts literally templates
   // "受惠層級=[beneficiaryTier]"/"lifecycle=[lifecycle]") still leaks the raw
-  // ENUM VALUES verbatim, e.g. real prod text "受惠層級=Observation，主題
-  // NVIDIA/Discovery" — neither the `key=value` catch-all below (its value
-  // alternation only covers true/false/number/quoted-string, not a bare
-  // identifier like Discovery) nor the snake_case/camelCase catch-alls (these
-  // are single PascalCase words, not multi-segment identifiers) catch this
-  // shape. These 9 values are confirmed closed Postgres enums
-  // (packages/db/src/schema.ts beneficiaryTierEnum / themeLifecycleEnum), not
-  // a guess — safe to translate exhaustively like themeContext's own display
-  // helper (resolveThemeContextDisplay) already does for the new panel.
-  [/\bCore\b/g, "核心受惠"],
-  [/\bDirect\b/g, "直接受惠"],
-  [/\bIndirect\b/g, "間接受惠"],
-  [/\bObservation\b/g, "觀察名單"],
-  [/\bDiscovery\b/g, "探索期"],
-  [/\bValidation\b/g, "驗證期"],
-  [/\bExpansion\b/g, "擴張期"],
-  [/\bCrowded\b/g, "擁擠期"],
-  [/\bDistribution\b/g, "出貨期"],
+  // ENUM VALUES verbatim, e.g. real prod text "受惠層級=Observation，主題含
+  // NVIDIA與5G通訊且lifecycle=Discovery" — neither the `key=value` catch-all
+  // below (its value alternation only covers true/false/number/quoted-string,
+  // not a bare identifier like Discovery) nor the snake_case/camelCase
+  // catch-alls (these are single PascalCase words, not multi-segment
+  // identifiers) catch this shape. These 9 words ARE confirmed closed
+  // Postgres enums (packages/db/src/schema.ts beneficiaryTierEnum /
+  // themeLifecycleEnum) — but unlike the other entries in this table, they
+  // are also ordinary English finance vocabulary that legitimately appears in
+  // AI-generated Chinese/English mixed prose on its own (e.g. "列為 Core
+  // Holding"／"Price Discovery 機制"／"配息 Distribution"／"Crowded Trade
+  // 訊號") — a bare \bWord\b match on these 9 specific tokens would silently
+  // mistranslate real financial commentary (Pete-15 review, PR #1365).
+  // Every confirmed REAL leak of these values so far has been directly
+  // adjacent to the `=`/`：`/`:` character the backend template emits right
+  // before them ("受惠層級=Observation", "lifecycle=Discovery") — so these 9
+  // rules only fire in that specific adjacency, trading recall (a leak with
+  // no adjoining `=`/`：`/`:`, e.g. a plain space or `/`, would not be caught)
+  // for precision (never touching a legitimate standalone English finance
+  // term). The pinned regression test in ui-vocab.test.ts uses the exact real
+  // leaked prod string and must stay green.
+  [/(?<=[=:：]\s*)\bCore\b/g, "核心受惠"],
+  [/(?<=[=:：]\s*)\bDirect\b/g, "直接受惠"],
+  [/(?<=[=:：]\s*)\bIndirect\b/g, "間接受惠"],
+  [/(?<=[=:：]\s*)\bObservation\b/g, "觀察名單"],
+  [/(?<=[=:：]\s*)\bDiscovery\b/g, "探索期"],
+  [/(?<=[=:：]\s*)\bValidation\b/g, "驗證期"],
+  [/(?<=[=:：]\s*)\bExpansion\b/g, "擴張期"],
+  [/(?<=[=:：]\s*)\bCrowded\b/g, "擁擠期"],
+  [/(?<=[=:：]\s*)\bDistribution\b/g, "出貨期"],
 
   // Catch-all (2026-07-12, Pete #1226 review 🟡: "translateNarrativeJargon()
   // 漏網 token 裸英文"). The rules above only cover tokens someone has

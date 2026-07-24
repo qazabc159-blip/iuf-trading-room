@@ -54,16 +54,31 @@ describe("translateNarrativeJargon — known tokens (regression)", () => {
     expect(out).not.toMatch(/\bObservation\b|\bDiscovery\b/);
   });
 
-  it("translates all 4 beneficiaryTier values and all 5 theme lifecycle values", () => {
-    expect(translateNarrativeJargon("Core")).toBe("核心受惠");
-    expect(translateNarrativeJargon("Direct")).toBe("直接受惠");
-    expect(translateNarrativeJargon("Indirect")).toBe("間接受惠");
-    expect(translateNarrativeJargon("Observation")).toBe("觀察名單");
-    expect(translateNarrativeJargon("Discovery")).toBe("探索期");
-    expect(translateNarrativeJargon("Validation")).toBe("驗證期");
-    expect(translateNarrativeJargon("Expansion")).toBe("擴張期");
-    expect(translateNarrativeJargon("Crowded")).toBe("擁擠期");
-    expect(translateNarrativeJargon("Distribution")).toBe("出貨期");
+  // 2026-07-24 Pete-15 review: the 9 entries are ALSO ordinary English finance
+  // vocabulary (Core Holding / Price Discovery / Crowded Trade / dividend
+  // Distribution), so they only fire when directly adjacent to the `=`/`：`/`:`
+  // character the real backend leak always has right before them — a bare
+  // word with no such prefix is left untouched instead of being
+  // mistranslated.
+  it("translates all 4 beneficiaryTier values and all 5 theme lifecycle values ONLY when adjacent to = / ： / :", () => {
+    expect(translateNarrativeJargon("受惠層級=Core")).toBe("受惠層級=核心受惠");
+    expect(translateNarrativeJargon("beneficiaryTier=Direct")).toBe("受惠層級=直接受惠");
+    expect(translateNarrativeJargon("beneficiaryTier=Indirect")).toBe("受惠層級=間接受惠");
+    expect(translateNarrativeJargon("beneficiaryTier=Observation")).toBe("受惠層級=觀察名單");
+    expect(translateNarrativeJargon("lifecycle=Discovery")).toBe("lifecycle=探索期");
+    expect(translateNarrativeJargon("lifecycle=Validation")).toBe("lifecycle=驗證期");
+    expect(translateNarrativeJargon("lifecycle=Expansion")).toBe("lifecycle=擴張期");
+    expect(translateNarrativeJargon("lifecycle=Crowded")).toBe("lifecycle=擁擠期");
+    expect(translateNarrativeJargon("lifecycle=Distribution")).toBe("lifecycle=出貨期");
+    expect(translateNarrativeJargon("狀態：Observation")).toBe("狀態：觀察名單");
+  });
+
+  it("does NOT mistranslate the same 9 words when they appear as ordinary standalone English finance vocabulary (no = / ： / : adjacency)", () => {
+    expect(translateNarrativeJargon("外資將此列為 Core Holding")).toBe("外資將此列為 Core Holding");
+    expect(translateNarrativeJargon("市場正處於 Price Discovery 階段")).toBe("市場正處於 Price Discovery 階段");
+    expect(translateNarrativeJargon("籌碼面出現 Crowded Trade 訊號需留意")).toBe("籌碼面出現 Crowded Trade 訊號需留意");
+    expect(translateNarrativeJargon("本季配息 Distribution 金額提高")).toBe("本季配息 Distribution 金額提高");
+    expect(translateNarrativeJargon("主題含NVIDIA與5G通訊，Discovery 型標的")).toBe("主題含NVIDIA與5G通訊，Discovery 型標的");
   });
 });
 

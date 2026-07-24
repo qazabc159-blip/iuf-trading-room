@@ -164,7 +164,10 @@ export function buildMarketRiskOffCopy(marketRiskOffScore: number | null | undef
 }
 
 // ── 頭版 deck 摘要句（leadSummary，#1362）───────────────────────────────
-const NO_LEAD_SUMMARY_TEXT = "後端尚未回傳頭版摘要句。";
+// 2026-07-24 Pete-15 review：「後端」是工程語意，禁字（repo CLAUDE.md「UI 禁
+// 工程語意」）；改用「AI」——本頁本來就以「AI 投研晨報」/「AI 推薦引擎」自稱，
+// 這裡是同一套產品詞彙的自然延伸，不是新發明。
+const NO_LEAD_SUMMARY_TEXT = "AI 尚未為此檔產出頭版摘要句。";
 
 /**
  * leadSummary 有值就直接顯示；null 時（deterministic fallback 項目沒有

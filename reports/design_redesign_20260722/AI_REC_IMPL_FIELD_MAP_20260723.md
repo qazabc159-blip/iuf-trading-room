@@ -53,7 +53,9 @@
 2. ~~沒有獨立的「頭版摘要句」欄位~~ — **已解決**：#1362 加了 `leadSummary`（`whyBuyBrief`/LLM `oneLineReason` 的別名，zero marginal cost）。前端 `resolveLeadSummaryText()`：有值原樣顯示；null（deterministic fallback 項目沒有 LLM 一句話理由）時顯示誠實 fallback「後端尚未回傳頭版摘要句。」，不留版面空洞。只用於頭版特稿（MorningBriefLead），內頁候選（MorningBriefStory）沒有這個版位——設計稿本身也只有頭版才有 deck。
 
 ### 順手修復（非本輪主目標，驗證時發現）
-驗證 themeContext 真渲染時發現：既有 `why_buy`/`rationale` 敘事文字（LLM 生成，system prompt 明確要求模板「受惠層級=[beneficiaryTier]，主題 lifecycle=[lifecycle]」）本來就會把 `beneficiaryTier`/`themes[].lifecycle` 的**原始英文 enum 值**（如 `Observation`/`Discovery`）逐字印出——`apps/web/lib/ui-vocab.ts` 的 `translateNarrativeJargon()` 原本只翻譯欄位名（`chainPosition`→供應鏈定位、`beneficiaryTier`→受惠層級），沒翻譯這 9 個值本身。本輪一併補上 9 個 bare-word enum 值翻譯（同一批我已查證的封閉 enum），並補了直接複製自真實 prod 洩漏文字的回歸測試（`ui-vocab.test.ts`）。**殘留小缺口**：`lifecycle=` 這個英文欄位名字面（非其值）目前仍未翻譯（只有 `chainPosition`/`beneficiaryTier` 兩個欄位名在既有翻譯表中，`lifecycle` 沒有），影響輕微（是一個可辨識英文單字，非不透明代碼），未在本輪擴大處理，留給下一張小票。
+驗證 themeContext 真渲染時發現：既有 `why_buy`/`rationale` 敘事文字（LLM 生成，system prompt 明確要求模板「受惠層級=[beneficiaryTier]，主題 lifecycle=[lifecycle]」）本來就會把 `beneficiaryTier`/`themes[].lifecycle` 的**原始英文 enum 值**（如 `Observation`/`Discovery`）逐字印出——`apps/web/lib/ui-vocab.ts` 的 `translateNarrativeJargon()` 原本只翻譯欄位名（`chainPosition`→供應鏈定位、`beneficiaryTier`→受惠層級），沒翻譯這 9 個值本身。本輪補上 9 個 enum 值翻譯，並補了直接複製自真實 prod 洩漏文字的回歸測試（`ui-vocab.test.ts`）。
+
+**2026-07-24 Pete-15 review 修正**：這 9 個值同時也是正常財經英文詞彙（Core Holding／Price Discovery／Crowded Trade／配息 Distribution 等），原本的裸字比對（bare `\bWord\b`）會誤翻真實財經敘述。改成只在緊鄰 `=`／`：`／`:` 時才翻譯（真實洩漏文字目前確認的兩種樣態「受惠層級=Observation」「lifecycle=Discovery」都符合這個形狀），犧牲部分 recall（換行/空格/斜線相鄰的洩漏樣態，例如「受益層級 Observation」「NVIDIA/Discovery」，本輪不處理）換取不誤翻真實英文財經詞彙的 precision。**殘留小缺口**（未修，留給下一張小票）：①`lifecycle=` 這個英文欄位名字面（非其值）目前仍未翻譯；②非 `=`／`：` 相鄰的洩漏樣態（空格/斜線分隔）仍會原樣印出。
 
 ## 刻意刪除的舊 UI（非本輪功能缺口，是設計換代的必然結果）
 

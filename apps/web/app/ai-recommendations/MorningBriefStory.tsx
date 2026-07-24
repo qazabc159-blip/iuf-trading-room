@@ -56,13 +56,13 @@ export function MorningBriefStory({ rec, index }: { rec: StockRecCardData; index
         <div className="p g"><div className="k">風報比</div><div className="v mono">{fmtRValue(targets?.r_value)}</div></div>
       </div>
 
-      <p className="st-entry">進場區間 <span className="rng mono">{entryRange}</span>：{entry?.label ?? "後端未回傳建議進場區間"}</p>
+      <p className="st-entry">進場區間 <span className="rng mono">{entryRange}</span>：{entry?.label ?? "AI 尚未提供建議進場區間"}</p>
 
       <div className="st-body">
         {bodyParagraphs.length > 0 ? (
           bodyParagraphs.map((paragraph, idx) => <p key={idx}>{paragraph}</p>)
         ) : (
-          <p>後端尚未回傳推薦理由。</p>
+          <p>AI 尚未產出推薦理由。</p>
         )}
       </div>
 
@@ -72,7 +72,7 @@ export function MorningBriefStory({ rec, index }: { rec: StockRecCardData; index
           {riskItems.map((item, idx) => <li key={idx}>{item}</li>)}
         </ul>
       ) : (
-        <p className="prose-empty">後端尚未回傳主要風險。</p>
+        <p className="prose-empty">AI 尚未產出主要風險。</p>
       )}
 
       {themeDisplay && (
