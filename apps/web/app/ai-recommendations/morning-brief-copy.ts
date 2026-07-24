@@ -12,14 +12,15 @@
  * MAP_20260723.md documents which design-draft fields have no backend
  * equivalent and were dropped rather than faked).
  *
- * Dropped from the design draft (not implemented here): the 頭版 "deck"
- * one-line abstract. Tried deriving it as "first 。-delimited sentence of
- * why_buy" and caught (via a local seeded-DB render, not just code review)
- * that real AI narrative paragraphs often only contain one 。 at the very
- * end — the "first sentence" then equals the entire first paragraph,
- * rendering as a verbatim duplicate immediately above it. The design
- * draft's deck text is a distinct hand-written abstract, not mechanically
- * derivable from why_buy; no such field exists on AiRecommendationV3Item.
+ * 2026-07-24 update: the 頭版 "deck" one-line abstract and the 主題/供應鏈
+ * gapnote (原「已知缺口」#1/#2) are no longer dropped — #1362 added real
+ * `leadSummary`/`themeContext` fields to the v3 item (see
+ * resolveLeadSummaryText / resolveThemeContextDisplay below). The earlier
+ * attempt to derive a deck line as "first 。-delimited sentence of why_buy"
+ * is still the reason a *mechanical* derivation was rejected (real AI
+ * narrative paragraphs often only contain one 。 at the very end, so "first
+ * sentence" == the entire first paragraph, duplicating the prose below it)
+ * — leadSummary is a distinct backend-authored value, not derived here.
  */
 
 const RANK_LABELS = ["序位第一", "貳", "叁", "肆", "伍"] as const;
@@ -160,6 +161,90 @@ export function buildMarketRiskOffCopy(marketRiskOffScore: number | null | undef
         ? `盤勢風控訊號 ${marketRiskOffScore}/6 觸發，依既定 SOP 主動縮減本輪推薦，屬於保護資金的正常操作，非引擎異常。`
         : "盤勢風控訊號已觸發，依既定 SOP 主動縮減本輪推薦，屬於保護資金的正常操作，非引擎異常。",
   };
+}
+
+// ── 頭版 deck 摘要句（leadSummary，#1362）───────────────────────────────
+// 2026-07-24 Pete-15 review：「後端」是工程語意，禁字（repo CLAUDE.md「UI 禁
+// 工程語意」）；改用「AI」——本頁本來就以「AI 投研晨報」/「AI 推薦引擎」自稱，
+// 這裡是同一套產品詞彙的自然延伸，不是新發明。
+const NO_LEAD_SUMMARY_TEXT = "AI 尚未為此檔產出頭版摘要句。";
+
+/**
+ * leadSummary 有值就直接顯示；null 時（deterministic fallback 項目沒有
+ * LLM 一句話理由）用誠實 fallback 句頂住版位，不留視覺空洞，也不是編一句
+ * 假摘要。只用於頭版特稿（MorningBriefLead），內頁候選沒有這個版位。
+ */
+export function resolveLeadSummaryText(leadSummary: string | null | undefined): string {
+  return leadSummary && leadSummary.trim().length > 0 ? leadSummary : NO_LEAD_SUMMARY_TEXT;
+}
+
+// ── 主題 / 供應鏈脈絡（themeContext，#1362）人話化 ──────────────────────
+// beneficiaryTier 與 themes[].lifecycle 是真封閉 Postgres enum
+// （packages/db/src/schema.ts 的 beneficiaryTierEnum / themeLifecycleEnum），
+// 值域已知、可安全全對照為中文。chainPosition 是 companies.chain_position
+// 這個 TEXT 自由文字欄位（無 enum 限制——見 apps/api/src/server.ts
+// CANONICAL_COMPANIES_SEED 註解「chain_position is TEXT (no enum
+// constraint) — use zh-TW industry chain label」，正確填法本身就是中文
+// 描述），前端原樣顯示、不對開放文字臆測翻譯表。
+
+const BENEFICIARY_TIER_LABEL: Record<string, string> = {
+  Core: "核心受惠",
+  Direct: "直接受惠",
+  Indirect: "間接受惠",
+  Observation: "觀察名單",
+};
+
+function beneficiaryTierLabel(value: string | null): string | null {
+  if (!value) return null;
+  return BENEFICIARY_TIER_LABEL[value] ?? value;
+}
+
+const THEME_LIFECYCLE_LABEL: Record<string, string> = {
+  Discovery: "探索期",
+  Validation: "驗證期",
+  Expansion: "擴張期",
+  Crowded: "擁擠期",
+  Distribution: "出貨期",
+};
+
+function themeLifecycleLabel(value: string): string {
+  return THEME_LIFECYCLE_LABEL[value] ?? value;
+}
+
+export type ThemeContextInput = {
+  dataAvailable?: boolean | null;
+  chainPosition?: string | null;
+  beneficiaryTier?: string | null;
+  themes?: Array<{ name: string; lifecycle: string }> | null;
+} | null | undefined;
+
+export type ThemeContextDisplay = {
+  positionLine: string | null;
+  themesLine: string | null;
+};
+
+/**
+ * 主題/供應鏈脈絡顯示邏輯。dataAvailable !== true（含 null 與 false 兩種
+ * 「無資料」狀態）→ 回傳 null，呼叫端必須整塊不渲染，不能補一句固定樣板
+ * gapnote（Pete-12 review 明確提醒過這點）。dataAvailable===true 但個別
+ * 子欄位是 null／空陣列時，只跳過那一行，不補假字；兩行都空等同無內容，
+ * 一樣整塊不顯示（避免只剩標題的空框）。
+ */
+export function resolveThemeContextDisplay(themeContext: ThemeContextInput): ThemeContextDisplay | null {
+  if (!themeContext || themeContext.dataAvailable !== true) return null;
+
+  const tier = beneficiaryTierLabel(themeContext.beneficiaryTier ?? null);
+  const positionLine = themeContext.chainPosition
+    ? (tier ? `${themeContext.chainPosition}．${tier}` : themeContext.chainPosition)
+    : tier;
+
+  const themes = themeContext.themes ?? [];
+  const themesLine = themes.length > 0
+    ? `相關主題：${themes.map((t) => `${t.name}（${themeLifecycleLabel(t.lifecycle)}）`).join("、")}`
+    : null;
+
+  if (!positionLine && !themesLine) return null;
+  return { positionLine, themesLine };
 }
 
 export type MorningBriefBodyMode = "risk_off" | "cards" | "empty";

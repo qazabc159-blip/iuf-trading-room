@@ -54,6 +54,42 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\btrace\b(?!\s*=)/g, "資料軌跡"],
   [/\binstitutional\b/g, "法人資料"],
   [/\bthemes?\b/g, "主題"],
+  // 2026-07-24 (found via #1362 leadSummary/themeContext verification,
+  // apps/web/app/ai-recommendations/morning-brief-copy.ts): the FIELD NAMES
+  // chainPosition/beneficiaryTier get translated above, but the real prod
+  // `why_buy`/`rationale` prose (system prompt in
+  // apps/api/src/ai-recommendation-v2/orchestrator-v3.ts literally templates
+  // "受惠層級=[beneficiaryTier]"/"lifecycle=[lifecycle]") still leaks the raw
+  // ENUM VALUES verbatim, e.g. real prod text "受惠層級=Observation，主題含
+  // NVIDIA與5G通訊且lifecycle=Discovery" — neither the `key=value` catch-all
+  // below (its value alternation only covers true/false/number/quoted-string,
+  // not a bare identifier like Discovery) nor the snake_case/camelCase
+  // catch-alls (these are single PascalCase words, not multi-segment
+  // identifiers) catch this shape. These 9 words ARE confirmed closed
+  // Postgres enums (packages/db/src/schema.ts beneficiaryTierEnum /
+  // themeLifecycleEnum) — but unlike the other entries in this table, they
+  // are also ordinary English finance vocabulary that legitimately appears in
+  // AI-generated Chinese/English mixed prose on its own (e.g. "列為 Core
+  // Holding"／"Price Discovery 機制"／"配息 Distribution"／"Crowded Trade
+  // 訊號") — a bare \bWord\b match on these 9 specific tokens would silently
+  // mistranslate real financial commentary (Pete-15 review, PR #1365).
+  // Every confirmed REAL leak of these values so far has been directly
+  // adjacent to the `=`/`：`/`:` character the backend template emits right
+  // before them ("受惠層級=Observation", "lifecycle=Discovery") — so these 9
+  // rules only fire in that specific adjacency, trading recall (a leak with
+  // no adjoining `=`/`：`/`:`, e.g. a plain space or `/`, would not be caught)
+  // for precision (never touching a legitimate standalone English finance
+  // term). The pinned regression test in ui-vocab.test.ts uses the exact real
+  // leaked prod string and must stay green.
+  [/(?<=[=:：]\s*)\bCore\b/g, "核心受惠"],
+  [/(?<=[=:：]\s*)\bDirect\b/g, "直接受惠"],
+  [/(?<=[=:：]\s*)\bIndirect\b/g, "間接受惠"],
+  [/(?<=[=:：]\s*)\bObservation\b/g, "觀察名單"],
+  [/(?<=[=:：]\s*)\bDiscovery\b/g, "探索期"],
+  [/(?<=[=:：]\s*)\bValidation\b/g, "驗證期"],
+  [/(?<=[=:：]\s*)\bExpansion\b/g, "擴張期"],
+  [/(?<=[=:：]\s*)\bCrowded\b/g, "擁擠期"],
+  [/(?<=[=:：]\s*)\bDistribution\b/g, "出貨期"],
 
   // Catch-all (2026-07-12, Pete #1226 review 🟡: "translateNarrativeJargon()
   // 漏網 token 裸英文"). The rules above only cover tokens someone has
@@ -68,8 +104,12 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   // shape is what marks a token as "leaked from code" in the first place;
   // ordinary Chinese narrative text and legitimate bare English loanwords
   // (AI, ETF, TAIEX, KGI — single-segment, no internal case/underscore
-  // split) never take this shape, so they pass through untouched. Because
-  // these are pattern-shape matches rather than a known-meaning lookup, the
+  // split) never take this shape, so they pass through untouched. (The 9
+  // beneficiaryTier/lifecycle enum-value entries above are the deliberate
+  // exception to "shape not meaning" — those specific words are a known,
+  // closed, verified vocabulary, so they get a real translation instead of
+  // the generic "系統欄位" placeholder.) Because these are pattern-shape
+  // matches rather than a known-meaning lookup, the
   // replacement can only honestly say "there was a technical value here",
   // never claim to know what it meant — that's a deliberate accuracy
   // tradeoff versus the specific, meaning-preserving entries above, which

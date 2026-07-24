@@ -7,6 +7,8 @@ import {
   fmtRValue,
   fmtScore,
   rankLabel,
+  resolveLeadSummaryText,
+  resolveThemeContextDisplay,
   splitParagraphs,
   SUB_SCORE_ROWS,
 } from "./morning-brief-copy";
@@ -26,6 +28,8 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
   const entryRange = entry?.ote_low != null && entry?.ote_high != null
     ? `${fmtPrice(entry.ote_low)} – ${fmtPrice(entry.ote_high)}`
     : "--";
+  const deckText = resolveLeadSummaryText(rec.leadSummary);
+  const themeDisplay = resolveThemeContextDisplay(rec.themeContext);
 
   return (
     <article className="lead">
@@ -44,6 +48,8 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
         </div>
       </div>
 
+      <p className="deck">{deckText}</p>
+
       <div className="lead-body">
         <div className="lb-main">
           <div className="colhd">推薦理由</div>
@@ -51,7 +57,7 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
             {whyBuyParagraphs.length > 0 ? (
               whyBuyParagraphs.map((paragraph, idx) => <p key={idx}>{paragraph}</p>)
             ) : (
-              <p>後端尚未回傳推薦理由。</p>
+              <p>AI 尚未產出推薦理由。</p>
             )}
           </div>
 
@@ -62,9 +68,17 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
                 {riskItems.map((item, idx) => <li key={idx}>{item}</li>)}
               </ul>
             ) : (
-              <p className="prose-empty">後端尚未回傳主要風險。</p>
+              <p className="prose-empty">AI 尚未產出主要風險。</p>
             )}
           </div>
+
+          {themeDisplay && (
+            <div className="theme-block">
+              <div className="th-h">主題與供應鏈脈絡<span className="en">Theme Context</span></div>
+              {themeDisplay.positionLine && <p className="th-pos">{themeDisplay.positionLine}</p>}
+              {themeDisplay.themesLine && <p className="th-themes">{themeDisplay.themesLine}</p>}
+            </div>
+          )}
         </div>
 
         <div className="lb-aside">
@@ -88,7 +102,7 @@ export function MorningBriefLead({ rec }: { rec: StockRecCardData }) {
             <caption>交易計畫</caption>
             <tbody>
               <tr className="entry-row"><td className="k">進場區間</td><td className="v"><span className="entry-val mono">{entryRange}</span></td></tr>
-              <tr className="entry-note"><td colSpan={2}><div className="n">{entry?.label ?? "後端未回傳建議進場區間"}</div></td></tr>
+              <tr className="entry-note"><td colSpan={2}><div className="n">{entry?.label ?? "AI 尚未提供建議進場區間"}</div></td></tr>
               <tr><td className="k">目標一</td><td className="v up">{fmtPrice(targets?.tp1)}</td></tr>
               <tr><td className="k">目標二</td><td className="v up">{fmtPrice(targets?.tp2)}</td></tr>
               <tr><td className="k">停損</td><td className="v down">{fmtPrice(targets?.sl)}</td></tr>

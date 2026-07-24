@@ -308,8 +308,10 @@ export function mapV3ItemToStockRecCard(
   const entryLow = asNumber(item.entryZone?.low ?? item.entryPriceRange?.low);
   const entryHigh = asNumber(item.entryZone?.high ?? item.entryPriceRange?.high);
   const entryReason = item.entryZone?.reason ? localizeV3Narrative(item.entryZone.reason) : null;
+  // 2026-07-24 Pete-15 review：「後端」是工程語意禁字，改用「AI」（同頁既有
+  // 「AI 投研晨報」/「AI 推薦引擎」詞彙延伸）。
   const entryLabel = entryReason
-    || (entryLow != null && entryHigh != null ? "後端回傳建議進場區間" : "後端未回傳建議進場區間");
+    || (entryLow != null && entryHigh != null ? "AI 提供建議進場區間" : "AI 尚未提供建議進場區間");
 
   const tp1 = asNumber(item.tp1Structured?.price ?? item.tp1);
   const tp2 = asNumber(item.tp2Structured?.price ?? item.tp2);
@@ -349,6 +351,8 @@ export function mapV3ItemToStockRecCard(
       usedFallback: item.usedFallback ?? data?.usedFallback ?? null,
     },
     market_multiplier: asNumber(item.position_sizing?.market_multiplier),
+    leadSummary: item.leadSummary ?? null,
+    themeContext: item.themeContext ?? null,
   };
 }
 

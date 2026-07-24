@@ -49,6 +49,13 @@ export interface SynthesisFlags {
   usedFallback?: boolean | null;
 }
 
+export interface ThemeContext {
+  dataAvailable: boolean;
+  chainPosition: string | null;
+  beneficiaryTier: string | null;
+  themes: Array<{ name: string; lifecycle: string }>;
+}
+
 export interface StockRecCardData {
   ticker: string;
   company_name?: string | null;
@@ -66,6 +73,8 @@ export interface StockRecCardData {
   officialAnnouncementSourceState?: SourceStateSummary | null;
   synthesisFlags?: SynthesisFlags | null;
   market_multiplier?: number | null;
+  leadSummary?: string | null;
+  themeContext?: ThemeContext | null;
 }
 
 const SUB_SCORE_ROWS: Array<{
