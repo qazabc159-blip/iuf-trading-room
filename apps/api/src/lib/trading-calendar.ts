@@ -87,3 +87,113 @@ export async function isTwTradingDay(tradingDate: string): Promise<boolean> {
     return true;
   }
 }
+
+// ── Taiwan market session — single source of truth (2026-07-24) ────────────
+//
+// reports/design_redesign_20260722/DUAL_CRITERIA_AUDIT_20260723.md 🔴 R2:
+// server.ts's composeTaiwanMarketState() judged OPEN/CLOSED purely from the
+// wall-clock minute-of-day, with NO day-of-week check at all — Sat/Sun
+// 09:00-13:30 was reported as "OPEN", which then fed a fake
+// `kgi_unavailable_eod_fallback` incident label downstream (the gateway is
+// correctly closed on weekends; that's not an outage). The same audit found
+// 4 more independent re-implementations of "is TW market in session right
+// now" scattered across server.ts, some without a weekday check at all, some
+// with a bare `getUTCDay()` 1-5 check (which still can't see holidays).
+//
+// This function is the one place that decides "is *today* a trading day" —
+// every caller wanting a session/open-closed judgement should route through
+// here (or through `isTaiwanTradingDayNow` below for callers that only need
+// the day-level boolean and keep their own minute-of-day window, e.g. a MIS
+// cron's deliberately-wider 08:55-14:35 serving window vs. the official
+// 09:00-13:30 session — those are legitimately different questions, not
+// duplicate bugs, so their minute boundaries are intentionally NOT collapsed
+// into this function).
+//
+// Epoch-ms arithmetic (`nowMs + 8h`), never `Date.prototype.getTimezoneOffset()`:
+// `data-sources/finmind-aggregate-client.ts:309-315`'s `todayTaipei()` has a
+// known (queued, unfixed) double-offset bug where `getTimezoneOffset()` reads
+// the *host process's* timezone — on a host whose own TZ is already
+// Asia/Taipei, `offset + getTimezoneOffset()` cancels to 0 and the function
+// silently returns the raw UTC date instead of the Taipei date. The fixed
+// `+8h` epoch shift used here (same idiom as `_isKgiHeatmapAfterHours` /
+// `getTaipeiHHMM` elsewhere in server.ts) is immune: it always adds exactly
+// 8h to the UTC instant and reads UTC fields back, independent of host TZ.
+
+export type TaiwanMarketSessionState = "PRE-OPEN" | "OPEN" | "MIDDAY" | "POST-CLOSE" | "CLOSED";
+
+export interface TaiwanMarketSession {
+  state: TaiwanMarketSessionState;
+  isTradingDay: boolean;
+  countdownSec: number;
+}
+
+/** Taipei calendar date (YYYY-MM-DD) for a given UTC epoch ms, via fixed +8h
+ *  arithmetic — see double-offset note above. Exported so callers needing
+ *  just the date string (to pass to `isTwTradingDay`) don't reinvent it. */
+export function taipeiDateFromMs(nowMs: number): string {
+  return new Date(nowMs + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** Is *today* (Taipei calendar date, derived from `nowMs`) a TW trading day?
+ *  Thin wrapper over `isTwTradingDay` for callers that only need the
+ *  day-level boolean. `isTradingDayCheck` is overridable for deterministic
+ *  tests (same optional-injection convention as `nowMs` params elsewhere in
+ *  this repo, e.g. FA9 in finmind-aggregate-market.test.ts) — production
+ *  callers should never pass it. */
+export async function isTaiwanTradingDayNow(
+  nowMs: number = Date.now(),
+  isTradingDayCheck: (dateIso: string) => Promise<boolean> = isTwTradingDay
+): Promise<boolean> {
+  return isTradingDayCheck(taipeiDateFromMs(nowMs)).catch(() => true);
+}
+
+/**
+ * Single source of truth for "what is the Taiwan market session right now",
+ * weekday+holiday aware. Non-trading days (weekend today; holiday once
+ * `tw_trading_calendar` is populated — see `isTwTradingDay`'s own DEGRADED
+ * mode note, that data gap is pre-existing and out of scope here) resolve to
+ * `CLOSED` regardless of the wall-clock minute — this is the R2 fix.
+ * Boundary minutes (unchanged from the original composeTaiwanMarketState):
+ * pre-open 08:30-09:00, open 09:00-13:30, midday 13:30-13:35, else post-close.
+ */
+export async function getTaiwanMarketSession(
+  nowMs: number = Date.now(),
+  isTradingDayCheck: (dateIso: string) => Promise<boolean> = isTwTradingDay
+): Promise<TaiwanMarketSession> {
+  const d = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const twMin = (d.getUTCHours() * 60 + d.getUTCMinutes()) % (24 * 60);
+  const isTradingDay = await isTaiwanTradingDayNow(nowMs, isTradingDayCheck);
+
+  const PREOPEN_START = 510; // 08:30
+  const OPEN_START = 540;    // 09:00
+  const MIDDAY_START = 810;  // 13:30
+  const CLOSE_END = 815;     // 13:35
+
+  let state: TaiwanMarketSessionState;
+  let nextBoundary: number;
+
+  if (!isTradingDay) {
+    state = "CLOSED";
+    // Same "assume tomorrow" simplification the original code already had
+    // for POST-CLOSE (doesn't look ahead across multi-day weekends/holiday
+    // runs) — not this fix's scope, no live consumer of countdownSec exists
+    // today (verified: no apps/web caller reads composeTaiwanMarketState's
+    // countdownSec field).
+    nextBoundary = twMin < PREOPEN_START ? PREOPEN_START : PREOPEN_START + 24 * 60;
+  } else if (twMin >= PREOPEN_START && twMin < OPEN_START) {
+    state = "PRE-OPEN";
+    nextBoundary = OPEN_START;
+  } else if (twMin >= OPEN_START && twMin < MIDDAY_START) {
+    state = "OPEN";
+    nextBoundary = MIDDAY_START;
+  } else if (twMin >= MIDDAY_START && twMin < CLOSE_END) {
+    state = "MIDDAY";
+    nextBoundary = CLOSE_END;
+  } else {
+    state = "POST-CLOSE";
+    nextBoundary = twMin < PREOPEN_START ? PREOPEN_START : PREOPEN_START + 24 * 60;
+  }
+
+  const countdownSec = Math.max(0, (nextBoundary - twMin) * 60 - d.getUTCSeconds());
+  return { state, isTradingDay, countdownSec };
+}
