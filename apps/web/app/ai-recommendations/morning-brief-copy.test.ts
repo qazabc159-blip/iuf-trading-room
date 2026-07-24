@@ -263,4 +263,24 @@ describe("resolveThemeContextDisplay — 主題/供應鏈脈絡", () => {
       }),
     ).toBeNull();
   });
+
+  // QA misc batch ticket #3 (fast-follow): pins the CURRENT unknown-enum
+  // fallback behavior — raw passthrough, not a guessed translation or a
+  // generic placeholder. beneficiaryTierEnum/themeLifecycleEnum are closed
+  // Postgres enums (packages/db/src/schema.ts) so this branch is not
+  // expected to fire against real data today; it documents what happens if
+  // the enum ever grows a member that lib/ui-vocab.ts's
+  // BENEFICIARY_TIER_LABEL/THEME_LIFECYCLE_LABEL tables haven't been updated
+  // for yet — a visible raw English code, not a silent/misleading label.
+  it("passes an unrecognized beneficiaryTier/lifecycle value through raw instead of guessing a translation (enum tables not yet updated for a hypothetical new DB enum member)", () => {
+    const display = resolveThemeContextDisplay({
+      dataAvailable: true,
+      chainPosition: null,
+      beneficiaryTier: "FutureTier",
+      themes: [{ name: "量子運算", lifecycle: "FutureStage" }],
+    });
+
+    expect(display?.positionLine).toBe("FutureTier");
+    expect(display?.themesLine).toBe("相關主題：量子運算（FutureStage）");
+  });
 });

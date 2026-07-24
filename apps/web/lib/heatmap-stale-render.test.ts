@@ -4,7 +4,15 @@
  * Tests cover:
  * 1. live tiles → normal color logic (pct rendered, no stale class)
  * 2. eod tiles  → stale dot indicator (is-stale class, sourceState=twse_eod)
- * 3. no_data tiles → gray but visible (is-no-data class, displayPct=0)
+ * 3. no_data tiles → deriveTileClasses/getDisplayPct/staleDotLabel's gray
+ *    "visible but no price" styling (is-no-data class, displayPct=0) — this
+ *    describes the pre-2026-07-14 design. That decision was superseded
+ *    (楊董: 缺角要遞補真公司, not a gray placeholder) — isUsableTile below now
+ *    imports the REAL render-inclusion gate, which filters no_data tiles out
+ *    before they ever reach these styling helpers. The styling helpers stay
+ *    as local pure-function tests of "what classes would this produce", the
+ *    inclusion GATE itself (isUsableTile/isUsableHeatmapTile) is the one
+ *    piece kept byte-identical to production (Pete-13 review 🟡#2).
  * 4. MarketStateBanner freshness → correct wording per state
  *
  * These test pure logic extracted from the components.
@@ -13,6 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 import { isKgiTradingHours } from "./kgi-trading-hours";
+import { isUsableHeatmapTile } from "./heatmap-tile-usability";
 import { buildBannerText, deriveFreshness, formatTradeDateWithWeekday } from "./market-state-banner";
 
 // ── Inline extracted logic from industry-heatmap.tsx ─────────────────────────
@@ -48,15 +57,20 @@ function deriveTileClasses(tile: MockTile): string[] {
   return classes;
 }
 
+// isUsableTile used to be a local inline copy of the real render-inclusion
+// gate. Pete-13 review 🟡#2 (2026-07-24, QA misc batch ticket #2) flagged
+// that its no_data branch had been INVERTED relative to the real predicate
+// (`return true` here vs the real `isUsableHeatmapTile()`'s `return false`
+// for sourceState==="no_data") — a leftover from the pre-2026-07-14 design
+// where no_data tiles rendered as a gray placeholder tile ("gray but
+// visible", see the Test 3 describe block below). That design was replaced
+// (楊董 2026-07-14 定案: 缺角要遞補真公司, not a gray block) — no_data tiles
+// are filtered out of the candidate pool entirely today, never reaching
+// HeatmapTile. Importing the real function directly (rather than fixing the
+// inline mock's boolean by hand) removes the drift risk permanently instead
+// of leaving a second copy that could invert again unnoticed.
 function isUsableTile(tile: MockTile): boolean {
-  if (tile.symbol.trim().length === 0 || tile.name.trim().length === 0) return false;
-  if (tile.readiness === "blocked") return false;
-  if (tile.sourceState === "no_data") return true;
-  // Standard: need a price move
-  const hasMove = tile.pct !== null;
-  if (!hasMove) return false;
-  if (tile.freshnessStatus === "missing") return false;
-  return true;
+  return isUsableHeatmapTile(tile);
 }
 
 function getDisplayPct(tile: MockTile): number {
@@ -175,12 +189,12 @@ describe("F4-T3: no_data tile gray but visible", () => {
     expect(getDisplayPct(tile)).toBe(0);
   });
 
-  it("no_data tile isUsable returns true (visible even without price)", () => {
+  it("no_data tile isUsable returns false — filtered out of the grid entirely, not rendered as a gray placeholder (real predicate, Pete-13 fix)", () => {
     const tile: MockTile = {
       symbol: "2882", name: "國泰金", pct: null, price: null, weight: 5,
       source: "no_data", sourceState: "no_data",
     };
-    expect(isUsableTile(tile)).toBe(true);
+    expect(isUsableTile(tile)).toBe(false);
   });
 
   it("no_data tile staleDotLabel returns '暫無資料'", () => {

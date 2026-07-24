@@ -23,6 +23,8 @@
  * — leadSummary is a distinct backend-authored value, not derived here.
  */
 
+import { BENEFICIARY_TIER_LABEL, THEME_LIFECYCLE_LABEL } from "@/lib/ui-vocab";
+
 const RANK_LABELS = ["序位第一", "貳", "叁", "肆", "伍"] as const;
 
 /** 序位標籤：0-based index → 頭版特稿「序位第一」/ 內頁「貳」「叁」「肆」「伍」 */
@@ -186,26 +188,28 @@ export function resolveLeadSummaryText(leadSummary: string | null | undefined): 
 // CANONICAL_COMPANIES_SEED 註解「chain_position is TEXT (no enum
 // constraint) — use zh-TW industry chain label」，正確填法本身就是中文
 // 描述），前端原樣顯示、不對開放文字臆測翻譯表。
-
-const BENEFICIARY_TIER_LABEL: Record<string, string> = {
-  Core: "核心受惠",
-  Direct: "直接受惠",
-  Indirect: "間接受惠",
-  Observation: "觀察名單",
-};
+//
+// 2026-07-24 (QA misc batch, ticket #3): BENEFICIARY_TIER_LABEL /
+// THEME_LIFECYCLE_LABEL used to be defined locally here — the exact same 9
+// pairs were ALSO hardcoded a second time in lib/ui-vocab.ts as regex
+// replacements for the same enum values leaking into narrative prose
+// (translateNarrativeJargon). Both copies are now generated from / import
+// the single canonical Record in lib/ui-vocab.ts.
+//
+// Unknown-value fallback (未知 enum 值): if the DB enum ever grows a member
+// neither table lists yet, `label[value] ?? value` prints the raw enum value
+// verbatim rather than guessing a translation or hiding it — pinned in
+// morning-brief-copy.test.ts ("passes an unrecognized ... value through
+// raw"). This is a deliberate stopgap, not a silent no-op: because the enum
+// is closed and both tables are meant to be exhaustive, this branch should
+// never fire in practice; if it does, a raw English enum code is a visible
+// signal that lib/ui-vocab.ts's tables need a new pair added, which is
+// preferable to a placeholder that looks intentional.
 
 function beneficiaryTierLabel(value: string | null): string | null {
   if (!value) return null;
   return BENEFICIARY_TIER_LABEL[value] ?? value;
 }
-
-const THEME_LIFECYCLE_LABEL: Record<string, string> = {
-  Discovery: "探索期",
-  Validation: "驗證期",
-  Expansion: "擴張期",
-  Crowded: "擁擠期",
-  Distribution: "出貨期",
-};
 
 function themeLifecycleLabel(value: string): string {
   return THEME_LIFECYCLE_LABEL[value] ?? value;

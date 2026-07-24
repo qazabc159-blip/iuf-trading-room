@@ -22,6 +22,32 @@
  * "9110 9110" when the company name was absent). */
 export const MISSING_COMPANY_NAME_LABEL = "名稱待補";
 
+// Canonical translation tables for the two closed Postgres enums
+// (packages/db/src/schema.ts beneficiaryTierEnum / themeLifecycleEnum) that
+// show up both as ENUM VALUES leaking into narrative prose (translated below
+// via NARRATIVE_JARGON_REPLACEMENTS) and as structured field values consumed
+// directly by apps/web/app/ai-recommendations/morning-brief-copy.ts
+// (beneficiaryTierLabel/themeLifecycleLabel — #1362 themeContext display).
+// 2026-07-24 (Pete-15 round-2 follow-up 🟡#1): these used to be two
+// hand-maintained copies of the same 9 pairs (one here as regex
+// replacements, one in morning-brief-copy.ts as a lookup Record) that could
+// silently drift. This is now the single source; morning-brief-copy.ts
+// imports these two exports instead of keeping its own copies.
+export const BENEFICIARY_TIER_LABEL: Record<string, string> = {
+  Core: "核心受惠",
+  Direct: "直接受惠",
+  Indirect: "間接受惠",
+  Observation: "觀察名單",
+};
+
+export const THEME_LIFECYCLE_LABEL: Record<string, string> = {
+  Discovery: "探索期",
+  Validation: "驗證期",
+  Expansion: "擴張期",
+  Crowded: "擁擠期",
+  Distribution: "出貨期",
+};
+
 // Known raw field-name / debug tokens that have leaked into AI-generated
 // narrative text (why_buy / risk / rationale strings from the v3
 // recommendation engine). The engine's Chinese phrasing AROUND these tokens
@@ -39,6 +65,19 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   [/company_graph_db/gi, "產業鏈定位資料庫"],
   [/chainPosition/gi, "供應鏈定位"],
   [/beneficiaryTier/gi, "受惠層級"],
+  // 2026-07-24 (QA misc batch, ticket #4 — "同僚 field map 註記的小缺口"):
+  // chainPosition/beneficiaryTier were translated as field names above, but
+  // the literal system-prompt template in
+  // apps/api/src/ai-recommendation-v2/orchestrator-v3.ts writes the third
+  // sibling field name in raw English — `...主題 [theme] lifecycle=[lifecycle]`
+  // — while writing chainPosition/beneficiaryTier's Chinese labels directly
+  // into the template text. That left "lifecycle" itself (not just its enum
+  // value) leaking verbatim, e.g. real prod text "...且lifecycle=Discovery"
+  // used to render as "...且lifecycle=探索期" — the field name survived even
+  // though the value was translated. See the updated
+  // "translates the closed beneficiaryTier/lifecycle enum values" pin in
+  // ui-vocab.test.ts for the exact before/after.
+  [/\blifecycle\b/gi, "生命週期"],
   [/get_company_news/gi, "個股新聞來源"],
   [/itemCount\s*=\s*0/gi, "查無新項目"],
   [/itemCount\s*=\s*(\d+)/gi, "共 $1 筆"],
@@ -81,15 +120,16 @@ const NARRATIVE_JARGON_REPLACEMENTS: Array<[RegExp, string]> = [
   // for precision (never touching a legitimate standalone English finance
   // term). The pinned regression test in ui-vocab.test.ts uses the exact real
   // leaked prod string and must stay green.
-  [/(?<=[=:：]\s*)\bCore\b/g, "核心受惠"],
-  [/(?<=[=:：]\s*)\bDirect\b/g, "直接受惠"],
-  [/(?<=[=:：]\s*)\bIndirect\b/g, "間接受惠"],
-  [/(?<=[=:：]\s*)\bObservation\b/g, "觀察名單"],
-  [/(?<=[=:：]\s*)\bDiscovery\b/g, "探索期"],
-  [/(?<=[=:：]\s*)\bValidation\b/g, "驗證期"],
-  [/(?<=[=:：]\s*)\bExpansion\b/g, "擴張期"],
-  [/(?<=[=:：]\s*)\bCrowded\b/g, "擁擠期"],
-  [/(?<=[=:：]\s*)\bDistribution\b/g, "出貨期"],
+  // 2026-07-24 (QA misc batch, ticket #3): these 9 rules used to be 9
+  // hardcoded regex/label pairs here, duplicating the same 9 pairs hardcoded
+  // a second time as a lookup Record in
+  // apps/web/app/ai-recommendations/morning-brief-copy.ts
+  // (BENEFICIARY_TIER_LABEL / THEME_LIFECYCLE_LABEL). Generated from the
+  // canonical maps above instead, so the two call sites (regex-replace here
+  // vs dictionary-lookup there) share one list of pairs and can't drift.
+  ...Object.entries({ ...BENEFICIARY_TIER_LABEL, ...THEME_LIFECYCLE_LABEL }).map(
+    ([enumValue, label]): [RegExp, string] => [new RegExp(`(?<=[=:：]\\s*)\\b${enumValue}\\b`, "g"), label]
+  ),
 
   // Catch-all (2026-07-12, Pete #1226 review 🟡: "translateNarrativeJargon()
   // 漏網 token 裸英文"). The rules above only cover tokens someone has

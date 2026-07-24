@@ -50,8 +50,11 @@ describe("translateNarrativeJargon — known tokens (regression)", () => {
   it("translates the closed beneficiaryTier/lifecycle enum values, not just their field names — exact real prod leak text", () => {
     const real = "供應鏈定位Computer Hardware，受惠層級=Observation，主題含NVIDIA與5G通訊且lifecycle=Discovery";
     const out = translateNarrativeJargon(real);
-    expect(out).toBe("供應鏈定位Computer Hardware，受惠層級=觀察名單，主題含NVIDIA與5G通訊且lifecycle=探索期");
-    expect(out).not.toMatch(/\bObservation\b|\bDiscovery\b/);
+    // 2026-07-24 (QA misc batch ticket #4): "lifecycle" the FIELD NAME is now
+    // also translated (受惠層級/供應鏈定位 already were) — it used to survive
+    // verbatim in English even though its enum value got translated.
+    expect(out).toBe("供應鏈定位Computer Hardware，受惠層級=觀察名單，主題含NVIDIA與5G通訊且生命週期=探索期");
+    expect(out).not.toMatch(/\bObservation\b|\bDiscovery\b|lifecycle/i);
   });
 
   // 2026-07-24 Pete-15 review: the 9 entries are ALSO ordinary English finance
@@ -65,11 +68,13 @@ describe("translateNarrativeJargon — known tokens (regression)", () => {
     expect(translateNarrativeJargon("beneficiaryTier=Direct")).toBe("受惠層級=直接受惠");
     expect(translateNarrativeJargon("beneficiaryTier=Indirect")).toBe("受惠層級=間接受惠");
     expect(translateNarrativeJargon("beneficiaryTier=Observation")).toBe("受惠層級=觀察名單");
-    expect(translateNarrativeJargon("lifecycle=Discovery")).toBe("lifecycle=探索期");
-    expect(translateNarrativeJargon("lifecycle=Validation")).toBe("lifecycle=驗證期");
-    expect(translateNarrativeJargon("lifecycle=Expansion")).toBe("lifecycle=擴張期");
-    expect(translateNarrativeJargon("lifecycle=Crowded")).toBe("lifecycle=擁擠期");
-    expect(translateNarrativeJargon("lifecycle=Distribution")).toBe("lifecycle=出貨期");
+    // "lifecycle" the field name is also translated (ticket #4) — both sides
+    // of the "=" change.
+    expect(translateNarrativeJargon("lifecycle=Discovery")).toBe("生命週期=探索期");
+    expect(translateNarrativeJargon("lifecycle=Validation")).toBe("生命週期=驗證期");
+    expect(translateNarrativeJargon("lifecycle=Expansion")).toBe("生命週期=擴張期");
+    expect(translateNarrativeJargon("lifecycle=Crowded")).toBe("生命週期=擁擠期");
+    expect(translateNarrativeJargon("lifecycle=Distribution")).toBe("生命週期=出貨期");
     expect(translateNarrativeJargon("狀態：Observation")).toBe("狀態：觀察名單");
   });
 
