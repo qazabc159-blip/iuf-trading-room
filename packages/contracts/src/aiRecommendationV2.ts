@@ -70,6 +70,22 @@ export const aiRecSourceTrailEntrySchema = z.object({
 });
 export type AiRecSourceTrailEntry = z.infer<typeof aiRecSourceTrailEntrySchema>;
 
+/**
+ * Theme / supply-chain context for a stock — sourced from the existing
+ * company_graph_db (companies.chain_position/beneficiary_tier + themes table),
+ * the same data `get_supply_chain` already queries to compute the theme sub-score.
+ * Exposed verbatim (no new inference) so the frontend can render an honest
+ * "主題/供應鏈脈絡" panel instead of a fixed placeholder sentence.
+ */
+export const aiRecThemeContextSchema = z.object({
+  /** false when company_graph_db has no row for this ticker — render honest gap, not a guess */
+  dataAvailable: z.boolean(),
+  chainPosition: z.string().nullable(),
+  beneficiaryTier: z.string().nullable(),
+  themes: z.array(z.object({ name: z.string(), lifecycle: z.string() })),
+});
+export type AiRecThemeContext = z.infer<typeof aiRecThemeContextSchema>;
+
 /** Run-level score breakdown summary (aggregate across items) */
 export const aiRecRunScoreBreakdownSchema = z.object({
   itemCount: z.number().int(),
@@ -142,6 +158,16 @@ export const aiStockRecommendationV2Schema = z.object({
   why_not_buy: z.array(z.string()).optional(),
   /** ≤80 char single-line plain-Chinese buy thesis (楊董 SOP "為什麼可以買") */
   whyBuyBrief: z.string().max(80).optional(),
+  /**
+   * ≤80 char newspaper-style lead sentence ("頭版摘要句"). Alias of whyBuyBrief
+   * under an explicit name for the morning-brief frontend — same synthesis-time
+   * value (LLM's required "oneLineReason"/"一句話理由" field), zero marginal cost.
+   * Null when the source item has no LLM-produced one-liner (e.g. deterministic
+   * fallback items) — never fabricated.
+   */
+  leadSummary: z.string().max(80).nullable().optional(),
+  /** Theme / supply-chain context — see aiRecThemeContextSchema. Null when company_graph_db has no data for this ticker. */
+  themeContext: aiRecThemeContextSchema.nullable().optional(),
   /** Tool call trail that produced data for this recommendation */
   sourceTrail: z.array(aiRecSourceTrailEntrySchema).optional(),
   /** True when any of the 7 sub-score axes is missing — this card was not fully scored */

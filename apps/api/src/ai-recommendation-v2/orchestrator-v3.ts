@@ -2020,16 +2020,41 @@ export function applyDeterministicMultiDimScoresToItems(
     const bullets = buildV3MultiDimBullets(fundamentals, supplyChain, companyNews);
     const why_buy = mergeUniqueText(item.why_buy, bullets.whyBuy).slice(0, 6);
     const why_not_buy = mergeUniqueText(item.why_not_buy, bullets.whyNotBuy).slice(0, 6);
+    // themeContext: expose the same company_graph_db observation already used
+    // to compute subScores.theme, verbatim — no new inference. Null (not a
+    // guessed default) when get_supply_chain was never called for this ticker.
+    const themeContext = supplyChain
+      ? {
+          dataAvailable: supplyChain.dataAvailable,
+          chainPosition: supplyChain.chainPosition,
+          beneficiaryTier: supplyChain.beneficiaryTier,
+          themes: supplyChain.themes,
+        }
+      : item.themeContext ?? null;
+    // finalWhyBuyBrief: same value this function has always returned as
+    // whyBuyBrief (LLM's oneLineReason when present, else derived from
+    // why_buy bullets). Computed once so leadSummary is a TRUE alias — not
+    // a second, narrower derivation that can diverge from whyBuyBrief when
+    // the LLM omits oneLineReason but why_buy bullets still exist
+    // (Pete review, PR #1362: orchestrator-v3.ts:2023 vs :2019 divergence).
+    const finalWhyBuyBrief = item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy);
+    // leadSummary: explicit alias of whyBuyBrief under the name the
+    // newspaper frontend expects. Null (never fabricated) only when
+    // whyBuyBrief itself is also empty, e.g. deterministic fallback items
+    // with no why_buy bullets at all.
+    const leadSummary = item.leadSummary ?? finalWhyBuyBrief ?? null;
 
     return {
       ...item,
+      themeContext,
+      leadSummary,
       action,
       subScores,
       totalScore,
       bucket,
       why_buy: why_buy.length > 0 ? why_buy : item.why_buy,
       why_not_buy: why_not_buy.length > 0 ? why_not_buy : item.why_not_buy,
-      whyBuyBrief: item.whyBuyBrief ?? buildWhyBuyBrief(why_buy.length > 0 ? why_buy : item.why_buy),
+      whyBuyBrief: finalWhyBuyBrief,
     };
   });
 }
