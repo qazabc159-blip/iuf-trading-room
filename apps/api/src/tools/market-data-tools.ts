@@ -149,7 +149,7 @@ export async function getMarketOverview(): Promise<MarketOverviewResult> {
 /**
  * Returns sector relative strength from TWSE OHLCV heatmap data.
  * Primary: getStockDayAllRows() (real-time TWSE, available during trading hours).
- * Fallback: companies_ohlcv + companies.industry from DB (post-market / off-hours).
+ * Fallback: companies_ohlcv + companies.chain_position from DB (post-market / off-hours).
  *
  * When StockDayAll returns empty (after close or weekend), the fallback computes
  * the most-recent trading day's per-sector avg changePct from the DB so the LLM
@@ -161,7 +161,10 @@ export async function getSectorRotation(limit = 20): Promise<SectorRotationResul
   const asOf = new Date().toISOString();
   try {
     const { getStockDayAllRows } = await import("../data-sources/twse-openapi-client.js");
-    const rows = await getStockDayAllRows().catch(() => []);
+    const rows = await getStockDayAllRows().catch((err) => {
+      console.warn("[get_sector_rotation] getStockDayAllRows failed, treating as empty:", err instanceof Error ? err.message : err);
+      return [];
+    });
 
     if (rows.length > 0) {
       // ── Primary path: live TWSE StockDayAll ──────────────────────────────────
@@ -190,83 +193,100 @@ export async function getSectorRotation(limit = 20): Promise<SectorRotationResul
       return { sectors: sectors.slice(0, limit), asOf, source: "twse_stock_day_all" };
     }
 
-    // ── Fallback path: DB companies_ohlcv + companies.industry ───────────────────
+    // ── Fallback path: DB companies_ohlcv + companies.chain_position ────────────
     // Fires post-market / weekends when StockDayAll returns no rows.
-    // Computes per-sector avg changePct from the most-recent trading day in DB.
     console.info("[get_sector_rotation] StockDayAll empty — falling back to DB OHLCV sector aggregation");
-    try {
-      const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
-      if (!isDatabaseMode()) return { sectors: [], asOf, source: "twse_stock_day_all" };
-      const db = getDb();
-      if (!db) return { sectors: [], asOf, source: "twse_stock_day_all" };
-
-      const { sql } = await import("drizzle-orm");
-      // Find the most recent date in OHLCV
-      const latestDateRows = await db.execute(sql`
-        SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval IN ('1d', 'day')
-      `);
-      const latestDate = execRows<{ max_dt: string | null }>(latestDateRows)[0]?.max_dt;
-      if (!latestDate) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
-
-      // Fetch all stocks for that date with their previous-day close for changePct
-      const sectorRows = await db.execute(sql`
-        SELECT
-          c.industry AS industry,
-          o.close AS close,
-          o_prev.close AS prev_close
-        FROM companies_ohlcv o
-        INNER JOIN companies c ON c.id = o.company_id
-        LEFT JOIN companies_ohlcv o_prev
-          ON o_prev.company_id = o.company_id
-          AND o_prev.interval IN ('1d', 'day')
-          AND o_prev.dt = (
-            SELECT MAX(dt2.dt) FROM companies_ohlcv dt2
-            WHERE dt2.company_id = o.company_id
-              AND dt2.interval IN ('1d', 'day')
-              AND dt2.dt < ${latestDate}
-          )
-        WHERE o.dt = ${latestDate}
-          AND o.interval IN ('1d', 'day')
-          AND c.industry IS NOT NULL
-          AND c.industry <> ''
-        LIMIT 2000
-      `);
-
-      const dbRows = execRows<{ industry: string; close: string; prev_close: string | null }>(sectorRows);
-      if (dbRows.length === 0) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
-
-      const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
-      for (const row of dbRows) {
-        const sector = row.industry ?? "其他";
-        const close = parseFloat(row.close);
-        const prevClose = row.prev_close ? parseFloat(row.prev_close) : null;
-        const cp = (prevClose && prevClose > 0) ? Math.round(((close - prevClose) / prevClose) * 10000) / 100 : 0;
-        const entry = sectorMap.get(sector) ?? { changePcts: [], gainers: 0, losers: 0 };
-        entry.changePcts.push(cp);
-        if (cp > 0) entry.gainers++;
-        else if (cp < 0) entry.losers++;
-        sectorMap.set(sector, entry);
-      }
-
-      const sectors: SectorStrengthRow[] = [];
-      for (const [sector, data] of sectorMap.entries()) {
-        const avg = data.changePcts.reduce((a, b) => a + b, 0) / data.changePcts.length;
-        sectors.push({
-          sector,
-          avgChangePct: Math.round(avg * 100) / 100,
-          gainerCount: data.gainers,
-          loserCount: data.losers,
-          stockCount: data.changePcts.length,
-        });
-      }
-      sectors.sort((a, b) => b.avgChangePct - a.avgChangePct);
-      return { sectors: sectors.slice(0, limit), asOf: latestDate, source: "db_ohlcv_fallback" };
-    } catch (dbErr) {
-      console.warn("[get_sector_rotation] DB fallback error:", dbErr instanceof Error ? dbErr.message : dbErr);
-      return { sectors: [], asOf, source: "twse_stock_day_all" };
-    }
+    return await getSectorRotationFromDb(limit, asOf);
   } catch (err) {
     console.warn("[get_sector_rotation] error:", err instanceof Error ? err.message : err);
+    return { sectors: [], asOf, source: "twse_stock_day_all" };
+  }
+}
+
+/**
+ * DB fallback for getSectorRotation() — computes per-sector avg changePct from
+ * the most-recent trading day in companies_ohlcv, grouped by companies.chain_position
+ * (the same ticker->industry/sector proxy already used by the KGI-core heatmap
+ * route and the FinMind industry heatmap route — see server.ts "sector lookup").
+ *
+ * 2026-07-24 fix: this previously queried the non-existent companies.industry
+ * column (companies never had that column — only chain_position; see schema.ts
+ * and information_schema on prod). Postgres threw "column c.industry does not
+ * exist" on every call, the error was swallowed by the catch below, and this
+ * branch always returned an empty sectors array. Exported separately so it can
+ * be exercised directly in a DB-mode test without depending on a live TWSE
+ * StockDayAll call.
+ */
+export async function getSectorRotationFromDb(limit: number, asOf: string): Promise<SectorRotationResult> {
+  try {
+    const { getDb, isDatabaseMode, execRows } = await import("@iuf-trading-room/db");
+    if (!isDatabaseMode()) return { sectors: [], asOf, source: "twse_stock_day_all" };
+    const db = getDb();
+    if (!db) return { sectors: [], asOf, source: "twse_stock_day_all" };
+
+    const { sql } = await import("drizzle-orm");
+    // Find the most recent date in OHLCV
+    const latestDateRows = await db.execute(sql`
+      SELECT MAX(dt) AS max_dt FROM companies_ohlcv WHERE interval IN ('1d', 'day')
+    `);
+    const latestDate = execRows<{ max_dt: string | null }>(latestDateRows)[0]?.max_dt;
+    if (!latestDate) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
+
+    // Fetch all stocks for that date with their previous-day close for changePct
+    const sectorRows = await db.execute(sql`
+      SELECT
+        c.chain_position AS industry,
+        o.close AS close,
+        o_prev.close AS prev_close
+      FROM companies_ohlcv o
+      INNER JOIN companies c ON c.id = o.company_id
+      LEFT JOIN companies_ohlcv o_prev
+        ON o_prev.company_id = o.company_id
+        AND o_prev.interval IN ('1d', 'day')
+        AND o_prev.dt = (
+          SELECT MAX(dt2.dt) FROM companies_ohlcv dt2
+          WHERE dt2.company_id = o.company_id
+            AND dt2.interval IN ('1d', 'day')
+            AND dt2.dt < ${latestDate}
+        )
+      WHERE o.dt = ${latestDate}
+        AND o.interval IN ('1d', 'day')
+        AND c.chain_position IS NOT NULL
+        AND c.chain_position <> ''
+      LIMIT 2000
+    `);
+
+    const dbRows = execRows<{ industry: string; close: string; prev_close: string | null }>(sectorRows);
+    if (dbRows.length === 0) return { sectors: [], asOf, source: "db_ohlcv_fallback" };
+
+    const sectorMap = new Map<string, { changePcts: number[]; gainers: number; losers: number }>();
+    for (const row of dbRows) {
+      const sector = row.industry ?? "其他";
+      const close = parseFloat(row.close);
+      const prevClose = row.prev_close ? parseFloat(row.prev_close) : null;
+      const cp = (prevClose && prevClose > 0) ? Math.round(((close - prevClose) / prevClose) * 10000) / 100 : 0;
+      const entry = sectorMap.get(sector) ?? { changePcts: [], gainers: 0, losers: 0 };
+      entry.changePcts.push(cp);
+      if (cp > 0) entry.gainers++;
+      else if (cp < 0) entry.losers++;
+      sectorMap.set(sector, entry);
+    }
+
+    const sectors: SectorStrengthRow[] = [];
+    for (const [sector, data] of sectorMap.entries()) {
+      const avg = data.changePcts.reduce((a, b) => a + b, 0) / data.changePcts.length;
+      sectors.push({
+        sector,
+        avgChangePct: Math.round(avg * 100) / 100,
+        gainerCount: data.gainers,
+        loserCount: data.losers,
+        stockCount: data.changePcts.length,
+      });
+    }
+    sectors.sort((a, b) => b.avgChangePct - a.avgChangePct);
+    return { sectors: sectors.slice(0, limit), asOf: latestDate, source: "db_ohlcv_fallback" };
+  } catch (dbErr) {
+    console.warn("[get_sector_rotation] DB fallback error:", dbErr instanceof Error ? dbErr.message : dbErr);
     return { sectors: [], asOf, source: "twse_stock_day_all" };
   }
 }
