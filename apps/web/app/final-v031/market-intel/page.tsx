@@ -47,6 +47,7 @@ import {
   resolveSourceStatusList,
   resolveHeatmap,
   resolveInstitutional,
+  institutionalTitleLabel,
   type MarketIntelFeedItem,
   type MarketIntelSource,
   type MarketIntelSources,
@@ -222,6 +223,7 @@ function HeroPulsePanelFallback() {
 async function InstitutionalPanel({ sources }: { sources: Pick<MarketIntelSources, "institutional"> }) {
   const institutional = await resolveInstitutional(sources);
   if (!institutional) return null;
+  const isLive = institutional.state === "live";
   const rows = [
     { name: "外資", en: "FOREIGN", line: institutional.foreign },
     { name: "投信", en: "INV TRUST", line: institutional.invest },
@@ -233,7 +235,8 @@ async function InstitutionalPanel({ sources }: { sources: Pick<MarketIntelSource
       <div className="_mi-insthd">
         <div className="_mi-eyebrow">
           <span className="_mi-tab">Institutional</span>
-          <span className="_mi-crumb">三大法人 · 今日買賣超</span>
+          <span className="_mi-crumb">{institutionalTitleLabel(institutional)}</span>
+          {!isLive && <span className="_mi-badge warn">非即時</span>}
         </div>
         <span className="_mi-unit">單位 億元 · 紅買綠賣</span>
       </div>

@@ -2072,6 +2072,13 @@ export type MarketInstitutionalSummary = {
   state: string;
   staleAfterSec?: number;
   reason?: string;
+  // #1348: getFinMindInstitutionalSummaryWithFallback() (apps/api) can return
+  // a PRIOR trading day's data when today's isn't published yet — dataDate +
+  // isFallback identify which day the numbers actually belong to (server.ts
+  // derives `state: "stale"` from isFallback). See market-intel-data.ts
+  // resolveInstitutional() for the frontend honesty consumer.
+  dataDate?: string | null;
+  isFallback?: boolean;
 };
 
 export async function getMarketInstitutionalSummary() {

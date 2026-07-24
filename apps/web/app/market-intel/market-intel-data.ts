@@ -22,6 +22,7 @@ import {
   type CompanyAnnouncement,
   type NewsAiItem,
 } from "@/lib/api";
+import { formatAsOfDate } from "@/lib/data-state-copy";
 import { industryLabel } from "@/lib/industry-i18n";
 
 const UPSTREAM_TIMEOUT_MS = 4_000;
@@ -271,6 +272,12 @@ export type MarketIntelInstitutional = {
   foreign: MarketIntelInstitutionalLine;
   invest: MarketIntelInstitutionalLine;
   dealer: MarketIntelInstitutionalLine;
+  // #1348 誠實態透傳：後端 state 恆為 "live"（今日已發布）或 "stale"
+  // （getFinMindInstitutionalSummaryWithFallback 抓不到今日資料、退回前一
+  // 交易日，見 apps/api/src/server.ts _institutionalSummaryResponseState）。
+  // dataDate 是這批數字實際所屬的交易日（stale 時 = 前一交易日，非今日）。
+  state: string | null;
+  dataDate: string | null;
 };
 
 // ── Source fan-out ───────────────────────────────────────────────────────
@@ -442,8 +449,20 @@ export async function resolveInstitutional(sources: Pick<MarketIntelSources, "in
   return {
     asOf: institutionalRaw.asOf ?? null,
     totalNet: institutionalRaw.totalNet ?? null,
+    state: institutionalRaw.state ?? null,
+    dataDate: institutionalRaw.dataDate ?? null,
     foreign: line("foreign"),
     invest: line("investmentTrust"),
     dealer: line("dealer"),
   };
+}
+
+// #1348 誠實顯示：盤中 FinMind 尚未發布今日值時，state="stale"、dataDate=
+// 前一交易日——標題要老實講「這是哪天收盤」，不能不論新舊都寫死「今日買賣超」
+// （2026-07-24 Bruce prod 稽核抓到的缺口：後端三欄早就回了，前端從未消費）。
+// 純函式抽出來獨立可測，不用整顆 async server component 才能鎖回歸。
+export function institutionalTitleLabel(institutional: Pick<MarketIntelInstitutional, "state" | "dataDate">): string {
+  if (institutional.state === "live") return "三大法人 · 今日買賣超";
+  const dateLabel = formatAsOfDate(institutional.dataDate);
+  return dateLabel ? `三大法人 · ${dateLabel} 收盤` : "三大法人 · 買賣超（非即時）";
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveInstitutional, type MarketIntelSources } from "./market-intel-data";
+import { institutionalTitleLabel, resolveInstitutional, type MarketIntelSources } from "./market-intel-data";
 
 // 2026-07-22 回歸鎖：/api/v1/market/institutional-summary/finmind 的
 // institutions[].name 是 FinMind 英文 enum（非中文），舊版用中文子字串
@@ -98,5 +98,66 @@ describe("resolveInstitutional", () => {
     expect(result!.foreign).toBeNull();
     expect(result!.invest).toBeNull();
     expect(result!.dealer).toBeNull();
+  });
+
+  // #1348 誠實顯示回歸鎖：backend `_institutionalSummaryResponseState()` 早已回
+  // state:"stale"/dataDate 三欄（2026-07-24 Bruce prod 實測 PASS），但
+  // resolveInstitutional() 從未把這兩欄透傳出去——把它們拿掉，下面兩個
+  // assertion 就會紅。
+  it("passes through state + dataDate untouched (live)", async () => {
+    const result = await resolveInstitutional(
+      sources(
+        Promise.resolve({
+          asOf: "2026-07-24",
+          totalNet: 100,
+          institutions: [{ name: "外資", buy: 100, sell: 40, net: 60 }],
+          topNetBuy: [],
+          topNetSell: [],
+          source: "finmind",
+          state: "live",
+          dataDate: "2026-07-24",
+          isFallback: false,
+        }),
+      ),
+    );
+
+    expect(result!.state).toBe("live");
+    expect(result!.dataDate).toBe("2026-07-24");
+  });
+
+  it("passes through state + dataDate untouched (fallback/stale — prior trading day)", async () => {
+    const result = await resolveInstitutional(
+      sources(
+        Promise.resolve({
+          asOf: "2026-07-23",
+          totalNet: 100,
+          institutions: [{ name: "外資", buy: 100, sell: 40, net: 60 }],
+          topNetBuy: [],
+          topNetSell: [],
+          source: "finmind",
+          state: "stale",
+          dataDate: "2026-07-23",
+          isFallback: true,
+        }),
+      ),
+    );
+
+    expect(result!.state).toBe("stale");
+    expect(result!.dataDate).toBe("2026-07-23");
+  });
+});
+
+describe("institutionalTitleLabel", () => {
+  it('shows "今日買賣超" when state is live', () => {
+    expect(institutionalTitleLabel({ state: "live", dataDate: "2026-07-24" })).toContain("今日");
+    expect(institutionalTitleLabel({ state: "live", dataDate: "2026-07-24" })).toBe("三大法人 · 今日買賣超");
+  });
+
+  it("shows the actual data date (MM/DD 收盤) when state is stale (fallback to a prior trading day)", () => {
+    expect(institutionalTitleLabel({ state: "stale", dataDate: "2026-07-23" })).toBe("三大法人 · 07/23 收盤");
+  });
+
+  it("falls back to a non-date honest label when state is not live and dataDate is missing", () => {
+    expect(institutionalTitleLabel({ state: "unavailable", dataDate: null })).toBe("三大法人 · 買賣超（非即時）");
   });
 });
