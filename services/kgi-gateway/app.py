@@ -1218,14 +1218,129 @@ async def recent_order_events(limit: int = 100) -> dict[str, Any]:
 # Order create — 3-gate: NOT_LOGGED_IN / LIVE_ORDER_BLOCKED / SIM-only SDK call
 # ---------------------------------------------------------------------------
 
+# Gate 3 reject-honesty fix (2026-07-24, forensics: FORENSICS_TRADEID_AND_INVALID_20260724.md).
+#
+# Root cause (verified against the installed kgisuperpy==2.0.3 SDK source,
+# NOT documented anywhere — proprietary SDK, no public docs):
+#   - api.Order.create_order() (kgisuperpy/trading/Order.py:59-222) submits the
+#     order to a native TradeCom DLL call (`self._Order.SecurityOrder(...)`)
+#     and returns IMMEDIATELY. Two outcomes:
+#       (a) SecurityOrder() itself returns non-zero (`rt != 0`) → create_order()
+#           has NO explicit return in that branch (Order.py:218-220) → Python
+#           implicitly returns None. This is a genuinely synchronous reject.
+#       (b) SecurityOrder() returns 0 (queued) → create_order() returns a
+#           `Trade` object with `operations=[Operation(nid=RequestId,
+#           status=Status.Pending)]` (Order.py:187-197). This does NOT mean
+#           KGI accepted the order — it means the order was queued for async
+#           processing.
+#   - KGI's own validation ack (bad symbol code MAT0015 / price outside
+#     limit-up-down range MAT0024, etc.) arrives asynchronously via the SDK's
+#     push callback `_OnOrderPending` (Order.py:456-534), which looks up the
+#     SAME Trade object via `self._rid[rid]` (rid = the RequestId we already
+#     hold) and, when `data['ErrorCode'] != '0'`, mutates
+#     `operation.status = Status.Failed` and `operation.msg = "<code>: <text>"`
+#     (e.g. "MAT0024: 價格超出漲跌範圍" — this exact example string is the
+#     docstring example for kgisuperpy's own `Operation.msg` field, see
+#     kgisuperpy/trading/_trade_base.py:344-388) IN PLACE on the object we
+#     already hold a reference to.
+#   - Previously, Gate 3 read `sdk_response` immediately and returned 200
+#     status="accepted" unconditionally whenever the SDK call didn't raise a
+#     Python exception — even for order (a) (sdk_response=None, trade_id=None,
+#     no information at all) and order (b) mid-flight before the async reject
+#     ack had a chance to arrive. Confirmed against 8 real INVALID orders from
+#     2026-07-23/24 (all 8 got HTTP 200 status="accepted" despite being
+#     rejected by KGI with order_id="0000"/quantity=0 in the "無效單" bucket).
+#
+# Fix: (1) treat sdk_response is None as an immediate synchronous reject
+# (no wait needed — SecurityOrder() already failed before returning).
+# (2) for the async validation-ack case, poll the SAME returned object's
+# operations[] for a short BOUNDED window (see constants below) before
+# answering. This does NOT change order submission behavior (no retry, no
+# cancel, no different SDK call) — it only delays the HTTP *response* by up
+# to _GATE3_REJECT_POLL_ATTEMPTS * _GATE3_REJECT_POLL_INTERVAL_S seconds so
+# the response can honestly reflect a reject if one has already happened.
+# Genuine fills take 10-40s+ (see 2026-07-22 RCA in
+# .claude/agent-memory/backend-strategy-jason/pattern_kgi_sim_send_chain_rca_20260722.md)
+# — this poll is NOT trying to wait for fills, only for the near-instant
+# validation ack. No documented SLA exists for how fast that ack arrives;
+# the bound below is a conservative estimate pending live-market
+# confirmation (see PR body "未達成事項").
+#
+# TS-side impact analysis (verified by reading, zero changes required):
+#   - apps/api/src/broker/kgi-gateway-client.ts classifyError() already maps
+#     HTTP 422 → KgiGatewayValidationError (distinct from
+#     KgiGatewayUnreachableError), reusing the existing INVALID_ORDER_REQUEST
+#     422 path — no new TS error class needed.
+#   - All three production runners (apps/api/src/s1-sim-runner.ts:886-897,
+#     v34-sim-runner.ts:785-791, v51-sim-basket-runner.ts:681-686) already
+#     branch `e instanceof KgiGatewayUnreachableError ? retry : reject-no-retry
+#     (comment: "KGI SIM rejection → log + NO auto-retry")`. A 422 throws
+#     KgiGatewayValidationError, which is NOT KgiGatewayUnreachableError, so
+#     it already falls into the correct "no retry, mark rejected" branch with
+#     zero code changes in any runner.
+#   - apps/api/src/broker/kgi-broker-adapter.ts submitOrder() does not
+#     currently read the gateway's `status` field (hardcodes
+#     `status: "submitted"` on any non-throwing response) — this is a
+#     PRE-EXISTING gap unrelated to this fix (it will now correctly throw
+#     instead of silently reporting "submitted" for rejects, which is a
+#     strict improvement, not a behavior change this PR needs to make).
+#
+# Response shape: reuses the EXISTING ErrorEnvelope/ErrorDetail schema (same
+# shape as the existing 422 INVALID_ORDER_REQUEST / 500 SESSION_API_MISSING /
+# 502 SIM_SDK_ERROR branches below) — no schemas.py change needed. New error
+# code: "KGI_ORDER_REJECTED".
+_GATE3_REJECT_POLL_ATTEMPTS = 8
+_GATE3_REJECT_POLL_INTERVAL_S = 0.1  # 8 * 0.1s = 0.8s worst-case added latency
+                                     # per ACCEPTED order (see PR body caveat)
+
+
+def _gate3_has_pollable_operations(sdk_response: Any) -> bool:
+    """True if sdk_response exposes a real operations[] list to poll.
+
+    Test-double dicts without an "operations" key (existing test_order_gate.py
+    Group C mocks) return False here so the poll loop below is skipped
+    entirely — zero added latency for shapes that carry no reject signal.
+    """
+    if sdk_response is None:
+        return False
+    if isinstance(sdk_response, dict):
+        return isinstance(sdk_response.get("operations"), list)
+    return isinstance(getattr(sdk_response, "operations", None), list)
+
+
+def _gate3_extract_reject_signal(sdk_response: Any) -> Optional[str]:
+    """Scan sdk_response.operations[] for a Status.Failed entry.
+
+    Returns the operation's `msg` (e.g. "MAT0024: 價格超出漲跌範圍") if a
+    failed operation is found, else None. Handles both real kgisuperpy
+    dataclass objects and dict-shaped test doubles.
+    """
+    if isinstance(sdk_response, dict):
+        ops = sdk_response.get("operations") or []
+    else:
+        ops = getattr(sdk_response, "operations", None) or []
+    for op in ops:
+        op_status = op.get("status") if isinstance(op, dict) else getattr(op, "status", None)
+        status_value = getattr(op_status, "value", op_status)
+        if status_value == "Failed":
+            op_msg = op.get("msg") if isinstance(op, dict) else getattr(op, "msg", None)
+            return str(op_msg) if op_msg else "KGI rejected the order (no message)"
+    return None
+
+
 @app.post("/order/create")
 async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse:
     """
-    Order submission route — 3-gate (P0-A 2026-05-13).
+    Order submission route — 3-gate (P0-A 2026-05-13; Gate 3 reject-honesty
+    fix 2026-07-24 — see module-level comment above create_order for design).
 
     Gate 1 (no session)         → 409 NOT_LOGGED_IN
     Gate 2 (LIVE session)       → 409 LIVE_ORDER_BLOCKED (permanent hard line)
-    Gate 3 (SIM session)        → validate body, call SDK, return 200 sim_only=true
+    Gate 3 (SIM session)        → validate body, call SDK, poll a short bounded
+                                   window for a KGI-side sync reject, then
+                                   return 200 sim_only=true status="accepted"
+                                   OR 422 KGI_ORDER_REJECTED with the real
+                                   KGI error code/message passed through.
 
     Hard line: production broker write is permanently disabled at this endpoint.
     LIVE-session order placement returns 409 LIVE_ORDER_BLOCKED regardless of payload.
@@ -1336,10 +1451,39 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
             odd_lot=_ol,
             name=order_req.name,
         )
-        logger.info(
-            "POST /order/create SIM accepted symbol=%s qty=%d action=%s",
-            order_req.symbol, order_req.qty, order_req.action,
-        )
+        # Gate 3 reject-honesty fix (2026-07-24) — see module-level comment
+        # above create_order() for full design + citations.
+        if sdk_response is None:
+            # create_order()'s underlying SecurityOrder() DLL call itself
+            # returned a non-zero rt (synchronous reject at submission time);
+            # kgisuperpy has no explicit return in that branch — only a
+            # print() of the error code/message we cannot capture from here.
+            logger.warning(
+                "POST /order/create SIM synchronous reject symbol=%s qty=%d action=%s: "
+                "SDK returned None (SecurityOrder rejected before a Trade object was created)",
+                order_req.symbol, order_req.qty, order_req.action,
+            )
+            return JSONResponse(
+                status_code=422,
+                content=ErrorEnvelope(
+                    error=ErrorDetail(
+                        code="KGI_ORDER_REJECTED",
+                        message=(
+                            "KGI SDK rejected the order synchronously "
+                            "(SecurityOrder returned non-zero); no trade object was created."
+                        ),
+                    )
+                ).model_dump(),
+            )
+
+        reject_msg = None
+        if _gate3_has_pollable_operations(sdk_response):
+            for _ in range(_GATE3_REJECT_POLL_ATTEMPTS):
+                reject_msg = _gate3_extract_reject_signal(sdk_response)
+                if reject_msg is not None:
+                    break
+                await asyncio.sleep(_GATE3_REJECT_POLL_INTERVAL_S)
+
         sdk_repr = str(sdk_response)[:500] if sdk_response is not None else None
         trade_id = None
         for attr in ("nid", "trade_id", "order_id", "ord_no", "seqno"):
@@ -1359,6 +1503,27 @@ async def create_order(body: Optional[Any] = Body(default=None)) -> JSONResponse
                 flags=re.IGNORECASE,
             )
             trade_id = match.group(1) if match else None
+
+        if reject_msg is not None:
+            logger.info(
+                "POST /order/create SIM rejected symbol=%s qty=%d action=%s trade_id=%s reason=%s",
+                order_req.symbol, order_req.qty, order_req.action, trade_id, reject_msg,
+            )
+            return JSONResponse(
+                status_code=422,
+                content=ErrorEnvelope(
+                    error=ErrorDetail(
+                        code="KGI_ORDER_REJECTED",
+                        message=reject_msg,
+                        upstream=reject_msg,
+                    )
+                ).model_dump(),
+            )
+
+        logger.info(
+            "POST /order/create SIM accepted symbol=%s qty=%d action=%s",
+            order_req.symbol, order_req.qty, order_req.action,
+        )
         return JSONResponse(
             status_code=200,
             content=OrderCreateResponse(
