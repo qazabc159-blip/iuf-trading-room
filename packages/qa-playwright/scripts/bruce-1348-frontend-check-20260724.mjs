@@ -3,8 +3,12 @@ import { chromium, request as pwRequest } from "@playwright/test";
 
 const WEB = "https://app.eycvector.com";
 const API = "https://api.eycvector.com";
-const email = "qazabc159@gmail.com";
-const password = "qazabc159";
+const email = process.env.IUF_QA_OWNER_EMAIL ?? process.env.SEED_OWNER_EMAIL;
+const password = process.env.IUF_QA_OWNER_PASSWORD ?? process.env.SEED_OWNER_PASSWORD;
+if (!email || !password) {
+  console.error("Set IUF_QA_OWNER_EMAIL / IUF_QA_OWNER_PASSWORD (never hardcode credentials)");
+  process.exit(1);
+}
 
 const apiCtx = await pwRequest.newContext({ baseURL: API, storageState: { cookies: [], origins: [] } });
 const loginResp = await apiCtx.post("/auth/login", {
